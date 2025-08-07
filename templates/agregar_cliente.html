@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Agregar nuevo cliente</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #f4f6f8;
+            margin: 0;
+            padding: 40px;
+            color: #333;
+        }
+
+        .tarjeta {
+            max-width: 600px;
+            margin: auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            font-size: 14px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            font-size: 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 20px;
+            text-decoration: none;
+            color: #0275d8;
+            font-weight: 500;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="tarjeta">
+        <h1>Agregar nuevo cliente</h1>
+
+        <form action="/nuevo_cliente" method="POST">
+            <label>Nombre del cliente:</label>
+            <input type="text" name="nombre" required>
+
+            <label>Atención (separar varios por coma):</label>
+            <input type="text" name="atencion" required>
+
+            <label>Dirección:</label>
+            <input type="text" name="direccion" required>
+
+            <label>Anticipo:</label>
+            <input type="text" name="anticipo" required>
+
+            <label>Tiempo de entrega:</label>
+            <input type="text" name="tiempo" required>
+
+            <label>Vigencia:</label>
+            <input type="text" name="vigencia" required>
+
+            <button type="submit">💾 Guardar cliente</button>
+        </form>
+
+        <a href="/">← Volver al inicio</a>
+    </div>
+</body>
+</html>

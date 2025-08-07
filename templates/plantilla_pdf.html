@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>PDF</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 13px;
+            margin: 40px;
+            color: #333;
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .logo img {
+            height: 140px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .encabezado td {
+            padding: 4px 8px;
+            vertical-align: top;
+            font-size: 13px;
+        }
+
+        .partidas th {
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-bottom: 1px solid #ccc;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        .partidas td {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            font-size: 13px;
+            vertical-align: top;
+        }
+
+        .partidas td:nth-child(3),
+        .partidas td:nth-child(4),
+        .partidas td:nth-child(5) {
+            text-align: right;
+        }
+
+        .partidas td:nth-child(3) {
+            text-align: center;
+        }
+
+        .totales {
+            margin-top: 25px;
+            width: 100%;
+        }
+
+        .totales td {
+            padding: 6px 8px;
+            font-size: 13px;
+        }
+
+        .totales .etiqueta {
+            width: 80%;
+            text-align: right;
+        }
+
+        .totales .valor {
+            width: 20%;
+            text-align: right;
+            font-weight: bold;
+        }
+
+        button {
+            padding: 6px 12px;
+            background-color: #5bc0de;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        a {
+            text-decoration: none;
+        }
+
+    </style>
+</head>
+<body>
+
+{% if preview %}
+<!-- Botón Volver -->
+<a href="{{ url_for('inicio') }}">
+    <button style="margin-bottom: 15px;">← Volver</button>
+</a>
+
+<!-- Botón PDF -->
+<button onclick="generarYVolver()">📄 Generar PDF</button>
+
+<script>
+function generarYVolver() {
+    window.open("{{ url_for('generar_pdf') }}", "_blank");
+    setTimeout(() => {
+        window.location.href = "{{ url_for('inicio') }}";
+    }, 1000);
+}
+</script>
+{% endif %}
+
+<!-- LOGO -->
+<div class="logo">
+    <img src="file:///C:/Users/rotce/OneDrive/Documentos/Cotizador-hsc/img/logo.png" alt="Logo HSC">
+</div>
+
+<!-- ENCABEZADO -->
+<table class="encabezado">
+    <tr>
+        <td><strong>Cliente:</strong> {{ datos.cliente }}</td>
+        <td><strong>Fecha:</strong> {{ datos.fecha }}</td>
+    </tr>
+    <tr>
+        <td><strong>Atención:</strong>
+            {% if datos.atencion %}
+                {% for nombre in datos.atencion %}
+                    {{ nombre }}{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            {% else %}
+                -
+            {% endif %}
+        </td>
+        <td><strong>Anticipo:</strong> {{ datos.anticipo }}</td>
+    </tr>
+    <tr>
+        <td><strong>Dirección:</strong> {{ datos.direccion or '-' }}</td>
+        <td><strong>Tiempo de entrega:</strong> {{ datos.tiempo or '-' }}</td>
+    </tr>
+    <tr>
+        <td><strong>No. Cotización:</strong> {{ datos.cotizacion or '-' }}</td>
+        <td><strong>Vigencia:</strong> {{ datos.vigencia or '-' }}</td>
+    </tr>
+</table>
+
+<br>
+<!-- ... todo igual hasta abajo del encabezado ... -->
+
+</table>
+
+<br>
+
+
+
+<!-- PARTIDAS -->
+<table class="partidas">
+    <thead>
+        <tr>
+            <th>Parte</th>
+            <th>Descripción</th>
+            <th>Cantidad</th>
+            <th>Precio Unitario</th>
+            <th>Total</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for partida in partidas %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ partida.descripcion }}</td>
+            <td>{{ partida.cantidad }}</td>
+            <td>${{ '%.2f'|format(partida.precio) }}</td>
+            <td>${{ '%.2f'|format(partida.total) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+
+<!-- TOTALES -->
+<table class="totales">
+    <tr>
+        <td class="etiqueta">SUBTOTAL</td>
+        <td class="valor">${{ '%.2f'|format(subtotal) }}</td>
+    </tr>
+    <tr>
+        <td class="etiqueta">IVA 16%</td>
+        <td class="valor">${{ '%.2f'|format(iva) }}</td>
+    </tr>
+    <tr>
+        <td class="etiqueta">TOTAL</td>
+        <td class="valor"><strong>${{ '%.2f'|format(total) }}</strong></td>
+    </tr>
+</table>
+<!-- COMENTARIOS -->
+{% if datos.comentarios %}
+    <p style="margin-top: 20px; font-style: italic; background-color: #f9f9f9; padding: 10px; border-left: 4px solid #ccc;">
+        <strong>Comentarios:</strong> {{ datos.comentarios }}
+    </p>
+{% endif %}
+<!-- CONDICIONES GENERALES -->
+<div style="margin-top: 30px; font-size: 12px; line-height: 1.6; background-color: #f9f9f9; padding: 12px 16px; border-left: 4px solid #666;">
+    <strong>CONDICIONES GENERALES</strong><br><br>
+    ➢ La garantía en mano de obra de reparaciones tendrá un tiempo de 180 días. En el caso de las partes eléctricas, no se expide garantía más allá de la que expide el fabricante. HSC no se hace responsable por fallas o daños a los equipos por fuego, inundación, abuso, sabotaje, dolo, desastres naturales, corrosión atmosférica o cualquier otra condición de operación anormal del equipo. Siempre considerando: operación de acuerdo a manuales de usuario, notificación oportuna con el mayor detalle de la falla, no exista evidencia de choque eléctrico, arco eléctrico o descarga eléctrica, variación de voltaje de ±5% y variación de corriente no mayor a 5% entre fases, no exista evidencia de corto circuito en instalación de la red eléctrica.<br><br>
+    ➢ No se reconocen cargos por los costos de operaciones o procesos interrumpidos en ningún caso por fallo del sistema.<br><br>
+    ➢ La cancelación de orden de compra causará una penalización de un 25% sobre el monto total de la misma OC.<br><br>
+    ➢ Esta cotización no contempla seguros ni fianzas, en caso de requerirlas favor de solicitarla para integrarlas en la propuesta.
+</div>
+
+</body>
+</html>

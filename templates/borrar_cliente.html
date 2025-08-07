@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Confirmar eliminación</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 30px;
+        }
+        .boton-rojo {
+            background-color: #d9534f;
+            color: white;
+            padding: 10px 20px;
+            font-size: 14px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .boton-cancelar {
+            background-color: #6c757d;
+            color: white;
+            padding: 10px 20px;
+            font-size: 14px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h2>¿Seguro que deseas borrar al cliente <strong>{{ cliente }}</strong>?</h2>
+
+    <form method="post">
+        <button type="submit" class="boton-rojo">Sí, borrar</button>
+        <a href="/"><button type="button" class="boton-cancelar">Cancelar</button></a>
+    </form>
+</body>
+</html>
