@@ -1,27 +1,35 @@
 from flask import Flask, render_template, request, redirect, url_for, make_response, flash
 from markupsafe import escape
+from datetime import date
+from weasyprint import HTML
 import json
 import os
-import pdfkit
-import tempfile
-from datetime import date  # asegúrate de tener esta importación al inicio
-import subprocess  # asegúrate de tener esta línea arriba
+import subprocess
+import platform
+from pathlib import Path
 
 app = Flask(__name__)
+app.secret_key = 'superclave'
+
+
+
 app.secret_key = 'superclave'  # Necesario para flash()
 CARPETA_COTIZACIONES = "cotizaciones"
-config = pdfkit.configuration(wkhtmltopdf=r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe')
+
 
 # Ruta absoluta al archivo footer.html
-FOOTER_PATH = os.path.abspath("footer.html")
+from pathlib import Path  # Asegúrate de tener esta importación
+import os
+
+
 
 options = {
-    'footer-html': FOOTER_PATH,
+   
     'margin-bottom': '20mm',
     'encoding': "UTF-8",
     'disable-smart-shrinking': '',
     'javascript-delay': '200',
-    'enable-local-file-access': ''  # ESTA LÍNEA ES IMPORTANTE
+    'enable-local-file-access': ''  # NECESARIO para acceder al footer local
 }
 
 
@@ -159,46 +167,64 @@ def nuevo_cliente():
         guardar_clientes(clientes_predefinidos)
         return redirect(url_for('inicio'))
     return render_template('agregar_cliente.html')
-@app.route('/generar_pdf')
-def generar_pdf():
-    global datos_cliente, partidas
 
-    # Calcular totales
-    subtotal = sum(p['total'] for p in partidas)
+def cargar_datos():
+    try:
+        with open('datos.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+def cargar_partidas():
+    try:
+        with open('partidas.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []
+
+def calcular_totales(partidas):
+    subtotal = sum(p['cantidad'] * p['precio'] for p in partidas)
     iva = subtotal * 0.16
     total = subtotal + iva
+    return subtotal, iva, total
 
-    # Renderizar HTML
-    rendered_html = render_template(
-        "plantilla_pdf.html",
-        datos=datos_cliente,
-        partidas=partidas,
-        subtotal=subtotal,
-        iva=iva,
-        total=total,
-        preview=False
-    )
 
-    # Ruta de guardado
-    nombre_cliente = datos_cliente.get('cliente', 'cliente')
-    folio = datos_cliente.get('cotizacion', 'cotizacion')
-    carpeta_cliente = os.path.join(CARPETA_COTIZACIONES, nombre_cliente)
-    os.makedirs(carpeta_cliente, exist_ok=True)
-    nombre_archivo = f"{nombre_cliente} - {folio}.pdf"
-    ruta_completa = os.path.join(carpeta_cliente, nombre_archivo)
+@app.route('/generar_pdf')
+def generar_pdf():
+    from weasyprint import HTML
+    from pathlib import Path
 
-    # Generar PDF
-    print("Ruta del footer HTML:", FOOTER_PATH)
+    datos = cargar_datos()
+    partidas = cargar_partidas()
+    subtotal, iva, total = calcular_totales(partidas)
 
-    pdfkit.from_string(rendered_html, ruta_completa, configuration=config, options=options)
+    cliente_folder = os.path.join('cotizaciones', datos['cliente'])
+    os.makedirs(cliente_folder, exist_ok=True)
 
-    # Abrir carpeta (opcional)
+    nombre_archivo = f"{datos['cliente']} - {datos['cotizacion']}.pdf"
+    ruta_completa = os.path.abspath(os.path.join(cliente_folder, nombre_archivo))
+
+    img_path = Path("img/LOGO.png").resolve().as_uri()
+
+    html = render_template('plantilla_pdf.html',
+                           datos=datos,
+                           partidas=partidas,
+                           subtotal=subtotal,
+                           iva=iva,
+                           total=total,
+                           img_path=img_path)
+
+    HTML(string=html).write_pdf(ruta_completa)
+
     try:
-        subprocess.Popen(f'explorer "{carpeta_cliente}"')
+        os.startfile(os.path.dirname(ruta_completa))
     except Exception as e:
         print("No se pudo abrir la carpeta:", e)
 
-    return f"PDF generado y guardado en:<br>{ruta_completa}<br><a href='/'>← Volver</a>"
+    return f"""PDF generado y guardado en:<br>{ruta_completa}<br>
+               <a href='/'>← Volver</a>"""
+
+
 
 
 
@@ -251,16 +277,34 @@ def borrar_cliente():
 
     return render_template('borrar_cliente.html', cliente=cliente)
 
+# ================================== FUNCIONES DE GUARDADO ==================================
+
+def guardar_datos(datos):
+    with open('datos.json', 'w', encoding='utf-8') as f:
+        json.dump(datos, f, indent=2, ensure_ascii=False)
+
+def guardar_partidas(partidas):
+    with open('partidas.json', 'w', encoding='utf-8') as f:
+        json.dump(partidas, f, indent=2, ensure_ascii=False)
+
+
+# ============================ VISTA PREVIA (HTML en navegador) =============================
 @app.route('/vista_previa')
 def vista_previa():
-    return render_template("plantilla_pdf.html",
-                           datos=datos_cliente,
-                           partidas=partidas,
-                           subtotal=sum(p['total'] for p in partidas),
-                           iva=sum(p['total'] for p in partidas) * 0.16,
-                           total=sum(p['total'] for p in partidas) * 1.16,
-                           preview=True)
+    guardar_datos(datos_cliente)
+    guardar_partidas(partidas)
+    return render_template(
+        "plantilla_pdf.html",
+        datos=datos_cliente,
+        partidas=partidas,
+        subtotal=sum(p['total'] for p in partidas),
+        iva=sum(p['total'] for p in partidas) * 0.16,
+        total=sum(p['total'] for p in partidas) * 1.16,
+        img_path=url_for('static', filename='img/logo2.png'),
+        preview=True
+    )
 
-# ================================= Run App =====================================
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
+

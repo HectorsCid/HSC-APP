@@ -6,18 +6,18 @@
     <style>
         body {
             font-family: 'Segoe UI', sans-serif;
-            font-size: 13px;
-            margin: 40px;
+            font-size: 11px;
+            margin: 5px;
             color: #333;
         }
 
         .logo {
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 5px;
         }
 
         .logo img {
-            height: 140px;
+            height: 240px;
         }
 
         table {
@@ -26,23 +26,30 @@
         }
 
         .encabezado td {
-            padding: 4px 8px;
-            vertical-align: top;
-            font-size: 13px;
-        }
+    padding: 4px 8px;
+    vertical-align: top;
+}
+
+.encabezado td:first-child {
+    width: 40%;
+}
+
+.encabezado td:last-child {
+    width: 60%;
+    padding-left: 50px;
+}
+
 
         .partidas th {
             padding: 10px;
             background-color: #f0f0f0;
             border-bottom: 1px solid #ccc;
             text-align: left;
-            font-size: 13px;
         }
 
         .partidas td {
             padding: 8px;
             border-bottom: 1px solid #eee;
-            font-size: 13px;
             vertical-align: top;
         }
 
@@ -57,13 +64,12 @@
         }
 
         .totales {
-            margin-top: 25px;
+            margin-top: 30px;
             width: 100%;
         }
 
         .totales td {
             padding: 6px 8px;
-            font-size: 13px;
         }
 
         .totales .etiqueta {
@@ -76,6 +82,26 @@
             text-align: right;
             font-weight: bold;
         }
+
+        .comentarios {
+            margin-top: 35px;
+            font-style: italic;
+            background-color: #f9f9f9;
+            padding: 10px;
+            border-left: 4px solid #ccc;
+        }
+
+        .condiciones {
+    margin-top: 30px;
+    background-color: #f5f5f5; /* Fondo gris claro */
+    padding: 15px 20px;
+    border-left: 6px solid #666; /* Borde vertical a la izquierda */
+    font-size: 10px;
+    line-height: 1.6;
+}
+
+
+    
 
         button {
             padding: 6px 12px;
@@ -90,18 +116,15 @@
         a {
             text-decoration: none;
         }
-
     </style>
 </head>
 <body>
 
 {% if preview %}
-<!-- Botón Volver -->
 <a href="{{ url_for('inicio') }}">
     <button style="margin-bottom: 15px;">← Volver</button>
 </a>
 
-<!-- Botón PDF -->
 <button onclick="generarYVolver()">📄 Generar PDF</button>
 
 <script>
@@ -113,51 +136,35 @@ function generarYVolver() {
 }
 </script>
 {% endif %}
-
-<!-- LOGO -->
 <div class="logo">
-    <img src="file:///C:/Users/rotce/OneDrive/Documentos/Cotizador-hsc/img/logo.png" alt="Logo HSC">
+    {% if preview %}
+        <img src="{{ url_for('static', filename='logo2.png') }}" alt="Logo HSC"> 
+
+    {% else %}
+        <img src="{{ img_path }}" alt="Logo HSC">
+    {% endif %}
 </div>
 
-<!-- ENCABEZADO -->
-<table class="encabezado">
+<table class="encabezado" style="width: 100%;">
     <tr>
-        <td><strong>Cliente:</strong> {{ datos.cliente }}</td>
-        <td><strong>Fecha:</strong> {{ datos.fecha }}</td>
-    </tr>
-    <tr>
-        <td><strong>Atención:</strong>
-            {% if datos.atencion %}
-                {% for nombre in datos.atencion %}
-                    {{ nombre }}{% if not loop.last %}, {% endif %}
-                {% endfor %}
-            {% else %}
-                -
-            {% endif %}
+        <td style="width: 50%;">
+            <strong>Cliente:</strong> {{ datos.cliente }}<br>
+            <strong>Atención:</strong> {{ datos.atencion | join(', ') if datos.atencion is iterable else datos.atencion }}<br>
+
+        <strong>Dirección:</strong> {{ datos.direccion or '-' }}<br>
+            <strong>No. Cotización:</strong> {{ datos.cotizacion or '-' }}
         </td>
-        <td><strong>Anticipo:</strong> {{ datos.anticipo }}</td>
-    </tr>
-    <tr>
-        <td><strong>Dirección:</strong> {{ datos.direccion or '-' }}</td>
-        <td><strong>Tiempo de entrega:</strong> {{ datos.tiempo or '-' }}</td>
-    </tr>
-    <tr>
-        <td><strong>No. Cotización:</strong> {{ datos.cotizacion or '-' }}</td>
-        <td><strong>Vigencia:</strong> {{ datos.vigencia or '-' }}</td>
+        <td style="width: 50%; padding-left: 80px;">
+            <strong>Fecha:</strong> {{ datos.fecha }}<br>
+            <strong>Anticipo:</strong> {{ datos.anticipo }}<br>
+            <strong>Tiempo de entrega:</strong> {{ datos.tiempo or '-' }}<br>
+            <strong>Vigencia:</strong> {{ datos.vigencia or '-' }}
+        </td>
     </tr>
 </table>
 
-<br>
-<!-- ... todo igual hasta abajo del encabezado ... -->
 
-</table>
-
-<br>
-
-
-
-<!-- PARTIDAS -->
-<table class="partidas">
+<table class="partidas" style="margin-top: 30px;">
     <thead>
         <tr>
             <th>Parte</th>
@@ -168,48 +175,52 @@ function generarYVolver() {
         </tr>
     </thead>
     <tbody>
-        {% for partida in partidas %}
+        {% for p in partidas %}
         <tr>
             <td>{{ loop.index }}</td>
-            <td>{{ partida.descripcion }}</td>
-            <td>{{ partida.cantidad }}</td>
-            <td>${{ '%.2f'|format(partida.precio) }}</td>
-            <td>${{ '%.2f'|format(partida.total) }}</td>
+            <td>{{ p.descripcion }}</td>
+            <td>{{ p.cantidad }}</td>
+            <td>${{ "%.2f"|format(p.precio) }}</td>
+            <td>${{ "%.2f"|format(p.total) }}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 
-
-<!-- TOTALES -->
 <table class="totales">
     <tr>
         <td class="etiqueta">SUBTOTAL</td>
-        <td class="valor">${{ '%.2f'|format(subtotal) }}</td>
+        <td class="valor">${{ "%.2f"|format(subtotal) }}</td>
     </tr>
     <tr>
         <td class="etiqueta">IVA 16%</td>
-        <td class="valor">${{ '%.2f'|format(iva) }}</td>
+        <td class="valor">${{ "%.2f"|format(iva) }}</td>
     </tr>
     <tr>
         <td class="etiqueta">TOTAL</td>
-        <td class="valor"><strong>${{ '%.2f'|format(total) }}</strong></td>
+        <td class="valor">${{ "%.2f"|format(total) }}</td>
     </tr>
 </table>
-<!-- COMENTARIOS -->
+
 {% if datos.comentarios %}
-    <p style="margin-top: 20px; font-style: italic; background-color: #f9f9f9; padding: 10px; border-left: 4px solid #ccc;">
-        <strong>Comentarios:</strong> {{ datos.comentarios }}
-    </p>
-{% endif %}
-<!-- CONDICIONES GENERALES -->
-<div style="margin-top: 30px; font-size: 12px; line-height: 1.6; background-color: #f9f9f9; padding: 12px 16px; border-left: 4px solid #666;">
-    <strong>CONDICIONES GENERALES</strong><br><br>
-    ➢ La garantía en mano de obra de reparaciones tendrá un tiempo de 180 días. En el caso de las partes eléctricas, no se expide garantía más allá de la que expide el fabricante. HSC no se hace responsable por fallas o daños a los equipos por fuego, inundación, abuso, sabotaje, dolo, desastres naturales, corrosión atmosférica o cualquier otra condición de operación anormal del equipo. Siempre considerando: operación de acuerdo a manuales de usuario, notificación oportuna con el mayor detalle de la falla, no exista evidencia de choque eléctrico, arco eléctrico o descarga eléctrica, variación de voltaje de ±5% y variación de corriente no mayor a 5% entre fases, no exista evidencia de corto circuito en instalación de la red eléctrica.<br><br>
-    ➢ No se reconocen cargos por los costos de operaciones o procesos interrumpidos en ningún caso por fallo del sistema.<br><br>
-    ➢ La cancelación de orden de compra causará una penalización de un 25% sobre el monto total de la misma OC.<br><br>
-    ➢ Esta cotización no contempla seguros ni fianzas, en caso de requerirlas favor de solicitarla para integrarlas en la propuesta.
+<div class="comentarios">
+    <strong>Comentarios:</strong> {{ datos.comentarios }}
 </div>
+{% endif %}
+
+<div class="condiciones">
+    <h4><strong>CONDICIONES GENERALES</strong></h4>
+    <ul>
+        <li>➢ La garantía en mano de obra de reparaciones tendrá un tiempo de 180 días. En el caso de las partes eléctricas, no se expide garantía más allá de la que expide el fabricante. HSC no se hace responsable por fallas o daños a los equipos por fuego, inundación, abuso, sabotaje, dolo, desastres naturales, corrosión atmosférica o cualquier otra condición de operación anormal del equipo. Siempre considerando: operación de acuerdo a manuales de usuario, notificación oportuna con el mayor detalle de la falla, no exista evidencia de choque eléctrico, arco eléctrico o descarga eléctrica, variación de voltaje de ±5% y variación de corriente no mayor a 5% entre fases, no exista evidencia de corto circuito en instalación de la red eléctrica.</li><br>
+
+        <li>➢ No se reconocen cargos por los costos de operaciones o procesos interrumpidos en ningún caso por fallo del sistema.</li><br>
+
+        <li>➢ La cancelación de orden de compra causará una penalización de un 25% sobre el monto total de la misma OC.</li><br>
+
+        <li>➢ Esta cotización no contempla seguros ni fianzas, en caso de requerirlas favor de solicitarlas para integrarlas en la propuesta.</li><br>
+    </ul>
+</div>
+
 
 </body>
 </html>

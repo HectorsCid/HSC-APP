@@ -1,27 +1,17 @@
 {
   "Hotel Central": {
     "atencion": [
-      "Lic. Juan Pérez",
-      "Srita. María Vázquez"
+      "Lic. Juan Pérez"
     ],
     "direccion": "Av. Reforma #123, CDMX",
     "tiempo": "3 días hábiles",
     "anticipo": "30%",
     "vigencia": "15 días"
   },
-  "Fiesta Inn 5 de Feb": {
-    "atencion": [
-      "Ing Inventado Rico",
-      "Hector Silva Cid"
-    ],
-    "direccion": "Av. Reforma #123, CDMX",
-    "tiempo": "7 dias",
-    "anticipo": "30%",
-    "vigencia": "30 dias"
-  },
   "Yo Ancestral": {
     "atencion": [
-      "Clementina Calderon Pena"
+      "Clementina Calderon Pena",
+      "Hector Silva Cid"
     ],
     "direccion": "Gran Reserva Preserve, Juiquilla Santa Rosa",
     "tiempo": "7 dias",
