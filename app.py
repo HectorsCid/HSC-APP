@@ -403,6 +403,59 @@ def repositorio():
             estructura[cliente] = pdfs
 
     return render_template("repositorio.html", estructura=estructura)
+from urllib.parse import quote
+from flask import redirect
+
+@app.route('/drive/<cliente>')
+def abrir_drive_cliente(cliente):
+    # Helpers locales (para no tocar tu generar_pdf)
+    def _drive_service():
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        if not creds.valid:
+            if creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                raise RuntimeError("token.json inválido o sin refresh_token.")
+        return build('drive', 'v3', credentials=creds)
+
+    def _obtener_o_crear_carpeta(service, nombre, id_padre=None):
+        query = f"name='{nombre}' and mimeType='application/vnd.google-apps.folder'"
+        if id_padre:
+            query += f" and '{id_padre}' in parents"
+        res = service.files().list(q=query, spaces='drive', fields='files(id,name)', pageSize=1).execute()
+        items = res.get('files', [])
+        if items:
+            return items[0]['id']
+        meta = {'name': nombre, 'mimeType': 'application/vnd.google-apps.folder'}
+        if id_padre:
+            meta['parents'] = [id_padre]
+        folder = service.files().create(body=meta, fields='id').execute()
+        return folder['id']
+
+    service = _drive_service()
+
+    # 📌 Carpeta base fija "01. Cotizaciones"
+    id_cot = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'
+
+    # Buscar carpeta del cliente sin duplicar por mayúsculas/espacios
+    canon = (cliente or "").strip().lower()
+    res = service.files().list(
+        q=f"'{id_cot}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+        spaces='drive',
+        fields='files(id,name)',
+        pageSize=1000
+    ).execute()
+    id_cliente = None
+    for it in res.get('files', []):
+        if it['name'].strip().lower() == canon:
+            id_cliente = it['id']
+            break
+    if not id_cliente:
+        id_cliente = _obtener_o_crear_carpeta(service, cliente, id_cot)
+
+    url = f"https://drive.google.com/drive/folders/{id_cliente}"
+    return redirect(url)
+
 
 
 

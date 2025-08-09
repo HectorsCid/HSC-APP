@@ -1,98 +1,77 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Editar Partida</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            background-color: #f4f6f8;
-            margin: 0;
-            padding: 40px;
-            color: #333;
-        }
-
-        .tarjeta {
-            max-width: 600px;
-            margin: auto;
-            background-color: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        }
-
-        h1 {
-            text-align: center;
-            margin-bottom: 25px;
-        }
-
-        label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 6px;
-        }
-
-        input {
-            width: 100%;
-            padding: 10px;
-            font-size: 14px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            box-sizing: border-box;
-        }
-
-        .acciones {
-            display: flex;
-            justify-content: space-between;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        button[type="submit"] {
-            background-color: #0275d8;
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            font-size: 15px;
-            border-radius: 6px;
-            cursor: pointer;
-            width: 100%;
-        }
-
-        a {
-            display: inline-block;
-            margin-top: 20px;
-            text-decoration: none;
-            color: #0275d8;
-            font-weight: 500;
-            text-align: center;
-            width: 100%;
-        }
-
-        a:hover {
-            text-decoration: underline;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>Editar partida</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0f172a; --card:#111827; --text:#e5e7eb; --muted:#9ca3af;
+      --accent:#22c55e; --danger:#ef4444; --radius:16px;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
+    .wrap{max-width:720px;margin:0 auto;padding:16px}
+    .topbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+    .back{color:var(--muted);text-decoration:none;font-size:.95rem}
+    .card{
+      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      border:1px solid rgba(255,255,255,0.08);
+      border-radius:var(--radius);
+      padding:16px; box-shadow:0 10px 30px rgba(0,0,0,0.35);
+      backdrop-filter: blur(4px);
+    }
+    h1{font-size:1.2rem;margin:4px 0 16px}
+    label{display:block;font-size:.9rem;color:var(--muted);margin-bottom:6px}
+    input, textarea{
+      width:100%; background:#0b1220; color:var(--text);
+      border:1px solid rgba(255,255,255,0.12); border-radius:12px;
+      padding:14px 12px; font-size:16px; outline:none;
+    }
+    textarea{min-height:120px; resize:vertical}
+    .row{display:grid; gap:12px; grid-template-columns:1fr 1fr}
+    @media(max-width:560px){ .row{grid-template-columns:1fr} }
+    .actions{display:flex; gap:10px; margin-top:14px}
+    .btn{flex:1; text-align:center; padding:14px 16px; border:none; border-radius:12px; font-weight:600; font-size:16px; cursor:pointer}
+    .btn-primary{background:var(--accent); color:#04140a}
+    .btn-ghost{background:transparent; border:1px solid rgba(255,255,255,0.14); color:var(--text); text-decoration:none}
+    .hint{font-size:.8rem;color:var(--muted);margin-top:6px}
+  </style>
 </head>
 <body>
-    <div class="tarjeta">
-        <h1>Editar partida #{{ indice + 1 }}</h1>
-
-        <form action="{{ url_for('editar', indice=indice) }}" method="POST">
-            <label>Descripción:</label>
-            <input type="text" name="descripcion" value="{{ partida.descripcion }}" required>
-
-            <label>Cantidad:</label>
-            <input type="number" name="cantidad" value="{{ partida.cantidad }}" required>
-
-            <label>Precio unitario:</label>
-            <input type="number" name="precio" step="0.01" value="{{ partida.precio }}" required>
-
-            <button type="submit">💾 Guardar cambios</button>
-        </form>
-
-        <a href="{{ url_for('inicio') }}">← Volver al inicio</a>
+  <div class="wrap">
+    <div class="topbar">
+      <a class="back" href="{{ url_for('inicio') }}">← Volver</a>
+      <h1>Editar partida #{{ indice + 1 }}</h1>
     </div>
+
+    <form class="card" method="post" action="{{ url_for('editar', indice=indice) }}" autocomplete="on">
+      <div>
+        <label for="descripcion">Descripción</label>
+        <textarea id="descripcion" name="descripcion" required
+          placeholder="Describe la partida...">{{ partida.descripcion }}</textarea>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="cantidad">Cantidad</label>
+          <input id="cantidad" name="cantidad" type="number" inputmode="numeric" step="1" min="1"
+                 value="{{ partida.cantidad }}" required />
+          <div class="hint">Usa números enteros.</div>
+        </div>
+        <div>
+          <label for="precio">Precio (MXN)</label>
+          <input id="precio" name="precio" type="number" inputmode="decimal" step="0.01" min="0"
+                 value="{{ '%.2f'|format(partida.precio) }}" required />
+          <div class="hint">Admite decimales.</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" type="submit">Guardar cambios</button>
+        <a class="btn btn-ghost" href="{{ url_for('inicio') }}">Cancelar</a>
+      </div>
+    </form>
+  </div>
 </body>
 </html>

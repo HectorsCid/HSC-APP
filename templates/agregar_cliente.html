@@ -1,99 +1,116 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Agregar nuevo cliente</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', sans-serif;
-            background-color: #f4f6f8;
-            margin: 0;
-            padding: 40px;
-            color: #333;
-        }
+  <meta charset="UTF-8" />
+  <title>Agregar cliente</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#0f172a;        /* fondo oscuro elegante */
+      --card:#111827;      /* card */
+      --text:#e5e7eb;      /* texto claro */
+      --muted:#9ca3af;     /* texto secundario */
+      --accent:#22c55e;    /* botón principal */
+      --accent-2:#3b82f6;  /* botón secundario */
+      --danger:#ef4444;    /* cancelar */
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
+    .wrap{max-width:720px;margin:0 auto;padding:16px}
+    .card{
+      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      border:1px solid rgba(255,255,255,0.08);
+      border-radius:var(--radius);
+      padding:16px;
+      box-shadow:0 10px 30px rgba(0,0,0,0.35);
+      backdrop-filter: blur(4px);
+    }
+    h1{font-size:1.2rem;margin:4px 0 16px}
+    .grid{display:grid;gap:12px}
+    @media(min-width:560px){ .grid-2{grid-template-columns:1fr 1fr;gap:14px} }
 
-        .tarjeta {
-            max-width: 600px;
-            margin: auto;
-            background-color: white;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        }
+    label{display:block;font-size:.9rem;color:var(--muted);margin-bottom:6px}
+    input, textarea, select{
+      width:100%;
+      background:#0b1220;
+      color:var(--text);
+      border:1px solid rgba(255,255,255,0.12);
+      border-radius:12px;
+      padding:14px 12px;
+      font-size:16px; /* evita zoom en iOS */
+      outline:none;
+    }
+    textarea{min-height:110px;resize:vertical}
+    .hint{font-size:.8rem;color:var(--muted);margin-top:6px}
 
-        h1 {
-            text-align: center;
-            margin-bottom: 30px;
-        }
+    .actions{display:flex;gap:10px;margin-top:14px}
+    .btn{
+      flex:1;
+      text-align:center;
+      padding:14px 16px;
+      border:none;border-radius:12px;
+      font-weight:600;font-size:16px;
+      cursor:pointer;
+    }
+    .btn-primary{background:var(--accent);color:#04140a}
+    .btn-secondary{background:var(--accent-2);color:#061127}
+    .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.14);color:var(--text)}
+    .btn-danger{background:var(--danger);color:#fff}
+    a.btn{display:inline-block;text-decoration:none}
 
-        label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 6px;
-        }
-
-        input {
-            width: 100%;
-            padding: 10px;
-            font-size: 14px;
-            border: 1px solid #ccc;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            box-sizing: border-box;
-        }
-
-        button {
-            background-color: #28a745;
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            font-size: 15px;
-            border-radius: 6px;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 10px;
-        }
-
-        a {
-            display: inline-block;
-            margin-top: 20px;
-            text-decoration: none;
-            color: #0275d8;
-            font-weight: 500;
-        }
-
-        a:hover {
-            text-decoration: underline;
-        }
-    </style>
+    .topbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+    .back{color:var(--muted);text-decoration:none;font-size:.95rem}
+    .back:active{opacity:.7}
+  </style>
 </head>
 <body>
-    <div class="tarjeta">
-        <h1>Agregar nuevo cliente</h1>
-
-        <form action="/nuevo_cliente" method="POST">
-            <label>Nombre del cliente:</label>
-            <input type="text" name="nombre" required>
-
-            <label>Atención (separar varios por coma):</label>
-            <input type="text" name="atencion" required>
-
-            <label>Dirección:</label>
-            <input type="text" name="direccion" required>
-
-            <label>Anticipo:</label>
-            <input type="text" name="anticipo" required>
-
-            <label>Tiempo de entrega:</label>
-            <input type="text" name="tiempo" required>
-
-            <label>Vigencia:</label>
-            <input type="text" name="vigencia" required>
-
-            <button type="submit">💾 Guardar cliente</button>
-        </form>
-
-        <a href="/">← Volver al inicio</a>
+  <div class="wrap">
+    <div class="topbar">
+      <a class="back" href="{{ url_for('inicio') }}">← Volver</a>
+      <h1>Agregar cliente</h1>
     </div>
+
+    <form class="card grid" method="post" action="{{ url_for('nuevo_cliente') }}" autocomplete="on">
+      <div>
+        <label for="nombre">Nombre del cliente</label>
+        <input id="nombre" name="nombre" type="text" placeholder="Ej. Fiesta Inn 5 de Feb"
+               required autocapitalize="words" />
+      </div>
+
+      <div>
+        <label for="atencion">Atención (separar por comas)</label>
+        <input id="atencion" name="atencion" type="text" placeholder="Ej. Ana Pérez, Ing. López"
+               autocapitalize="words" />
+        <div class="hint">Puedes poner varios contactos separados por coma.</div>
+      </div>
+
+      <div>
+        <label for="direccion">Dirección</label>
+        <textarea id="direccion" name="direccion" placeholder="Calle, número, colonia, ciudad"></textarea>
+      </div>
+
+      <div class="grid grid-2">
+        <div>
+          <label for="tiempo">Tiempo de entrega</label>
+          <input id="tiempo" name="tiempo" type="text" placeholder="Ej. 3–5 días hábiles" />
+        </div>
+        <div>
+          <label for="vigencia">Vigencia de cotización</label>
+          <input id="vigencia" name="vigencia" type="text" placeholder="Ej. 15 días" />
+        </div>
+      </div>
+
+      <div>
+        <label for="anticipo">Anticipo (texto libre)</label>
+        <input id="anticipo" name="anticipo" type="text" placeholder="Ej. 50% al ordenar" />
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" type="submit">Guardar</button>
+        <a class="btn btn-ghost" href="{{ url_for('inicio') }}">Cancelar</a>
+      </div>
+    </form>
+  </div>
 </body>
 </html>

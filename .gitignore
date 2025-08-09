@@ -1,0 +1,7 @@
+# Datos locales y PDFs
+datos.json
+partidas.json
+folios.json
+cotizaciones/
+static/cotizaciones/
+*.pdf
