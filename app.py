@@ -7,6 +7,15 @@ import os
 import subprocess
 import platform
 from pathlib import Path
+from flask import send_file
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+SCOPES = ['https://www.googleapis.com/auth/drive.file']
+
+
+
 
 app = Flask(__name__)
 app.secret_key = 'superclave'
@@ -187,42 +196,119 @@ def calcular_totales(partidas):
     iva = subtotal * 0.16
     total = subtotal + iva
     return subtotal, iva, total
+def abrir_explorador_carpeta_cliente(cliente_nombre):
+    # Carpeta local sincronizada con Drive (ajusta si cambia tu letra/unidad)
+    base_local = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
+    ruta_local = os.path.join(base_local, cliente_nombre)
+    try:
+        if platform.system() == 'Windows' and os.path.isdir(ruta_local):
+            os.startfile(ruta_local)  # Abre Explorador en la carpeta
+            print("🗂️ Explorador abierto:", ruta_local)
+        else:
+            print("⚠️ No se pudo abrir Explorador. Ruta no existe o no es Windows:", ruta_local)
+    except Exception as e:
+        print("⚠️ Error al abrir Explorador:", e)
 
 
 @app.route('/generar_pdf')
 def generar_pdf():
     from weasyprint import HTML
     from pathlib import Path
+    import shutil
 
+    # --- Datos y totales ---
     datos = cargar_datos()
     partidas = cargar_partidas()
     subtotal, iva, total = calcular_totales(partidas)
 
-    cliente_folder = os.path.join('cotizaciones', datos['cliente'])
+    cliente = (datos.get('cliente') or 'SIN_CLIENTE').strip()
+    cot = (datos.get('cotizacion') or 'S/F').strip()
+
+    # --- Generar PDF en carpeta original ---
+    cliente_folder = os.path.join('cotizaciones', cliente)
     os.makedirs(cliente_folder, exist_ok=True)
 
-    nombre_archivo = f"{datos['cliente']} - {datos['cotizacion']}.pdf"
-    ruta_completa = os.path.abspath(os.path.join(cliente_folder, nombre_archivo))
+    nombre_archivo = f"{cliente} - {cot}.pdf"
+    ruta_pdf = os.path.abspath(os.path.join(cliente_folder, nombre_archivo))
 
     img_path = Path("img/LOGO.png").resolve().as_uri()
+    html = render_template(
+        'plantilla_pdf.html',
+        datos=datos,
+        partidas=partidas,
+        subtotal=subtotal,
+        iva=iva,
+        total=total,
+        img_path=img_path
+    )
+    HTML(string=html).write_pdf(ruta_pdf)
 
-    html = render_template('plantilla_pdf.html',
-                           datos=datos,
-                           partidas=partidas,
-                           subtotal=subtotal,
-                           iva=iva,
-                           total=total,
-                           img_path=img_path)
+    # --- Funciones internas (DENTRO de generar_pdf) ---
+    def guardar_respaldo_local(ruta_pdf_local, cliente_nombre, nombre_arch):
+        ruta_respaldo_dir = os.path.join('static', 'cotizaciones', cliente_nombre)
+        os.makedirs(ruta_respaldo_dir, exist_ok=True)
+        ruta_final = os.path.join(ruta_respaldo_dir, nombre_arch)
+        shutil.copy2(ruta_pdf_local, ruta_final)
+        print("💾 Copiado a respaldo local:", ruta_final)
 
-    HTML(string=html).write_pdf(ruta_completa)
+    def _drive_service():
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        if not creds.valid:
+            if creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                raise RuntimeError("token.json inválido o sin refresh_token. Regénéralo en local.")
+        return build('drive', 'v3', credentials=creds)
 
-    try:
-        os.startfile(os.path.dirname(ruta_completa))
-    except Exception as e:
-        print("No se pudo abrir la carpeta:", e)
+    def _obtener_o_crear_carpeta(service, nombre, id_padre=None):
+        query = f"name='{nombre}' and mimeType='application/vnd.google-apps.folder'"
+        if id_padre:
+            query += f" and '{id_padre}' in parents"
+        res = service.files().list(q=query, spaces='drive', fields='files(id)', pageSize=1).execute()
+        items = res.get('files', [])
+        if items:
+            return items[0]['id']
+        meta = {'name': nombre, 'mimeType': 'application/vnd.google-apps.folder'}
+        if id_padre:
+            meta['parents'] = [id_padre]
+        carpeta = service.files().create(body=meta, fields='id').execute()
+        return carpeta['id']
 
-    return f"""PDF generado y guardado en:<br>{ruta_completa}<br>
-               <a href='/'>← Volver</a>"""
+    def subir_a_drive_archivo(ruta_local, cliente_nombre, nombre_arch):
+        service = _drive_service()
+
+        # 📌 Carpeta base fija: "01. Cotizaciones"
+        id_cot = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'
+
+        # Crear/obtener subcarpeta del cliente dentro de "01. Cotizaciones"
+        id_cliente = _obtener_o_crear_carpeta(service, cliente_nombre, id_cot)
+
+        # URL de la carpeta del cliente
+        carpeta_url = f"https://drive.google.com/drive/folders/{id_cliente}"
+        print("📂 Carpeta en Drive:", carpeta_url)
+
+        # Subir PDF
+        meta = {'name': nombre_arch, 'parents': [id_cliente]}
+        media = MediaFileUpload(ruta_local, mimetype='application/pdf')
+        service.files().create(body=meta, media_body=media, fields='id, webViewLink').execute()
+        print("📤 Subido a Drive OK")
+
+
+
+
+        return carpeta_url
+
+
+
+    # --- Ejecutar copias y subida (FUERA de la función) ---
+    guardar_respaldo_local(ruta_pdf, cliente, nombre_archivo)
+    carpeta_url = subir_a_drive_archivo(ruta_pdf, cliente, nombre_archivo)
+    abrir_explorador_carpeta_cliente(cliente)
+
+
+    return f"""PDF generado y guardado en:<br>{ruta_pdf}<br>
+📂 <a href='{carpeta_url}' target='_blank'>Abrir carpeta en Drive</a><br>
+<a href='/'>← Volver</a>"""
 
 
 
@@ -303,6 +389,21 @@ def vista_previa():
         img_path=url_for('static', filename='img/logo2.png'),
         preview=True
     )
+##explorador de cotizaciones 
+@app.route('/repositorio')
+def repositorio():
+    base_dir = os.path.join(os.getcwd(), "static", "cotizaciones")
+
+    estructura = {}
+
+    for cliente in os.listdir(base_dir):
+        cliente_path = os.path.join(base_dir, cliente)
+        if os.path.isdir(cliente_path):
+            pdfs = [archivo for archivo in os.listdir(cliente_path) if archivo.endswith('.pdf')]
+            estructura[cliente] = pdfs
+
+    return render_template("repositorio.html", estructura=estructura)
+
 
 
 if __name__ == "__main__":

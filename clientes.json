@@ -17,5 +17,33 @@
     "tiempo": "7 dias",
     "anticipo": "10%",
     "vigencia": "30 dias"
+  },
+  "Sarrelmex": {
+    "atencion": [
+      "Ing Isaac Torres"
+    ],
+    "direccion": "38180 Parque Industrial Colinas de Apaseo, Gto.",
+    "tiempo": "7 dias",
+    "anticipo": "30%",
+    "vigencia": "30 dias"
+  },
+  "Holiday Inn Diamante": {
+    "atencion": [
+      "Ing Uriel Moralez Sanchez"
+    ],
+    "direccion": "Anillo Vial Fray Junípero Serra 1500-A, Arboledas, 76140 Santiago de Querétaro, Qro.",
+    "tiempo": "7 dias",
+    "anticipo": "10%",
+    "vigencia": "30 dias"
+  },
+  "Hector Silva Cid": {
+    "atencion": [
+      "Clementina Calderon Pena",
+      "Hector Silva Cid"
+    ],
+    "direccion": "Gran Reserva Preserve, Juiquilla Santa Rosa",
+    "tiempo": "7 dias",
+    "anticipo": "30%",
+    "vigencia": "30 dias"
   }
 }

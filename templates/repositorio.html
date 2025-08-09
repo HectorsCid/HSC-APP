@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Repositorio de Cotizaciones</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .cliente {
+            margin-bottom: 20px;
+        }
+
+        .cliente h2 {
+            background-color: #007bff;
+            color: white;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .archivos {
+            display: none;
+            background-color: white;
+            padding: 10px 20px;
+            border: 1px solid #ccc;
+            border-top: none;
+            border-radius: 0 0 6px 6px;
+        }
+
+        .archivo {
+            margin: 5px 0;
+        }
+
+        .archivo a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        .archivo a:hover {
+            text-decoration: underline;
+        }
+
+        .boton-volver {
+            display: block;
+            margin-top: 30px;
+            text-align: center;
+        }
+
+        button {
+            padding: 10px 18px;
+            background-color: #5bc0de;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Repositorio de Cotizaciones</h1>
+
+{% for cliente, archivos in estructura.items() %}
+<div class="cliente">
+    <h2 onclick="toggle(this)">{{ cliente }}</h2>
+    <div class="archivos">
+        {% for archivo in archivos %}
+        <div class="archivo">
+            <a href="{{ url_for('static', filename='cotizaciones/' + cliente + '/' + archivo) }}" download>{{ archivo }}</a>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}
+
+<div class="boton-volver">
+    <a href="/"><button>← Volver al inicio</button></a>
+</div>
+
+<script>
+    function toggle(header) {
+        const box = header.nextElementSibling;
+        box.style.display = box.style.display === "block" ? "none" : "block";
+    }
+</script>
+
+</body>
+</html>
+
