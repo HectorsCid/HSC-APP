@@ -36,14 +36,22 @@
     "anticipo": "10%",
     "vigencia": "30 dias"
   },
-  "Hector Silva Cid": {
+  "Bioextracto": {
     "atencion": [
-      "Clementina Calderon Pena",
-      "Hector Silva Cid"
+      "Ing Jorge Vite"
     ],
-    "direccion": "Gran Reserva Preserve, Juiquilla Santa Rosa",
+    "direccion": "Conocida",
     "tiempo": "7 dias",
     "anticipo": "30%",
+    "vigencia": "30 dias"
+  },
+  "Hector Silva Cid 5": {
+    "atencion": [
+      "Clementina Calderon Pena"
+    ],
+    "direccion": "Av La Cantera 2800",
+    "tiempo": "7 dias",
+    "anticipo": "50%",
     "vigencia": "30 dias"
   }
 }

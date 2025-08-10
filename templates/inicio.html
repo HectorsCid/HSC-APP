@@ -57,9 +57,12 @@
     th,td{padding:12px 12px;border-bottom:1px solid var(--line);text-align:left}
     th{background:#f8fafc;font-weight:700;color:#334155}
     tfoot td{font-weight:800;background:#f8fafc}
-    .t-actions .btn{padding:8px 10px;font-size:14px}
 
     .subtle{color:var(--muted);font-size:.88rem}
+
+    /* Ajustes para acciones en la tabla en pantallas angostas */
+    .t-actions .actions { display:flex; flex-wrap:wrap; }
+    .t-actions .btn{ padding:8px 10px; font-size:14px; }
   </style>
 </head>
 <body>
@@ -97,7 +100,7 @@
           <a class="btn" href="{{ url_for('nuevo_cliente') }}">➕ Nuevo</a>
           <button class="btn" type="button" id="btnEditarCliente">✏️ Editar</button>
           <a class="btn btn-danger" href="{{ url_for('borrar_cliente') }}">🗑️ Borrar</a>
-          <a class="btn" href="{{ url_for('repositorio') }}">📂 Ver cotizaciones guardadas</a> <!-- dejamos 1 sola instancia -->
+          <a class="btn" href="{{ url_for('repositorio') }}">📂 Ver cotizaciones guardadas</a>
         </div>
 
         <label>Atención</label>
@@ -135,7 +138,6 @@
 
         <div class="actions" style="margin-top:8px">
           <button class="btn btn-primary" type="submit">💾 Guardar datos</button>
-          <!-- quitamos vista previa duplicada aquí -->
         </div>
 
         <div style="margin-top:12px" class="subtle">
@@ -143,8 +145,6 @@
         </div>
       </div>
     </form>
-
-    <!-- quitamos tarjetas de totales (KPI) -->
 
     <!-- Agregar partida -->
     <form class="card" action="{{ url_for('agregar') }}" method="post">
@@ -165,7 +165,7 @@
       </div>
       <div class="actions" style="margin-top:10px">
         <button class="btn" type="submit">➕ Agregar</button>
-        <a class="btn" href="{{ url_for('vista_previa') }}">👁️ Vista previa</a> <!-- 1 sola instancia -->
+        <a class="btn" href="{{ url_for('vista_previa') }}">👁️ Vista previa</a>
         <a class="btn btn-ok" href="{{ url_for('generar_pdf') }}">📄 Generar PDF</a>
       </div>
     </form>
@@ -177,10 +177,10 @@
           <tr>
             <th>#</th>
             <th>Descripción</th>
-            <th>Cantidad</th>
-            <th>Precio Unitario</th>
-            <th>Total</th>
-            <th style="width:220px">Acciones</th>
+            <th style="width:120px;text-align:center">Cantidad</th>
+            <th style="width:160px;text-align:right">Precio Unitario</th>
+            <th style="width:160px;text-align:right">Total</th>
+            <th style="width:240px">Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -189,34 +189,39 @@
             <td>{{ loop.index }}</td>
             <td>{{ p.descripcion }}</td>
             <td style="text-align:center">{{ p.cantidad }}</td>
-            <td style="text-align:right">${{ '%.2f'|format(p.precio) }}</td>
-            <td style="text-align:right">${{ '%.2f'|format(p.total) }}</td>
+            <td style="text-align:right">{{ p.precio|currency }}</td>
+            <td style="text-align:right">{{ p.total|currency }}</td>
             <td class="t-actions">
-              <div class="actions">
+              <div class="actions" style="gap:8px">
                 <a class="btn" href="{{ url_for('editar', indice=loop.index0) }}">✏️ Editar</a>
                 <a class="btn btn-danger" href="{{ url_for('eliminar', indice=loop.index0) }}">🗑️ Borrar</a>
               </div>
             </td>
           </tr>
           {% endfor %}
+          {% if not partidas %}
+          <tr>
+            <td colspan="6" class="subtle">No hay partidas. Agrega la primera arriba.</td>
+          </tr>
+          {% endif %}
         </tbody>
         <tfoot>
           <tr>
             <td colspan="3"></td>
             <td style="text-align:right">SUBTOTAL</td>
-            <td style="text-align:right">${{ '%.2f'|format(subtotal) }}</td>
+            <td style="text-align:right">{{ subtotal|currency }}</td>
             <td></td>
           </tr>
           <tr>
             <td colspan="3"></td>
             <td style="text-align:right">IVA 16%</td>
-            <td style="text-align:right">${{ '%.2f'|format(iva) }}</td>
+            <td style="text-align:right">{{ iva|currency }}</td>
             <td></td>
           </tr>
           <tr>
             <td colspan="3"></td>
             <td style="text-align:right"><strong>TOTAL</strong></td>
-            <td style="text-align:right"><strong>${{ '%.2f'|format(total) }}</strong></td>
+            <td style="text-align:right"><strong>{{ total|currency }}</strong></td>
             <td></td>
           </tr>
         </tfoot>
@@ -225,7 +230,7 @@
 
     <div class="actions" style="margin-top:12px">
       <a class="btn" href="{{ url_for('limpiar') }}">🧹 Limpiar todo</a>
-      <a class="btn" href="{{ url_for('repositorio') }}">📂 Ver cotizaciones guardadas</a> <!-- queda solo aquí -->
+      <a class="btn" href="{{ url_for('repositorio') }}">📂 Ver cotizaciones guardadas</a>
     </div>
   </div>
 
@@ -273,13 +278,12 @@
         cargarDatosCliente(selectCliente.value);
       });
 
-      // Botón Editar cliente -> usa el seleccionado
+      // Botón Editar cliente -> ruta sin parámetros (tu endpoint no recibe nombre)
       const btnEditar = document.getElementById('btnEditarCliente');
       btnEditar.addEventListener('click', () => {
         const c = selectCliente.value;
         if(!c){ alert('Primero selecciona un cliente.'); return; }
-        const url = "{{ url_for('editar_cliente', nombre='__NOMBRE__') }}".replace('__NOMBRE__', encodeURIComponent(c));
-        window.location.href = url;
+        window.location.href = "{{ url_for('editar_cliente') }}";
       });
     });
   </script>

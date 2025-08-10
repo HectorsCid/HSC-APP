@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import platform
+from urllib.parse import quote_plus
 from pathlib import Path
 from flask import send_file
 from google.oauth2.credentials import Credentials
@@ -24,6 +25,14 @@ app.secret_key = 'superclave'
 
 app.secret_key = 'superclave'  # Necesario para flash()
 CARPETA_COTIZACIONES = "cotizaciones"
+
+@app.template_filter('currency')
+def currency_filter(value):
+    try:
+        return "${:,.2f}".format(float(value))
+    except Exception:
+        return "${:,.2f}".format(0)
+
 
 
 # Ruta absoluta al archivo footer.html
@@ -196,18 +205,18 @@ def calcular_totales(partidas):
     iva = subtotal * 0.16
     total = subtotal + iva
     return subtotal, iva, total
-def abrir_explorador_carpeta_cliente(cliente_nombre):
-    # Carpeta local sincronizada con Drive (ajusta si cambia tu letra/unidad)
-    base_local = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
-    ruta_local = os.path.join(base_local, cliente_nombre)
+def abrir_drive_local(cliente_nombre):
+    # Carpeta base del Google Drive sincronizado en tu PC
+    base = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
+    cliente_seguro = (cliente_nombre or "SIN_CLIENTE").replace("/", "-").replace("\\", "-").strip()
+    destino_dir = os.path.join(base, cliente_seguro)
     try:
-        if platform.system() == 'Windows' and os.path.isdir(ruta_local):
-            os.startfile(ruta_local)  # Abre Explorador en la carpeta
-            print("🗂️ Explorador abierto:", ruta_local)
-        else:
-            print("⚠️ No se pudo abrir Explorador. Ruta no existe o no es Windows:", ruta_local)
+        os.makedirs(destino_dir, exist_ok=True)  # si no existe, la crea (Drive Desktop la sincroniza)
+        os.startfile(destino_dir)                # abre Explorador en esa carpeta
+        print("📂 Abierto Drive local:", destino_dir)
     except Exception as e:
-        print("⚠️ Error al abrir Explorador:", e)
+        print("⚠️ No se pudo abrir Drive local:", e)
+
 
 
 @app.route('/generar_pdf')
@@ -216,16 +225,29 @@ def generar_pdf():
     from pathlib import Path
     import shutil
 
+    # --- 1) Congelar en disco lo que hay en memoria (por si lo necesitas en /repositorio) ---
+    guardar_datos(datos_cliente)
+    guardar_partidas(partidas)
+
+    # --- 2) Usar SIEMPRE la memoria vigente, no cargar_* (evita quedarse con "Prueba") ---
+    datos = dict(datos_cliente)  # copia defensiva
+    partidas_actuales = list(partidas)
+
     # --- Datos y totales ---
-    datos = cargar_datos()
-    partidas = cargar_partidas()
-    subtotal, iva, total = calcular_totales(partidas)
+    def calcular_totales_mem(partidas_lst):
+        subtotal = sum((p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0) for p in partidas_lst)
+        iva = subtotal * 0.16
+        total = subtotal + iva
+        return subtotal, iva, total
 
+    subtotal, iva, total = calcular_totales_mem(partidas_actuales)
+
+    # Cliente/folio seguros
     cliente = (datos.get('cliente') or 'SIN_CLIENTE').strip()
-    cot = (datos.get('cotizacion') or 'S/F').strip()
+    cot = (str(datos.get('cotizacion')) or 'S/F').strip()
 
-    # --- Generar PDF en carpeta original ---
-    cliente_folder = os.path.join('cotizaciones', cliente)
+    # --- 3) Generar PDF en carpeta original ---
+    cliente_folder = os.path.join('cotizaciones', cliente.replace("/", "-").replace("\\", "-"))
     os.makedirs(cliente_folder, exist_ok=True)
 
     nombre_archivo = f"{cliente} - {cot}.pdf"
@@ -235,7 +257,7 @@ def generar_pdf():
     html = render_template(
         'plantilla_pdf.html',
         datos=datos,
-        partidas=partidas,
+        partidas=partidas_actuales,
         subtotal=subtotal,
         iva=iva,
         total=total,
@@ -243,9 +265,9 @@ def generar_pdf():
     )
     HTML(string=html).write_pdf(ruta_pdf)
 
-    # --- Funciones internas (DENTRO de generar_pdf) ---
+    # --- Helpers internos ---
     def guardar_respaldo_local(ruta_pdf_local, cliente_nombre, nombre_arch):
-        ruta_respaldo_dir = os.path.join('static', 'cotizaciones', cliente_nombre)
+        ruta_respaldo_dir = os.path.join('static', 'cotizaciones', cliente_nombre.replace("/", "-").replace("\\", "-"))
         os.makedirs(ruta_respaldo_dir, exist_ok=True)
         ruta_final = os.path.join(ruta_respaldo_dir, nombre_arch)
         shutil.copy2(ruta_pdf_local, ruta_final)
@@ -264,7 +286,7 @@ def generar_pdf():
         query = f"name='{nombre}' and mimeType='application/vnd.google-apps.folder'"
         if id_padre:
             query += f" and '{id_padre}' in parents"
-        res = service.files().list(q=query, spaces='drive', fields='files(id)', pageSize=1).execute()
+        res = service.files().list(q=query, spaces='drive', fields='files(id,name)', pageSize=1).execute()
         items = res.get('files', [])
         if items:
             return items[0]['id']
@@ -274,76 +296,182 @@ def generar_pdf():
         carpeta = service.files().create(body=meta, fields='id').execute()
         return carpeta['id']
 
-    def subir_a_drive_archivo(ruta_local, cliente_nombre, nombre_arch):
+    def abrir_drive_local_win(cliente_nombre, nombre_archivo):
+        base = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
+        cliente_seguro = (cliente_nombre or "SIN_CLIENTE").replace("/", "-").replace("\\", "-").strip()
+        dir_local = os.path.join(base, cliente_seguro)
+        pdf_local = os.path.join(dir_local, nombre_archivo)
+        try:
+            if os.path.exists(pdf_local):
+                os.startfile(pdf_local)          # abrir el PDF si ya bajó por sync
+                print("📂 Abierto PDF local:", pdf_local)
+            elif os.path.isdir(dir_local):
+                os.startfile(dir_local)          # abrir carpeta solo si YA existe
+                print("📂 Abierta carpeta local existente:", dir_local)
+            else:
+                print("ℹ️ Carpeta/archivo local aún no existen (pendiente de sync).")
+        except Exception as e:
+            print("⚠️ No se pudo abrir recurso local:", e)
+
+    def subir_a_drive_archivo(ruta_pdf, cliente_nombre, nombre_archivo):
+        print(f"🚀 Iniciando subida a Drive: {nombre_archivo} para cliente '{cliente_nombre}'")
         service = _drive_service()
 
-        # 📌 Carpeta base fija: "01. Cotizaciones"
+        # Carpeta base fija: "01. Cotizaciones" (ID confirmado por ti)
         id_cot = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'
 
-        # Crear/obtener subcarpeta del cliente dentro de "01. Cotizaciones"
-        id_cliente = _obtener_o_crear_carpeta(service, cliente_nombre, id_cot)
+        # Reusar carpeta del cliente ignorando mayúsculas/espacios
+        canon = (cliente_nombre or "").strip().lower()
+        print(f"🔍 Buscando carpeta del cliente en Drive (canon: '{canon}')")
+        res = service.files().list(
+            q=f"'{id_cot}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+            spaces='drive',
+            fields='files(id,name)',
+            pageSize=1000
+        ).execute()
 
-        # URL de la carpeta del cliente
+        id_cliente = None
+        for it in res.get('files', []):
+            if it['name'].strip().lower() == canon:
+                id_cliente = it['id']
+                break
+
+        if not id_cliente:
+            print(f"📁 Carpeta cliente no encontrada, creando: {cliente_nombre}")
+            id_cliente = _obtener_o_crear_carpeta(service, cliente_nombre, id_cot)
+        else:
+            print(f"📁 Carpeta cliente encontrada: {id_cliente}")
+
         carpeta_url = f"https://drive.google.com/drive/folders/{id_cliente}"
-        print("📂 Carpeta en Drive:", carpeta_url)
 
-        # Subir PDF
-        meta = {'name': nombre_arch, 'parents': [id_cliente]}
-        media = MediaFileUpload(ruta_local, mimetype='application/pdf')
-        service.files().create(body=meta, media_body=media, fields='id, webViewLink').execute()
-        print("📤 Subido a Drive OK")
+        # --- Upsert del PDF ---
+        print(f"🔍 Buscando si el archivo '{nombre_archivo}' ya existe en carpeta del cliente...")
+        existing = service.files().list(
+            q=f"name='{nombre_archivo}' and '{id_cliente}' in parents and trashed=false",
+            spaces='drive',
+            fields='files(id,name)',
+            pageSize=100
+        ).execute().get('files', [])
 
+        media = MediaFileUpload(ruta_pdf, mimetype='application/pdf')
 
+        if existing:
+            print(f"♻️ Archivo encontrado, actualizando: {existing[0]['id']}")
+            file_id = existing[0]['id']
+            updated = service.files().update(
+                fileId=file_id,
+                media_body=media,
+                fields='id, webViewLink, webContentLink'
+            ).execute()
+            for dup in existing[1:]:
+                try:
+                    service.files().delete(fileId=dup['id']).execute()
+                    print(f"🗑️ Duplicado eliminado: {dup['id']}")
+                except Exception as e:
+                    print("⚠️ No se pudo borrar duplicado:", e)
+            archivo_url = updated.get('webViewLink') or carpeta_url
+            print("✅ Archivo actualizado en Drive:", archivo_url)
+        else:
+            print(f"📤 Subiendo nuevo archivo a Drive: {nombre_archivo}")
+            meta = {'name': nombre_archivo, 'parents': [id_cliente]}
+            created = service.files().create(
+                body=meta,
+                media_body=media,
+                fields='id, webViewLink, webContentLink'
+            ).execute()
+            archivo_url = created.get('webViewLink') or carpeta_url
+            print("✅ Archivo subido a Drive:", archivo_url)
 
+        return carpeta_url, archivo_url
 
-        return carpeta_url
+    # --- Ejecutar copias y subida ---
+    guardar_respaldo_local(ruta_pdf, cliente, nombre_archivo)  # para /repositorio
+    carpeta_url, archivo_url = subir_a_drive_archivo(ruta_pdf, cliente, nombre_archivo)
 
+    # Intento de abrir local SOLO si ya existe (no forzar creación)
+    abrir_drive_local_win(cliente, nombre_archivo)
 
+    # Enlaces de compartir
+    mensaje = f"Cotización {cot} - {cliente}\nArchivo: {archivo_url}"
+    wa_url = f"https://wa.me/?text={quote_plus(mensaje)}"
+    mailto_url = f"mailto:?subject={quote_plus(f'Cotización {cot} - {cliente}')}&body={quote_plus(mensaje)}"
 
-    # --- Ejecutar copias y subida (FUERA de la función) ---
-    guardar_respaldo_local(ruta_pdf, cliente, nombre_archivo)
-    carpeta_url = subir_a_drive_archivo(ruta_pdf, cliente, nombre_archivo)
-    abrir_explorador_carpeta_cliente(cliente)
-
-
-    return f"""PDF generado y guardado en:<br>{ruta_pdf}<br>
-📂 <a href='{carpeta_url}' target='_blank'>Abrir carpeta en Drive</a><br>
+    return f"""PDF generado y guardado en:<br>{ruta_pdf}<br><br>
+📄 <a href='{archivo_url}' target='_blank'>Abrir PDF en Drive</a><br>
+📂 <a href='{carpeta_url}' target='_blank'>Abrir carpeta en Drive</a><br><br>
+📱 <a href='{wa_url}' target='_blank'>Compartir por WhatsApp</a> &nbsp;|&nbsp;
+✉️ <a href='{mailto_url}'>Enviar por Email</a><br><br>
 <a href='/'>← Volver</a>"""
-
-
-
-
-
-   
-
-
- 
 
 
 
 
 @app.route('/editar_cliente', methods=['GET', 'POST'])
 def editar_cliente():
+    # Debe existir un cliente seleccionado en memoria
     if not datos_cliente.get('cliente'):
-        return "Primero selecciona un cliente para editar.", 400
-
-    cliente_actual = datos_cliente['cliente']
-    datos = clientes_predefinidos.get(cliente_actual, {})
-
-    if request.method == 'POST':
-        clientes_predefinidos[cliente_actual] = {
-            "atencion": [a.strip() for a in request.form['atencion'].split(',')],
-            "direccion": request.form['direccion'],
-            "tiempo": request.form['tiempo'],
-            "anticipo": request.form['anticipo'],
-            "vigencia": request.form['vigencia']
-        }
-        guardar_clientes(clientes_predefinidos)
+        flash("Primero selecciona un cliente en Inicio para poder editarlo.")
         return redirect(url_for('inicio'))
 
+    nombre_actual = (datos_cliente.get('cliente') or "").strip()
+    datos = clientes_predefinidos.get(nombre_actual, {
+        "atencion": [],
+        "direccion": "",
+        "tiempo": "",
+        "anticipo": "",
+        "vigencia": ""
+    })
+
+    if request.method == 'POST':
+        # Campos del formulario
+        nuevo_nombre = (request.form.get('nombre') or "").strip()
+        atencion = [a.strip() for a in (request.form.get('atencion') or "").split(',') if a.strip()]
+        direccion = request.form.get('direccion', '').strip()
+        tiempo = request.form.get('tiempo', '').strip()
+        anticipo = request.form.get('anticipo', '').strip()
+        vigencia = request.form.get('vigencia', '').strip()
+
+        # Validaciones básicas
+        if not nuevo_nombre:
+            flash("El nombre del cliente no puede estar vacío.")
+            return redirect(url_for('editar_cliente'))
+
+        # Si cambió el nombre y el nuevo ya existe, prevenimos colisión
+        existe_conflicto = (nuevo_nombre != nombre_actual) and (nuevo_nombre in clientes_predefinidos)
+        if existe_conflicto:
+            flash(f"Ya existe un cliente llamado '{nuevo_nombre}'. Elige otro nombre.")
+            return redirect(url_for('editar_cliente'))
+
+        # Armar el payload a guardar
+        payload = {
+            "atencion": atencion,
+            "direccion": direccion,
+            "tiempo": tiempo,
+            "anticipo": anticipo,
+            "vigencia": vigencia
+        }
+
+        # Si el nombre NO cambia: solo actualiza los datos
+        if nuevo_nombre == nombre_actual:
+            clientes_predefinidos[nombre_actual] = payload
+        else:
+            # Renombrado: crea la entrada nueva y borra la vieja
+            clientes_predefinidos[nuevo_nombre] = payload
+            if nombre_actual in clientes_predefinidos:
+                del clientes_predefinidos[nombre_actual]
+            # Actualiza el cliente vigente en memoria para que
+            # el resto de la app (PDF, subida a Drive, etc.) use el nuevo nombre
+            datos_cliente['cliente'] = nuevo_nombre
+
+        guardar_clientes(clientes_predefinidos)
+        flash("Cliente actualizado correctamente.")
+        return redirect(url_for('inicio'))
+
+    # GET -> mostrar formulario con datos actuales
     return render_template('editar_cliente.html',
-                           cliente=cliente_actual,
-                           datos=datos)
+                       cliente=nombre_actual,   # <— alias compatible con tu plantilla
+                       datos=datos)
+
 
 @app.route('/borrar_cliente', methods=['GET', 'POST'])
 def borrar_cliente():

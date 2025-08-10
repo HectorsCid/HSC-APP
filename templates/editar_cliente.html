@@ -6,39 +6,54 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
-      --bg:#0f172a; --card:#111827; --text:#e5e7eb; --muted:#9ca3af;
-      --accent:#22c55e; --danger:#ef4444; --radius:16px;
+      --bg:#f5f7fb;       /* fondo general */
+      --card:#ffffff;     /* tarjetas claras */
+      --text:#1f2937;     /* texto oscuro */
+      --muted:#6b7280;    /* gris medio */
+      --accent:#22c55e;   /* verde de acción */
+      --danger:#ef4444;   /* rojo de alerta */
+      --radius:16px;
     }
     *{box-sizing:border-box}
-    html,body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
+    html,body{
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif
+    }
     .wrap{max-width:720px;margin:0 auto;padding:16px}
     .topbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
     .back{color:var(--muted);text-decoration:none;font-size:.95rem}
     .card{
-      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
-      border:1px solid rgba(255,255,255,0.08);
+      background:var(--card);
+      border:1px solid #e5e7eb;
       border-radius:var(--radius);
-      padding:16px; box-shadow:0 10px 30px rgba(0,0,0,0.35);
-      backdrop-filter: blur(4px);
+      padding:16px;
+      box-shadow:0 6px 20px rgba(17,24,39,.08);
     }
     h1{font-size:1.2rem;margin:4px 0 16px}
     label{display:block;font-size:.9rem;color:var(--muted);margin-bottom:6px}
     input, textarea{
-      width:100%; background:#0b1220; color:var(--text);
-      border:1px solid rgba(255,255,255,0.12); border-radius:12px;
-      padding:14px 12px; font-size:16px; outline:none;
+      width:100%;
+      background:#ffffff;
+      color:var(--text);
+      border:1px solid #e5e7eb;
+      border-radius:12px;
+      padding:14px 12px;
+      font-size:16px;
+      outline:none;
     }
     textarea{min-height:110px; resize:vertical}
     .grid{display:grid; gap:12px}
     .grid-2{grid-template-columns:1fr 1fr}
     @media(max-width:560px){ .grid-2{grid-template-columns:1fr} }
-    .actions{display:flex; gap:10px; margin-top:14px}
+    .actions{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap}
     .btn{
       flex:1; text-align:center; padding:14px 16px; border:none; border-radius:12px;
       font-weight:600; font-size:16px; cursor:pointer
     }
     .btn-primary{background:var(--accent); color:#04140a}
-    .btn-ghost{background:transparent; border:1px solid rgba(255,255,255,0.14); color:var(--text); text-decoration:none}
+    .btn-ghost{background:transparent; border:1px solid #e5e7eb; color:var(--text); text-decoration:none}
     .hint{font-size:.8rem;color:var(--muted);margin-top:6px}
   </style>
 </head>
