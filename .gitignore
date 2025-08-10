@@ -5,3 +5,8 @@ folios.json
 cotizaciones/
 static/cotizaciones/
 *.pdf
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
