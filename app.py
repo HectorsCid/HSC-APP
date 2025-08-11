@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file
+from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file, redirect
 from markupsafe import escape
 from datetime import date
 from weasyprint import HTML
@@ -15,7 +15,14 @@ from googleapiclient.discovery import build
 # --- Google Drive scopes y constantes ---
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 ID_COT = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'   # Carpeta "01. Cotizaciones" en Drive
-CLIENTES_FILENAME = 'clientes.json'           # Nombre del archivo para persistir clientes en Drive
+CLIENTES_FILENAME = 'clientes.json'           # Archivo para persistir clientes en Drive
+
+# Detección de entorno y auto-sync
+IS_RENDER = bool(os.environ.get('RENDER') or
+                 os.environ.get('RENDER_SERVICE_ID') or
+                 os.environ.get('RENDER_EXTERNAL_HOSTNAME'))
+# Si NO quieres sincronizar automáticamente en local, cambia a False
+AUTO_SYNC_FROM_DRIVE = True
 
 # Cargas/descargas de bytes para Drive
 import io
@@ -32,13 +39,13 @@ def currency_filter(value):
     except Exception:
         return "${:,.2f}".format(0)
 
-# (opciones no usadas por WeasyPrint, pero las dejo si las ocupas después)
+# (opciones guardadas por si las ocupas después)
 options = {
     'margin-bottom': '20mm',
     'encoding': "UTF-8",
     'disable-smart-shrinking': '',
     'javascript-delay': '200',
-    'enable-local-file-access': ''  # NECESARIO para acceder a recursos locales
+    'enable-local-file-access': ''
 }
 
 # ===================================== Helpers Drive (clientes.json) =====================================
@@ -110,12 +117,14 @@ def subir_clientes_a_drive(clientes_dict):
 
 def cargar_clientes():
     """
-    Carga clientes:
-    1) Intenta leer clientes.json local si existe y es válido.
-    2) Si no hay datos locales, intenta descargar desde Drive.
-    3) Si no hay nada, devuelve {}.
+    En Render: siempre bajar desde Drive (contenedor efímero).
+    En local: usar archivo si existe; si no, intentar desde Drive.
     """
-    # 1) Local primero
+    if IS_RENDER:
+        data = descargar_clientes_de_drive()
+        return data or {}
+
+    # Local: primero archivo, luego Drive
     if os.path.exists("clientes.json"):
         try:
             with open("clientes.json", "r", encoding="utf-8") as f:
@@ -125,13 +134,8 @@ def cargar_clientes():
         except Exception as e:
             print("⚠️ clientes.json local ilegible:", e)
 
-    # 2) Drive para Render (cuando el contenedor despierta limpio)
     data = descargar_clientes_de_drive()
-    if data:
-        return data
-
-    # 3) Vacío si no hay nada en ningún lado
-    return {}
+    return data or {}
 
 def guardar_clientes(clientes):
     """Guarda local (caché) y sincroniza a Drive para persistir en Render."""
@@ -146,6 +150,29 @@ def guardar_clientes(clientes):
     subir_clientes_a_drive(clientes)
 
 clientes_predefinidos = cargar_clientes()
+
+def _sync_clientes_from_drive_into_memory():
+    """Descarga clientes.json desde Drive, escribe caché local y refresca el dict en memoria."""
+    data = descargar_clientes_de_drive()  # esta ya escribe clientes.json local como caché
+    if data is not None:
+        try:
+            clientes_predefinidos.clear()
+            clientes_predefinidos.update(data)
+            print("🔄 clientes_predefinidos sincronizado desde Drive (startup).")
+        except Exception as e:
+            print("⚠️ No se pudo actualizar clientes_predefinidos:", e)
+
+# ---------- Reemplazo de before_first_request (Flask 3.x) ----------
+# Corre solo una vez por proceso en el primer request
+__did_sync_once = False
+
+@app.before_request
+def _bootstrap_sync_clientes():
+    global __did_sync_once
+    if not __did_sync_once and (IS_RENDER or AUTO_SYNC_FROM_DRIVE):
+        _sync_clientes_from_drive_into_memory()
+        __did_sync_once = True
+# -------------------------------------------------------------------
 
 # ======================= Función para folios automáticos =======================
 
@@ -200,7 +227,6 @@ def guardar_datos():
     datos_cliente['vigencia'] = request.form.get('vigencia', '')
     datos_cliente['cotizacion'] = request.form.get('cotizacion', '')
     datos_cliente['comentarios'] = request.form.get('comentarios', '')
-
     return redirect(url_for('inicio'))
 
 @app.route('/agregar', methods=['POST'])
@@ -302,7 +328,6 @@ def abrir_drive_local(cliente_nombre):
 
 @app.route('/generar_pdf')
 def generar_pdf():
-    from pathlib import Path
     import shutil
 
     # --- 1) Congelar en disco lo que hay en memoria (para /repositorio) ---
@@ -545,7 +570,7 @@ def editar_cliente():
 
     # GET -> mostrar formulario con datos actuales
     return render_template('editar_cliente.html',
-                           cliente=nombre_actual,   # alias compatible con tu plantilla
+                           cliente=nombre_actual,
                            datos=datos)
 
 @app.route('/borrar_cliente', methods=['GET', 'POST'])
@@ -607,9 +632,6 @@ def repositorio():
             estructura[cliente] = pdfs
 
     return render_template("repositorio.html", estructura=estructura)
-
-from urllib.parse import quote
-from flask import redirect
 
 @app.route('/drive/<cliente>')
 def abrir_drive_cliente(cliente):
