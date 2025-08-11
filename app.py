@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, make_response, flash
+from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file
 from markupsafe import escape
 from datetime import date
 from weasyprint import HTML
@@ -8,21 +8,20 @@ import subprocess
 import platform
 from urllib.parse import quote_plus
 from pathlib import Path
-from flask import send_file
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+
+# --- Google Drive scopes y constantes ---
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
+ID_COT = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'   # Carpeta "01. Cotizaciones" en Drive
+CLIENTES_FILENAME = 'clientes.json'           # Nombre del archivo para persistir clientes en Drive
 
-
-
+# Cargas/descargas de bytes para Drive
+import io
+from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload, MediaIoBaseDownload
 
 app = Flask(__name__)
-app.secret_key = 'superclave'
-
-
-
 app.secret_key = 'superclave'  # Necesario para flash()
 CARPETA_COTIZACIONES = "cotizaciones"
 
@@ -33,37 +32,118 @@ def currency_filter(value):
     except Exception:
         return "${:,.2f}".format(0)
 
-
-
-# Ruta absoluta al archivo footer.html
-from pathlib import Path  # Asegúrate de tener esta importación
-import os
-
-
-
+# (opciones no usadas por WeasyPrint, pero las dejo si las ocupas después)
 options = {
-   
     'margin-bottom': '20mm',
     'encoding': "UTF-8",
     'disable-smart-shrinking': '',
     'javascript-delay': '200',
-    'enable-local-file-access': ''  # NECESARIO para acceder al footer local
+    'enable-local-file-access': ''  # NECESARIO para acceder a recursos locales
 }
 
+# ===================================== Helpers Drive (clientes.json) =====================================
 
+def _drive_service_cfg():
+    creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            raise RuntimeError("token.json inválido o sin refresh_token.")
+    return build('drive', 'v3', credentials=creds)
 
+def _drive_buscar_archivo(service, nombre, parent_id):
+    """Devuelve file_id (str) del archivo 'nombre' dentro de parent_id, o None si no existe."""
+    res = service.files().list(
+        q=f"name='{nombre}' and '{parent_id}' in parents and trashed=false",
+        spaces='drive',
+        fields='files(id,name)',
+        pageSize=10
+    ).execute()
+    files = res.get('files', [])
+    return files[0]['id'] if files else None
 
-# ======================= Funciones para clientes ======================
+def descargar_clientes_de_drive():
+    """Descarga clientes.json desde Drive (si existe) y devuelve dict; también guarda una copia local."""
+    try:
+        service = _drive_service_cfg()
+        fid = _drive_buscar_archivo(service, CLIENTES_FILENAME, ID_COT)
+        if not fid:
+            print("ℹ️ clientes.json no encontrado en Drive; usando vacío.")
+            return {}
+        request = service.files().get_media(fileId=fid)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+        fh.seek(0)
+        content = fh.read().decode('utf-8')
+        data = json.loads(content)
+        # Caché local (útil en dev y para lectura rápida)
+        with open('clientes.json', 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        print("✅ clientes.json cargado desde Drive.")
+        return data
+    except Exception as e:
+        print("⚠️ No se pudo descargar clientes.json de Drive:", e)
+        return {}
+
+def subir_clientes_a_drive(clientes_dict):
+    """Sube/actualiza clientes.json a Drive en la carpeta ID_COT."""
+    try:
+        service = _drive_service_cfg()
+        fid = _drive_buscar_archivo(service, CLIENTES_FILENAME, ID_COT)
+        payload = json.dumps(clientes_dict, ensure_ascii=False, indent=2).encode('utf-8')
+        media = MediaIoBaseUpload(io.BytesIO(payload), mimetype='application/json', resumable=False)
+        if fid:
+            updated = service.files().update(fileId=fid, media_body=media, fields='id').execute()
+            print("♻️ clientes.json actualizado en Drive:", updated.get('id'))
+        else:
+            meta = {'name': CLIENTES_FILENAME, 'parents': [ID_COT]}
+            created = service.files().create(body=meta, media_body=media, fields='id').execute()
+            print("📤 clientes.json creado en Drive:", created.get('id'))
+    except Exception as e:
+        print("⚠️ No se pudo subir clientes.json a Drive:", e)
+
+# ======================= Funciones para clientes (con persistencia en Drive) ======================
 
 def cargar_clientes():
+    """
+    Carga clientes:
+    1) Intenta leer clientes.json local si existe y es válido.
+    2) Si no hay datos locales, intenta descargar desde Drive.
+    3) Si no hay nada, devuelve {}.
+    """
+    # 1) Local primero
     if os.path.exists("clientes.json"):
-        with open("clientes.json", "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open("clientes.json", "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data:
+                return data
+        except Exception as e:
+            print("⚠️ clientes.json local ilegible:", e)
+
+    # 2) Drive para Render (cuando el contenedor despierta limpio)
+    data = descargar_clientes_de_drive()
+    if data:
+        return data
+
+    # 3) Vacío si no hay nada en ningún lado
     return {}
 
 def guardar_clientes(clientes):
-    with open("clientes.json", "w", encoding="utf-8") as f:
-        json.dump(clientes, f, indent=2, ensure_ascii=False)
+    """Guarda local (caché) y sincroniza a Drive para persistir en Render."""
+    try:
+        with open("clientes.json", "w", encoding="utf-8") as f:
+            json.dump(clientes, f, indent=2, ensure_ascii=False)
+        print("💾 clientes.json guardado localmente.")
+    except Exception as e:
+        print("⚠️ No se pudo guardar clientes.json local:", e)
+
+    # Sincronizar a Drive
+    subir_clientes_a_drive(clientes)
 
 clientes_predefinidos = cargar_clientes()
 
@@ -126,7 +206,6 @@ def guardar_datos():
 @app.route('/agregar', methods=['POST'])
 def agregar():
     descripcion = request.form['descripcion']
-    
     try:
         cantidad = int(request.form['cantidad'])
         precio = float(request.form['precio'])
@@ -169,12 +248,15 @@ def limpiar():
 @app.route('/nuevo_cliente', methods=['GET', 'POST'])
 def nuevo_cliente():
     if request.method == 'POST':
-        nombre = request.form['nombre']
-        atencion = [a.strip() for a in request.form['atencion'].split(',')]
-        direccion = request.form['direccion']
-        tiempo = request.form['tiempo']
-        anticipo = request.form['anticipo']
-        vigencia = request.form['vigencia']
+        nombre = (request.form['nombre'] or '').strip()
+        atencion = [a.strip() for a in request.form.get('atencion', '').split(',') if a.strip()]
+        direccion = request.form.get('direccion', '')
+        tiempo = request.form.get('tiempo', '')
+        anticipo = request.form.get('anticipo', '')
+        vigencia = request.form.get('vigencia', '')
+        if not nombre:
+            flash("El nombre del cliente no puede estar vacío.")
+            return redirect(url_for('nuevo_cliente'))
         clientes_predefinidos[nombre] = {
             "atencion": atencion,
             "direccion": direccion,
@@ -205,6 +287,7 @@ def calcular_totales(partidas):
     iva = subtotal * 0.16
     total = subtotal + iva
     return subtotal, iva, total
+
 def abrir_drive_local(cliente_nombre):
     # Carpeta base del Google Drive sincronizado en tu PC
     base = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
@@ -217,23 +300,20 @@ def abrir_drive_local(cliente_nombre):
     except Exception as e:
         print("⚠️ No se pudo abrir Drive local:", e)
 
-
-
 @app.route('/generar_pdf')
 def generar_pdf():
-    from weasyprint import HTML
     from pathlib import Path
     import shutil
 
-    # --- 1) Congelar en disco lo que hay en memoria (por si lo necesitas en /repositorio) ---
+    # --- 1) Congelar en disco lo que hay en memoria (para /repositorio) ---
     guardar_datos(datos_cliente)
     guardar_partidas(partidas)
 
-    # --- 2) Usar SIEMPRE la memoria vigente, no cargar_* (evita quedarse con "Prueba") ---
+    # --- 2) Usar SIEMPRE la memoria vigente ---
     datos = dict(datos_cliente)  # copia defensiva
     partidas_actuales = list(partidas)
 
-    # --- Datos y totales ---
+    # --- Totales ---
     def calcular_totales_mem(partidas_lst):
         subtotal = sum((p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0) for p in partidas_lst)
         iva = subtotal * 0.16
@@ -265,7 +345,7 @@ def generar_pdf():
     )
     HTML(string=html).write_pdf(ruta_pdf)
 
-    # --- Helpers internos ---
+    # --- Helpers internos de generar_pdf ---
     def guardar_respaldo_local(ruta_pdf_local, cliente_nombre, nombre_arch):
         ruta_respaldo_dir = os.path.join('static', 'cotizaciones', cliente_nombre.replace("/", "-").replace("\\", "-"))
         os.makedirs(ruta_respaldo_dir, exist_ok=True)
@@ -317,8 +397,8 @@ def generar_pdf():
         print(f"🚀 Iniciando subida a Drive: {nombre_archivo} para cliente '{cliente_nombre}'")
         service = _drive_service()
 
-        # Carpeta base fija: "01. Cotizaciones" (ID confirmado por ti)
-        id_cot = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'
+        # Carpeta base fija: "01. Cotizaciones"
+        id_cot = ID_COT
 
         # Reusar carpeta del cliente ignorando mayúsculas/espacios
         canon = (cliente_nombre or "").strip().lower()
@@ -403,9 +483,6 @@ def generar_pdf():
 ✉️ <a href='{mailto_url}'>Enviar por Email</a><br><br>
 <a href='/'>← Volver</a>"""
 
-
-
-
 @app.route('/editar_cliente', methods=['GET', 'POST'])
 def editar_cliente():
     # Debe existir un cliente seleccionado en memoria
@@ -459,8 +536,7 @@ def editar_cliente():
             clientes_predefinidos[nuevo_nombre] = payload
             if nombre_actual in clientes_predefinidos:
                 del clientes_predefinidos[nombre_actual]
-            # Actualiza el cliente vigente en memoria para que
-            # el resto de la app (PDF, subida a Drive, etc.) use el nuevo nombre
+            # Actualiza el cliente vigente en memoria
             datos_cliente['cliente'] = nuevo_nombre
 
         guardar_clientes(clientes_predefinidos)
@@ -469,9 +545,8 @@ def editar_cliente():
 
     # GET -> mostrar formulario con datos actuales
     return render_template('editar_cliente.html',
-                       cliente=nombre_actual,   # <— alias compatible con tu plantilla
-                       datos=datos)
-
+                           cliente=nombre_actual,   # alias compatible con tu plantilla
+                           datos=datos)
 
 @app.route('/borrar_cliente', methods=['GET', 'POST'])
 def borrar_cliente():
@@ -501,7 +576,6 @@ def guardar_partidas(partidas):
     with open('partidas.json', 'w', encoding='utf-8') as f:
         json.dump(partidas, f, indent=2, ensure_ascii=False)
 
-
 # ============================ VISTA PREVIA (HTML en navegador) =============================
 @app.route('/vista_previa')
 def vista_previa():
@@ -517,12 +591,14 @@ def vista_previa():
         img_path=url_for('static', filename='img/logo2.png'),
         preview=True
     )
-##explorador de cotizaciones 
+
+# =============================== Explorador de cotizaciones ================================
 @app.route('/repositorio')
 def repositorio():
     base_dir = os.path.join(os.getcwd(), "static", "cotizaciones")
-
     estructura = {}
+    if not os.path.isdir(base_dir):
+        return render_template("repositorio.html", estructura=estructura)
 
     for cliente in os.listdir(base_dir):
         cliente_path = os.path.join(base_dir, cliente)
@@ -531,6 +607,7 @@ def repositorio():
             estructura[cliente] = pdfs
 
     return render_template("repositorio.html", estructura=estructura)
+
 from urllib.parse import quote
 from flask import redirect
 
@@ -563,7 +640,7 @@ def abrir_drive_cliente(cliente):
     service = _drive_service()
 
     # 📌 Carpeta base fija "01. Cotizaciones"
-    id_cot = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'
+    id_cot = ID_COT
 
     # Buscar carpeta del cliente sin duplicar por mayúsculas/espacios
     canon = (cliente or "").strip().lower()
@@ -584,9 +661,5 @@ def abrir_drive_cliente(cliente):
     url = f"https://drive.google.com/drive/folders/{id_cliente}"
     return redirect(url)
 
-
-
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-
