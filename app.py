@@ -11,6 +11,9 @@ from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from werkzeug.utils import safe_join
+from flask import abort
+
 
 # --- Google Drive scopes y constantes ---
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
@@ -620,18 +623,80 @@ def vista_previa():
 # =============================== Explorador de cotizaciones ================================
 @app.route('/repositorio')
 def repositorio():
-    base_dir = os.path.join(os.getcwd(), "static", "cotizaciones")
-    estructura = {}
-    if not os.path.isdir(base_dir):
-        return render_template("repositorio.html", estructura=estructura)
+    # Ruta local donde Drive Desktop sincroniza tus cotizaciones
+    BASE_LOCAL_DRIVE = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
 
-    for cliente in os.listdir(base_dir):
-        cliente_path = os.path.join(base_dir, cliente)
-        if os.path.isdir(cliente_path):
-            pdfs = [archivo for archivo in os.listdir(cliente_path) if archivo.endswith('.pdf')]
-            estructura[cliente] = pdfs
+    # Si estamos en Render o no existe la ruta local, listamos desde Drive
+    use_drive = IS_RENDER or (not os.path.isdir(BASE_LOCAL_DRIVE))
 
-    return render_template("repositorio.html", estructura=estructura)
+    if use_drive:
+        try:
+            service = _drive_service_cfg()
+            estructura = {}  # { cliente: [ {name, link}, ... ] }
+
+            # 1) listar carpetas (clientes) bajo ID_COT
+            resp = service.files().list(
+                q=f"'{ID_COT}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                spaces='drive',
+                fields='files(id,name)',
+                pageSize=1000
+            ).execute()
+
+            for folder in resp.get('files', []):
+                cliente = folder['name']
+                fid = folder['id']
+                # 2) listar PDFs dentro de la carpeta del cliente
+                files = service.files().list(
+                    q=f"'{fid}' in parents and mimeType='application/pdf' and trashed=false",
+                    spaces='drive',
+                    fields='files(id,name,webViewLink)',
+                    pageSize=1000
+                ).execute().get('files', [])
+                estructura[cliente] = [
+                    {"name": f["name"], "link": f.get("webViewLink")} for f in files
+                ]
+
+            return render_template("repositorio.html", estructura=estructura, from_drive=True)
+        except Exception as e:
+            print("⚠️ No se pudo listar desde Drive en /repositorio:", e)
+            return render_template("repositorio.html", estructura={}, from_drive=True)
+
+    # --- Modo local: listar desde la carpeta sincronizada G:\... ---
+    estructura = {}  # { cliente: [ nombres_pdf ], ... }
+    try:
+        for cliente in sorted(os.listdir(BASE_LOCAL_DRIVE)):
+            c_path = os.path.join(BASE_LOCAL_DRIVE, cliente)
+            if os.path.isdir(c_path):
+                pdfs = [a for a in os.listdir(c_path) if a.lower().endswith('.pdf')]
+                estructura[cliente] = sorted(pdfs)
+    except Exception as e:
+        print("⚠️ Error listando en local /repositorio:", e)
+        estructura = {}
+
+    # En local, servimos los PDFs con una ruta dedicada (/repo/local/...)
+    return render_template("repositorio.html", estructura=estructura, from_drive=False)
+
+@app.route('/repo/local/<cliente>/<path:filename>')
+def repo_local_file(cliente, filename):
+    BASE_LOCAL_DRIVE = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
+    cliente_seguro = (cliente or "").replace("/", "-").replace("\\", "-").strip()
+    base_cliente = os.path.join(BASE_LOCAL_DRIVE, cliente_seguro)
+
+    # Solo PDFs por seguridad
+    if not filename.lower().endswith(".pdf"):
+        abort(403)
+
+    full_path = safe_join(base_cliente, filename)
+    if not full_path or not os.path.isfile(full_path):
+        abort(404)
+
+    try:
+        return send_file(full_path, mimetype="application/pdf", as_attachment=False, download_name=filename)
+    except Exception as e:
+        print("⚠️ No se pudo enviar archivo local:", e)
+        abort(500)
+
+
 
 @app.route('/drive/<cliente>')
 def abrir_drive_cliente(cliente):

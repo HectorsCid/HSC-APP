@@ -6,42 +6,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
-      --bg:#0f172a; --card:#0b1220; --text:#e5e7eb; --muted:#9ca3af;
-      --line:rgba(255,255,255,.08); --accent:#22c55e; --radius:16px;
+      --bg:#f5f7fb; --card:#ffffff; --ink:#1f2937; --muted:#6b7280;
+      --line:#e5e7eb; --accent:#2563eb; --radius:16px;
     }
     *{box-sizing:border-box}
-    html,body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
+    html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
     .wrap{max-width:900px;margin:0 auto;padding:16px}
-    h1{font-size:1.2rem;margin:4px 0 14px;text-align:center}
+    h1{font-size:1.25rem;margin:4px 0 14px;text-align:center;font-weight:800}
+
     .toolbar{display:flex;gap:10px;align-items:center;margin:6px 0 12px}
-    .search{flex:1;display:flex;align-items:center;gap:8px;background:#07101c;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
-    .search input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:16px}
-    .btn{border:1px solid var(--line);background:#0b1626;color:var(--text);padding:10px 12px;border-radius:12px;cursor:pointer}
+    .search{
+      flex:1;display:flex;align-items:center;gap:8px;
+      background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px
+    }
+    .search input{
+      flex:1;background:transparent;border:none;outline:none;color:var(--ink);font-size:16px
+    }
+    .btn{
+      border:1px solid var(--line);background:#fff;color:var(--ink);
+      padding:10px 12px;border-radius:12px;cursor:pointer;font-weight:700
+    }
+    .btn:hover{background:#f3f6ff}
     .btn:active{transform:scale(.99)}
+
     .fs{
-      background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01));
+      background:var(--card);
       border:1px solid var(--line); border-radius:var(--radius);
-      overflow:hidden;
+      overflow:hidden; box-shadow:0 6px 20px rgba(17,24,39,.05);
     }
     .row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
     .row:last-child{border-bottom:none}
     .folder{background:var(--card);cursor:pointer;user-select:none}
-    .folder:hover{background:#0e1a2c}
+    .folder:hover{background:#f8fafc}
     .name{flex:1;display:flex;align-items:center;gap:10px}
-    .badge{font-size:.75rem;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:999px}
+    .badge{font-size:.75rem;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:999px;background:#fff}
     .chev{transition:transform .2s ease}
     .open .chev{transform:rotate(90deg)}
-    .files{display:none;background:#08111d}
+    .files{display:none;background:#fbfdff}
     .open + .files{display:block}
-    .file{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px dashed var(--line)}
+    .file{
+      display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px dashed var(--line)
+    }
     .file:last-child{border-bottom:none}
-    .file a{color:#93c5fd;text-decoration:none}
+    .file a{color:var(--accent);text-decoration:none}
     .file a:hover{text-decoration:underline}
+
     .actions{margin-top:14px;text-align:center}
     .back{display:inline-block;text-decoration:none}
-    .hint{font-size:.85rem;color:var(--muted);text-align:center;margin:6px 0 12px}
+    .hint{font-size:.9rem;color:var(--muted);text-align:center;margin:6px 0 12px}
+
     /* Icons */
-    .ico{width:20px;height:20px;flex:0 0 20px}
+    .ico{width:20px;height:20px;flex:0 0 20px;color:#64748b}
     @media (min-width:700px){
       .row{padding:14px 18px}
       .file{padding:12px 22px}
@@ -51,7 +66,10 @@
 <body>
   <div class="wrap">
     <h1>Repositorio de Cotizaciones</h1>
-    <div class="hint">Toca una carpeta para ver sus PDFs. Busca por cliente o por nombre de archivo.</div>
+    <div class="hint">
+      Toca una carpeta para ver sus PDFs. Busca por cliente o por nombre de archivo.
+      {% if from_drive %}<br>Fuente: <strong>Google Drive</strong>{% else %}<br>Fuente: <strong>Carpeta local sincronizada</strong>{% endif %}
+    </div>
 
     <div class="toolbar">
       <div class="search">
@@ -75,24 +93,47 @@
         </div>
         <span class="badge">{{ archivos|length }} archivo{{ 's' if archivos|length != 1 }}</span>
         <a href="{{ url_for('abrir_drive_cliente', cliente=cliente) }}" class="btn" style="margin-left:8px" title="Abrir carpeta en Drive">Drive ↗</a>
-
       </div>
+
       <div class="files" data-files-of="{{ cliente | lower }}">
-        {% for archivo in archivos %}
-        <div class="file" data-file="{{ (cliente ~ ' ' ~ archivo) | lower }}">
-          <!-- pdf icon -->
-          <svg class="ico" viewBox="0 0 24 24" fill="none">
-            <path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="1.2"/>
-            <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.2"/>
-            <text x="8" y="17" font-size="6" fill="currentColor">PDF</text>
-          </svg>
-          <a href="{{ url_for('static', filename='cotizaciones/' + cliente + '/' + archivo) }}" target="_blank" rel="noopener">
-            {{ archivo }}
-          </a>
-          <span class="badge">ver</span>
-          <a href="{{ url_for('static', filename='cotizaciones/' + cliente + '/' + archivo) }}" download style="margin-left:auto" title="Descargar">⬇</a>
-        </div>
-        {% endfor %}
+        {% if from_drive %}
+          {# archivos = lista de dicts {name, link} #}
+          {% for item in archivos %}
+          <div class="file" data-file="{{ (cliente ~ ' ' ~ item.name) | lower }}">
+            <!-- pdf icon -->
+            <svg class="ico" viewBox="0 0 24 24" fill="none">
+              <path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.2"/>
+              <text x="8" y="17" font-size="6" fill="currentColor">PDF</text>
+            </svg>
+            <a href="{{ item.link }}" target="_blank" rel="noopener">
+              {{ item.name }}
+            </a>
+            <span class="badge">ver</span>
+          </div>
+          {% else %}
+          <div class="file"><span class="hint">Sin PDFs en Drive para este cliente.</span></div>
+          {% endfor %}
+        {% else %}
+          {# archivos = lista de nombres (archivos locales) #}
+          {% for nombre in archivos %}
+          <div class="file" data-file="{{ (cliente ~ ' ' ~ nombre) | lower }}">
+            <!-- pdf icon -->
+            <svg class="ico" viewBox="0 0 24 24" fill="none">
+              <path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.2"/>
+              <text x="8" y="17" font-size="6" fill="currentColor">PDF</text>
+            </svg>
+            <a href="{{ url_for('repo_local_file', cliente=cliente, filename=nombre) }}" target="_blank" rel="noopener">
+              {{ nombre }}
+            </a>
+            <span class="badge">ver</span>
+            <a href="{{ url_for('repo_local_file', cliente=cliente, filename=nombre) }}" download style="margin-left:auto" title="Descargar">⬇</a>
+          </div>
+          {% else %}
+          <div class="file"><span class="hint">Sin PDFs en la carpeta local de este cliente.</span></div>
+          {% endfor %}
+        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -136,19 +177,17 @@
 
         if(filesBox){
           filesBox.querySelectorAll('.file').forEach(file => {
-            const text = file.getAttribute('data-file') || '';
+            const text = (file.getAttribute('data-file') || '').toLowerCase();
             const show = !q || text.includes(q);
             file.style.display = show ? 'flex' : 'none';
             if(show) anyFileShown = true;
           });
         }
 
-        // mostrar carpeta si coincide el nombre o si algún archivo coincidió
         const showFolder = !q || hitFolder || anyFileShown;
         f.style.display = showFolder ? 'flex' : 'none';
         if(filesBox) filesBox.style.display = showFolder && (q ? anyFileShown || hitFolder : f.classList.contains('open')) ? 'block' : 'none';
-        if(q && showFolder){ f.classList.add('open'); } // abrir al buscar
-        else if(!q){ /* no tocar */ }
+        if(q && showFolder){ f.classList.add('open'); }
       });
     }
   </script>
