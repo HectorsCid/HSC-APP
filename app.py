@@ -11,12 +11,13 @@ from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
 from werkzeug.utils import safe_join
 from flask import abort
 
 
 # --- Google Drive scopes y constantes ---
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
+SCOPES = ['https://www.googleapis.com/auth/drive']
 ID_COT = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'   # Carpeta "01. Cotizaciones" en Drive
 CLIENTES_FILENAME = 'clientes.json'           # Archivo para persistir clientes en Drive
 
@@ -53,14 +54,34 @@ options = {
 
 # ===================================== Helpers Drive (clientes.json) =====================================
 
-def _drive_service_cfg():
-    creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-    if not creds.valid:
-        if creds.expired and creds.refresh_token:
+def _drive_service():
+    token_path = 'token.json'
+    creds = None
+
+    # 1) Cargar token si existe
+    if os.path.exists(token_path):
+        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
+
+    # 2) Si no hay credenciales o no son válidas, refrescar o iniciar flujo OAuth
+    if not creds or not creds.valid:
+        if creds and creds.expired and getattr(creds, 'refresh_token', None):
             creds.refresh(Request())
         else:
-            raise RuntimeError("token.json inválido o sin refresh_token.")
+            # Abrirá el navegador para consentimiento y generará un token nuevo con el scope actualizado
+            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            creds = flow.run_local_server(port=0, prompt='consent')
+
+        # 3) Guardar/actualizar token.json
+        with open(token_path, 'w', encoding='utf-8') as f:
+            f.write(creds.to_json())
+
+    # 4) Construir servicio Drive
     return build('drive', 'v3', credentials=creds)
+
+def _drive_service_cfg():
+    # Compatibilidad con llamadas existentes
+    return _drive_service()
+
 
 def _drive_buscar_archivo(service, nombre, parent_id):
     """Devuelve file_id (str) del archivo 'nombre' dentro de parent_id, o None si no existe."""
@@ -747,6 +768,31 @@ def abrir_drive_cliente(cliente):
 
     url = f"https://drive.google.com/drive/folders/{id_cliente}"
     return redirect(url)
+
+@app.route('/debug/drive')
+def debug_drive():
+    try:
+        service = _drive_service_cfg()
+        who = service.about().get(fields="user(emailAddress)").execute().get('user', {}).get('emailAddress')
+        folder = service.files().get(fileId=ID_COT, fields="id,name").execute()
+        # contar hijos (solo carpetas)
+        resp = service.files().list(
+            q=f"'{ID_COT}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+            spaces='drive',
+            fields='files(id,name)',
+            pageSize=5
+        ).execute()
+        hijos = resp.get('files', [])
+        return f"""✅ Token de: {who}<br>
+        📁 Carpeta madre: {folder.get('name')} ({folder.get('id')})<br>
+        👀 Primeras subcarpetas vistas: {len(hijos)}<br>
+        {', '.join([h['name'] for h in hijos])}
+        """
+    except Exception as e:
+        return f"❌ Error Drive: {e}", 500
+
+
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
