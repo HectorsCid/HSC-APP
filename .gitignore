@@ -1,10 +1,8 @@
-# Datos locales y PDFs
-datos.json
-partidas.json
-folios.json
-cotizaciones/
-static/cotizaciones/
-*.pdf
+# Ignorar credenciales sensibles
+credentials.json
+service_account.json
+token.json
+
 # --- Python ---
 __pycache__/
 *.pyc
