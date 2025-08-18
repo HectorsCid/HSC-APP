@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Reporte de trabajo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{ --ink:#111827; --muted:#6b7280; --line:#e5e7eb; --brand:#111827; --bg:#fff; }
+    @page { size: A4; margin: 14mm 13mm 16mm; }
+    *{ box-sizing:border-box; }
+    html, body { margin:0; padding:0; }
+    body{ font-family:"Segoe UI",system-ui,Roboto,Arial,sans-serif; color:var(--ink); background:var(--bg); font-size:11.7px; line-height:1.35; }
+    table, tr, td, th { page-break-inside: avoid; }
+    .avoid-break{ break-inside: avoid; page-break-inside: avoid; }
+
+    .wrap{ max-width: 770px; margin:0 auto; }
+    .logo{ width:118px; height:auto; }
+
+    /* Header */
+    .head{ display:flex; align-items:center; gap:16px; margin:0 0 8px; }
+    .title h1{ font-size:18px; line-height:1.2; margin:0; color:var(--brand); letter-spacing:.2px; }
+    .title .sub{ font-size:12px; color:#6b7280; margin-top:4px; white-space:pre-wrap; }
+    hr{ border:none; border-top:1px solid var(--line); margin:8px 0 10px; }
+
+    /* Grids y celdas */
+    .grid{ display:grid; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#fff; }
+    .cell{ padding:6px 8px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); font-size:11.5px; }
+    .label{ font-weight:700; color:#374151; background:#fafafa; white-space:nowrap; }
+    .val{ color:#111827; }
+    .one-line{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .cols-4{ grid-template-columns: 130px 1fr 130px 1fr; }
+    .cols-2{ grid-template-columns: 1fr 1fr; gap:10px; border:0; }
+
+    /* Box (contenedores) */
+    .box{ border:1px solid var(--line); border-radius:10px; padding:9px; background:#fff; }
+    .box h3{ margin:0 0 6px; font-size:12.5px; color:#111827; }
+    .muted{ color:var(--muted); }
+
+    /* Tablas */
+    .tbl{ width:100%; border-collapse:collapse; font-size:11.7px; }
+    .tbl th, .tbl td{ border:1px solid var(--line); padding:6px 8px; }
+    .tbl th{ background:#fafafa; text-align:left; color:#111827; }
+
+    /* Fotos */
+    h2{ font-size:14px; margin:12px 0 8px; }
+    .photos{ display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
+    .ph{ width:100%; aspect-ratio:3/2; border-radius:10px; overflow:hidden; border:1px solid var(--line); background:#f9fafb; }
+    .ph img{ width:100%; height:100%; object-fit:cover; display:block; }
+    .placeholder{ display:grid; place-items:center; color:#9ca3af; font-size:12px; height:100%; }
+
+    .page{ page-break-after: always; }
+    .page:last-child{ page-break-after: auto; }
+
+    /* Barra de acciones (solo vista previa; oculta en PDF) */
+    .actions-bar{
+      position: sticky; top: 0; z-index: 999;
+      background: #ffffff; border-bottom: 1px solid #e5e7eb;
+      padding: 8px 12px; display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px;
+    }
+    .actions-bar .left{ color:#6b7280 }
+    .actions-bar .btn{
+      display:inline-block; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;
+      text-decoration:none; color:#111827; background:#fff; margin-left:8px;
+    }
+    .actions-bar .btn:hover{ background:#f9fafb }
+    .actions-bar .btn.primary{ border-color:#22c55e; background:#ecfdf5; font-weight:700; }
+    @media print { .actions-bar { display: none !important; } }
+
+    /* Altos ajustados para caber en 1 página */
+    .mh-falla{ min-height: 5.5em; max-height: 7.5em; overflow:hidden; }
+    .mh-trabajo{ min-height: 6.5em; max-height: 9em; overflow:hidden; }
+    .mh-obs{ min-height: 5.2em; max-height: 7em; overflow:hidden; }
+    .mh-gar{ min-height: 5.2em; max-height: 7em; overflow:hidden; }
+  </style>
+</head>
+<body>
+
+  {% set _cliente = datos.get('cliente','') %}
+  {% set _fecha   = datos.get('fecha','') %}
+
+  <!-- ===== Barra de acciones (solo vista previa) ===== -->
+  {% if show_toolbar %}
+  <div class="actions-bar">
+    <div class="left"><strong>Reporte de trabajo</strong></div>
+    <div class="right">
+      <a class="btn" href="{{ url_for('reportes.diag_nuevo') }}">← Regresar</a>
+      <a class="btn primary" href="{{ url_for('reportes.diag_pdf', token=token) }}?dl=1">Generar PDF</a>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ========= PÁGINA 1 ========= -->
+  <div class="wrap page">
+    <div class="head">
+      {% if embed_for_pdf %}
+        <img class="logo" src="{{ logo_fs }}" alt="HSC">
+      {% else %}
+        <img class="logo" src="{{ logo_web }}" alt="HSC">
+      {% endif %}
+      <div class="title">
+        <h1>Reporte de trabajo</h1>
+        <div class="sub">{{ _cliente }} · {{ _fecha }}</div>
+      </div>
+    </div>
+    <hr>
+
+    <!-- Datos generales -->
+    <div class="grid cols-4 avoid-break" style="margin-bottom:8px">
+      <div class="cell label">Cliente</div>
+      <div class="cell val one-line" style="grid-column: span 3;">{{ datos.get('cliente','') }}</div>
+
+      <div class="cell label">Dirección</div>
+      <div class="cell val one-line" style="grid-column: span 3;">{{ datos.get('direccion','—') }}</div>
+
+      <div class="cell label">Departamento</div>
+      <div class="cell val one-line">{{ datos.get('departamento','—') }}</div>
+      <div class="cell label">Solicitante</div>
+      <div class="cell val one-line">{{ datos.get('atencion','—') }}</div>
+
+      <div class="cell label">Fecha inicio</div>
+      <div class="cell val one-line">{{ datos.get('fecha','—') }}</div>
+      <div class="cell label">Fecha fin</div>
+      <div class="cell val one-line">{{ datos.get('fecha_fin','—') }}</div>
+    </div>
+
+    <!-- Especificaciones del servicio -->
+    <div class="grid cols-2" style="margin-top:8px">
+      <div class="cell" style="border:0; padding:0">
+        <div class="box avoid-break">
+          <h3>Trabajo solicitado</h3>
+          <div style="white-space:pre-wrap">{{ datos.get('trabajo_solicitado','') }}</div>
+        </div>
+      </div>
+      <div class="cell" style="border:0; padding:0">
+        <div class="box avoid-break">
+          <h3>Tipo de mantenimiento</h3>
+          <div>{{ datos.get('tipo_mantenimiento','') or '—' }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="box avoid-break" style="margin-top:8px">
+      <h3>Descripción de la falla</h3>
+      <div class="mh-falla" style="white-space:pre-wrap">{{ datos.get('descripcion_falla','') }}</div>
+    </div>
+
+    <div class="box avoid-break" style="margin-top:8px">
+      <h3>Trabajo realizado</h3>
+      <div class="mh-trabajo" style="white-space:pre-wrap">{{ datos.get('trabajo','') }}</div>
+    </div>
+
+    <div class="box avoid-break" style="margin-top:8px">
+      <h3>Material utilizado</h3>
+      <table class="tbl">
+        <thead>
+          <tr><th style="width:90px">Cant.</th><th>Descripción</th></tr>
+        </thead>
+        <tbody>
+          {% if partes and partes|length > 0 %}
+            {% for p in partes if p.descripcion %}
+              <tr>
+                <td>{{ p.cantidad or '' }}</td>
+                <td>{{ p.descripcion }}</td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            {% for _ in range(6) %}
+              <tr><td style="height:20px"></td><td></td></tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid cols-2" style="margin-top:8px">
+      <div class="cell" style="border:0; padding:0">
+        <div class="box avoid-break">
+          <h3>Observaciones</h3>
+          <div class="mh-obs" style="white-space:pre-wrap">{{ datos.get('observaciones','') }}</div>
+        </div>
+      </div>
+      <div class="cell" style="border:0; padding:0">
+        <div class="box avoid-break">
+          <h3>Garantía</h3>
+          <div class="mh-gar" style="white-space:pre-wrap">{{ datos.get('notas','') }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========= PÁGINA 2 ========= -->
+  <div class="wrap">
+    <div class="head">
+      {% if embed_for_pdf %}
+        <img class="logo" src="{{ logo_fs }}" alt="HSC">
+      {% else %}
+        <img class="logo" src="{{ logo_web }}" alt="HSC">
+      {% endif %}
+      <div class="title">
+        <h1>Reporte fotográfico</h1>
+        <div class="sub">{{ _cliente }} · {{ _fecha }}</div>
+      </div>
+    </div>
+    <hr>
+
+    <div class="photos">
+      {% for f in fotos %}
+        {% if f %}
+          <div class="ph">
+            {% if embed_for_pdf %}
+              <img src="{{ f.fs_uri }}" alt="foto {{ loop.index }}">
+            {% else %}
+              <img src="{{ f.web_path }}" alt="foto {{ loop.index }}">
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="ph"><div class="placeholder">Sin foto</div></div>
+        {% endif %}
+      {% endfor %}
+      {% set missing = 6 - (fotos|length) %}
+      {% if missing > 0 %}
+        {% for _ in range(missing) %}
+          <div class="ph"><div class="placeholder">—</div></div>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+
+</body>
+</html>
+
+
+
+
+

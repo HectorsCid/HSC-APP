@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Editar — {{ id_reporte }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{ --bg:#0b1020; --card:#101933; --border:#2b3553; --text:#e5e7eb; --muted:#a3b2c7; --acc:#22c55e; }
+    *{ box-sizing:border-box }
+    body{ margin:0; font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--text); padding:28px; }
+    .wrap{ max-width:980px; margin:0 auto; }
+    h1{ margin:0 0 6px; font-size:22px; }
+    p{ margin:0 0 16px; color:var(--muted) }
+    .card{ background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03)); border:1px solid var(--border); border-radius:16px; padding:16px; }
+    form{ display:grid; gap:14px; }
+    .grid{ display:grid; grid-template-columns: repeat(2, 1fr); gap:12px; }
+    .full{ grid-column: 1 / -1; }
+    label{ font-size:12px; color:#c7d2fe; display:block; margin-bottom:6px; }
+    input, textarea{ width:100%; padding:10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,.15); background:rgba(255,255,255,.05); color:var(--text); }
+    textarea{ min-height:90px; }
+    .row{ display:flex; gap:10px; margin-top:6px }
+    .btn{ padding:10px 14px; border-radius:12px; border:1px solid rgba(34,197,94,.45); background:rgba(34,197,94,.12); color:#d1fae5; font-weight:700; text-decoration:none; cursor:pointer }
+    a.link{ color:#93c5fd; text-decoration:none }
+    .hr{ height:1px; background:var(--border); margin:6px 0 2px; }
+    .muted{ color:var(--muted); font-size:12px }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Editar reporte — {{ id_reporte }}</h1>
+    <p>Los cambios se guardan localmente (no escribimos en Sheets). Deja en blanco para mantener el valor original.</p>
+
+    <!-- flashes -->
+    {% with msgs = get_flashed_messages() %}
+      {% if msgs %}
+        <div style="margin:8px 0 12px; padding:10px; border:1px solid #ef4444; border-radius:10px; color:#fecaca; background:rgba(239,68,68,.1)">
+          {% for m in msgs %}{{ m }}{% if not loop.last %}<br>{% endif %}{% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="card">
+      <form method="post">
+        <div class="grid">
+          <div>
+            <label>Cliente</label>
+            <input name="Cliente" value="{{ datos.get('Cliente','') }}">
+          </div>
+          <div>
+            <label>Dirección</label>
+            <input name="Direccion" value="{{ datos.get('Direccion','') }}">
+          </div>
+
+          <div>
+            <label>Departamento</label>
+            <input name="Departamento" value="{{ datos.get('Departamento','') }}">
+          </div>
+          <div>
+            <label>Ubicación</label>
+            <input name="Ubicacion" value="{{ datos.get('Ubicacion','') }}">
+          </div>
+
+          <div>
+            <label>Responsable</label>
+            <input name="Responsable" value="{{ datos.get('Responsable','') }}">
+          </div>
+          <div>
+            <label>Modelo</label>
+            <input name="Modelo" value="{{ datos.get('Modelo','') }}">
+          </div>
+
+          <div>
+            <label>No. de serie</label>
+            <input name="NoSerie" value="{{ datos.get('NoSerie','') }}">
+          </div>
+          <div>
+            <label>No. inventario</label>
+            <input name="NoInventario" value="{{ datos.get('NoInventario','') }}">
+          </div>
+
+          <div>
+            <label>No. de contrato</label>
+            <input name="NoContrato" value="{{ datos.get('NoContrato','') }}">
+          </div>
+          <div>
+            <label>Vigencia</label>
+            <input name="Vigencia" value="{{ datos.get('Vigencia','') }}">
+          </div>
+        </div>
+
+        <div class="hr"></div>
+        <div class="grid">
+          <div>
+            <label>Presión Cto 1 (psi)</label>
+            <input name="PresionCto1" value="{{ datos.get('PresionCto1','') }}">
+          </div>
+          <div>
+            <label>Presión Cto 2 (psi)</label>
+            <input name="PresionCto2" value="{{ datos.get('PresionCto2','') }}">
+          </div>
+          <div>
+            <label>Temperatura Cto 1 (°C)</label>
+            <input name="TempCto1" value="{{ datos.get('TempCto1','') }}">
+          </div>
+          <div>
+            <label>Temperatura Cto 2 (°C)</label>
+            <input name="TempCto2" value="{{ datos.get('TempCto2','') }}">
+          </div>
+          <div>
+            <label>Amperaje 1 (A)</label>
+            <input name="Amperaje1" value="{{ datos.get('Amperaje1','') }}">
+          </div>
+          <div>
+            <label>Amperaje 2 (A)</label>
+            <input name="Amperaje2" value="{{ datos.get('Amperaje2','') }}">
+          </div>
+          <div class="full">
+            <label>Obs. Amperaje</label>
+            <input name="ObsAmperaje" value="{{ datos.get('ObsAmperaje','') }}">
+          </div>
+          <div>
+            <label>Tolerancia Presión</label>
+            <input name="TolPresion" value="{{ datos.get('TolPresion','± 5 psi') }}">
+          </div>
+          <div>
+            <label>Tolerancia Temperatura</label>
+            <input name="TolTemperatura" value="{{ datos.get('TolTemperatura','± 1 °C') }}">
+          </div>
+          <div>
+            <label>Tolerancia Amperaje</label>
+            <input name="TolAmperaje" value="{{ datos.get('TolAmperaje','± 1 A') }}">
+          </div>
+        </div>
+
+        <div class="hr"></div>
+        <div class="grid">
+          <div class="full">
+            <label>Mantenimiento correctivo</label>
+            <textarea name="MtoCorrectivo">{{ datos.get('MtoCorrectivo','') }}</textarea>
+          </div>
+          <div class="full">
+            <label>Partes utilizadas <span class="muted">(separadas por coma o punto y coma)</span></label>
+            <textarea name="PartesUtilizadas">{{ datos.get('PartesUtilizadas','') }}</textarea>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+        <div class="grid">
+          <div class="full">
+            <label>Obs. eléctricas</label>
+            <textarea name="ObsElectrico">{{ datos.get('ObsElectrico','') }}</textarea>
+          </div>
+          <div class="full">
+            <label>Obs. electrónicas</label>
+            <textarea name="OBsElectronico">{{ datos.get('OBsElectrónico','') }}</textarea>
+          </div>
+          <div class="full">
+            <label>Obs. mecánicas</label>
+            <textarea name="ObsMecanico">{{ datos.get('ObsMecanico','') }}</textarea>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+        <div class="grid">
+          <div class="full">
+            <label>Notas / Recomendaciones / Comentarios</label>
+            <textarea name="Notas">{{ datos.get('Notas','') or datos.get('Recomendaciones','') or datos.get('Comentarios','') }}</textarea>
+          </div>
+        </div>
+
+        <div class="row">
+          <button class="btn" type="submit">Guardar cambios</button>
+          <a class="btn" href="{{ url_for('reportes.reportes_prev', id_reporte=id_reporte) }}">Vista previa</a>
+          <a class="link" href="{{ url_for('reportes.reportes_pdf', id_reporte=id_reporte) }}">Generar PDF</a>
+          <a class="link" href="{{ url_for('reportes.reportes_inicio') }}">← Volver</a>
+        </div>
+      </form>
+    </div>
+
+    <p class="muted" style="margin-top:10px">Los overrides se guardan en <code>/tmp/reportes_overrides.json</code> (modo local/efímero). Puedes cambiar la ruta con <code>REPORTES_OVERRIDES_PATH</code>.</p>
+  </div>
+</body>
+</html>

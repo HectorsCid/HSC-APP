@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reportes — Selección</title>
+  <style>
+    :root{
+      --bg:#0b1020; --card:rgba(255,255,255,.04); --card2:rgba(255,255,255,.06);
+      --border:rgba(255,255,255,.12); --text:#e5e7eb; --muted:#a3b2c7;
+      --accent:#22c55e; --accent-bg:rgba(34,197,94,.12);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Segoe UI",system-ui,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:28px}
+    .wrap{max-width:1100px;margin:0 auto}
+    h1{margin:0 0 8px}
+    p{margin:0 0 16px;color:var(--muted)}
+    .grid{display:grid;gap:20px;grid-template-columns:1fr 1fr}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:18px;padding:20px;box-shadow:0 12px 30px rgba(0,0,0,.35)}
+    .row{display:flex;gap:10px}
+    input[type=text]{flex:1;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);color:var(--text)}
+    .btn{padding:10px 14px;border-radius:12px;border:1px solid rgba(34,197,94,.45);background:var(--accent-bg);color:#d1fae5;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;white-space:nowrap;transition:.15s}
+    .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(34,197,94,.18)}
+    .links{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+    a.link{color:#93c5fd;text-decoration:none}
+
+    .header-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+
+    .list{display:flex;flex-direction:column;gap:12px;margin-top:8px}
+    .item{display:flex;align-items:center;gap:14px;justify-content:space-between;padding:14px 16px;border:1px solid var(--border);border-radius:16px;background:var(--card);transition:.18s}
+    .item:hover{background:var(--card2);transform:translateY(-2px)}
+    .left{display:flex;align-items:center;gap:12px;min-width:0}
+    .icon{width:34px;height:34px;border-radius:10px;background:rgba(148,163,184,.12);display:grid;place-items:center;border:1px solid rgba(148,163,184,.22);flex-shrink:0}
+    .meta{display:flex;flex-direction:column;gap:2px;min-width:0}
+    .id{font-weight:700}
+    .eq{color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+    .cliente{color:#cbd5e1;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+    .actions{display:flex;gap:8px;flex-shrink:0}
+    @media (max-width:900px){
+      .grid{grid-template-columns:1fr}
+      .eq,.cliente{max-width:60vw}
+    }
+    .flash{margin:8px 0;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.03);color:#fca5a5}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Generar reporte</h1>
+    <p>Elige un <strong>ID_Reporte</strong> o ingrésalo manualmente.</p>
+
+    {% with msgs = get_flashed_messages() %}
+      {% if msgs %}
+        <div class="flash">
+          {% for m in msgs %}{{ m }}{% if not loop.last %}<br>{% endif %}{% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="grid">
+      <!-- Izquierda: Ingreso manual (con autocomplete) -->
+      <div class="card">
+        <h3>Ingresar manual</h3>
+        <form method="post" action="">
+          <div class="row">
+            <input id="id-manual" type="text" name="id_reporte"
+                   placeholder="Ej. HDI1_R_1" autocomplete="off" list="id-suggest" required />
+            <button class="btn" type="submit">Continuar</button>
+          </div>
+          <datalist id="id-suggest"></datalist>
+        </form>
+        <div class="links">
+          <a class="link" href="{{ url_for('inicio_app') }}">← Panel HSC</a>
+          <!-- Reemplaza 'Repositorio' por el botón de nuevos reportes -->
+        
+          <a class="link" href="{{ url_for('reportes.reportes_debug') }}">Debug de reportes</a>
+        </div>
+      </div>
+
+      <!-- Derecha: Últimos 10 -->
+      <div class="card">
+        <div class="header-row">
+          <h3>Últimos 10</h3>
+          <a class="btn" href="{{ url_for('reportes.diag_nuevo') }}">generar reporte de trabajo</a>
+        </div>
+        <div class="list">
+          {% if ultimos_items and ultimos_items|length > 0 %}
+            {% for it in ultimos_items %}
+              <div class="item">
+                <div class="left">
+                  <div class="icon" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2H19.5A1.5 1.5 0 0 1 21 9.5v7A1.5 1.5 0 0 1 19.5 18h-15A1.5 1.5 0 0 1 3 16.5v-9Z" stroke="#a3b2c7"/>
+                    </svg>
+                  </div>
+                  <div class="meta">
+                    <div class="id">{{ it.id_reporte }}</div>
+                    <div class="cliente">{{ it.cliente or "—" }}</div>
+                    <div class="eq">{{ it.nombre_equipo or "—" }}</div>
+                  </div>
+                </div>
+                <div class="actions">
+                  <a class="btn" href="{{ url_for('reportes.reportes_prev', id_reporte=it.id_reporte) }}">Vista previa</a>
+                  <a class="btn" href="{{ url_for('reportes.reportes_editar', id_reporte=it.id_reporte) }}">Editar</a>
+                  <a class="btn" href="{{ url_for('reportes.reportes_pdf', id_reporte=it.id_reporte) }}">Generar PDF</a>
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <p style="color:var(--muted)">No se encontraron folios. Verifica la hoja y el rango.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $in = document.querySelector('#id-manual');
+    const $dl = document.querySelector('#id-suggest');
+    let t;
+    $in.addEventListener('input', () => {
+      clearTimeout(t);
+      const q = $in.value.trim();
+      if (!q) { $dl.innerHTML = ''; return; }
+      t = setTimeout(async () => {
+        try{
+          const r = await fetch(`/reportes/suggest?q=${encodeURIComponent(q)}`);
+          const arr = await r.json();
+          $dl.innerHTML = arr.map(v => `<option value="${v}">`).join('');
+        }catch{}
+      }, 200);
+    });
+  </script>
+</body>
+</html>

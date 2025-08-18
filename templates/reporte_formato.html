@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Reporte — {{ datos.get('ID_Reporte','') }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{ --ink:#111827; --muted:#6b7280; --line:#e5e7eb; --brand:#111827; --bg:#fff; }
+    @page { size: A4; margin: 14mm 13mm 16mm; @bottom-center { content: element(footer); } }
+    *{ box-sizing:border-box; }
+    html, body { margin:0; padding:0; }
+    body{ font-family:"Segoe UI",system-ui,Roboto,Arial,sans-serif; color:var(--ink); background:var(--bg); font-size:11.7px; line-height:1.35; }
+    table, tr, td, th { page-break-inside: avoid; }
+    .avoid-break{ break-inside: avoid; page-break-inside: avoid; }
+
+    .wrap{ max-width: 770px; margin:0 auto; }
+    .logo{ width:118px; height:auto; }
+
+    /* Header */
+    .head{ display:flex; align-items:center; gap:16px; margin:0 0 8px; }
+    .title h1{ font-size:18px; line-height:1.2; margin:0; color:var(--brand); letter-spacing:.2px; }
+    .title .sub{ font-size:12px; color:#6b7280; margin-top:4px; white-space:pre-wrap; }
+    hr{ border:none; border-top:1px solid var(--line); margin:8px 0 10px; }
+
+    /* Grids y celdas */
+    .grid{ display:grid; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#fff; }
+    .cell{ padding:6px 8px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); font-size:11.5px; }
+    .label{ font-weight:700; color:#374151; background:#fafafa; white-space:nowrap; }
+    .val{ color:#111827; }
+    .one-line{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .cols-4{ grid-template-columns: 130px 1fr 130px 1fr; }
+    .cols-2{ grid-template-columns: 1fr 1fr; gap:10px; border:0; }
+
+    /* Box */
+    .box{ border:1px solid var(--line); border-radius:10px; padding:9px; background:#fff; }
+    .box h3{ margin:0 0 6px; font-size:12.5px; color:#111827; }
+    .muted{ color:var(--muted); }
+    .bullets{ margin:4px 0 0 18px; padding:0; }
+    .bullets li{ margin:2px 0; }
+
+    /* Tablas */
+    .tbl{ width:100%; border-collapse:collapse; font-size:11.7px; }
+    .tbl th, .tbl td{ border:1px solid var(--line); padding:6px 8px; }
+    .tbl th{ background:#fafafa; text-align:left; color:#111827; }
+
+    /* Fotos */
+    h3{ font-size:14px; margin:12px 0 8px; }
+    .photos{ display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
+    .ph{ width:100%; aspect-ratio:3/2; border-radius:10px; overflow:hidden; border:1px solid var(--line); background:#f9fafb; }
+    .ph img{ width:100%; height:100%; object-fit:cover; display:block; }
+    .placeholder{ display:grid; place-items:center; color:#9ca3af; font-size:12px; height:100%; }
+
+    .page{ page-break-after: always; }
+    .page:last-child{ page-break-after: auto; }
+
+    /* Footer (sin numeración) */
+    .pdf-footer { position: running(footer); font-size: 11px; color: #6b7280; }
+    .pdf-footer .hr { border-top: 1px solid #e5e7eb; margin-bottom: 6px; }
+    .pdf-footer .gridf { display: grid; grid-template-columns: 1fr; gap: 6px; text-align:center; }
+
+    /* Altos para llenar mejor P1 (ajustables) */
+    .mh-correctivo{ min-height: 10.5em; max-height: 12.8em; overflow: hidden; }
+    .mh-partes{    min-height: 12.5em; max-height: 14.8em; overflow: hidden; }
+
+    /* Encabezado P2 */
+    .p2-title{ font-size:13px; text-transform:uppercase; letter-spacing:.25px; margin:0 0 6px; color:#111827; }
+    .p2-hr{ border-top:1px solid var(--line); margin:4px 0 10px; }
+    .p2-spacer{ height: 4mm; }
+    
+    /* ===== Barra de acciones (solo vista previa; oculta en PDF) ===== */
+    .actions-bar{
+      position: sticky; top: 0; z-index: 999;
+      background: #ffffff; border-bottom: 1px solid #e5e7eb;
+      padding: 8px 12px; display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px;
+    }
+    .actions-bar .left{ color:#6b7280 }
+    .actions-bar .btn{
+      display:inline-block; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;
+      text-decoration:none; color:#111827; background:#fff; margin-left:8px;
+    }
+    .actions-bar .btn:hover{ background:#f9fafb }
+    .actions-bar .btn.primary{ border-color:#22c55e; background:#ecfdf5; font-weight:700; }
+    @media print { .actions-bar { display: none !important; } }
+  </style>
+</head>
+<body>
+
+  <!-- Barra de acciones (vista previa) -->
+  {% set _id = datos.get('ID_Reporte') or '' %}
+  <div class="actions-bar">
+    <div class="left">
+      <strong>Reporte:</strong> {{ _id }} · {{ datos.get('NombreEquipo','') }}
+    </div>
+    <div class="right">
+      <a class="btn" href="{{ url_for('reportes.reportes_inicio') }}">← Regresar</a>
+      <a class="btn" href="{{ url_for('reportes.reportes_editar', id_reporte=_id) }}">Editar</a>
+      <a class="btn primary" href="{{ url_for('reportes.reportes_pdf', id_reporte=_id) }}">Generar PDF</a>
+    </div>
+  </div>
+
+  <!-- ========= PÁGINA 1 ========= -->
+  <div class="wrap page">
+    <div class="head">
+      <img class="logo" src="{{ url_for('static', filename='img/logo2.png') }}" alt="HSC">
+      <div class="title">
+        <h1>Reporte de servicio y/o calibración — {{ datos.get('ID_Reporte','') }}</h1>
+        <!-- SUBTÍTULO FIJO -->
+        <div class="sub">Detalles del servicio</div>
+      </div>
+    </div>
+    <hr>
+
+    <!-- Datos generales -->
+    <div class="grid cols-4 avoid-break" style="margin-bottom:8px">
+      <div class="cell label">Cliente</div>
+      <div class="cell val one-line" style="grid-column: span 3;">{{ datos.get('Cliente','') or datos.get('ID_Cliente','—') }}</div>
+
+      <div class="cell label">Dirección</div>
+      <div class="cell val one-line" style="grid-column: span 3;">{{ datos.get('Direccion','—') }}</div>
+
+      <div class="cell label">Equipo</div>
+      <div class="cell val one-line">{{ datos.get('NombreEquipo','—') }}</div>
+      <div class="cell label">Ubicación</div>
+      <div class="cell val one-line">{{ datos.get('Ubicacion','—') }}</div>
+
+      <div class="cell label">Marca</div>
+      <div class="cell val one-line">{{ datos.get('Marca','—') }}</div>
+      <div class="cell label">Departamento</div>
+      <div class="cell val one-line">{{ datos.get('Departamento','—') }}</div>
+
+      <div class="cell label">Responsable</div>
+      <div class="cell val one-line">{{ datos.get('Responsable','—') }}</div>
+      <div class="cell label">Modelo</div>
+      <div class="cell val one-line">{{ datos.get('Modelo','—') }}</div>
+
+      <div class="cell label">No. de serie</div>
+      <div class="cell val one-line">{{ datos.get('NoSerie','—') }}</div>
+      <div class="cell label">No. inventario</div>
+      <div class="cell val one-line">{{ datos.get('NoInventario','—') }}</div>
+
+      <div class="cell label">No. de contrato</div>
+      <div class="cell val one-line">{{ datos.get('NoContrato','—') }}</div>
+      <div class="cell label">Fecha inicio</div>
+      <div class="cell val one-line">{{ datos.get('FechaInicio','—') }}</div>
+
+      <div class="cell label">Fecha fin</div>
+      <div class="cell val one-line">{{ datos.get('FechaFin','—') }}</div>
+      <div class="cell label">Vigencia</div>
+      <div class="cell val one-line">{{ datos.get('Vigencia','—') }}</div>
+    </div>
+
+    <!-- Rutina preventiva fija -->
+    <div class="box avoid-break" style="margin-top:6px">
+      <h3>RUTINA DE MANTENIMIENTO PREVENTIVO GENERAL QUE SE REALIZA AL EQUIPO</h3>
+      <ul class="bullets">
+        <li>Revisión del buen funcionamiento del equipo en sus parámetros programados</li>
+        <li>Mantenimiento preventivo y limpieza general del equipo</li>
+        <li>Revisión del sistema eléctrico general</li>
+        <li>Revisión del sistema electrónico en general</li>
+        <li>Revisión del sistema mecánico en general</li>
+        <li>Pruebas de operación al equipo</li>
+      </ul>
+    </div>
+
+    <!-- Columna doble -->
+    <div class="grid cols-2" style="margin-top:10px">
+      <!-- IZQUIERDA -->
+      <div class="cell" style="border:0; padding:0">
+        <div class="box avoid-break">
+          <h3>Servicio correctivo y partes utilizadas</h3>
+          <div class="box mh-correctivo" style="margin:6px 0 8px; white-space:pre-wrap">{{ datos.get('MtoCorrectivo','') }}</div>
+
+          {% set partes_raw = (datos.get('PartesUtilizadas','') or '') %}
+          {% set partes = partes_raw.replace(';','\n').replace(',','\n').splitlines() %}
+          <div class="box mh-partes" style="white-space:normal">
+            <h3 style="margin:0 0 6px">Partes utilizadas</h3>
+            <ol style="margin:0; padding-left:18px; font-size:11.5px; line-height:1.3">
+              {% for p in partes if p.strip() %}
+                <li>{{ p.strip() }}</li>
+              {% else %}
+                {% for _ in range(8) %}<li>&nbsp;</li>{% endfor %}
+              {% endfor %}
+            </ol>
+          </div>
+        </div>
+      </div>
+
+      <!-- DERECHA -->
+      <div class="cell" style="border:0; padding:0">
+        <div class="box avoid-break">
+          <h3>Valores de presión de gas <span class="muted">(Tol: {{ datos.get('TolPresion','± 5 psi') }})</span></h3>
+          <table class="tbl">
+            <tr><th>Concepto</th><th>Valor</th><th>Unidad</th></tr>
+            <tr><td>Circuito 1</td><td>{{ datos.get('PresionCto1','—') }}</td><td>psi</td></tr>
+            <tr><td>Circuito 2</td><td>{{ datos.get('PresionCto2','—') }}</td><td>psi</td></tr>
+          </table>
+        </div>
+
+        <div class="box avoid-break" style="margin-top:8px">
+          <h3>Valores de temperatura <span class="muted">(Tol: {{ datos.get('TolTemperatura','± 1 °C') }})</span></h3>
+          <table class="tbl">
+            <tr><th>Concepto</th><th>Valor</th><th>Unidad</th></tr>
+            <tr><td>Circuito 1</td><td>{{ datos.get('TempCto1','—') }}</td><td>°C</td></tr>
+            <tr><td>Circuito 2</td><td>{{ datos.get('TempCto2','—') }}</td><td>°C</td></tr>
+          </table>
+        </div>
+
+        <div class="box avoid-break" style="margin-top:8px">
+          <h3>Amperaje de compresor y/o motores <span class="muted">(Tol: {{ datos.get('TolAmperaje','± 1 A') }})</span></h3>
+          <table class="tbl">
+            <tr><th>Circuito 1</th><th>Circuito 2</th><th>Observaciones</th></tr>
+            <tr>
+              <td>{{ datos.get('Amperaje1','—') }} A</td>
+              <td>{{ datos.get('Amperaje2','—') }} A</td>
+              <td>{{ datos.get('ObsAmperaje','—') }}</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========= PÁGINA 2 ========= -->
+  <div class="wrap page">
+    <h2 class="p2-title">Especificación de las revisiones y acciones que se hacen a los diversos sistemas que integran los equipos</h2>
+    <div class="p2-hr"></div>
+
+    <div class="box avoid-break">
+      <h3>Revisión del sistema eléctrico</h3>
+      <ul class="bullets">
+        <li>Estado de cableado y terminales</li>
+        <li>Relevadores de estado sólido y mecánicos</li>
+        <li>Conectores y acoples eléctricos</li>
+        <li>Válvulas solenoides de refrigeración</li>
+        <li>Elementos calefactores · Fusibles de protección</li>
+      </ul>
+      <h3>Observaciones eléctricas</h3>
+      <div class="box" style="min-height:70px; white-space:pre-wrap">{{ datos.get('ObsElectrico','') }}</div>
+    </div>
+
+    <div class="box avoid-break" style="margin-top:10px">
+      <h3>Revisión del sistema electrónico</h3>
+      <ul class="bullets">
+        <li>Tarjetas electrónicas (evitar falsos contactos)</li>
+        <li>Tarjeta principal / fuente de alimentación</li>
+        <li>Fusibles integrados en tarjetas</li>
+        <li>Alarmas / protecciones de control</li>
+        <li>Revisión / ajuste de sensores</li>
+      </ul>
+      <h3>Observaciones electrónicas</h3>
+      <div class="box" style="min-height:70px; white-space:pre-wrap">{{ datos.get('OBsElectrónico','') }}</div>
+    </div>
+
+    <div class="box avoid-break" style="margin-top:10px">
+      <h3>Revisión del sistema mecánico de refrigeración</h3>
+      <ul class="bullets">
+        <li>Corriente de compresores · Motores ventiladores / turbinas</li>
+        <li>Conexiones de tubería (fugas/quebraduras) · Aislamientos</li>
+        <li>Mediciones de temperatura con termopar · Lubricación de partes</li>
+      </ul>
+      <h3>Observaciones mecánicas</h3>
+      <div class="box" style="min-height:70px; white-space:pre-wrap">{{ datos.get('ObsMecanico','') }}</div>
+    </div>
+
+    <div class="box avoid-break" style="margin-top:10px">
+      <h3>Notas y recomendaciones</h3>
+      <div class="mh-notas" style="white-space:pre-wrap; line-height:1.35;">
+        {{ datos.get('Notas','') or datos.get('Recomendaciones','') or datos.get('Comentarios','') }}
+      </div>
+    </div>
+
+    <div class="p2-spacer"></div>
+  </div>
+
+  <!-- ========= PÁGINA 3 ========= -->
+  <div class="wrap">
+    <div class="head">
+      <img class="logo" src="{{ url_for('static', filename='img/logo2.png') }}" alt="HSC">
+      <div class="title">
+        <h1>Reporte fotográfico</h1>
+        <div class="sub">{{ datos.get('ID_Reporte','') }} — {{ datos.get('NombreEquipo','—') }}</div>
+      </div>
+    </div>
+    <hr>
+
+    <div class="photos">
+      {% for f in fotos %}
+        {% if f %}
+          <div class="ph"><img src="{{ url_for('reportes.reportes_imgproxy', url=f) }}" alt="foto {{ loop.index }}"></div>
+        {% else %}
+          <div class="ph"><div class="placeholder">Sin foto</div></div>
+        {% endif %}
+      {% endfor %}
+      {% for _ in range(6 - (fotos|length)) %}
+        <div class="ph"><div class="placeholder">—</div></div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Footer (sin numeración, solo contacto) -->
+  <footer class="pdf-footer">
+    <div class="hr"></div>
+    <div class="gridf">
+      <div>Tel 5527605496 · hectorsc@hscrefrigeracion.com · www.hscrefrigeracion.com</div>
+    </div>
+  </footer>
+
+</body>
+</html>

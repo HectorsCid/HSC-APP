@@ -1,0 +1,218 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Reporte de trabajo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{
+    --bg:#0b1020; --card:rgba(255,255,255,.04); --card2:rgba(255,255,255,.06);
+    --border:rgba(255,255,255,.14); --text:#e5e7eb; --muted:#a3b2c7; --accent:#22c55e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI",system-ui,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:28px}
+  .wrap{max-width:1100px;margin:0 auto}
+  .card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:18px;padding:20px;box-shadow:0 12px 30px rgba(0,0,0,.35);margin-bottom:18px}
+
+  /* Encabezado */
+  .header{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:12px}
+  .logo{height:72px;object-fit:contain}
+  h1{margin:0;font-size:24px}
+
+  /* Grids */
+  .grid{display:grid;gap:14px}
+  .grid-2{grid-template-columns:2fr 1fr}
+  .row{display:flex;gap:12px}
+  .row .col{flex:1}
+
+  label{display:block;font-size:13px;color:#cbd5e1;margin-bottom:6px}
+  input[type=text], input[type=date], textarea, select{
+    width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.15);
+    background:rgba(255,255,255,.04);color:var(--text)
+  }
+  textarea{min-height:110px;resize:vertical}
+  .hint{font-size:12px;color:var(--muted);margin-top:4px}
+
+  /* Material */
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th,td{border:1px solid var(--border);padding:8px;font-size:14px}
+  th{background:rgba(255,255,255,.06);text-align:left}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+  .btn{padding:10px 14px;border-radius:12px;border:1px solid rgba(34,197,94,.45);background:rgba(34,197,94,.12);color:#d1fae5;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;white-space:nowrap;transition:.15s}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(34,197,94,.18)}
+  .btn-secondary{border-color:#64748b;background:rgba(100,116,139,.18);color:#e2e8f0}
+
+  @media (max-width:900px){
+    .grid-2{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- ENCABEZADO -->
+    <div class="card">
+      <div class="header">
+        <!-- Usa tu archivo estático: /static/img/logo2.png -->
+        <img class="logo" src="{{ url_for('static', filename='img/logo2.png') }}" alt="Logo">
+        <h1>Reporte de trabajo</h1>
+      </div>
+
+      <!-- FORMULARIO -->
+      <form method="post" action="{{ url_for('reportes.diag_prev') }}" enctype="multipart/form-data">
+        <div class="grid grid-2">
+          <!-- Columna izquierda -->
+          <div class="grid">
+            <div>
+              <label>Cliente *</label>
+              <input type="text" name="cliente" required autofocus>
+            </div>
+
+            <div>
+              <label>Dirección</label>
+              <input type="text" name="direccion" placeholder="Calle, número, colonia, ciudad">
+            </div>
+
+            <div class="row">
+              <div class="col">
+                <label>Departamento</label>
+                <input type="text" name="departamento" placeholder="Ej. Mantenimiento">
+              </div>
+            </div>
+
+            <div>
+              <label>Solicitante</label>
+              <!-- Se mapea al campo existente "atencion" del backend -->
+              <input type="text" name="atencion" placeholder="Nombre de quien solicita">
+            </div>
+          </div>
+
+          <!-- Columna derecha (fechas) -->
+          <div class="grid">
+            <div>
+              <label>Fecha inicio *</label>
+              <!-- Se mapea al campo existente "fecha" -->
+              <input type="date" name="fecha" value="{{ fecha_hoy }}" required>
+            </div>
+            <div>
+              <label>Fecha fin</label>
+              <input type="date" name="fecha_fin">
+            </div>
+          </div>
+        </div>
+
+        <!-- BLOQUE DE ESPECIFICACIONES -->
+        <div class="card" style="margin-top:16px">
+          <div class="row">
+            <div class="col">
+              <label>Trabajo solicitado</label>
+              <input type="text" name="trabajo_solicitado" placeholder="Revisión, reubicación, diagnóstico, etc.">
+            </div>
+            <div class="col">
+              <label>Tipo de mantenimiento</label>
+              <select name="tipo_mantenimiento">
+                <option value="" selected>— Selecciona —</option>
+                <option>Correctivo</option>
+                <option>Preventivo</option>
+                <option>Predictivo</option>
+                <option>Diagnóstico</option>
+                <option>Instalación</option>
+                <option>Reubicación</option>
+                <option>Otro</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-top:12px">
+            <label>Descripción de la falla</label>
+            <textarea name="descripcion_falla" placeholder="Describe la falla reportada"></textarea>
+          </div>
+
+          <div style="margin-top:12px">
+            <label>Trabajo realizado</label>
+            <!-- IMPORTANTE: este campo se llama "trabajo" para que el PDF actual lo muestre -->
+            <textarea name="trabajo" placeholder="Describe el trabajo realizado"></textarea>
+          </div>
+
+          <div style="margin-top:12px">
+            <label>Material utilizado</label>
+            <div class="hint">Agrega hasta 10 filas. Solo Cantidad y Descripción.</div>
+            <table id="tbl-material">
+              <thead>
+                <tr><th style="width:120px">Cantidad</th><th>Descripción</th><th style="width:120px">Acciones</th></tr>
+              </thead>
+              <tbody>
+                <!-- Fila inicial -->
+                <tr>
+                  <td><input type="text" name="part_cant[]" placeholder="0"></td>
+                  <td>
+                    <input type="text" name="part_desc[]" placeholder="Refacción / material">
+                    <!-- precio oculto = 0 (el backend ya lo soporta) -->
+                    <input type="hidden" name="part_precio[]" value="0">
+                  </td>
+                  <td><button type="button" class="btn-secondary btn" onclick="delRow(this)">Quitar</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="actions">
+              <button type="button" class="btn" onclick="addRow()">Agregar material</button>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:12px">
+            <div class="col">
+              <label>Observaciones</label>
+              <textarea name="observaciones" rows="5" placeholder="Observaciones (5 renglones aprox.)"></textarea>
+            </div>
+            <div class="col">
+              <label>Garantía</label>
+              <!-- Se mapea a "notas" para que el PDF lo muestre -->
+              <input type="text" name="notas" placeholder="Ej. 30 días sobre mano de obra">
+            </div>
+          </div>
+        </div>
+
+        <!-- FOTOS (explorador) -->
+        <div class="card">
+          <label>Fotos (hasta 6)</label>
+          <input type="file" name="fotos" accept="image/*" multiple>
+          <div class="hint">Se adjuntan ahora; se imprimen en la segunda página del PDF.</div>
+        </div>
+
+        <div class="actions">
+          <button class="btn" type="submit">Vista previa del PDF</button>
+          <a class="btn-secondary" href="{{ url_for('reportes.reportes_inicio') }}">Cancelar</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const MAX_ROWS = 10;
+    function addRow(){
+      const tbody = document.querySelector('#tbl-material tbody');
+      const rows = tbody.querySelectorAll('tr').length;
+      if(rows >= MAX_ROWS){ alert('Máximo 10 filas.'); return; }
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="text" name="part_cant[]" placeholder="0"></td>
+        <td>
+          <input type="text" name="part_desc[]" placeholder="Refacción / material">
+          <input type="hidden" name="part_precio[]" value="0">
+        </td>
+        <td><button type="button" class="btn-secondary btn" onclick="delRow(this)">Quitar</button></td>
+      `;
+      tbody.appendChild(tr);
+    }
+    function delRow(btn){
+      const tbody = document.querySelector('#tbl-material tbody');
+      if(tbody.querySelectorAll('tr').length === 1){
+        // limpia la única fila en vez de quitarla
+        const tr = tbody.querySelector('tr');
+        tr.querySelectorAll('input').forEach(i => i.value = i.type === 'hidden' ? '0' : '');
+        return;
+      }
+      btn.closest('tr').remove();
+    }
+  </script>
+</body>
+</html>

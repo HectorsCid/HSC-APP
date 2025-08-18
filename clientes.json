@@ -1,13 +1,4 @@
 {
-  "Hotel Central": {
-    "atencion": [
-      "Lic. Juan Pérez"
-    ],
-    "direccion": "Av. Reforma #123, CDMX",
-    "tiempo": "3 días hábiles",
-    "anticipo": "30%",
-    "vigencia": "15 días"
-  },
   "Yo Ancestral": {
     "atencion": [
       "Clementina Calderon Pena",
@@ -40,18 +31,38 @@
     "atencion": [
       "Ing Jorge Vite"
     ],
-    "direccion": "Conocida",
+    "direccion": "C. 1 203, Jurica, 76120 Santiago de Querétaro, Qro.",
+    "tiempo": "7 dias",
+    "anticipo": "70%",
+    "vigencia": "30 dias"
+  },
+  "Visscher Caravelle": {
+    "atencion": [
+      "Lic. Sol Nieves",
+      "Lic. Alonda Ruiz",
+      "Ing. Mijail Cruz"
+    ],
+    "direccion": "Parque tecnolgico Innovación, 76246 Santiago de Queretaro, Qro.\r\n",
+    "tiempo": "7 dias",
+    "anticipo": "0%",
+    "vigencia": "30 dias"
+  },
+  "UVM Campus Queretaro": {
+    "atencion": [
+      "Ing Emilio Aguilar"
+    ],
+    "direccion": "Naranjos Punta Juriquilla 1000, Santa Rosa Jáuregui, 76230 Santiago de Querétaro, Qro.\r\n",
     "tiempo": "7 dias",
     "anticipo": "30%",
     "vigencia": "30 dias"
   },
-  "Hector Silva Cid 5": {
+  "Universidad Autónoma de Querétaro": {
     "atencion": [
-      "Clementina Calderon Pena"
+      "Dr. Ricardo Escalona"
     ],
-    "direccion": "Av La Cantera 2800",
-    "tiempo": "7 dias",
-    "anticipo": "50%",
+    "direccion": "Carr. a Chichimequillas S/N, Ejido Bolaños, 76140 Santiago de Querétaro, Qro.",
+    "tiempo": "3 días hábiles",
+    "anticipo": "0%",
     "vigencia": "30 dias"
   }
 }
