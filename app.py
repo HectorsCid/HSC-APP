@@ -158,10 +158,21 @@ __did_sync_once = False
 
 @app.before_request
 def _bootstrap_sync_clientes():
-    global __did_sync_once
-    if not __did_sync_once and (IS_RENDER or AUTO_SYNC_FROM_DRIVE):
-        _sync_clientes_from_drive_into_memory()
-        __did_sync_once = True
+    global __did_sync_once, clientes_predefinidos
+    # Si no se ha sincronizado exitosamente o la memoria está vacía → intenta cargar
+    need_sync = (not __did_sync_once) or (not clientes_predefinidos)
+    if need_sync and (IS_RENDER or AUTO_SYNC_FROM_DRIVE):
+        try:
+            _sync_clientes_from_drive_into_memory()  # esto deja clientes_predefinidos poblado si todo va bien
+            if clientes_predefinidos:   # ✅ solo marcamos done si hay datos
+                __did_sync_once = True
+                print(f"🔄 clientes_predefinidos cargados: {len(clientes_predefinidos)}")
+            else:
+                print("⚠️ Sync intentada pero sin datos; se volverá a intentar en el siguiente request.")
+        except Exception as e:
+            print("❌ Error sincronizando clientes:", e)
+            # No marcamos __did_sync_once; reintentará en el próximo request
+
 # -------------------------------------------------------------------
 
 # ======================= Función para folios automáticos =======================
