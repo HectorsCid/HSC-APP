@@ -203,6 +203,41 @@ def inicio():
                            total=total,
                            today=date.today().isoformat())
 
+@app.route('/debug/clientes')
+def debug_clientes():
+    try:
+        svc = _drive_service_cfg()
+        q = f"name='clientes.json' and '{ID_COT}' in parents and trashed=false"
+        res = svc.files().list(
+            q=q, spaces='drive', fields='files(id,name,mimeType,parents,owners/emailAddress)', pageSize=10
+        ).execute()
+        files = res.get('files', [])
+        if not files:
+            return "❌ No encontré clientes.json DIRECTO dentro de 01. Cotizaciones", 404
+        f = files[0]
+        return f"✅ Encontrado: {f['name']} ({f['id']}) · mime={f.get('mimeType')} · owner={f.get('owners',[{}])[0].get('emailAddress','?')}"
+    except Exception as e:
+        return f"❌ Error buscando clientes.json: {e}", 500
+@app.route('/clientes/status')
+def clientes_status():
+    try:
+        n = len(clientes_predefinidos)
+        sample = list(clientes_predefinidos.keys())[:5]
+        return f"✅ En memoria: {n} clientes. Ejemplos: {sample}"
+    except Exception as e:
+        return f"❌ Error: {e}", 500
+
+@app.route('/clientes/refresh-cache')
+def clientes_refresh_cache():
+    try:
+        _sync_clientes_from_drive_into_memory()
+        return f"🔄 Recargados. Ahora hay {len(clientes_predefinidos)} clientes."
+    except Exception as e:
+        return f"❌ No se pudo recargar: {e}", 500
+    
+
+
+
 @app.route('/guardar_datos', methods=['POST'])
 def guardar_datos():
     datos_cliente['cliente'] = request.form.get('cliente')
