@@ -16,7 +16,8 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload, MediaIoBaseDownload
-from auth_google import get_drive_service, get_sheets_service, get_drive_service_user
+from auth_google import get_drive_service, get_sheets_service
+
 
 
 
@@ -439,7 +440,7 @@ def generar_pdf():
 
     def subir_a_drive_archivo(ruta_pdf, cliente_nombre, nombre_archivo):
         print(f"🚀 Subiendo a Drive: {nombre_archivo} para '{cliente_nombre}'")
-        service = get_drive_service_user()
+        service = get_drive_service()
 
         id_cot = ID_COT
         canon = (cliente_nombre or "").strip().lower()
@@ -747,7 +748,7 @@ def debug_identidades():
 
     # Usuario final (token.json) — para SUBIR PDFs
     try:
-        usr = get_drive_service_user()
+        usr = get_drive_service()
         who_usr = usr.about().get(fields="user(displayName,emailAddress)").execute().get('user', {})
         out.append(f"👤 Usuario (token.json): {who_usr.get('displayName','(sin nombre)')} <{who_usr.get('emailAddress','(sin email)')}>")
     except Exception as e:
