@@ -11,7 +11,8 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from googleapiclient.errors import HttpError
 from weasyprint import HTML
 from werkzeug.utils import secure_filename
-from auth_google import get_drive_service, get_sheets_service
+from auth_google import get_drive_service_user, get_sheets_service, get_drive_service
+
 
 
 # ----------------------------------------------------------------------
@@ -350,7 +351,7 @@ def reportes_suggest():
 # Drive helpers (IDs por ruta / shortcuts) para imágenes
 # ----------------------------------------------------------------------
 def _drive_service_for_imgs():
-    return _drive_service()
+    return get_drive_service_user()
 
 _DRIVE_PATTERNS = [
     r'drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)',
@@ -401,36 +402,74 @@ def _resolve_path_to_id(drive, path_str: str):
 
 @reportes_bp.route("/reportes/imgproxy", endpoint="reportes_imgproxy")
 def reportes_imgproxy():
+    """
+    Devuelve bytes de imagen desde Drive.
+    - Si falla cualquier cosa, devuelve un PNG transparente 1x1 (no 302).
+    - Soporta IDs directos y ruta relativa bajo REPORTES_ROOT_ID.
+    """
+    # PNG transparente 1x1 (para fallback)
+    TRANSPARENT_PNG = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\x0bIDATx\x9cc``\x00\x00\x00\x02\x00\x01"
+        b"\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+
     url = (request.args.get("url") or "").strip()
     if not url:
-        abort(400)
-    file_id = _extract_drive_id(url)
+        return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
+
     try:
         drive = _drive_service_for_imgs()
+
+        # 1) ¿Es un ID de archivo de Drive en la URL?
+        file_id = _extract_drive_id(url)
+
+        # 2) ¿Es una ruta tipo ".../04. Reportes/<Cliente>/<ID>/archivo.jpg"?
         if not file_id:
             maybe = _resolve_path_to_id(drive, url)
             if maybe:
                 file_id = maybe
-            else:
-                return redirect(url)
-        else:
-            file_id = _resolve_shortcut(drive, file_id)
 
-        meta = _retry(lambda: drive.files().get(fileId=file_id, fields="mimeType,name").execute())
+        if not file_id:
+            # No pudimos resolver nada -> PNG transparente
+            return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
+
+        # Atajo (shortcuts) -> resolver target real
+        file_id = _resolve_shortcut(drive, file_id)
+
+        # Metadatos (para saber mimetype y nombre)
+        meta = _retry(lambda: drive.files().get(
+            fileId=file_id, fields="mimeType,name"
+        ).execute())
+
+        # Descargar bytes
         req = drive.files().get_media(fileId=file_id)
-
         buf = io.BytesIO()
         downloader = MediaIoBaseDownload(buf, req)
         done = False
-        while not done:
+        # Pequeño límite de chunks para evitar loop infinito por red mala
+        max_iters = 20
+        iters = 0
+        while not done and iters < max_iters:
             _, done = downloader.next_chunk()
+            iters += 1
         buf.seek(0)
 
-        mime = meta.get("mimeType", "image/jpeg")
-        return send_file(buf, mimetype=mime, as_attachment=False,
+        # Si no descargó, devolver PNG transparente
+        if buf.getbuffer().nbytes == 0:
+            return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
+
+        mime = meta.get("mimeType", "image/jpeg") or "image/jpeg"
+        # Cabeceras cacheables para que WeasyPrint no golpee varias veces
+        resp = send_file(buf, mimetype=mime, as_attachment=False,
                          download_name=meta.get("name", "img"))
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+        return resp
+
     except Exception:
-        return redirect(url)
+        # Falla silenciosa -> imagen transparente (evitar redirects/timeouts)
+        return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
+
 
 # ----------------------------------------------------------------------
 # Drive helpers (guardar PDF)
