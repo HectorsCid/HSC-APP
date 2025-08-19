@@ -11,6 +11,8 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from googleapiclient.errors import HttpError
 from weasyprint import HTML
 from werkzeug.utils import secure_filename
+from auth_google import get_drive_service, get_sheets_service
+
 
 # ----------------------------------------------------------------------
 # Blueprint
@@ -45,26 +47,15 @@ _sheets_svc = None
 _drive_svc  = None
 
 def _sheets_service():
-    """Cliente de Sheets (OAuth usuario a partir de token.json)."""
     global _sheets_svc
-    if _sheets_svc is not None:
-        return _sheets_svc
-    creds = Credentials.from_authorized_user_file('token.json', [
-        'https://www.googleapis.com/auth/drive',
-        'https://www.googleapis.com/auth/spreadsheets.readonly'
-    ])
-    _sheets_svc = build('sheets', 'v4', credentials=creds, cache_discovery=False)
+    if _sheets_svc is None:
+        _sheets_svc = get_sheets_service()
     return _sheets_svc
 
 def _drive_service():
-    """Cliente de Drive (OAuth usuario a partir de token.json)."""
     global _drive_svc
-    if _drive_svc is not None:
-        return _drive_svc
-    creds = Credentials.from_authorized_user_file('token.json', [
-        'https://www.googleapis.com/auth/drive'
-    ])
-    _drive_svc = build('drive', 'v3', credentials=creds, cache_discovery=False)
+    if _drive_svc is None:
+        _drive_svc = get_drive_service()
     return _drive_svc
 
 # ----------------------------------------------------------------------
@@ -875,6 +866,7 @@ def diag_pdf(token):
         logo_web=logo_web,
         logo_fs=logo_fs,
     )
+    
 
     # Nombre de archivo: Cliente + Fecha (sin id)
     base_cliente = re.sub(r"[^A-Za-z0-9_-]+", "_", (datos.get("cliente") or "Reporte"))

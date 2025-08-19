@@ -16,6 +16,8 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload, MediaIoBaseDownload
+from auth_google import get_drive_service
+
 
 # Otros
 from werkzeug.utils import safe_join
@@ -54,25 +56,9 @@ def currency_filter(value):
 
 # ===================================== Helpers Drive (clientes.json) =====================================
 def _drive_service():
-    token_path = 'token.json'
-    creds = None
+    # Ahora usa cuenta de servicio (sin token.json)
+    return get_drive_service()
 
-    # 1) Cargar token si existe
-    if os.path.exists(token_path):
-        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-
-    # 2) Refrescar o flujo OAuth
-    if not creds or not creds.valid:
-        if creds and creds.expired and getattr(creds, 'refresh_token', None):
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0, prompt='consent')
-
-        with open(token_path, 'w', encoding='utf-8') as f:
-            f.write(creds.to_json())
-
-    return build('drive', 'v3', credentials=creds)
 
 def _drive_service_cfg():
     return _drive_service()
