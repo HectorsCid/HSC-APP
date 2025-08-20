@@ -16,9 +16,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload, MediaIoBaseDownload
-from auth_google import get_drive_service, get_sheets_service
-
-
+from auth_google import get_drive_service, get_sheets_service, get_drive_service_user
 
 
 
@@ -388,7 +386,7 @@ def generar_pdf():
     nombre_archivo = f"{cliente} - {cot}.pdf"
     ruta_pdf = os.path.abspath(os.path.join(cliente_folder, nombre_archivo))
 
-    img_path = Path("img/LOGO.png").resolve().as_uri()
+    img_path = Path("img/logo2.png").resolve().as_uri()
     html = render_template(
         'plantilla_pdf.html',
         datos=datos,
@@ -440,7 +438,9 @@ def generar_pdf():
 
     def subir_a_drive_archivo(ruta_pdf, cliente_nombre, nombre_archivo):
         print(f"🚀 Subiendo a Drive: {nombre_archivo} para '{cliente_nombre}'")
-        service = get_drive_service()
+        service = get_drive_service_user()
+
+
 
         id_cot = ID_COT
         canon = (cliente_nombre or "").strip().lower()
@@ -691,7 +691,7 @@ def abrir_drive_cliente(cliente):
         folder = service.files().create(body=meta, fields='id').execute()
         return folder['id']
 
-    service = _drive_service()
+    service = get_drive_service_user()
     id_cot = ID_COT
     canon = (cliente or "").strip().lower()
     res = service.files().list(
@@ -748,7 +748,7 @@ def debug_identidades():
 
     # Usuario final (token.json) — para SUBIR PDFs
     try:
-        usr = get_drive_service()
+        usr = get_drive_service_user()
         who_usr = usr.about().get(fields="user(displayName,emailAddress)").execute().get('user', {})
         out.append(f"👤 Usuario (token.json): {who_usr.get('displayName','(sin nombre)')} <{who_usr.get('emailAddress','(sin email)')}>")
     except Exception as e:

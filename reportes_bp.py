@@ -475,7 +475,8 @@ def reportes_imgproxy():
 # Drive helpers (guardar PDF)
 # ----------------------------------------------------------------------
 def _drive_service_for_files():
-    return _drive_service()
+    return get_drive_service_user()
+
 
 def _sanitize_name(name: str) -> str:
     # Evitar caracteres problemáticos
