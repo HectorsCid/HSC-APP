@@ -114,7 +114,10 @@
   <!-- ========= PÁGINA 1 ========= -->
   <div class="wrap page">
     <div class="head">
-      <img class="logo" src="{{ url_for('static', filename='img/logo2.png', _external=True) }}" alt="HSC">
+     {# elegir fuente del logo: filesystem para PDF, HTTP para vista previa #}
+{% set _logo = (logo_fs if embed_for_pdf and logo_fs else (logo_web or url_for('static', filename='img/logo2.png', _external=True))) %}
+<img class="logo" src="{{ _logo }}" alt="HSC">
+
       <div class="title">
         <h1>Reporte de servicio y/o calibración — {{ datos.get('ID_Reporte','') }}</h1>
         <!-- SUBTÍTULO FIJO -->
@@ -289,7 +292,10 @@
   <div class="wrap page page3">
     <div class="avoid-break">
       <div class="head" style="margin-bottom:6px">
-        <img class="logo" src="{{ url_for('static', filename='img/logo2.png', _external=True) }}" alt="HSC">
+        {# elegir fuente del logo: filesystem para PDF, HTTP para vista previa #}
+{% set _logo = (logo_fs if embed_for_pdf and logo_fs else (logo_web or url_for('static', filename='img/logo2.png', _external=True))) %}
+<img class="logo" src="{{ _logo }}" alt="HSC">
+
         <div class="title">
           <h1>Reporte fotográfico</h1>
           <div class="sub">{{ datos.get('ID_Reporte','') }} — {{ datos.get('NombreEquipo','—') }}</div>

@@ -594,9 +594,20 @@ def reportes_prev(id_reporte):
     if not data:
         flash("ID_Reporte no encontrado en la hoja.")
         return redirect(url_for("reportes.reportes_inicio"))
+
     fotos = [f for f in (data.get(f"Foto{i}", "").strip() for i in range(1,7)) if f]
-    
-    return render_template("reporte_formato.html", datos=data, fotos=fotos)
+
+    # ⬇⬇⬇ NUEVO
+    logo_web, logo_fs = _logo_paths()
+    return render_template(
+        "reporte_formato.html",
+        datos=data,
+        fotos=fotos,
+        embed_for_pdf=False,
+        logo_web=logo_web,
+        logo_fs=logo_fs,
+    )
+
 
 @reportes_bp.route("/reportes/pdf/<id_reporte>")
 def reportes_pdf(id_reporte):
@@ -618,9 +629,19 @@ def reportes_pdf(id_reporte):
 
     fotos = [f for f in (data.get(f"Foto{i}", "").strip() for i in range(1,7)) if f]
 
-    html = render_template("reporte_formato.html", datos=data, fotos=fotos)
-    pdf_bytes = HTML(string=html, base_url=request.url_root).write_pdf()
+    # NUEVO: rutas del logo para PDF (filesystem) y bandera de embed
+    logo_web, logo_fs = _logo_paths()
+    html = render_template(
+        "reporte_formato.html",
+        datos=data,
+        fotos=fotos,
+        embed_for_pdf=True,
+        logo_web=logo_web,
+        logo_fs=logo_fs,
+    )
 
+    # CAMBIO: base_url usando filesystem para que WeasyPrint resuelva file://
+    pdf_bytes = HTML(string=html, base_url=current_app.root_path).write_pdf()
 
     # 2) Si se pidió forzar descarga, la damos y salimos (opcional)
     if force_download:
@@ -678,6 +699,7 @@ def reportes_pdf(id_reporte):
             as_attachment=True,
             download_name=f"{nombre_equipo} - {id_reporte}.pdf"
         )
+
 
 # ----------------------------------------------------------------------
 # Editar (GET/POST)
