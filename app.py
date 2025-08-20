@@ -386,7 +386,7 @@ def generar_pdf():
     nombre_archivo = f"{cliente} - {cot}.pdf"
     ruta_pdf = os.path.abspath(os.path.join(cliente_folder, nombre_archivo))
 
-    img_path = Path("img/logo2.png").resolve().as_uri()
+    img_path = Path("img/logo.png").resolve().as_uri()
     html = render_template(
         'plantilla_pdf.html',
         datos=datos,
