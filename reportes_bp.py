@@ -594,7 +594,8 @@ def reportes_prev(id_reporte):
     if not data:
         flash("ID_Reporte no encontrado en la hoja.")
         return redirect(url_for("reportes.reportes_inicio"))
-    fotos = [data.get(f"Foto{i}", "") for i in range(1, 7)]
+    fotos = [f for f in (data.get(f"Foto{i}", "").strip() for i in range(1,7)) if f]
+    
     return render_template("reporte_formato.html", datos=data, fotos=fotos)
 
 @reportes_bp.route("/reportes/pdf/<id_reporte>")
@@ -615,9 +616,11 @@ def reportes_pdf(id_reporte):
         flash("ID_Reporte no encontrado en la hoja.")
         return redirect(url_for("reportes.reportes_inicio"))
 
-    fotos = [data.get(f"Foto{i}", "") for i in range(1, 7)]
+    fotos = [f for f in (data.get(f"Foto{i}", "").strip() for i in range(1,7)) if f]
+
     html = render_template("reporte_formato.html", datos=data, fotos=fotos)
-    pdf_bytes = HTML(string=html, base_url=request.root_url).write_pdf()
+    pdf_bytes = HTML(string=html, base_url=request.url_root).write_pdf()
+
 
     # 2) Si se pidió forzar descarga, la damos y salimos (opcional)
     if force_download:

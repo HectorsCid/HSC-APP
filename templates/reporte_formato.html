@@ -43,15 +43,27 @@
     .tbl th, .tbl td{ border:1px solid var(--line); padding:6px 8px; }
     .tbl th{ background:#fafafa; text-align:left; color:#111827; }
 
-    /* Fotos */
+    /* ====== FOTOS (PÁGINA 3) ====== */
+    .page3{ break-before: page; page-break-before: always; } /* forzamos que P3 inicie página */
     h3{ font-size:14px; margin:12px 0 8px; }
-    .photos{ display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
-    .ph{ width:100%; aspect-ratio:3/2; border-radius:10px; overflow:hidden; border:1px solid var(--line); background:#f9fafb; }
+    .photos{
+      display:grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-auto-rows: 41mm;    /* alto fijo por fila (2 filas) */
+      gap:4px;
+      page-break-inside: avoid;
+    }
+    .ph{
+      width:100%;
+      height:41mm;            /* coincide con auto-rows */
+      border-radius:8px;
+      overflow:hidden;
+      border:1px solid var(--line);
+      background:#f9fafb;
+      page-break-inside: avoid;
+    }
     .ph img{ width:100%; height:100%; object-fit:cover; display:block; }
     .placeholder{ display:grid; place-items:center; color:#9ca3af; font-size:12px; height:100%; }
-
-    .page{ page-break-after: always; }
-    .page:last-child{ page-break-after: auto; }
 
     /* Footer (sin numeración) */
     .pdf-footer { position: running(footer); font-size: 11px; color: #6b7280; }
@@ -102,7 +114,7 @@
   <!-- ========= PÁGINA 1 ========= -->
   <div class="wrap page">
     <div class="head">
-      <img class="logo" src="{{ url_for('static', filename='img/logo2.png') }}" alt="HSC">
+      <img class="logo" src="{{ url_for('static', filename='img/logo2.png', _external=True) }}" alt="HSC">
       <div class="title">
         <h1>Reporte de servicio y/o calibración — {{ datos.get('ID_Reporte','') }}</h1>
         <!-- SUBTÍTULO FIJO -->
@@ -274,37 +286,43 @@
   </div>
 
   <!-- ========= PÁGINA 3 ========= -->
-  <div class="wrap">
-    <div class="head">
-      <img class="logo" src="{{ url_for('static', filename='img/logo2.png') }}" alt="HSC">
-      <div class="title">
-        <h1>Reporte fotográfico</h1>
-        <div class="sub">{{ datos.get('ID_Reporte','') }} — {{ datos.get('NombreEquipo','—') }}</div>
+  <div class="wrap page page3">
+    <div class="avoid-break">
+      <div class="head" style="margin-bottom:6px">
+        <img class="logo" src="{{ url_for('static', filename='img/logo2.png', _external=True) }}" alt="HSC">
+        <div class="title">
+          <h1>Reporte fotográfico</h1>
+          <div class="sub">{{ datos.get('ID_Reporte','') }} — {{ datos.get('NombreEquipo','—') }}</div>
+        </div>
       </div>
-    </div>
-    <hr>
+      <hr style="margin:6px 0 8px">
 
-    <div class="photos">
-      {% for f in fotos %}
-        {% if f %}
-          <div class="ph"><img src="{{ url_for('reportes.reportes_imgproxy', url=f) }}" alt="foto {{ loop.index }}"></div>
-        {% else %}
-          <div class="ph"><div class="placeholder">Sin foto</div></div>
-        {% endif %}
-      {% endfor %}
-      {% for _ in range(6 - (fotos|length)) %}
-        <div class="ph"><div class="placeholder">—</div></div>
-      {% endfor %}
+      {% if fotos %}
+        <div class="photos">
+          {% for f in fotos if f %}
+            <div class="ph">
+              <img src="{{ url_for('reportes.reportes_imgproxy', url=f, _external=True) }}" alt="foto {{ loop.index }}">
+            </div>
+          {% endfor %}
+          {% for _ in range(6 - (fotos|length)) %}
+            <div class="ph"><div class="placeholder">—</div></div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="photos">
+          {% for _ in range(6) %}
+            <div class="ph"><div class="placeholder">Sin foto</div></div>
+          {% endfor %}
+        </div>
+      {% endif %}
     </div>
   </div>
 
-  <!-- Footer (sin numeración, solo contacto) -->
-  <footer class="pdf-footer">
-    <div class="hr"></div>
-    <div class="gridf">
-      <div>Tel 5527605496 · hectorsc@hscrefrigeracion.com · www.hscrefrigeracion.com</div>
-    </div>
+
   </footer>
 
 </body>
 </html>
+
+
+
