@@ -1,5 +1,6 @@
 # app.py
-from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file, abort
+from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file, abort, jsonify
+
 from markupsafe import escape
 from datetime import date, datetime
 from weasyprint import HTML
@@ -18,7 +19,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload, MediaIoBaseDownload
 from auth_google import get_drive_service, get_sheets_service, get_drive_service_user
 
-
+# NEW: para detectar RefreshError con claridad
+from google.auth.exceptions import RefreshError
 
 # Otros
 from werkzeug.utils import safe_join
@@ -230,6 +232,7 @@ def debug_clientes():
         return f"✅ Encontrado: {f['name']} ({f['id']}) · mime={f.get('mimeType')} · owner={f.get('owners',[{}])[0].get('emailAddress','?')}"
     except Exception as e:
         return f"❌ Error buscando clientes.json: {e}", 500
+
 @app.route('/clientes/status')
 def clientes_status():
     try:
@@ -246,9 +249,6 @@ def clientes_refresh_cache():
         return f"🔄 Recargados. Ahora hay {len(clientes_predefinidos)} clientes."
     except Exception as e:
         return f"❌ No se pudo recargar: {e}", 500
-    
-
-
 
 @app.route('/guardar_datos', methods=['POST'])
 def guardar_datos():
@@ -439,8 +439,6 @@ def generar_pdf():
     def subir_a_drive_archivo(ruta_pdf, cliente_nombre, nombre_archivo):
         print(f"🚀 Subiendo a Drive: {nombre_archivo} para '{cliente_nombre}'")
         service = get_drive_service_user()
-
-
 
         id_cot = ID_COT
         canon = (cliente_nombre or "").strip().lower()
@@ -732,33 +730,212 @@ def debug_drive():
     except Exception as e:
         return f"❌ Error Drive: {e}", 500
 
-@app.route('/inicio-app')
-def inicio_app():
-    return render_template('inicio_app.html')
-@app.route('/debug/identidades')
-def debug_identidades():
-    out = []
-    # Cuenta de servicio (para lecturas/listados)
-    try:
-        svc = get_drive_service()
-        who_svc = svc.about().get(fields="user(displayName,emailAddress)").execute().get('user', {})
-        out.append(f"🔐 Servicio (service account): {who_svc.get('displayName','(sin nombre)')} <{who_svc.get('emailAddress','(sin email)')}>")
-    except Exception as e:
-        out.append(f"❌ Servicio (service account) ERROR: {type(e).__name__}: {e}")
+# ====================== NUEVO: snapshot de salud + botones ======================
 
-    # Usuario final (token.json) — para SUBIR PDFs
+def _health_snapshot():
+    """
+    Retorna un dict con el estado de:
+    - usuario (OAuth de usuario)
+    - service (cuenta de servicio)
+    - drive (acceso a carpeta ID_COT con usuario)
+    - sheets (lectura de encabezados con service account)
+    """
+    health = {
+        "usuario": {"ok": False, "label": "Desconocido", "hint": "", "needs_reconnect": False},
+        "service": {"ok": False, "label": "Desconocido", "hint": ""},
+        "drive":   {"ok": False, "label": "Desconocido", "hint": ""},
+        "sheets":  {"ok": False, "label": "Desconocido", "hint": ""},
+    }
+
+    # Usuario (token.json / TOKEN_JSON_B64)
     try:
         usr = get_drive_service_user()
         who_usr = usr.about().get(fields="user(displayName,emailAddress)").execute().get('user', {})
-        out.append(f"👤 Usuario (token.json): {who_usr.get('displayName','(sin nombre)')} <{who_usr.get('emailAddress','(sin email)')}>")
+        who_s = f"{who_usr.get('displayName','')} <{who_usr.get('emailAddress','')}>"
+        health["usuario"] = {"ok": True, "label": "OK", "hint": who_s, "needs_reconnect": False}
+    except RefreshError as e:
+        health["usuario"] = {"ok": False, "label": "Requiere reconectar", "hint": str(e), "needs_reconnect": True}
+    except RuntimeError as e:
+        health["usuario"] = {"ok": False, "label": "Falta token", "hint": str(e), "needs_reconnect": True}
     except Exception as e:
-        out.append(f"❌ Usuario (token.json) ERROR: {type(e).__name__}: {e}")
+        health["usuario"] = {"ok": False, "label": "Error", "hint": f"{type(e).__name__}: {e}", "needs_reconnect": False}
 
-    # Render simple en texto plano/HTML
-    return "<br>".join(out)
+    # Service account
+    try:
+        svc = get_drive_service()
+        who_svc = svc.about().get(fields="user(emailAddress)").execute().get('user', {}).get('emailAddress', '')
+        health["service"] = {"ok": True, "label": "OK", "hint": who_svc}
+    except Exception as e:
+        health["service"] = {"ok": False, "label": "Error", "hint": f"{type(e).__name__}: {e}"}
 
+    # Drive (usuario) acceso a carpeta madre
+    try:
+        usr = get_drive_service_user()
+        folder = usr.files().get(fileId=ID_COT, fields="id,name").execute()
+        health["drive"] = {"ok": True, "label": "OK", "hint": folder.get("name", "Carpeta")}
+    except Exception as e:
+        health["drive"] = {"ok": False, "label": "Error", "hint": f"{type(e).__name__}: {e}"}
+
+    # Sheets (service account) lectura de encabezados
+    try:
+        sh = get_sheets_service()
+        res = sh.spreadsheets().values().get(spreadsheetId=SHEET_ID, range=f"{SHEET_TAB}!A1:Z1").execute()
+        hdr = res.get("values", [[]])[0]
+        health["sheets"] = {"ok": True, "label": "OK", "hint": f"{SHEET_TAB} · {len(hdr)} columnas"}
+    except Exception as e:
+        health["sheets"] = {"ok": False, "label": "Error", "hint": f"{type(e).__name__}: {e}"}
+
+    return health
+
+@app.route('/health-check')
+def health_check():
+    """Probar conexiones sin modificar datos (para los semáforos)."""
+    return jsonify(_health_snapshot())
+
+# --- Healthcheck para la UI de /inicio-app ---
+from google.auth.exceptions import RefreshError
+
+@app.get("/health")
+def health():
+    out = {
+        "user_ok": False,
+        "user_email": None,
+        "sa_ok": False,
+        "sa_email": None,
+        "drive_ok": False,
+        "sheets_ok": False,
+        "needs_reconnect": False,
+    }
+
+    # Usuario (token.json via TOKEN_JSON_B64 en Render)
+    try:
+        usr = get_drive_service_user()
+        who_u = usr.about().get(fields="user(displayName,emailAddress)").execute().get("user", {})
+        out["user_ok"] = True
+        out["user_email"] = who_u.get("emailAddress")
+    except RefreshError:
+        out["needs_reconnect"] = True
+    except Exception:
+        pass
+
+    # Service account
+    try:
+        svc = get_drive_service()
+        who_s = svc.about().get(fields="user(emailAddress)").execute().get("user", {})
+        out["sa_ok"] = True
+        out["sa_email"] = who_s.get("emailAddress")
+    except Exception:
+        pass
+
+    # Drive acceso a la carpeta madre
+    try:
+        # Usa la cuenta de servicio para listar la carpeta madre
+        svc = get_drive_service()
+        svc.files().get(fileId=ID_COT, fields="id").execute()
+        out["drive_ok"] = True
+    except Exception:
+        pass
+
+    # Sheets (leer encabezado)
+    try:
+        sh = get_sheets_service()
+        rng = f"{SHEET_TAB}!A1:A1"
+        _ = sh.spreadsheets().values().get(spreadsheetId=SHEET_ID, range=rng).execute()
+        out["sheets_ok"] = True
+    except Exception:
+        pass
+
+    return jsonify(out)
+
+
+    # 1) Cuenta de servicio (solo construir cliente)
+    try:
+        svc = get_drive_service()  # SA
+        # toque mínimo: whoami (no escribe nada)
+        _ = svc.about().get(fields="user(emailAddress)").execute()
+        out["sa_ok"] = True
+    except Exception as e:
+        out["msg"].append(f"SA: {type(e).__name__}: {e}")
+
+    # 2) Usuario (token.json / TOKEN_JSON_B64)
+    try:
+        usr = get_drive_service_user()
+        who = usr.about().get(fields="user(emailAddress)").execute().get("user", {}).get("emailAddress", "")
+        if who:
+            out["user_ok"] = True
+    except Exception as e:
+        out["msg"].append(f"Usuario: {type(e).__name__}: {e}")
+
+    # 3) Drive con usuario: listar subcarpetas dentro de ID_COT
+    try:
+        if out["user_ok"]:
+            res = usr.files().list(
+                q=f"'{ID_COT}' in parents and trashed=false",
+                spaces="drive",
+                fields="files(id)",
+                pageSize=1
+            ).execute()
+            _ = res.get("files", [])
+            out["drive_ok"] = True
+    except Exception as e:
+        out["msg"].append(f"Drive: {type(e).__name__}: {e}")
+
+    # 4) Sheets con SA (solo lectura)
+    try:
+        sh = get_sheets_service()
+        _ = sh.spreadsheets().values().get(
+            spreadsheetId=SHEET_ID, range=f"{SHEET_TAB}!A1:A1"
+        ).execute()
+        out["sheets_ok"] = True
+    except Exception as e:
+        out["msg"].append(f"Sheets: {type(e).__name__}: {e}")
+
+    # Resultado general
+    out["ok"] = all([out["user_ok"], out["sa_ok"], out["drive_ok"], out["sheets_ok"]])
+    return out, 200
+
+
+
+# === OAuth local-only: renovar token y devolver Base64 listo para Render ===
+@app.route('/oauth/renew-local')
+def oauth_renew_local():
+    # Bloquear en Render (esto es solo para correr en tu PC)
+    if IS_RENDER:
+        return "⛔ Esta acción solo está disponible en tu PC (no en Render).", 403
+    try:
+        from auth_google import SCOPES
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+        creds = flow.run_local_server(
+            prompt="consent",
+            access_type="offline",
+            include_granted_scopes="true",
+            port=0
+        )
+        token_json_str = creds.to_json()
+        with open("token.json", "w", encoding="utf-8") as f:
+            f.write(token_json_str)
+
+        import base64
+        b64 = base64.b64encode(token_json_str.encode("utf-8")).decode("ascii")
+        html = f"""
+        <h3>✅ Token renovado localmente</h3>
+        <p>Copia este Base64 y pégalo en <b>Render → Environment Variables → TOKEN_JSON_B64</b> (una sola línea):</p>
+        <textarea style="width:100%;height:260px" readonly>{b64}</textarea>
+        <p>Luego haz: <i>Manual Deploy → Deploy latest commit</i> y valida en <code>/debug/identidades</code>.</p>
+        """
+        return html
+    except Exception as e:
+        return f"❌ Error renovando token local: {type(e).__name__}: {e}", 500
 
 # ============================ MAIN (solo local) ============================
+@app.route('/inicio-app')
+def inicio_app():
+    # Pasamos el snapshot para pintar semáforos en SSR
+    health = _health_snapshot()
+    return render_template('inicio_app.html', IS_RENDER=IS_RENDER, health=health)
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
+
