@@ -2,6 +2,32 @@
 credentials.json
 service_account.json
 token.json
+Manual de Emergencia Token.docx
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+# --- Credenciales sensibles ---
+credentials.json
+service_account.json
+token.json
+token_backup.json
+
+# Manuales o docs personales
+ManualEmergenciaToken.*
+Manual de Emergencia Token.docx
+
+# --- Archivos de datos locales ---
+clientes.json
+datos.json
+folios.json
+partidas.json
+
+# --- PDFs generados ---
+cotizaciones/
+static/cotizaciones/
+static/reportes_pdfs/
 
 # --- Python ---
 __pycache__/
