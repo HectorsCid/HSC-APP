@@ -5,79 +5,173 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>HSC — Inicio</title>
   <style>
-    :root { --bg:#0f172a; --card:#111827; --muted:#94a3b8; --text:#e5e7eb; --accent:#22c55e; }
+    :root { --bg:#0f172a; --muted:#94a3b8; --text:#e5e7eb; --accent:#22c55e; }
     * { box-sizing: border-box; }
-    body {
-      margin:0; font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    body{
+      margin:0; font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
       background: radial-gradient(1200px 800px at 20% -10%, #1f2937 0%, #0b1020 50%, #070b16 100%), var(--bg);
-      color: var(--text);
-      min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+      color:var(--text);
+      min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
     }
-    .wrap { width:100%; max-width:980px; }
-    header { text-align:center; margin-bottom:24px; }
-    header img { height:72px; display:block; margin:0 auto 8px; }
-    header h1 { margin:8px 0 6px; font-weight:700; letter-spacing:.2px; }
-    header p { margin:0; color:var(--muted); }
-    .grid {
-      display:grid; gap:20px;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    }
-    .card {
+    .wrap{ width:100%; max-width:980px; position:relative; }
+    header{ text-align:center; margin-bottom:24px; }
+    header img{ height:300px; display:block; margin:0 auto 8px; } /* logo más grande */
+    header h1{ margin:8px 0 6px; font-weight:700; letter-spacing:.2px; }
+    header p{ margin:0; color:var(--muted); }
+
+    .grid{ display:grid; gap:20px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }
+    .card{
       background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
       border:1px solid rgba(255,255,255,.08);
       border-radius:18px; padding:20px;
-      box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      box-shadow:0 10px 30px rgba(0,0,0,.25);
       transition: transform .15s ease, box-shadow .2s ease, border-color .2s ease;
     }
-    .card:hover { transform: translateY(-2px); border-color: rgba(34,197,94,.5); box-shadow: 0 14px 36px rgba(0,0,0,.35); }
-    .card h2 { margin:0 0 6px; font-size:1.25rem; }
-    .card p { margin:0 0 16px; color:var(--muted); }
-    .actions { display:flex; gap:10px; flex-wrap:wrap; }
-    .btn {
+    .card:hover{ transform:translateY(-2px); border-color: rgba(34,197,94,.5); box-shadow:0 14px 36px rgba(0,0,0,.35); }
+    .card h2{ margin:0 0 6px; font-size:1.25rem; }
+    .card p{ margin:0 0 16px; color:var(--muted); }
+
+    .actions{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .btn{
       display:inline-block; padding:10px 14px; border-radius:12px; text-decoration:none; font-weight:600;
       border:1px solid rgba(255,255,255,.14);
-      background: rgba(255,255,255,.04);
-      color: var(--text);
+      background: rgba(255,255,255,.04); color:var(--text);
       transition: background .15s ease, border-color .15s ease;
     }
-    .btn:hover { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.22); }
-    .btn.primary { border-color: rgba(34,197,94,.6); }
-    .footer { text-align:center; margin-top:22px; color:var(--muted); font-size:.95rem; }
-    .badge { font-size:.8rem; color:#a7f3d0; background:rgba(34,197,94,.12); border:1px solid rgba(34,197,94,.3); padding:3px 8px; border-radius:999px; }
+    .btn:hover{ background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.22); }
+    .btn.primary{ border-color: rgba(34,197,94,.6); }
+    .btn.sm{ padding:7px 10px; font-size:.9rem; border-radius:10px; }
+
+    .footer{ text-align:center; margin-top:22px; color:var(--muted); font-size:.95rem; }
+
+    /* ==== Semáforo fijo arriba-derecha ==== */
+    .status-box{
+      position:fixed; top:12px; right:12px; z-index:9999;
+      width:230px;
+      background:rgba(255,255,255,.05);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:14px; padding:12px 14px;
+      backdrop-filter: blur(4px);
+      box-shadow:0 10px 26px rgba(0,0,0,.28);
+    }
+    .status-box h3{ margin:0 0 8px; font-size:.95rem; opacity:.9; }
+    .st-list{ list-style:none; padding:0; margin:0 0 10px; }
+    .st-list li{ display:flex; justify-content:space-between; gap:10px; padding:2px 0; font-size:.92rem; }
+    .pill{
+      font-size:.78rem; padding:2px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.18);
+      background:rgba(255,255,255,.06); color:#d1d5db; white-space:nowrap;
+    }
+    .pill.ok   { color:#a7f3d0; border-color:rgba(34,197,94,.35); background:rgba(34,197,94,.12); }
+    .pill.err  { color:#fecaca; border-color:rgba(248,113,113,.4); background:rgba(248,113,113,.12); }
+    .pill.warn { color:#fde68a; border-color:rgba(251,191,36,.4); background:rgba(251,191,36,.12); }
+    .st-actions{ display:flex; gap:8px; justify-content:flex-end; }
+    .st-foot{ margin-top:8px; font-size:.8rem; color:var(--muted); text-align:right; }
   </style>
 </head>
 <body>
   <div class="wrap">
+    <!-- Semáforo (arriba-derecha) -->
+    <aside class="status-box">
+      <h3>Estado sistema</h3>
+      <ul class="st-list">
+        <li><span>Usuario Google</span>   <span id="st-user"   class="pill warn">…</span></li>
+        <li><span>Service Account</span>  <span id="st-sa"     class="pill warn">…</span></li>
+        <li><span>Drive</span>            <span id="st-drive"  class="pill warn">…</span></li>
+        <li><span>Sheets</span>           <span id="st-sheets" class="pill warn">…</span></li>
+      </ul>
+      <div class="st-actions">
+        <button class="btn sm" id="btnTest" type="button" title="Probar conexión sin modificar datos">🔍 Probar</button>
+        {% if not IS_RENDER %}
+        <a class="btn sm" href="/oauth/renew-local" title="Abrir renovación OAuth (solo local)">🔑 Renovar</a>
+        {% endif %}
+      </div>
+      <div class="st-foot">
+        <span id="lastCheck">—</span>
+      </div>
+    </aside>
+
     <header>
-      <!-- Si tienes un logo en /static/img/logo2.png lo mostramos -->
       <img src="{{ url_for('static', filename='img/logo2.png') }}" alt="HSC" onerror="this.style.display='none'">
       <h1>Panel HSC</h1>
       <p>Elige qué quieres hacer</p>
     </header>
 
     <section class="grid">
+      <!-- Cotizaciones -->
       <article class="card">
         <h2>Cotizaciones</h2>
         <p>Crear y enviar PDFs con tu formato moderno.</p>
         <div class="actions">
-          <!-- El cotizador ya funciona en "/" -->
           <a class="btn primary" href="{{ url_for('inicio') }}">Abrir cotizador</a>
-          <span class="badge">Activo</span>
         </div>
       </article>
 
+      <!-- Reportes -->
       <article class="card">
         <h2>Reportes</h2>
         <p>Generar reportes desde Google Sheets por <em>ID_Reporte</em>, con fotos 3×2.</p>
         <div class="actions">
-          <!-- Dejamos un placeholder a implementar -->
           <a class="btn" href="{{ url_for('repositorio') }}">Ver repositorio</a>
           <a class="btn" href="/reportes">Crear reporte</a>
         </div>
       </article>
     </section>
 
-    <div class="footer">Tip: guarda este panel en favoritos — <code>/inicio-app</code></div>
+    <div class="footer">www.hscrefrigeracion.com — <code>Servicios Industriales</code></div>
   </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    function setPill(el, state, text){
+      el.classList.remove('ok','err','warn');
+      el.classList.add(state);
+      el.textContent = text;
+    }
+    function stamp(){
+      const d = new Date();
+      const pad = n => String(n).padStart(2,'0');
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+
+    async function runHealth(){
+      setPill($('st-user'),'warn','Comprobando…');
+      setPill($('st-sa'),'warn','Comprobando…');
+      setPill($('st-drive'),'warn','Comprobando…');
+      setPill($('st-sheets'),'warn','Comprobando…');
+      $('lastCheck').textContent = 'Verificando…';
+
+      try{
+        const r = await fetch('/health', {headers:{'Accept':'application/json'}, cache:'no-store'});
+        if(!r.ok) throw new Error('HTTP '+r.status);
+        const j = await r.json();
+
+        // Usuario
+        if(j.user_ok){
+          setPill($('st-user'),'ok', j.user_email || 'OK');
+        }else if(j.needs_reconnect){
+          setPill($('st-user'),'warn','Requiere reconexión');
+        }else{
+          setPill($('st-user'),'err','Error');
+        }
+        // SA
+        setPill($('st-sa'), j.sa_ok ? 'ok':'err', j.sa_ok ? (j.sa_email || 'OK') : 'Error');
+        // Drive/Sheets
+        setPill($('st-drive'),  j.drive_ok  ? 'ok':'err', j.drive_ok  ? 'OK':'Error');
+        setPill($('st-sheets'), j.sheets_ok ? 'ok':'err', j.sheets_ok ? 'OK':'Error');
+
+        $('lastCheck').textContent = 'Última verificación: ' + stamp();
+      }catch(e){
+        setPill($('st-user'),'err','Error');
+        setPill($('st-sa'),'err','Error');
+        setPill($('st-drive'),'err','Error');
+        setPill($('st-sheets'),'err','Error');
+        $('lastCheck').textContent = 'Fallo en la verificación (' + stamp() + ')';
+      }
+    }
+
+    // Auto-check al cargar
+    document.addEventListener('DOMContentLoaded', runHealth);
+    $('btnTest').addEventListener('click', runHealth);
+  </script>
 </body>
 </html>
