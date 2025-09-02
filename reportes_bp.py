@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 import os, io, re, time, json, random
 from datetime import date, datetime
 from pathlib import Path
-from uuid import uuid4
+import uuid
 
 # Credenciales OAuth de usuario (NO service account)
 from google.oauth2.credentials import Credentials
@@ -966,7 +966,7 @@ def diag_nuevo():
 @reportes_bp.post("/reportes/diag/prev")
 def diag_prev():
     up_dir, pdf_dir, tmp_dir = _diag_paths()
-    token = uuid4().hex()
+    token = uuid.uuid4().hex 
 
     # ----- Datos del formulario (sin id_reporte) -----
     datos = {
