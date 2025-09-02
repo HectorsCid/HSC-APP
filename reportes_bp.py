@@ -13,8 +13,6 @@ from weasyprint import HTML
 from werkzeug.utils import secure_filename
 from auth_google import get_drive_service_user, get_sheets_service, get_drive_service
 
-
-
 # ----------------------------------------------------------------------
 # Blueprint
 # ----------------------------------------------------------------------
@@ -89,6 +87,16 @@ def _values_get(svc, rng):
 def _values_batch_get(svc, ranges):
     return _retry(lambda: svc.spreadsheets().values().batchGet(
         spreadsheetId=SHEET_ID, ranges=ranges
+    ).execute())
+
+def _values_append(svc, rng, rows):
+    body = {"values": rows}
+    return _retry(lambda: svc.spreadsheets().values().append(
+        spreadsheetId=SHEET_ID,
+        range=rng,
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body=body
     ).execute())
 
 def _spreadsheet_meta(svc, fields=None):
@@ -350,8 +358,46 @@ def reportes_suggest():
 # ----------------------------------------------------------------------
 # Drive helpers (IDs por ruta / shortcuts) para imágenes
 # ----------------------------------------------------------------------
+
+# Reuso de cliente y cachés en memoria para estabilidad
+_drive_imgs_svc = None
+_IMG_PATH_ID_CACHE = {"ttl": 1800, "data": {}}  # path_str -> (file_id, ts)
+_IMG_BYTES_CACHE = {"ttl": 600, "data": {}}     # file_id -> (bytes, mime, name, ts)
+
 def _drive_service_for_imgs():
-    return get_drive_service_user()
+    global _drive_imgs_svc
+    if _drive_imgs_svc is None:
+        _drive_imgs_svc = get_drive_service_user()
+    return _drive_imgs_svc
+
+def _cache_get_path_id(path_str: str):
+    ent = _IMG_PATH_ID_CACHE["data"].get(path_str)
+    if not ent:
+        return None
+    file_id, ts = ent
+    if time.time() - ts > _IMG_PATH_ID_CACHE["ttl"]:
+        _IMG_PATH_ID_CACHE["data"].pop(path_str, None)
+        return None
+    return file_id
+
+def _cache_set_path_id(path_str: str, file_id: str):
+    _IMG_PATH_ID_CACHE["data"][path_str] = (file_id, time.time())
+
+def _cache_get_bytes(file_id: str):
+    ent = _IMG_BYTES_CACHE["data"].get(file_id)
+    if not ent:
+        return None
+    bts, mime, name, ts = ent
+    if time.time() - ts > _IMG_BYTES_CACHE["ttl"]:
+        _IMG_BYTES_CACHE["data"].pop(file_id, None)
+        return None
+    return bts, mime, name
+
+def _cache_set_bytes(file_id: str, bts: bytes, mime: str, name: str):
+    # Limit simple: no más de 40MB por entrada
+    if len(bts) > 40 * 1024 * 1024:
+        return
+    _IMG_BYTES_CACHE["data"][file_id] = (bts, mime, name, time.time())
 
 _DRIVE_PATTERNS = [
     r'drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)',
@@ -384,6 +430,9 @@ def _normalize_relpath(p: str) -> str:
 def _resolve_path_to_id(drive, path_str: str):
     if not REPORTES_ROOT_ID:
         return None
+    cached = _cache_get_path_id(path_str)
+    if cached:
+        return cached
     parts = [s for s in _normalize_relpath(path_str).split("/") if s]
     parent = REPORTES_ROOT_ID
     for i, part in enumerate(parts):
@@ -398,6 +447,7 @@ def _resolve_path_to_id(drive, path_str: str):
         if not files:
             return None
         parent = files[0]['id']
+    _cache_set_path_id(path_str, parent)
     return parent
 
 @reportes_bp.route("/reportes/imgproxy", endpoint="reportes_imgproxy")
@@ -406,6 +456,7 @@ def reportes_imgproxy():
     Devuelve bytes de imagen desde Drive.
     - Si falla cualquier cosa, devuelve un PNG transparente 1x1 (no 302).
     - Soporta IDs directos y ruta relativa bajo REPORTES_ROOT_ID.
+    - Usa caché en memoria para reducir llamadas y estabilizar en Windows.
     """
     # PNG transparente 1x1 (para fallback)
     TRANSPARENT_PNG = (
@@ -437,10 +488,20 @@ def reportes_imgproxy():
         # Atajo (shortcuts) -> resolver target real
         file_id = _resolve_shortcut(drive, file_id)
 
+        # ¿Tenemos bytes en caché?
+        cached = _cache_get_bytes(file_id)
+        if cached:
+            bts, mime, name = cached
+            resp = send_file(io.BytesIO(bts), mimetype=mime, as_attachment=False, download_name=name or "img")
+            resp.headers["Cache-Control"] = "public, max-age=3600"
+            return resp
+
         # Metadatos (para saber mimetype y nombre)
         meta = _retry(lambda: drive.files().get(
             fileId=file_id, fields="mimeType,name"
         ).execute())
+        name = meta.get("name", "img")
+        mime = meta.get("mimeType", "image/jpeg") or "image/jpeg"
 
         # Descargar bytes
         req = drive.files().get_media(fileId=file_id)
@@ -459,10 +520,11 @@ def reportes_imgproxy():
         if buf.getbuffer().nbytes == 0:
             return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
 
-        mime = meta.get("mimeType", "image/jpeg") or "image/jpeg"
+        bts = buf.getvalue()
+        _cache_set_bytes(file_id, bts, mime, name)
+
         # Cabeceras cacheables para que WeasyPrint no golpee varias veces
-        resp = send_file(buf, mimetype=mime, as_attachment=False,
-                         download_name=meta.get("name", "img"))
+        resp = send_file(io.BytesIO(bts), mimetype=mime, as_attachment=False, download_name=name)
         resp.headers["Cache-Control"] = "public, max-age=3600"
         return resp
 
@@ -470,13 +532,11 @@ def reportes_imgproxy():
         # Falla silenciosa -> imagen transparente (evitar redirects/timeouts)
         return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
 
-
 # ----------------------------------------------------------------------
 # Drive helpers (guardar PDF)
 # ----------------------------------------------------------------------
 def _drive_service_for_files():
     return get_drive_service_user()
-
 
 def _sanitize_name(name: str) -> str:
     # Evitar caracteres problemáticos
@@ -532,6 +592,7 @@ def _logo_paths():
     Busca primero static/img/logo2.(png|jpg|svg); si no, cae a LOGO.(png|jpg|svg).
     Retorna (logo_web, logo_fs_uri) o (None, None) si no existe.
     """
+    from flask import url_for  # aseguramos import para uso local
     static_dir = Path(current_app.root_path) / "static" / "img"
     candidates = [
         "logo2.png", "logo2.jpg", "logo2.svg",
@@ -595,9 +656,9 @@ def reportes_prev(id_reporte):
         flash("ID_Reporte no encontrado en la hoja.")
         return redirect(url_for("reportes.reportes_inicio"))
 
-    fotos = [f for f in (data.get(f"Foto{i}", "").strip() for i in range(1,7)) if f]
+    # VISTA PREVIA SIN IMÁGENES (para estabilidad)
+    fotos = []  # <— importante: vaciamos para no golpear Drive en preview
 
-    # ⬇⬇⬇ NUEVO
     logo_web, logo_fs = _logo_paths()
     return render_template(
         "reporte_formato.html",
@@ -607,7 +668,6 @@ def reportes_prev(id_reporte):
         logo_web=logo_web,
         logo_fs=logo_fs,
     )
-
 
 @reportes_bp.route("/reportes/pdf/<id_reporte>")
 def reportes_pdf(id_reporte):
@@ -627,9 +687,9 @@ def reportes_pdf(id_reporte):
         flash("ID_Reporte no encontrado en la hoja.")
         return redirect(url_for("reportes.reportes_inicio"))
 
+    # IMPORTANTE: en PDF sí usamos fotos
     fotos = [f for f in (data.get(f"Foto{i}", "").strip() for i in range(1,7)) if f]
 
-    # NUEVO: rutas del logo para PDF (filesystem) y bandera de embed
     logo_web, logo_fs = _logo_paths()
     html = render_template(
         "reporte_formato.html",
@@ -640,7 +700,6 @@ def reportes_pdf(id_reporte):
         logo_fs=logo_fs,
     )
 
-    # CAMBIO: base_url usando filesystem para que WeasyPrint resuelva file://
     pdf_bytes = HTML(string=html, base_url=current_app.root_path).write_pdf()
 
     # 2) Si se pidió forzar descarga, la damos y salimos (opcional)
@@ -677,7 +736,7 @@ def reportes_pdf(id_reporte):
         target_parent = reportes_folder
         if ronda_norm:
             target_parent = _ensure_folder(drive, reportes_folder, ronda_norm)
-        _upsert_pdf(drive, target_parent, filename, pdf_bytes)
+        file_id_B = _upsert_pdf(drive, target_parent, filename, pdf_bytes)
 
         # 4) Respaldo local
         base_static = Path(current_app.root_path) / "static" / "reportes_pdfs" / cliente
@@ -688,6 +747,15 @@ def reportes_pdf(id_reporte):
         carpeta_b = f"Reportes/{ronda_norm}" if ronda_norm else "Reportes"
         msg = f"✅ PDF guardado en Drive:\n• {cliente}/{id_reporte}/{filename}\n• {cliente}/{carpeta_b}/{filename}"
         flash(msg)
+
+        # >>> REGISTRO CORRECTO EN HistorialPDF!A:F (orden real)
+        try:
+            archivo_url = _file_web_link(drive, file_id_B)
+            carpeta_url = _folder_web_link(drive, target_parent)
+            _log_pdf_historial(cliente, id_reporte, archivo_url, carpeta_url, tipo="reporte")
+        except Exception:
+            pass
+
         return redirect(url_for("reportes.reportes_prev", id_reporte=id_reporte))
 
     except Exception as e:
@@ -700,42 +768,125 @@ def reportes_pdf(id_reporte):
             download_name=f"{nombre_equipo} - {id_reporte}.pdf"
         )
 
+# ====================== NUEVO: snapshot/aux para la UI ======================
 
-# ----------------------------------------------------------------------
-# Editar (GET/POST)
-# ----------------------------------------------------------------------
-@reportes_bp.route("/reportes/editar/<id_reporte>", methods=["GET", "POST"], endpoint="reportes_editar")
-def reportes_editar(id_reporte):
+# >>> append a HistorialPDF (A:F)  ← incluye columna Tipo en la 6ª POSICIÓN
+def _hist_append(rows):
+    try:
+        svc = _sheets_service()
+        return _values_append(svc, "HistorialPDF!A:F", rows)
+    except Exception:
+        return None
+
+# >>> log a HistorialPDF (en el orden correcto de encabezados reales)
+def _log_pdf_historial(cliente, folio_o_id, archivo_url, carpeta_url, tipo="reporte"):
+    try:
+        # Orden correcto: [timestamp, cliente, folio, archivo_url, carpeta_url, tipo]
+        ts = datetime.now().isoformat(timespec="seconds")
+        _hist_append([[ts, cliente or "", str(folio_o_id or ""), archivo_url or "", carpeta_url or "", tipo or ""]])
+    except Exception:
+        pass
+
+# >>> helpers para obtener links web
+def _file_web_link(drive, file_id: str) -> str | None:
+    try:
+        meta = _retry(lambda: drive.files().get(fileId=file_id, fields="webViewLink").execute())
+        return meta.get("webViewLink")
+    except Exception:
+        return None
+
+def _folder_web_link(drive, folder_id: str) -> str | None:
+    try:
+        return f"https://drive.google.com/drive/folders/{folder_id}"
+    except Exception:
+        return None
+
+# >>> meta para auxiliar (cliente/nombre_equipo)
+@reportes_bp.get("/reportes/meta/<id_reporte>")
+def reportes_meta(id_reporte):
     data = get_reporte_con_overrides(id_reporte)
     if not data:
-        flash("ID_Reporte no encontrado en la hoja.")
-        return redirect(url_for("reportes.reportes_inicio"))
+        return jsonify({"ok": False, "error": "not_found"}), 404
+    cliente = (data.get("Cliente") or "").strip()
+    nombre = (data.get("NombreEquipo") or "").strip()
+    if not nombre:
+        marca = (data.get("Marca") or "").strip()
+        modelo = (data.get("Modelo") or "").strip()
+        nombre = (" ".join(x for x in [marca, modelo] if x) or "")
+    return jsonify({"ok": True, "cliente": cliente, "nombre_equipo": nombre})
 
-    if request.method == "POST":
-        fields = [
-            "Cliente", "Direccion", "Departamento", "Ubicacion", "Responsable",
-            "Modelo", "NoSerie", "NoInventario", "NoContrato", "Vigencia",
-            "MtoCorrectivo", "PartesUtilizadas",
-            "ObsElectrico", "OBsElectronico", "ObsMecanico",
-            "Notas", "Recomendaciones", "Comentarios",
-            "TolPresion", "TolTemperatura", "TolAmperaje",
-            "PresionCto1", "PresionCto2", "TempCto1", "TempCto2",
-            "Amperaje1", "Amperaje2", "ObsAmperaje",
-        ]
-        newov = _overrides.get(id_reporte, {}).copy()
-        for f in fields:
-            val = (request.form.get(f) or "").strip()
-            if val:
-                newov[f] = val
-        _overrides[id_reporte] = newov
-        _save_overrides()
-        flash("Cambios guardados.")
-        return redirect(url_for("reportes.reportes_prev", id_reporte=id_reporte))
+# >>> generar PDF sin redirigir (para fetch() en la UI)
+@reportes_bp.post("/reportes/pdf_json/<id_reporte>")
+def reportes_pdf_json(id_reporte):
+    """
+    Genera el PDF del reporte y devuelve JSON.
+    No redirige. Pensado para usar via fetch() desde la UI.
+    Respuesta: {ok, cliente, folio, archivo_url, carpeta_url, timestamp}
+    """
+    # 1) Datos y HTML (igual que reportes_pdf)
+    data = get_reporte_con_overrides(id_reporte)
+    if not data:
+        return jsonify({"ok": False, "error": "not_found"}), 404
 
-    data.setdefault("TolPresion", "± 5 psi")
-    data.setdefault("TolTemperatura", "± 1 °C")
-    data.setdefault("TolAmperaje", "± 1 A")
-    return render_template("reporte_editar.html", datos=data, id_reporte=id_reporte)
+    fotos = [f for f in (data.get(f"Foto{i}", "").strip() for i in range(1,7)) if f]
+    logo_web, logo_fs = _logo_paths()
+    html = render_template(
+        "reporte_formato.html",
+        datos=data,
+        fotos=fotos,
+        embed_for_pdf=True,
+        logo_web=logo_web,
+        logo_fs=logo_fs,
+    )
+    pdf_bytes = HTML(string=html, base_url=current_app.root_path).write_pdf()
+
+    # 2) Guardar en Drive (dos rutas, como en reportes_pdf)
+    cliente = _sanitize_name(data.get("Cliente") or "Sin Cliente")
+    ronda_norm = _normalize_ronda(data.get("Ronda") or "")
+    nombre_equipo = (data.get("NombreEquipo") or "Reporte").strip().replace("/", "-")
+    filename = f"{nombre_equipo} - {id_reporte}.pdf"
+
+    try:
+        drive = _drive_service_for_files()
+        if not REPORTES_ROOT_ID:
+            raise RuntimeError("REPORTES_ROOT_ID no configurado")
+
+        client_id = _ensure_folder(drive, REPORTES_ROOT_ID, cliente)
+
+        # A) /<Cliente>/<ID_Reporte>/
+        id_folder = _ensure_folder(drive, client_id, id_reporte)
+        file_id_A = _upsert_pdf(drive, id_folder, filename, pdf_bytes)
+
+        # B) /<Cliente>/Reportes[/Ronda N]/
+        reportes_folder = _ensure_folder(drive, client_id, "Reportes")
+        target_parent = reportes_folder
+        if ronda_norm:
+            target_parent = _ensure_folder(drive, reportes_folder, ronda_norm)
+        file_id_B = _upsert_pdf(drive, target_parent, filename, pdf_bytes)
+
+        # Links web (tomamos el de B como “archivo_url” por ser la vista agregada)
+        archivo_url = _file_web_link(drive, file_id_B) or _file_web_link(drive, file_id_A)
+        carpeta_url = _folder_web_link(drive, target_parent)
+
+        # Respaldo local
+        base_static = Path(current_app.root_path) / "static" / "reportes_pdfs" / cliente
+        base_static.mkdir(parents=True, exist_ok=True)
+        (base_static / filename).write_bytes(pdf_bytes)
+
+        # Historial con orden correcto (col A..F)
+        _log_pdf_historial(cliente, id_reporte, archivo_url, carpeta_url, tipo="reporte")
+
+        return jsonify({
+            "ok": True,
+            "cliente": cliente,
+            "folio": id_reporte,
+            "archivo_url": archivo_url,
+            "carpeta_url": carpeta_url,
+            "timestamp": datetime.now().isoformat(timespec="seconds")
+        })
+
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
 # ----------------------------------------------------------------------
 # Debug (incluye whoami de Drive)
@@ -786,7 +937,7 @@ def reportes_debug():
         )
 
 # ======================================================================
-# ====== BLOQUE NUEVO: Formato manual Servicio/Diagnóstico (diag) =====
+# ====== BLOQUE: Formato manual Servicio/Diagnóstico (diag) ============
 # ======================================================================
 
 def _diag_paths():
@@ -815,7 +966,7 @@ def diag_nuevo():
 @reportes_bp.post("/reportes/diag/prev")
 def diag_prev():
     up_dir, pdf_dir, tmp_dir = _diag_paths()
-    token = uuid4().hex
+    token = uuid4().hex()
 
     # ----- Datos del formulario (sin id_reporte) -----
     datos = {
@@ -903,6 +1054,39 @@ def diag_prev():
         logo_fs=logo_fs,
     )
 
+@reportes_bp.route("/reportes/editar/<id_reporte>", methods=["GET", "POST"], endpoint="reportes_editar")
+def reportes_editar(id_reporte):
+    data = get_reporte_con_overrides(id_reporte)
+    if not data:
+        flash("ID_Reporte no encontrado en la hoja.")
+        return redirect(url_for("reportes.reportes_inicio"))
+
+    if request.method == "POST":
+        fields = [
+            "Cliente", "Direccion", "Departamento", "Ubicacion", "Responsable",
+            "Modelo", "NoSerie", "NoInventario", "NoContrato", "Vigencia",
+            "MtoCorrectivo", "PartesUtilizadas",
+            "ObsElectrico", "OBsElectronico", "ObsMecanico",
+            "Notas", "Recomendaciones", "Comentarios",
+            "TolPresion", "TolTemperatura", "TolAmperaje",
+            "PresionCto1", "PresionCto2", "TempCto1", "TempCto2",
+            "Amperaje1", "Amperaje2", "ObsAmperaje",
+        ]
+        newov = _overrides.get(id_reporte, {}).copy()
+        for f in fields:
+            val = (request.form.get(f) or "").strip()
+            if val:
+                newov[f] = val
+        _overrides[id_reporte] = newov
+        _save_overrides()
+        flash("Cambios guardados.")
+        return redirect(url_for("reportes.reportes_prev", id_reporte=id_reporte))
+
+    data.setdefault("TolPresion", "± 5 psi")
+    data.setdefault("TolTemperatura", "± 1 °C")
+    data.setdefault("TolAmperaje", "± 1 A")
+    return render_template("reporte_editar.html", datos=data, id_reporte=id_reporte)
+
 
 @reportes_bp.get("/reportes/diag/pdf/<token>")
 def diag_pdf(token):
@@ -957,5 +1141,6 @@ def diag_pdf(token):
     HTML(string=html, base_url=current_app.root_path).write_pdf(str(pdf_path))
     flash(f"PDF generado: {pdf_path}", "success")
     return redirect(url_for("reportes.diag_nuevo"))
+
 
 

@@ -9,6 +9,7 @@
       --bg:#0b1020; --card:rgba(255,255,255,.04); --card2:rgba(255,255,255,.06);
       --border:rgba(255,255,255,.12); --text:#e5e7eb; --muted:#a3b2c7;
       --accent:#22c55e; --accent-bg:rgba(34,197,94,.12);
+      --blue:#93c5fd; --chip:#e0f2fe; --chip-bd:#bae6fd; --chip-tx:#0369a1;
     }
     *{box-sizing:border-box}
     body{margin:0;font-family:"Segoe UI",system-ui,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:28px}
@@ -22,7 +23,7 @@
     .btn{padding:10px 14px;border-radius:12px;border:1px solid rgba(34,197,94,.45);background:var(--accent-bg);color:#d1fae5;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;white-space:nowrap;transition:.15s}
     .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(34,197,94,.18)}
     .links{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
-    a.link{color:#93c5fd;text-decoration:none}
+    a.link{color:var(--blue);text-decoration:none}
 
     .header-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
 
@@ -41,6 +42,22 @@
       .eq,.cliente{max-width:60vw}
     }
     .flash{margin:8px 0;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.03);color:#fca5a5}
+
+    /* --- Auxiliar permanente (selección manual) --- */
+    .aux-header{margin-top:14px;margin-bottom:6px;font-weight:700;color:#e2e8f0;display:flex;align-items:center;gap:8px}
+    .muted{color:var(--muted);font-size:12px}
+    .chip{font-size:12px;padding:4px 8px;border-radius:999px;background:var(--chip);color:var(--chip-tx);border:1px solid var(--chip-bd)}
+    .empty{border:1px dashed var(--border);border-radius:14px;padding:14px;text-align:center;color:var(--muted)}
+
+    /* --- Consolita de últimos generados --- */
+    .tiny-list{display:flex;flex-direction:column;gap:10px}
+    .tiny-item{display:flex;justify-content:space-between;gap:12px;border:1px solid var(--border);border-radius:12px;padding:10px 12px;background:var(--card)}
+    .tiny-left{display:flex;flex-direction:column;gap:2px}
+    .tiny-title{font-weight:600}
+    .tiny-meta{font-size:12px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
+    .tiny-links{display:flex;gap:8px;flex-wrap:wrap}
+    .link-pill{font-size:12px;text-decoration:none;border:1px solid var(--border);padding:6px 8px;border-radius:999px;background:transparent;color:#dbeafe}
+    .right-chip{display:flex;align-items:center}
   </style>
 </head>
 <body>
@@ -60,20 +77,32 @@
       <!-- Izquierda: Ingreso manual (con autocomplete) -->
       <div class="card">
         <h3>Ingresar manual</h3>
-        <form method="post" action="">
+        <form id="form-manual" method="post" action="">
           <div class="row">
             <input id="id-manual" type="text" name="id_reporte"
                    placeholder="Ej. HDI1_R_1" autocomplete="off" list="id-suggest" required />
-            <button class="btn" type="submit">Continuar</button>
+            <!-- Evitamos submit de página -->
+            <button id="btn-continuar" class="btn" type="button">Continuar</button>
           </div>
           <datalist id="id-suggest"></datalist>
         </form>
         <div class="links">
           <a class="link" href="{{ url_for('inicio_app') }}">← Panel HSC</a>
-          <!-- Reemplaza 'Repositorio' por el botón de nuevos reportes -->
-        
           <a class="link" href="{{ url_for('reportes.reportes_debug') }}">Debug de reportes</a>
         </div>
+
+        <!-- (1) Auxiliar permanente: aquí se muestra la SELECCIÓN MANUAL -->
+        <div class="aux-header">Selección actual <span class="chip">manual</span></div>
+        <div id="aux-manual" class="list">
+          <div class="empty">Escribe un ID y pulsa <strong>Continuar</strong> para cargar las acciones aquí.</div>
+        </div>
+
+        <!-- (2) Consola: últimos 5 reportes generados (solo tipo=reporte) -->
+        <div class="aux-header">Últimos generados <span class="muted">(reportes)</span></div>
+        <div id="console-ultimos" class="tiny-list">
+          <div class="empty muted">Actualizando…</div>
+        </div>
+        <div class="muted" id="console-status" style="margin-top:6px;">&nbsp;</div>
       </div>
 
       <!-- Derecha: Últimos 10 -->
@@ -114,13 +143,14 @@
   </div>
 
   <script>
+    // ---------- Autocomplete (igual que tenías) ----------
     const $in = document.querySelector('#id-manual');
     const $dl = document.querySelector('#id-suggest');
     let t;
     $in.addEventListener('input', () => {
       clearTimeout(t);
       const q = $in.value.trim();
-      if (!q) { $dl.innerHTML = ''; return; }
+      if (!q) { $dl.innerHTML=''; return; }
       t = setTimeout(async () => {
         try{
           const r = await fetch(`/reportes/suggest?q=${encodeURIComponent(q)}`);
@@ -129,6 +159,152 @@
         }catch{}
       }, 200);
     });
+
+    // ---------- 1) Auxiliar permanente: render de selección manual ----------
+    const $btnContinuar = document.getElementById('btn-continuar');
+    const $aux = document.getElementById('aux-manual');
+
+    function renderAux(id, cliente='—', equipo='—'){
+      if(!id){
+        $aux.innerHTML = `<div class="empty">Escribe un ID y pulsa <strong>Continuar</strong>.</div>`;
+        return;
+      }
+      // Tarjeta con mismas acciones que la lista de la derecha
+      const prev = `/reportes/prev/${encodeURIComponent(id)}`;
+      const edit = `/reportes/editar/${encodeURIComponent(id)}`;
+      const pdf  = `/reportes/pdf/${encodeURIComponent(id)}`;
+
+      $aux.innerHTML = `
+        <div class="item">
+          <div class="left">
+            <div class="icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2H19.5A1.5 1.5 0 0 1 21 9.5v7A1.5 1.5 0 0 1 19.5 18h-15A1.5 1.5 0 0 1 3 16.5v-9Z" stroke="#a3b2c7"/>
+              </svg>
+            </div>
+            <div class="meta">
+              <div class="id">${id}</div>
+              <div class="cliente">${cliente}</div>
+              <div class="eq">${equipo}</div>
+            </div>
+          </div>
+          <div class="actions">
+            <a class="btn" href="${prev}">Vista previa</a>
+            <a class="btn" href="${edit}">Editar</a>
+            <a class="btn" href="${pdf}">Generar PDF</a>
+          </div>
+        </div>
+      `;
+    }
+
+    // Al pulsar continuar: no navegamos; pintamos la tarjeta
+    $btnContinuar?.addEventListener('click', async () => {
+      const id = $in.value.trim();
+      if(!id){ renderAux(''); return; }
+
+      // Intento opcional: traer meta básica para mostrar cliente/equipo (si tienes endpoint)
+      // Si no hay endpoint, se mostrará "—" y listo (no rompe nada).
+      try{
+        const metaResp = await fetch(`/reportes/meta/${encodeURIComponent(id)}`, {cache:'no-store'});
+        if(metaResp.ok){
+          const meta = await metaResp.json(); // {cliente, nombre_equipo}
+          renderAux(id, meta.cliente || '—', meta.nombre_equipo || '—');
+        }else{
+          renderAux(id);
+        }
+      }catch{
+        renderAux(id);
+      }
+    });
+
+    // ---------- 2) Consola: últimos 5 PDFs tipo=reporte ----------
+    const $console = document.getElementById('console-ultimos');
+    const $cStatus = document.getElementById('console-status');
+
+    async function fetchUltimosReportes(){
+      try{
+        $console.innerHTML = `<div class="empty muted">Actualizando…</div>`;
+        const r = await fetch(`/api/ultimos-pdfs?limit=5&tipo=reporte`, {cache:'no-store'});
+        const data = await r.json();
+        if(!data.ok){ throw new Error(data.error || 'No ok'); }
+        renderConsole(data.items || []);
+        const now = new Date();
+        $cStatus.textContent = `Actualizado ${now.toLocaleTimeString()}`;
+      }catch(e){
+        console.error(e);
+        $console.innerHTML = `<div class="empty muted">No se pudo cargar el historial.</div>`;
+        $cStatus.textContent = 'Error al actualizar';
+      }
+    }
+
+    function renderConsole(items){
+      if(!items.length){
+        $console.innerHTML = `<div class="empty muted">Sin PDFs recientes.</div>`;
+        return;
+      }
+      $console.innerHTML = items.map(it => {
+        const fecha = it.timestamp ? new Date(it.timestamp).toLocaleString() : '';
+        const folio = it.folio ? `Folio ${it.folio}` : '—';
+        const archivo = it.archivo_url ? `<a class="link-pill" href="${it.archivo_url}" target="_blank">Abrir PDF</a>` : '';
+        const carpeta = it.carpeta_url ? `<a class="link-pill" href="${it.carpeta_url}" target="_blank">Carpeta</a>` : '';
+        return `
+          <div class="tiny-item">
+            <div class="tiny-left">
+              <div class="tiny-title">${it.cliente || '—'}</div>
+              <div class="tiny-meta"><span>${folio}</span><span>•</span><span>${fecha}</span></div>
+              <div class="tiny-links">${archivo}${carpeta}</div>
+            </div>
+            <div class="right-chip"><span class="chip">PDF</span></div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Auto-refresh cada 20s
+    setInterval(fetchUltimosReportes, 20000);
+    fetchUltimosReportes();
   </script>
+  <script>
+  // Delegación: capturar clicks en "Generar PDF" de ambas columnas
+  document.addEventListener('click', async (ev) => {
+    const a = ev.target.closest('a.btn');
+    if (!a) return;
+    if (!/Generar PDF/i.test(a.textContent || '')) return;
+
+    // Detectar si es de la derecha (Últimos 10) o del auxiliar
+    // La URL actual es algo like /reportes/pdf/<ID>; extraemos el ID
+    try{
+      const href = a.getAttribute('href') || '';
+      const m = href.match(/\/reportes\/pdf\/([^/?#]+)/);
+      if(!m){ return; } // si no es ese formato, dejamos pasar
+      ev.preventDefault();
+
+      const id = decodeURIComponent(m[1]);
+      a.textContent = 'Generando…';
+      a.style.pointerEvents = 'none';
+
+      const r = await fetch(`/reportes/pdf_json/${encodeURIComponent(id)}`, {method:'POST'});
+      const data = await r.json();
+
+      if(data && data.ok){
+        // Actualiza consola
+        await fetchUltimosReportes();
+        // Feedback sutil
+        a.textContent = 'Listo ✓';
+        setTimeout(()=>{ a.textContent = 'Generar PDF'; a.style.pointerEvents=''; }, 1200);
+      }else{
+        alert('No se pudo generar el PDF: ' + (data && data.error ? data.error : 'Error'));
+        a.textContent = 'Generar PDF';
+        a.style.pointerEvents = '';
+      }
+    }catch(e){
+      console.error(e);
+      alert('Error de red al generar el PDF');
+      a.textContent = 'Generar PDF';
+      a.style.pointerEvents = '';
+    }
+  });
+</script>
+
 </body>
 </html>

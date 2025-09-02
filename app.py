@@ -9,7 +9,7 @@ import os
 import platform
 from urllib.parse import quote_plus
 from pathlib import Path
-import io 
+import io
 
 # Google / OAuth
 from google.oauth2.credentials import Credentials
@@ -40,6 +40,80 @@ SHEET_ID = "15xLRRfR_Leidnd34Cpr3ERbpJ7AaMelMxMa-9B0d6kQ"
 SHEET_TAB = "Reportes"
 SHEET_ID_REPORTE_RANGE = f"{SHEET_TAB}!A2:A"
 
+# ===== Persistencia de folios en Google Sheets =====
+FOLIO_RANGE = "Control_Procesamiento!B3"  # aquí vive el ultimo_folio
+
+def _sheets_values_get(range_):
+    sh = get_sheets_service()
+    return sh.spreadsheets().values().get(
+        spreadsheetId=SHEET_ID,
+        range=range_
+    ).execute()
+
+def _sheets_values_update(range_, value):
+    sh = get_sheets_service()
+    body = {"values": [[value]]}
+    return sh.spreadsheets().values().update(
+        spreadsheetId=SHEET_ID,
+        range=range_,
+        valueInputOption="RAW",
+        body=body
+    ).execute()
+
+def _get_ultimo_folio_sheets():
+    """Lee B3 (ultimo_folio) de Control_Procesamiento. Devuelve int o None."""
+    try:
+        res = _sheets_values_get(FOLIO_RANGE)
+        vals = res.get("values", [[]])
+        if vals and vals[0]:
+            return int(str(vals[0][0]).strip())
+    except Exception as e:
+        print("⚠️ Sheets: no se pudo leer ultimo_folio:", e)
+    return None
+
+def _set_ultimo_folio_sheets(nuevo_valor):
+    """Escribe B3 con el folio indicado. Devuelve True/False."""
+    try:
+        _sheets_values_update(FOLIO_RANGE, int(nuevo_valor))
+        return True
+    except Exception as e:
+        print("⚠️ Sheets: no se pudo escribir ultimo_folio:", e)
+        return False
+
+# ===== Historial de PDFs en Google Sheets =====
+HIST_TAB = "HistorialPDF"
+HIST_RANGE_READ = f"{HIST_TAB}!A2:E"  # lectura (sin encabezado)
+
+def _sheets_values_append(range_, rows):
+    """Append de filas al final de la hoja."""
+    sh = get_sheets_service()
+    body = {"values": rows}
+    return sh.spreadsheets().values().append(
+        spreadsheetId=SHEET_ID,
+        range=range_,
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body=body
+    ).execute()
+
+def _sheets_values_get_all(range_):
+    sh = get_sheets_service()
+    return sh.spreadsheets().values().get(
+        spreadsheetId=SHEET_ID,
+        range=range_
+    ).execute()
+
+def log_pdf_event(cliente, folio, archivo_url, carpeta_url, tipo="cotizacion"):
+    """Registra fila en HistorialPDF con tipo."""
+    try:
+        ts = datetime.now().isoformat(timespec="seconds")
+        rows = [[ts, cliente or "", str(folio or ""), archivo_url or "", carpeta_url or "", tipo or ""]]
+        _sheets_values_append(f"{HIST_TAB}!A:F", rows)
+        print(f"📝 HistorialPDF: agregado {cliente} folio {folio} tipo={tipo}")
+    except Exception as e:
+        print("⚠️ No se pudo escribir en HistorialPDF:", e)
+
+
 # Detección de entorno y auto-sync
 IS_RENDER = bool(os.environ.get('RENDER') or
                  os.environ.get('RENDER_SERVICE_ID') or
@@ -61,7 +135,6 @@ def currency_filter(value):
 def _drive_service():
     # Ahora usa cuenta de servicio (sin token.json)
     return get_drive_service()
-
 
 def _drive_service_cfg():
     return _drive_service()
@@ -180,20 +253,54 @@ def _bootstrap_sync_clientes():
 
 # ======================= Función para folios automáticos =======================
 def obtener_siguiente_folio():
+    """
+    Nuevo flujo:
+    1) Intentar leer y actualizar folio en Google Sheets (Control_Procesamiento!B3).
+    2) Si Sheets falla, usar folios.json local como respaldo (comportamiento actual).
+    3) Espejar el valor final en folios.json (best-effort) para consulta local.
+    """
+    # --- 1) Intento con Sheets (oficial) ---
+    ultimo_sheets = _get_ultimo_folio_sheets()
+    if isinstance(ultimo_sheets, int):
+        siguiente = ultimo_sheets + 1
+        if _set_ultimo_folio_sheets(siguiente):
+            # Espejo local (best effort)
+            try:
+                with open("folios.json", "w", encoding="utf-8") as f:
+                    json.dump({"ultimo_folio": siguiente}, f, indent=2, ensure_ascii=False)
+            except Exception as e:
+                print("⚠️ No se pudo espejar folio en folios.json:", e)
+            return siguiente
+        else:
+            print("⚠️ No se pudo escribir en Sheets, se usará respaldo local.")
+
+    # --- 2) Respaldo local: folios.json (comportamiento previo) ---
     ruta_folios = "folios.json"
-    if not os.path.exists(ruta_folios):
+    try:
+        if not os.path.exists(ruta_folios):
+            with open(ruta_folios, "w", encoding="utf-8") as f:
+                json.dump({"ultimo_folio": 0}, f)
+
+        with open(ruta_folios, "r", encoding="utf-8") as f:
+            datos = json.load(f)
+        # Tolerancia a archivo raro/corrupto
+        if not isinstance(datos, dict) or "ultimo_folio" not in datos:
+            datos = {"ultimo_folio": 0}
+
+        datos["ultimo_folio"] = int(datos.get("ultimo_folio", 0)) + 1
+
         with open(ruta_folios, "w", encoding="utf-8") as f:
-            json.dump({"ultimo_folio": 0}, f)
+            json.dump(datos, f, indent=2, ensure_ascii=False)
 
-    with open(ruta_folios, "r", encoding="utf-8") as f:
-        datos = json.load(f)
+        # --- 3) Espejo a Sheets (best effort) ---
+        _set_ultimo_folio_sheets(datos["ultimo_folio"])
 
-    datos["ultimo_folio"] += 1
+        return datos["ultimo_folio"]
 
-    with open(ruta_folios, "w", encoding="utf-8") as f:
-        json.dump(datos, f, indent=2)
-
-    return datos["ultimo_folio"]
+    except Exception as e:
+        print("❌ Error con folios.json:", e)
+        # Último salvavidas para no romper el flujo:
+        return int(datetime.now().strftime("%y%m%d%H%M%S"))
 
 # =========================== Variables de trabajo ==============================
 partidas = []
@@ -496,6 +603,12 @@ def generar_pdf():
     carpeta_url, archivo_url = subir_a_drive_archivo(ruta_pdf, cliente, nombre_archivo)
     abrir_drive_local_win(cliente, nombre_archivo)
 
+    # Registrar en historial (para el panel de "Generados recientes")
+    try:
+        log_pdf_event(cliente, cot, archivo_url, carpeta_url)
+    except Exception as _e:
+        print("⚠️ No se pudo registrar en HistorialPDF:", _e)
+
     mensaje = f"Cotización {cot} - {cliente}\nArchivo: {archivo_url}"
     wa_url = f"https://wa.me/?text={quote_plus(mensaje)}"
     mailto_url = f"mailto:?subject={quote_plus(f'Cotización {cot} - {cliente}')}&body={quote_plus(mensaje)}"
@@ -793,8 +906,6 @@ def health_check():
     return jsonify(_health_snapshot())
 
 # --- Healthcheck para la UI de /inicio-app ---
-from google.auth.exceptions import RefreshError
-
 @app.get("/health")
 def health():
     out = {
@@ -847,55 +958,6 @@ def health():
 
     return jsonify(out)
 
-
-    # 1) Cuenta de servicio (solo construir cliente)
-    try:
-        svc = get_drive_service()  # SA
-        # toque mínimo: whoami (no escribe nada)
-        _ = svc.about().get(fields="user(emailAddress)").execute()
-        out["sa_ok"] = True
-    except Exception as e:
-        out["msg"].append(f"SA: {type(e).__name__}: {e}")
-
-    # 2) Usuario (token.json / TOKEN_JSON_B64)
-    try:
-        usr = get_drive_service_user()
-        who = usr.about().get(fields="user(emailAddress)").execute().get("user", {}).get("emailAddress", "")
-        if who:
-            out["user_ok"] = True
-    except Exception as e:
-        out["msg"].append(f"Usuario: {type(e).__name__}: {e}")
-
-    # 3) Drive con usuario: listar subcarpetas dentro de ID_COT
-    try:
-        if out["user_ok"]:
-            res = usr.files().list(
-                q=f"'{ID_COT}' in parents and trashed=false",
-                spaces="drive",
-                fields="files(id)",
-                pageSize=1
-            ).execute()
-            _ = res.get("files", [])
-            out["drive_ok"] = True
-    except Exception as e:
-        out["msg"].append(f"Drive: {type(e).__name__}: {e}")
-
-    # 4) Sheets con SA (solo lectura)
-    try:
-        sh = get_sheets_service()
-        _ = sh.spreadsheets().values().get(
-            spreadsheetId=SHEET_ID, range=f"{SHEET_TAB}!A1:A1"
-        ).execute()
-        out["sheets_ok"] = True
-    except Exception as e:
-        out["msg"].append(f"Sheets: {type(e).__name__}: {e}")
-
-    # Resultado general
-    out["ok"] = all([out["user_ok"], out["sa_ok"], out["drive_ok"], out["sheets_ok"]])
-    return out, 200
-
-
-
 # === OAuth local-only: renovar token y devolver Base64 listo para Render ===
 @app.route('/oauth/renew-local')
 def oauth_renew_local():
@@ -935,7 +997,68 @@ def inicio_app():
     health = _health_snapshot()
     return render_template('inicio_app.html', IS_RENDER=IS_RENDER, health=health)
 
+# --- Healthcheck muy ligero para Render ---
+@app.route("/healthz")
+def healthz():
+    return "ok", 200
+
+# Estado folios (debug rápido)
+@app.route("/folios/status")
+def folios_status():
+    val_sheets = _get_ultimo_folio_sheets()
+    val_local = None
+    try:
+        with open("folios.json", "r", encoding="utf-8") as f:
+            val_local = json.load(f).get("ultimo_folio")
+    except Exception:
+        pass
+
+    return {
+        "sheets_B3": val_sheets,
+        "folios_json": val_local
+    }
+
+# API para el panel "Generados recientes"
+@app.route("/api/ultimos-pdfs")
+def api_ultimos_pdfs():
+    """Devuelve los últimos N registros de HistorialPDF (más reciente primero), con filtro opcional por tipo."""
+    try:
+        limit = max(1, min(int(request.args.get("limit", 5)), 50))
+    except:
+        limit = 5
+    tipo_req = (request.args.get("tipo") or "").strip().lower()
+
+    try:
+        resp = _sheets_values_get_all(f"{HIST_TAB}!A2:F")  # incluir columna F
+        vals = resp.get("values", [])
+        tail = vals[-limit*3:] if len(vals) > limit*3 else vals  # buffer extra por filtro
+        items = []
+        for row in tail[::-1]:
+            ts, cliente, folio, archivo_url, carpeta_url, tipo = (row + ["", "", "", "", "", ""])[:6]
+            tipo = (tipo or "").lower()
+            # Filtrado
+            if tipo_req:
+                if not tipo and tipo_req != "cotizacion":
+                    continue
+                if tipo and tipo != tipo_req:
+                    continue
+            items.append({
+                "timestamp": ts,
+                "cliente": cliente,
+                "folio": folio,
+                "archivo_url": archivo_url,
+                "carpeta_url": carpeta_url,
+                "tipo": tipo or "cotizacion"
+            })
+            if len(items) >= limit:
+                break
+        return jsonify({"ok": True, "count": len(items), "items": items})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "items": []}), 500
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=False)
+
 
