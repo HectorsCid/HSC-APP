@@ -660,6 +660,23 @@ def generar_pdf():
         return subtotal, iva, total
 
     subtotal, iva, total = calcular_totales_mem(partidas_actuales)
+        # --- Retenciones (para cotización) ---
+    aplicar_retenciones = str(datos.get("aplicar_retenciones", "1")).strip().lower() not in ("0", "false", "no", "off")
+
+    if aplicar_retenciones:
+        # RESICO: ISR 1.25% sobre subtotal
+        isr_retenido = subtotal * 0.0125
+
+        # IVA retenido 2/3 del IVA (equivale a 10.6667% del subtotal)
+        iva_retenido = subtotal * (0.16 * (2/3))
+
+        total_final = total - isr_retenido - iva_retenido
+        if total_final < 0:
+            total_final = 0.0
+    else:
+        isr_retenido = 0.0
+        iva_retenido = 0.0
+        total_final = total
 
     cliente = (datos.get('cliente') or 'SIN_CLIENTE').strip()
     cot = (str(datos.get('cotizacion')) or 'S/F').strip()
@@ -678,6 +695,9 @@ def generar_pdf():
         subtotal=subtotal,
         iva=iva,
         total=total,
+        isr_retenido=isr_retenido,
+        iva_retenido=iva_retenido,
+        total_final=total_final,
         img_path=img_path
     )
     HTML(string=html).write_pdf(ruta_pdf)
