@@ -965,19 +965,41 @@ def guardar_partidas(partidas):
 # ============================ VISTA PREVIA (HTML en navegador) =============================
 @app.route('/vista_previa')
 def vista_previa():
-    guardar_datos(datos_cliente)
-    guardar_partidas(partidas)
-    return render_template(
-        "plantilla_pdf.html",
-        datos=datos_cliente,
-        partidas=partidas,
-        subtotal=sum(p['total'] for p in partidas),
-        iva=sum(p['total'] for p in partidas) * 0.16,
-        total=sum(p['total'] for p in partidas) * 1.16,
-        img_path=url_for('static', filename='img/logo2.png'),
-        preview=True
+    datos = dict(datos_cliente)
+    partidas_actuales = list(partidas)
+
+    subtotal = sum(
+        (p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0)
+        for p in partidas_actuales
     )
 
+    iva = subtotal * 0.16
+
+    usar_retenciones = bool(datos.get("usar_retenciones"))
+
+    if usar_retenciones:
+        isr_retenido = subtotal * 0.0125
+        iva_retenido = iva * 0.106667
+    else:
+        isr_retenido = 0.0
+        iva_retenido = 0.0
+
+    total = subtotal + iva - isr_retenido - iva_retenido
+
+    img_path = Path("img/logo.png").resolve().as_uri()
+
+    return render_template(
+        "plantilla_pdf.html",
+        datos=datos,
+        partidas=partidas_actuales,
+        subtotal=subtotal,
+        iva=iva,
+        total=total,
+        isr_retenido=isr_retenido,
+        iva_retenido=iva_retenido,
+        img_path=img_path,
+        preview=True
+    )
 # =============================== Explorador de cotizaciones ================================
 @app.route('/repositorio')
 def repositorio():
