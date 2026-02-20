@@ -1013,7 +1013,6 @@ def vista_previa():
         preview=True
     )
 
-
 @app.route('/repositorio')
 def repositorio():
     BASE_LOCAL_DRIVE = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
@@ -1023,6 +1022,7 @@ def repositorio():
         try:
             service = _drive_service_cfg()
             estructura = {}
+
             resp = service.files().list(
                 q=f"'{ID_COT}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
                 spaces='drive',
@@ -1033,67 +1033,25 @@ def repositorio():
             for folder in resp.get('files', []):
                 cliente = folder['name']
                 fid = folder['id']
+
                 files = service.files().list(
                     q=f"'{fid}' in parents and mimeType='application/pdf' and trashed=false",
                     spaces='drive',
                     fields='files(id,name,webViewLink)',
                     pageSize=1000
                 ).execute().get('files', [])
+
                 estructura[cliente] = [
                     {"name": f["name"], "link": f.get("webViewLink")} for f in files
                 ]
 
             return render_template("repositorio.html", estructura=estructura, from_drive=True)
+
         except Exception as e:
             print("⚠️ No se pudo listar desde Drive en /repositorio:", e)
             return render_template("repositorio.html", estructura={}, from_drive=True)
 
-    estructura = {}
-    try:
-        for cliente in sorted(os.listdir(BASE_LOCAL_DRIVE)):
-            c_path = os.path.join(BASE_LOCAL_DRIVE, cliente)
-            if os.path.isdir(c_path):
-                pdfs = [a for a in os.listdir(c_path) if a.lower().endswith('.pdf')]
-                estructura[cliente] = sorted(pdfs)
-    except Exception as e:
-        print("⚠️ Error listando en local /repositorio:", e)
-        estructura = {}
-
-    return render_template("repositorio.html", estructura=estructura, from_drive=False)
-@app.route('/repositorio')
-def repositorio():
-    BASE_LOCAL_DRIVE = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
-    use_drive = IS_RENDER or (not os.path.isdir(BASE_LOCAL_DRIVE))
-
-    if use_drive:
-        try:
-            service = _drive_service_cfg()
-            estructura = {}
-            resp = service.files().list(
-                q=f"'{ID_COT}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-                spaces='drive',
-                fields='files(id,name)',
-                pageSize=1000
-            ).execute()
-
-            for folder in resp.get('files', []):
-                cliente = folder['name']
-                fid = folder['id']
-                files = service.files().list(
-                    q=f"'{fid}' in parents and mimeType='application/pdf' and trashed=false",
-                    spaces='drive',
-                    fields='files(id,name,webViewLink)',
-                    pageSize=1000
-                ).execute().get('files', [])
-                estructura[cliente] = [
-                    {"name": f["name"], "link": f.get("webViewLink")} for f in files
-                ]
-
-            return render_template("repositorio.html", estructura=estructura, from_drive=True)
-        except Exception as e:
-            print("⚠️ No se pudo listar desde Drive en /repositorio:", e)
-            return render_template("repositorio.html", estructura={}, from_drive=True)
-
+    # --- Local ---
     estructura = {}
     try:
         for cliente in sorted(os.listdir(BASE_LOCAL_DRIVE)):

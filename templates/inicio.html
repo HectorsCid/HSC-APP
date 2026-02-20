@@ -23,8 +23,10 @@
     .top{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
     .title{font-size:1.25rem;font-weight:800;letter-spacing:.2px}
     .pill{font-size:.85rem;color:var(--muted)}
+
     .grid{display:grid;gap:16px}
     @media(min-width:840px){ .grid-2{grid-template-columns:1.2fr .8fr} }
+
     .card{
       background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
       padding:16px; box-shadow:0 8px 22px rgba(17,24,39,.06);
@@ -38,6 +40,7 @@
     textarea{min-height:92px;resize:vertical}
     .row{display:grid;gap:12px}
     @media(min-width:560px){ .row-2{grid-template-columns:1fr 1fr} }
+
     .btn{
       display:inline-flex; align-items:center; justify-content:center; gap:8px;
       padding:12px 14px; border-radius:12px; border:1px solid var(--line); cursor:pointer; font-weight:700; font-size:15px;
@@ -49,40 +52,30 @@
     .btn-ok{background:var(--ok); color:#04140a; border-color:transparent}
     .btn-danger{background:var(--danger); color:#fff; border-color:transparent}
     .actions{display:flex;flex-wrap:wrap;gap:10px}
+
     .flash{
       background:#fee2e2; color:#7f1d1d; border:1px solid #fecaca;
       padding:10px 12px; border-radius:12px; margin:12px 0; font-weight:600;
     }
+
     .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
     table{width:100%;border-collapse:collapse;min-width:720px}
     th,td{padding:12px 12px;border-bottom:1px solid var(--line);text-align:left}
     th{background:#f1f5f9;font-weight:700;color:#1f2937}
     tfoot td{font-weight:800;background:#f1f5f9}
+
     .subtle{color:var(--muted);font-size:.88rem}
+
     .t-actions .actions { display:flex; flex-wrap:wrap; }
     .t-actions .btn{ padding:8px 10px; font-size:14px; }
 
-    /* mini switch */
-    .mini-switch{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      font-weight:700;
-      color:#111827;
-      user-select:none;
+    /* Switch compacto en tabla */
+    .switch{
+      display:inline-flex; align-items:center; gap:8px; white-space:nowrap;
+      font-weight:700; font-size:.9rem; color:#111827;
     }
-    .mini-switch input[type="checkbox"]{
-      width:auto;
-      transform:scale(1.1);
-      margin:0;
-      accent-color: var(--brand);
-    }
-    .mini-note{
-      font-weight:600;
-      color:var(--muted);
-      font-size:.85rem;
-      margin-left:6px;
-    }
+    .switch input{ width:auto; transform:scale(1.05); }
+    .hint{font-weight:600;color:var(--muted);font-size:.82rem}
   </style>
 </head>
 <body>
@@ -158,7 +151,19 @@
         <label>No. Cotización</label>
         <input type="text" name="cotizacion" value="{{ datos.cotizacion or '' }}"/>
 
-        <div class="actions" style="margin-top:8px">
+        <label style="margin-top:10px">Retenciones</label>
+        <div class="switch" style="margin-top:6px">
+          <input
+            type="checkbox"
+            name="usar_retenciones"
+            id="usar_retenciones"
+            {% if datos.usar_retenciones %}checked{% endif %}
+          />
+          <span>Aplicar ISR 1.25% e IVA 2/3</span>
+        </div>
+        <div class="hint">Si lo activas, el total se calcula con retenciones.</div>
+
+        <div class="actions" style="margin-top:12px">
           <button class="btn btn-primary" type="submit">💾 Guardar datos</button>
         </div>
 
@@ -235,6 +240,7 @@
             <td style="text-align:right">{{ subtotal|currency }}</td>
             <td></td>
           </tr>
+
           <tr>
             <td colspan="3"></td>
             <td style="text-align:right">IVA 16%</td>
@@ -244,21 +250,21 @@
 
           <tr>
             <td colspan="3"></td>
-            <td style="text-align:right">
-              <span class="mini-switch">
+            <td style="text-align:right">ISR retenido 1.25%</td>
+            <td style="text-align:right">-{{ (isr_retenido or 0)|currency }}</td>
+            <td>
+              <!-- checkbox al lado (se guarda en el form de datos) -->
+              <label class="switch" style="justify-content:flex-end">
                 <input
-                  id="chk_ret"
                   type="checkbox"
                   name="usar_retenciones"
                   form="form-datos"
                   {% if datos.usar_retenciones %}checked{% endif %}
+                  onchange="document.getElementById('form-datos').submit();"
                 />
-                ISR retenido 1.25%
-              </span>
-              <span class="mini-note">(activar retenciones)</span>
+                <span>Retenciones</span>
+              </label>
             </td>
-            <td style="text-align:right">-{{ (isr_retenido or 0)|currency }}</td>
-            <td></td>
           </tr>
 
           <tr>
@@ -304,6 +310,7 @@
         const d = clientes[nombreCliente];
         if(!d) return;
 
+        // Atención
         selectAtencion.innerHTML = '';
         (d.atencion || []).forEach((persona, i) => {
           const opt = document.createElement('option');
@@ -319,26 +326,21 @@
         vigencia.value  = d.vigencia || '';
       }
 
+      // Inicial
       if(selectCliente.value){ cargarDatosCliente(selectCliente.value); }
 
+      // Cambio de cliente
       selectCliente.addEventListener('change', () => {
         cargarDatosCliente(selectCliente.value);
       });
 
+      // Botón Editar cliente
       const btnEditar = document.getElementById('btnEditarCliente');
       btnEditar.addEventListener('click', () => {
         const c = selectCliente.value;
         if(!c){ alert('Primero selecciona un cliente.'); return; }
         window.location.href = "{{ url_for('editar_cliente') }}";
       });
-
-      // Opcional: si quieres que al marcar retenciones se recalculen "al momento" sin dar click:
-      const chk = document.getElementById('chk_ret');
-      if(chk){
-        chk.addEventListener('change', () => {
-          document.getElementById('form-datos').submit();
-        });
-      }
     });
   </script>
 </body>
