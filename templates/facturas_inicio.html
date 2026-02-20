@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Facturación – HSC</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{--bg:#fff;--card:#f9fafb;--ink:#111827;--muted:#6b7280;--line:#e5e7eb;--brand:#374151;--ok:#22c55e;--warn:#f59e0b;--danger:#ef4444}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Roboto,system-ui,-apple-system,sans-serif}
+  .layout{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+  .side{border-right:1px solid var(--line);padding:18px}
+  .side .logo{font-weight:800;margin-bottom:14px}
+  .nav{display:flex;flex-direction:column;gap:8px}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#111827;text-decoration:none;cursor:pointer}
+  .btn[disabled]{opacity:.6;cursor:not-allowed}
+  .btn:hover{background:#f3f4f6}
+  .btn-primary{background:var(--brand);color:#fff;border-color:transparent}
+  .btn-danger{background:var(--danger);color:#fff;border-color:transparent}
+  .wrap{max-width:1400px;margin:0 auto;padding:18px}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .title{font-size:1.25rem;font-weight:800}
+  .pill{font-size:.85rem;color:var(--muted)}
+  .filters{display:flex;gap:10px;align-items:center}
+  select,input[type="search"]{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:#fff}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 6px 20px rgba(17,24,39,.05)}
+  .tabs{display:flex;gap:10px;margin:14px 0}
+  .tab{padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer}
+  .tab.active{background:#eef2ff;border-color:#c7d2fe}
+  .table-wrap{margin-top:12px;overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff;max-height:620px}
+  table{width:100%;border-collapse:collapse;min-width:1200px}
+  th,td{padding:12px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+  th{background:#f8fafc;font-weight:700;color:#334155;position:sticky;top:0;z-index:1}
+  .badge{padding:4px 8px;border-radius:999px;font-size:.8rem;border:1px solid var(--line);background:#fff}
+  .badge.gray{background:#e5e7eb}
+  .badge.green{background:#dcfce7;border-color:#bbf7d0}
+  .badge.purple{background:#ede9fe;border-color:#ddd6fe}
+  .actions{display:flex;gap:8px;flex-wrap:nowrap}
+  .td-uuid{max-width:460px;overflow:hidden;text-overflow:ellipsis}
+  .td-acciones{min-width:360px}
+
+  /* === Modal cancelación === */
+  .cm-backdrop{position:fixed;inset:0;background:rgba(17,24,39,.45);display:none;align-items:center;justify-content:center;z-index:9999}
+  .cm-backdrop.show{display:flex}
+  .cm-card{width:min(560px,92vw);background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .cm-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+  .cm-title{font-weight:800;color:#1f2937}
+  .cm-close{border:none;background:transparent;font-size:20px;cursor:pointer;color:#6b7280}
+  .cm-body{padding:14px 16px;display:grid;gap:12px}
+  .cm-kv{color:#6b7280;font-size:.92rem}
+  .cm-actions{display:flex;gap:10px;justify-content:flex-end;padding:14px 16px;border-top:1px solid var(--line)}
+  .cm-btn{display:inline-flex;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:#fff;color:#111827;font-weight:700;cursor:pointer}
+  .cm-btn:hover{background:#f3f4f6}
+  .cm-btn-primary{background:var(--brand);color:#fff;border-color:transparent}
+  .cm-btn-danger{background:var(--danger);color:#fff;border-color:transparent}
+  .cm-btn-ghost{background:transparent}
+  .cm-input, .cm-select{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px}
+  .cm-hint{font-size:.85rem;color:#6b7280}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="side">
+    <div class="logo">HSC</div>
+    <div class="nav">
+      <a class="btn" href="/inicio-app">🏠 Inicio app</a>
+      <a class="btn btn-primary" href="/facturas/nueva">➕ Nueva factura</a>
+      <a class="btn" href="/pagos/nuevo">💳 Complemento</a>
+      <a class="btn" href="/clientes">👤 Clientes</a>
+      <!-- eliminado: visor fiscal -->
+    </div>
+  </aside>
+
+  <main class="wrap">
+    <div class="row">
+      <div>
+        <div class="title">Facturación</div>
+        <div class="pill">Lista mensual y acciones</div>
+      </div>
+      <div class="filters">
+        <input id="q" type="search" placeholder="Buscar: receptor, RFC o UUID" />
+        <label for="mes">Mes</label>
+        <select id="mes"></select>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div id="tabEmitidas" class="tab active">Emitidas</div>
+      <div id="tabRecibidas" class="tab">Recibidas</div>
+      <div id="tabPlantillas" class="tab">Plantillas</div>
+    </div>
+
+    <div class="card" id="panelEmitidas">
+      <div class="table-wrap">
+        <table id="tbl">
+          <thead>
+            <tr>
+              <th>Receptor</th>
+              <th>RFC</th>
+              <th>Fecha</th>
+              <th>Total (MXN)</th>
+              <th>Estatus</th>
+              <th>Método</th>
+              <th>Tipo</th>
+              <th>Estatus de pago</th>
+              <th class="td-uuid">Folio fiscal</th>
+              <th class="td-acciones">Acciones</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="panelRecibidas" style="display:none">Pendiente.</div>
+    <div class="card" id="panelPlantillas" style="display:none">Pendiente.</div>
+  </main>
+</div>
+
+<!-- ===== Modal Cancelación SAT ===== -->
+<div id="cm" class="cm-backdrop" aria-modal="true" role="dialog">
+  <div class="cm-card" role="document">
+    <div class="cm-head">
+      <div class="cm-title">Cancelación de CFDI</div>
+      <button class="cm-close" id="cmClose" aria-label="Cerrar">×</button>
+    </div>
+    <div class="cm-body">
+      <div class="cm-kv" id="cmInfo"></div>
+      <div>
+        <label for="cmMotivo">Motivo de cancelación</label>
+        <select id="cmMotivo" class="cm-select">
+          <option value="">— Selecciona —</option>
+          <option value="01">01 — Comprobante emitido con errores con relación</option>
+          <option value="02">02 — Comprobante emitido con errores sin relación</option>
+          <option value="03">03 — No se llevó a cabo la operación</option>
+          <option value="04">04 — Operación nominativa relacionada en la factura global</option>
+        </select>
+        <div class="cm-hint">Si eliges 01, indica el folio fiscal (UUID) que sustituye.</div>
+      </div>
+      <div id="cmSubWrap" class="hidden">
+        <label for="cmSubfolio">Folio relacionado (UUID a relacionar)</label>
+        <input id="cmSubfolio" class="cm-input" type="text" placeholder="UUID que sustituye" />
+      </div>
+      <div id="cmErr" class="cm-hint" style="color:var(--danger)"></div>
+    </div>
+    <div class="cm-actions">
+      <button class="cm-btn cm-btn-ghost" id="cmCancel">Cancelar</button>
+      <button class="cm-btn cm-btn-danger" id="cmConfirm">Confirmar cancelación</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s=>document.querySelector(s);
+const tbody = $('#tbl tbody');
+const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Plantillas:'#panelPlantillas'};
+const clickLocks = new Set(); // antirrebote por fila
+
+['Emitidas','Recibidas','Plantillas'].forEach(n=>{
+  const tab = document.getElementById('tab'+n);
+  tab.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    Object.values(panels).forEach(sel=>document.querySelector(sel).style.display='none');
+    document.querySelector(panels[n]).style.display='block';
+  };
+});
+
+// meses últimos 12
+(function initMeses(){
+  const sel = document.getElementById('mes');
+  const now = new Date();
+  for(let i=0;i<12;i++){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const v = d.toISOString().slice(0,7);
+    const o = document.createElement('option');
+    o.value=v; o.textContent=d.toLocaleDateString('es-MX',{year:'numeric',month:'long'});
+    sel.appendChild(o);
+  }
+  sel.onchange=load;
+})();
+
+$('#q').addEventListener('input', load);
+
+function tipoBadge(t){
+  if(t==='I') return '<span class="badge">Ingreso</span>';
+  if(t==='P') return '<span class="badge purple">Pago</span>';
+  return `<span class="badge">${t||''}</span>`;
+}
+
+async function load(){
+  tbody.innerHTML = '<tr><td colspan="10">Cargando…</td></tr>';
+  try{
+    const r = await fetch('/api/facturas/list');
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error||'Error');
+    const m = $('#mes').value;
+    const q = ($('#q').value||'').toLowerCase();
+
+    let rows = (d.data||[]).filter(x => (x.date||'').startsWith(m));
+    if(q){
+      rows = rows.filter(x =>
+        (x.customer_name||'').toLowerCase().includes(q) ||
+        (x.customer_tax_id||'').toLowerCase().includes(q) ||
+        (x.uuid||'').toLowerCase().includes(q)
+      );
+    }
+
+    tbody.innerHTML='';
+    for(const x of rows){
+      const tr = document.createElement('tr');
+      const pagoStatus =
+        x.type==='P' ? '<span class="badge purple">REP</span>' :
+        (x.paid ? '<span class="badge green">Pagado</span>' :
+          (x.payment_method==='PUE' ? '<span class="badge green">Completo</span>' : '<span class="badge">Sin pagos</span>'));
+
+      tr.innerHTML = `
+        <td>${x.customer_name||''}</td>
+        <td>${x.customer_tax_id||''}</td>
+        <td>${(x.date||'').slice(0,10)}</td>
+        <td>$${Number(x.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+        <td>${x.status||''}</td>
+        <td><span class="badge gray">${x.payment_method||''}</span></td>
+        <td>${tipoBadge(x.type)}</td>
+        <td>${pagoStatus}</td>
+        <td class="td-uuid" title="${x.uuid||''}">${x.uuid||''}</td>
+        <td class="td-acciones">
+          <a class="btn" href="/api/invoices/${x.id}/pdf" target="_blank">👁 Ver</a>
+          <a class="btn" href="/api/invoices/${x.id}/pdf" target="_blank">PDF</a>
+          <a class="btn" href="/api/invoices/${x.id}/xml" target="_blank">XML</a>
+          ${
+            (x.type==='I' && x.payment_method==='PPD' && !x.paid)
+              ? `<button class="btn" data-goto="/pagos/nuevo?invoice_id=${encodeURIComponent(x.id)}&uuid=${encodeURIComponent(x.uuid||'')}" data-key="rep-${x.id}">💳 Complemento</button>`
+              : ''
+          }
+          <button class="btn btn-danger"
+                  data-cancel="${x.id}"
+                  data-total="${x.total||0}"
+                  data-cliente="${(x.customer_name||'').replace(/"/g,'&quot;')}"
+                  data-uuid="${x.uuid||''}"
+                  data-key="cancel-${x.id}">⛔ Cancelar</button>
+        </td>`;
+      tbody.appendChild(tr);
+    }
+
+    const pad = Math.max(0, 10 - rows.length);
+    for(let i=0;i<pad;i++){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td colspan="10">&nbsp;</td>`;
+      tbody.appendChild(tr);
+    }
+
+    // Navegar a REP
+    tbody.querySelectorAll('button[data-goto]').forEach(btn=>{
+      btn.onclick = (e)=>{
+        const k = e.currentTarget.dataset.key;
+        if(clickLocks.has(k)) return;
+        clickLocks.add(k);
+        e.currentTarget.setAttribute('disabled','disabled');
+        location.href = e.currentTarget.dataset.goto;
+      };
+    });
+
+    // Abrir modal de cancelación
+    tbody.querySelectorAll('button[data-cancel]').forEach(btn=>{
+      btn.onclick = (e)=>{
+        const k = e.currentTarget.dataset.key;
+        if(clickLocks.has(k)) return;
+        openCancelModal({
+          key: k,
+          id: e.currentTarget.dataset.cancel,
+          total: Number(e.currentTarget.dataset.total||0),
+          cliente: e.currentTarget.dataset.cliente || '',
+          uuid: e.currentTarget.dataset.uuid || ''
+        }, e.currentTarget);
+      };
+    });
+
+  }catch(e){
+    tbody.innerHTML = `<tr><td colspan="10">${e.message}</td></tr>`;
+  }
+}
+
+load();
+
+/* ===== Lógica del modal de cancelación ===== */
+const cm = $('#cm');
+const cmInfo = $('#cmInfo');
+const cmMotivo = $('#cmMotivo');
+const cmSub = $('#cmSubWrap');
+const cmSubfolio = $('#cmSubfolio');
+const cmErr = $('#cmErr');
+const cmClose = $('#cmClose');
+const cmCancel = $('#cmCancel');
+const cmConfirm = $('#cmConfirm');
+
+let cancelCtx = null; // {key,id,total,cliente,uuid,btn}
+
+function money(n){ return Number(n||0).toLocaleString('es-MX',{style:'currency',currency:'MXN'}); }
+
+function openCancelModal(ctx, btn){
+  cancelCtx = {...ctx, btn};
+  cmInfo.textContent = `¿Cancelar la factura de ${money(ctx.total)} del cliente ${ctx.cliente}?`;
+  cmMotivo.value = '';
+  cmSub.classList.add('hidden');
+  cmSubfolio.value = '';
+  cmErr.textContent = '';
+  cm.classList.add('show');
+}
+
+function closeCancelModal(){
+  cm.classList.remove('show');
+  cancelCtx = null;
+}
+
+cmMotivo.addEventListener('change',()=>{
+  cmErr.textContent = '';
+  if(cmMotivo.value === '01'){
+    cmSub.classList.remove('hidden');
+  } else {
+    cmSub.classList.add('hidden');
+    cmSubfolio.value = '';
+  }
+});
+
+cmClose.addEventListener('click', closeCancelModal);
+cmCancel.addEventListener('click', closeCancelModal);
+
+cmConfirm.addEventListener('click', async ()=>{
+  if(!cancelCtx) return;
+  const motive = cmMotivo.value;
+  const substitution_folio = cmSubfolio.value.trim();
+  cmErr.textContent = '';
+
+  if(!motive){
+    cmErr.textContent = 'Selecciona un motivo.';
+    return;
+  }
+  if(motive==='01' && !substitution_folio){
+    cmErr.textContent = 'Indica el UUID a relacionar cuando el motivo es 01.';
+    return;
+  }
+
+  // antirrebote del botón original
+  const k = cancelCtx.key;
+  if(cancelCtx.btn){
+    cancelCtx.btn.setAttribute('disabled','disabled');
+  }
+  clickLocks.add(k);
+
+  try{
+    const payload = { motive };
+    if(substitution_folio) payload.substitution_folio = substitution_folio;
+
+    const r = await fetch(`/api/invoices/${encodeURIComponent(cancelCtx.id)}/cancel`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if(!r.ok || !d.ok){
+      throw new Error(d.body || d.error || 'Error al cancelar');
+    }
+    closeCancelModal();
+    alert('CFDI cancelado.');
+    load();
+  }catch(err){
+    cmErr.textContent = err.message || String(err);
+    if(cancelCtx.btn){
+      cancelCtx.btn.removeAttribute('disabled');
+    }
+    clickLocks.delete(k);
+  }
+});
+</script>
+</body>
+</html>
+
+

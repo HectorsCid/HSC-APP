@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Detalle de cotización</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{--bg:#fff;--card:#f9fafb;--ink:#111827;--muted:#6b7280;--line:#e5e7eb;--brand:#374151;--ok:#22c55e}
+    *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Roboto,system-ui,sans-serif}
+    .wrap{max-width:1000px;margin:0 auto;padding:18px}
+    .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .title{font-weight:800;font-size:1.2rem}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;color:#111827;text-decoration:none}
+    .btn:hover{background:#f3f4f6}
+    .btn-ok{background:var(--ok);color:#fff;border-color:transparent}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+    .grid{display:grid;gap:12px}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .kv{display:grid;grid-template-columns:140px 1fr;gap:6px 12px}
+    .muted{color:var(--muted)}
+    .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:10px}
+    table{width:100%;border-collapse:collapse;min-width:760px}
+    th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:14px}
+    th{background:#f8fafc;font-weight:700;color:#334155}
+    td.numeric{text-align:right;white-space:nowrap}
+    .tot{font-weight:800}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="title">Detalle de cotización</div>
+      <div class="row">
+        <a class="btn" href="/cotizaciones">← Volver</a>
+        {% if q and q.view_url %}
+          <a class="btn" href="{{ q.view_url }}" target="_blank">📄 Ver PDF</a>
+        {% endif %}
+        {% if q %}
+          <a class="btn btn-ok" href="/facturas/nueva?quote_id={{ q.id }}">🧾 Mandar a facturar</a>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if not q %}
+      <div class="card">No encontrada.</div>
+    {% else %}
+      <div class="card grid">
+        <div class="kv">
+          <div class="muted">Cliente</div><div>{{ q.cliente }}</div>
+          <div class="muted">Folio</div><div>{{ q.folio or q.id }}</div>
+          <div class="muted">Fecha</div><div>{{ q.fecha }}</div>
+          <div class="muted">Total</div><div>${{ '%.2f'|format(q.total or 0) }}</div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Descripción</th>
+                <th style="width:110px">Cantidad</th>
+                <th style="width:140px">Precio</th>
+                <th style="width:80px">IVA</th>
+                <th style="width:140px">Importe</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set st = 0 %}
+              {% for c in q.conceptos %}
+                {% set base = (c.cantidad or 0) * (c.precio_unitario or 0) %}
+                {% set imp = base * (1 + (c.tasa_iva or 0)) %}
+                {% set st = st + imp %}
+                <tr>
+                  <td>{{ c.descripcion }}</td>
+                  <td class="numeric">{{ '%.2f'|format(c.cantidad or 0) }}</td>
+                  <td class="numeric">${{ '%.2f'|format(c.precio_unitario or 0) }}</td>
+                  <td class="numeric">{{ '%.0f'|format(((c.tasa_iva or 0)*100)) }}%</td>
+                  <td class="numeric">${{ '%.2f'|format(imp) }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr><td colspan="4" class="numeric tot">TOTAL</td><td class="numeric tot">${{ '%.2f'|format(q.total or st) }}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</body>
+</html>
