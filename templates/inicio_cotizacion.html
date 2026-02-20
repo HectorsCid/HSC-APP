@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Inicio · Cotizaciones</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#ffffff; --card:#f9fafb; --ink:#1f2937; --muted:#6b7280;
+      --line:#e5e7eb; --brand:#374151; --ok:#22c55e; --accent:#3b82f6; --danger:#ef4444;
+      --radius:14px;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
+    .wrap{max-width:1100px;margin:0 auto;padding:18px}
+    .top{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .title{font-size:1.25rem;font-weight:800}
+    .pill{font-size:.85rem;color:var(--muted)}
+    .actions{display:flex;gap:10px;flex-wrap:wrap}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);cursor:pointer;font-weight:700;font-size:14px;background:#fff;color:#0f172a;text-decoration:none}
+    .btn:hover{background:#f3f4f6}
+    .btn-primary{background:var(--brand);color:#fff;border-color:transparent}
+    .btn-accent{background:var(--accent);color:#fff;border-color:transparent}
+    .btn-ok{background:var(--ok);color:#fff;border-color:transparent}
+    .btn-danger{background:var(--danger);color:#fff;border-color:transparent}
+
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:0 6px 20px rgba(17,24,39,.05)}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .grow{flex:1}
+    input[type="search"]{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;background:#fff;outline:none}
+
+    .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:10px}
+    table{width:100%;border-collapse:collapse;min-width:860px}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;font-size:14px}
+    th{background:#f8fafc;font-weight:700;color:#334155}
+    td.numeric{text-align:right;white-space:nowrap}
+    .muted{color:var(--muted)}
+    .flash{display:none;margin:12px 0;padding:10px 12px;border-radius:12px;font-weight:600}
+    .flash.ok{display:block;background:#dcfce7;border:1px solid #bbf7d0;color:#14532d}
+    .flash.err{display:block;background:#fee2e2;border:1px solid #fecaca;color:#7f1d1d}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <div class="title">Cotizaciones</div>
+        <div class="pill">Lista reciente con acciones</div>
+      </div>
+      <div class="actions">
+        <a class="btn" href="/inicio-app">🏠 Inicio</a>
+        <a id="lnkNueva" class="btn btn-accent" href="/cotizador">🆕 Nueva cotización</a>
+      </div>
+    </div>
+
+    <div id="msg" class="flash"></div>
+
+    <div class="card">
+      <div class="row">
+        <input id="q" type="search" class="grow" placeholder="Buscar por cliente, folio o concepto…" />
+        <button id="btnReload" class="btn" type="button">🔄 Actualizar</button>
+      </div>
+
+      <div class="table-wrap">
+        <table id="tabla">
+          <thead>
+            <tr>
+              <th style="width:28%">Cliente</th>
+              <th style="width:14%">Fecha</th>
+              <th style="width:12%">Folio</th>
+              <th style="width:12%">Total</th>
+              <th>Resumen</th>
+              <th style="width:180px">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="6" class="muted">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    const tbody = document.getElementById('tbody');
+    const q = document.getElementById('q');
+    const msg = (ok, t) => {
+      const el = document.getElementById('msg');
+      el.className = 'flash ' + (ok ? 'ok' : 'err');
+      el.textContent = t;
+    };
+
+    async function fetchList(){
+      const urls = ['/api/cotizaciones/list?limit=100','/api/cotizaciones?limit=100','/api/quotes/list?limit=100'];
+      for(const u of urls){
+        try{
+          const r = await fetch(u, {headers:{'Accept':'application/json'}});
+          if(!r.ok) continue;
+          const raw = await r.json();
+          const items = Array.isArray(raw) ? raw
+                       : Array.isArray(raw.items) ? raw.items
+                       : Array.isArray(raw.data) ? raw.data
+                       : [];
+          if(items.length) return items;
+        }catch{}
+      }
+      return [];
+    }
+
+    const money = n => {
+      const v = Number(n||0);
+      return isFinite(v) ? v.toLocaleString('es-MX',{style:'currency',currency:'MXN'}) : '';
+    };
+    const fmtDate = s => {
+      if(!s) return '';
+      try{
+        const d = new Date(s);
+        if(isNaN(d)) return String(s);
+        return d.toLocaleDateString('es-MX',{year:'2-digit',month:'2-digit',day:'2-digit'});
+      }catch{ return String(s); }
+    };
+
+    function firstConcept(raw){
+      const arr = raw.conceptos || raw.items || raw.detalles || raw.partidas || [];
+      if(Array.isArray(arr) && arr.length){
+        const c = arr[0];
+        return c.descripcion || c.desc || c.nombre || '';
+      }
+      return raw.resumen || '';
+    }
+
+    function calcTotal(raw){
+      if(raw.total != null) return raw.total;
+      if(raw.importe_total != null) return raw.importe_total;
+      const arr = raw.conceptos || raw.items || [];
+      if(Array.isArray(arr) && arr.length){
+        try{
+          return arr.reduce((s,c)=>{
+            const q = Number(c.cantidad||c.qty||1);
+            const pu= Number(c.precio_unitario||c.valor_unitario||c.price||0);
+            const iva= Number(c.tasa_iva||0);
+            const base = q*pu;
+            return s + base + (base*iva);
+          },0);
+        }catch{}
+      }
+      return null;
+    }
+
+    function normalize(raw, i){
+      const id = raw.id || raw.folio || raw.numero || raw.uuid || String(i+1);
+      const cliente = raw.cliente || raw.nombre_cliente || (raw.receptor && (raw.receptor.nombre || raw.receptor.razon_social)) || raw.nombre || '';
+      const fecha = raw.fecha || raw.created_at || raw.fecha_emision || raw.fecha_creacion || '';
+      const folio = raw.folio || raw.numero || raw.id || '';
+      const total = calcTotal(raw);
+      const resumen = firstConcept(raw);
+
+      const view_url = raw.view_url || raw.pdf_url || (id ? `/cotizaciones/${encodeURIComponent(id)}` : '#');
+      const quote_id = raw.quote_id || id;
+      const facturar_url = quote_id ? `/facturas/nueva?quote_id=${encodeURIComponent(quote_id)}` : '#';
+
+      return { id, cliente, fecha, folio, total, resumen, view_url, facturar_url, _raw: raw };
+    }
+
+    function renderRows(list){
+      if(!list.length){
+        tbody.innerHTML = `<tr><td colspan="6" class="muted">Sin cotizaciones.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = list.map(it => `
+        <tr>
+          <td>${escapeHTML(it.cliente||'')}</td>
+          <td>${escapeHTML(fmtDate(it.fecha)||'')}</td>
+          <td>${escapeHTML(String(it.folio||''))}</td>
+          <td class="numeric">${it.total!=null ? money(it.total) : ''}</td>
+          <td class="muted">${escapeHTML((it.resumen||'').slice(0,80))}</td>
+          <td>
+            <div class="actions">
+              <a class="btn" href="${it.view_url}" target="_blank">👁️ Ver</a>
+              <button class="btn btn-ok" data-qid="${it.id}" data-fact-url="${it.facturar_url}" type="button">🧾 Mandar a facturar</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      tbody.querySelectorAll('button[data-qid]').forEach(btn=>{
+        btn.onclick = () => {
+          const url = btn.getAttribute('data-fact-url') || '#';
+          if(url === '#'){ msg(false,'No se pudo construir la URL de facturación.'); return; }
+          window.location.href = url;
+        };
+      });
+    }
+
+    function escapeHTML(s){
+      return String(s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    }
+
+    let DATA = [];
+    async function load(){
+      msg(true,'Cargando cotizaciones…');
+      const items = await fetchList();
+      DATA = items.map(normalize);
+      renderRows(DATA);
+      msg(true, `Cargadas ${DATA.length} cotizaciones.`);
+      setTimeout(()=>{ document.getElementById('msg').className='flash'; }, 1200);
+    }
+
+    q.addEventListener('input', ()=>{
+      const term = q.value.trim().toLowerCase();
+      if(!term) { renderRows(DATA); return; }
+      const f = DATA.filter(it => {
+        return [it.cliente, it.folio, it.resumen].some(v => String(v||'').toLowerCase().includes(term));
+      });
+      renderRows(f);
+    });
+
+    document.getElementById('btnReload').addEventListener('click', load);
+    load();
+  })();
+  </script>
+</body>
+</html>
+
