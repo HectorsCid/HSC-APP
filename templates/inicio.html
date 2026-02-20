@@ -6,7 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
-      /* Levemente más oscuro (sin cambiar el diseño) */
       --bg:#e3e8f0;
       --card:#ffffff;
       --ink:#111827;
@@ -24,10 +23,8 @@
     .top{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
     .title{font-size:1.25rem;font-weight:800;letter-spacing:.2px}
     .pill{font-size:.85rem;color:var(--muted)}
-
     .grid{display:grid;gap:16px}
     @media(min-width:840px){ .grid-2{grid-template-columns:1.2fr .8fr} }
-
     .card{
       background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
       padding:16px; box-shadow:0 8px 22px rgba(17,24,39,.06);
@@ -36,12 +33,11 @@
     label{display:block;font-size:.9rem;color:var(--muted);margin:8px 0 6px}
     input,select,textarea{
       width:100%; border:1px solid var(--line); border-radius:12px; padding:12px 12px; font-size:16px;
-      background:#edf2f8;; outline:none; color:var(--ink);
+      background:#edf2f8; outline:none; color:var(--ink);
     }
     textarea{min-height:92px;resize:vertical}
     .row{display:grid;gap:12px}
     @media(min-width:560px){ .row-2{grid-template-columns:1fr 1fr} }
-
     .btn{
       display:inline-flex; align-items:center; justify-content:center; gap:8px;
       padding:12px 14px; border-radius:12px; border:1px solid var(--line); cursor:pointer; font-weight:700; font-size:15px;
@@ -53,41 +49,52 @@
     .btn-ok{background:var(--ok); color:#04140a; border-color:transparent}
     .btn-danger{background:var(--danger); color:#fff; border-color:transparent}
     .actions{display:flex;flex-wrap:wrap;gap:10px}
-
     .flash{
       background:#fee2e2; color:#7f1d1d; border:1px solid #fecaca;
       padding:10px 12px; border-radius:12px; margin:12px 0; font-weight:600;
     }
-
     .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
     table{width:100%;border-collapse:collapse;min-width:720px}
     th,td{padding:12px 12px;border-bottom:1px solid var(--line);text-align:left}
     th{background:#f1f5f9;font-weight:700;color:#1f2937}
     tfoot td{font-weight:800;background:#f1f5f9}
-
     .subtle{color:var(--muted);font-size:.88rem}
-
-    /* Ajustes para acciones en la tabla en pantallas angostas */
     .t-actions .actions { display:flex; flex-wrap:wrap; }
     .t-actions .btn{ padding:8px 10px; font-size:14px; }
+
+    /* mini switch */
+    .mini-switch{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      font-weight:700;
+      color:#111827;
+      user-select:none;
+    }
+    .mini-switch input[type="checkbox"]{
+      width:auto;
+      transform:scale(1.1);
+      margin:0;
+      accent-color: var(--brand);
+    }
+    .mini-note{
+      font-weight:600;
+      color:var(--muted);
+      font-size:.85rem;
+      margin-left:6px;
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="top">
-      <!-- quitamos botones duplicados aquí -->
-       <div class="top">
-  <div>
-    <div class="title">Cotizador HSC</div>
-    <div class="pill">Esta vez vamos a vender</div>
-  </div>
-
-  <!-- Botón Inicio -->
-  <div>
-    <a class="btn" href="/inicio-app">🏠 Inicio</a>
-  </div>
-</div>
-
+      <div>
+        <div class="title">Cotizador HSC</div>
+        <div class="pill">Esta vez vamos a vender</div>
+      </div>
+      <div>
+        <a class="btn" href="/inicio-app">🏠 Inicio</a>
+      </div>
     </div>
 
     {% with mensajes = get_flashed_messages() %}
@@ -99,7 +106,7 @@
     {% endwith %}
 
     <!-- Formulario de datos -->
-    <form class="grid grid-2" action="{{ url_for('guardar_datos') }}" method="post">
+    <form id="form-datos" class="grid grid-2" action="{{ url_for('guardar_datos') }}" method="post">
       <div class="card">
         <h3 class="section-title">Cliente y condiciones</h3>
 
@@ -167,7 +174,6 @@
       <div class="row row-2">
         <div style="grid-column:1/-1">
           <label>Descripción</label>
-          <!-- CAMBIO: ahora es textarea, como comentarios -->
           <textarea name="descripcion" rows="3" placeholder="Describe la partida…"></textarea>
         </div>
         <div>
@@ -221,38 +227,54 @@
           </tr>
           {% endif %}
         </tbody>
+
         <tfoot>
-  <tr>
-    <td colspan="3"></td>
-    <td style="text-align:right">SUBTOTAL</td>
-    <td style="text-align:right">{{ subtotal|currency }}</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td colspan="3"></td>
-    <td style="text-align:right">IVA 16%</td>
-    <td style="text-align:right">{{ iva|currency }}</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td colspan="3"></td>
-    <td style="text-align:right">ISR retenido 1.25%</td>
-    <td style="text-align:right">-{{ isr_retenido|currency }}</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td colspan="3"></td>
-    <td style="text-align:right">IVA retenido 10.6667%</td>
-    <td style="text-align:right">-{{ iva_retenido|currency }}</td>
-    <td></td>
-  </tr>
-  <tr>
-    <td colspan="3"></td>
-    <td style="text-align:right"><strong>TOTAL</strong></td>
-    <td style="text-align:right"><strong>{{ total|currency }}</strong></td>
-    <td></td>
-  </tr>
-</tfoot>
+          <tr>
+            <td colspan="3"></td>
+            <td style="text-align:right">SUBTOTAL</td>
+            <td style="text-align:right">{{ subtotal|currency }}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td colspan="3"></td>
+            <td style="text-align:right">IVA 16%</td>
+            <td style="text-align:right">{{ iva|currency }}</td>
+            <td></td>
+          </tr>
+
+          <tr>
+            <td colspan="3"></td>
+            <td style="text-align:right">
+              <span class="mini-switch">
+                <input
+                  id="chk_ret"
+                  type="checkbox"
+                  name="usar_retenciones"
+                  form="form-datos"
+                  {% if datos.usar_retenciones %}checked{% endif %}
+                />
+                ISR retenido 1.25%
+              </span>
+              <span class="mini-note">(activar retenciones)</span>
+            </td>
+            <td style="text-align:right">-{{ (isr_retenido or 0)|currency }}</td>
+            <td></td>
+          </tr>
+
+          <tr>
+            <td colspan="3"></td>
+            <td style="text-align:right">IVA retenido 10.6667%</td>
+            <td style="text-align:right">-{{ (iva_retenido or 0)|currency }}</td>
+            <td></td>
+          </tr>
+
+          <tr>
+            <td colspan="3"></td>
+            <td style="text-align:right"><strong>TOTAL</strong></td>
+            <td style="text-align:right"><strong>{{ total|currency }}</strong></td>
+            <td></td>
+          </tr>
+        </tfoot>
       </table>
     </div>
 
@@ -282,7 +304,6 @@
         const d = clientes[nombreCliente];
         if(!d) return;
 
-        // Atención
         selectAtencion.innerHTML = '';
         (d.atencion || []).forEach((persona, i) => {
           const opt = document.createElement('option');
@@ -298,21 +319,26 @@
         vigencia.value  = d.vigencia || '';
       }
 
-      // Inicial
       if(selectCliente.value){ cargarDatosCliente(selectCliente.value); }
 
-      // Cambio de cliente
       selectCliente.addEventListener('change', () => {
         cargarDatosCliente(selectCliente.value);
       });
 
-      // Botón Editar cliente -> ruta sin parámetros (tu endpoint no recibe nombre)
       const btnEditar = document.getElementById('btnEditarCliente');
       btnEditar.addEventListener('click', () => {
         const c = selectCliente.value;
         if(!c){ alert('Primero selecciona un cliente.'); return; }
         window.location.href = "{{ url_for('editar_cliente') }}";
       });
+
+      // Opcional: si quieres que al marcar retenciones se recalculen "al momento" sin dar click:
+      const chk = document.getElementById('chk_ret');
+      if(chk){
+        chk.addEventListener('change', () => {
+          document.getElementById('form-datos').submit();
+        });
+      }
     });
   </script>
 </body>

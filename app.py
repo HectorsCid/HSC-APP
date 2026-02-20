@@ -434,15 +434,29 @@ def inicio():
 
     subtotal = sum(p['total'] for p in partidas)
     iva = subtotal * 0.16
-    total = subtotal + iva
-    return render_template('inicio.html',
-                           partidas=partidas,
-                           datos=datos_cliente,
-                           clientes=clientes_predefinidos,
-                           subtotal=subtotal,
-                           iva=iva,
-                           total=total,
-                           today=date.today().isoformat())
+
+    usar_retenciones = bool(datos_cliente.get("usar_retenciones"))
+    if usar_retenciones:
+        isr_retenido = subtotal * 0.0125
+        iva_retenido = iva * (2/3)
+    else:
+        isr_retenido = 0
+        iva_retenido = 0
+
+    total = subtotal + iva - isr_retenido - iva_retenido
+
+    return render_template(
+        'inicio.html',
+        partidas=partidas,
+        datos=datos_cliente,
+        clientes=clientes_predefinidos,
+        subtotal=subtotal,
+        iva=iva,
+        isr_retenido=isr_retenido,
+        iva_retenido=iva_retenido,
+        total=total,
+        today=date.today().isoformat()
+    )
 
 @app.route('/debug/clientes')
 def debug_clientes():
@@ -488,6 +502,8 @@ def guardar_datos():
     datos_cliente['vigencia'] = request.form.get('vigencia', '')
     datos_cliente['cotizacion'] = request.form.get('cotizacion', '')
     datos_cliente['comentarios'] = request.form.get('comentarios', '')
+    datos_cliente["usar_retenciones"] = ("usar_retenciones" in request.form)
+    datos_cliente["usar_retenciones"] = (request.form.get("usar_retenciones") == "on")
     return redirect(url_for('inicio'))
 
 @app.route('/agregar', methods=['POST'])
@@ -968,24 +984,18 @@ def vista_previa():
     datos = dict(datos_cliente)
     partidas_actuales = list(partidas)
 
-    subtotal = sum(
-        (p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0)
-        for p in partidas_actuales
-    )
-
+    subtotal = sum((p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0) for p in partidas_actuales)
     iva = subtotal * 0.16
 
     usar_retenciones = bool(datos.get("usar_retenciones"))
-
     if usar_retenciones:
         isr_retenido = subtotal * 0.0125
-        iva_retenido = iva * 0.106667
+        iva_retenido = iva * (2/3)
     else:
-        isr_retenido = 0.0
-        iva_retenido = 0.0
+        isr_retenido = 0
+        iva_retenido = 0
 
     total = subtotal + iva - isr_retenido - iva_retenido
-
     img_path = Path("img/logo.png").resolve().as_uri()
 
     return render_template(
@@ -999,9 +1009,7 @@ def vista_previa():
         iva_retenido=iva_retenido,
         img_path=img_path,
         preview=True
-    )
-# =============================== Explorador de cotizaciones ================================
-@app.route('/repositorio')
+    )@app.route('/repositorio')
 def repositorio():
     BASE_LOCAL_DRIVE = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
     use_drive = IS_RENDER or (not os.path.isdir(BASE_LOCAL_DRIVE))
