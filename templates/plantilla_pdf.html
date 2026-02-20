@@ -130,9 +130,7 @@
       <div class="row"><div class="label">Vigencia</div><div class="value">{{ datos.vigencia or '—' }}</div></div>
       <div class="row"><div class="label">Anticipo</div><div class="value">{{ datos.anticipo or '—' }}</div></div>
       <div class="row"><div class="label">Tiempo de entrega</div><div class="value">{{ datos.tiempo or '—' }}</div></div>
-      {% if datos.comentarios %}
-      <div class="row"><div class="label">Notas</div><div class="value">{{ datos.comentarios }}</div></div>
-      {% endif %}
+      
     </div>
   </section>
 
@@ -181,13 +179,15 @@
       • Tiempos de entrega sujetos a disponibilidad.<br>
       • Cualquier cambio en el alcance puede modificar el precio.
     </div>
-    <div class="totals">
-      <table>
-        <tr><td>Subtotal</td><td style="text-align:right">${{ '%.2f'|format(subtotal) }}</td></tr>
-        <tr><td>IVA 16%</td><td style="text-align:right">${{ '%.2f'|format(iva) }}</td></tr>
-        <tr class="strong"><td>Total</td><td style="text-align:right">${{ '%.2f'|format(total) }}</td></tr>
-      </table>
-    </div>
+   <div class="totals">
+  <table>
+    <tr><td>Subtotal</td><td style="text-align:right">${{ '%.2f'|format(subtotal) }}</td></tr>
+    <tr><td>IVA trasladado 16%</td><td style="text-align:right">${{ '%.2f'|format(iva) }}</td></tr>
+    <tr><td>ISR retenido 1.25%</td><td style="text-align:right">-${{ '%.2f'|format(isr_retenido) }}</td></tr>
+    <tr><td>IVA retenido 10.6667%</td><td style="text-align:right">-${{ '%.2f'|format(iva_retenido) }}</td></tr>
+    <tr class="strong"><td>Total</td><td style="text-align:right">${{ '%.2f'|format(total) }}</td></tr>
+  </table>
+</div>
   </section>
 
   <!-- Condiciones comerciales (a lo ancho) -->

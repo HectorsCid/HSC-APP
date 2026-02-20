@@ -1,5 +1,12 @@
 # app.py
-from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file, abort, jsonify
+from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file, abort, jsonify, current_app
+
+app = Flask(__name__)
+@app.get("/ping_root")
+def ping_root():
+    return "pong", 200
+
+
 
 from markupsafe import escape
 from datetime import date, datetime
@@ -25,6 +32,30 @@ from google.auth.exceptions import RefreshError
 # Otros
 from werkzeug.utils import safe_join
 from reportes_bp import reportes_bp
+
+from facturacion_bp import facturacion_bp
+app.register_blueprint(facturacion_bp)
+print(">>> Blueprint facturacion registrado")
+print(app.url_map)
+
+from pagos_bp import pagos_bp
+app.register_blueprint(pagos_bp)
+
+# imports facturas
+
+from pathlib import Path
+
+from flask import current_app, render_template
+
+import json, sys
+from flask import current_app, render_template
+
+# Fallback a variable global si existe
+try:
+    # importa sin romper si no existe
+    from facturacion_bp import clientes_predefinidos  # ya dice "cargados: 14" en logs
+except Exception:
+    clientes_predefinidos = []
 
 # --- Google Drive scopes y constantes ---
 SCOPES = [
@@ -120,7 +151,9 @@ IS_RENDER = bool(os.environ.get('RENDER') or
                  os.environ.get('RENDER_EXTERNAL_HOSTNAME'))
 AUTO_SYNC_FROM_DRIVE = True  # si no quieres en local, pon False
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
+app.static_folder = "static"
+app.template_folder = "templates"
+
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "superclave")
 app.register_blueprint(reportes_bp)
 
@@ -313,14 +346,15 @@ def inicio():
         datos_cliente['cotizacion'] = obtener_siguiente_folio()
 
     subtotal = sum(p['total'] for p in partidas)
-    iva = subtotal * 0.16
-    total = subtotal + iva
+    iva, isr_retenido, iva_retenido, total = calcular_totales_con_retenciones(subtotal)
     return render_template('inicio.html',
                            partidas=partidas,
                            datos=datos_cliente,
                            clientes=clientes_predefinidos,
                            subtotal=subtotal,
                            iva=iva,
+                           isr_retenido=isr_retenido,
+                           iva_retenido=iva_retenido,
                            total=total,
                            today=date.today().isoformat())
 
@@ -415,15 +449,25 @@ def limpiar():
 @app.route('/nuevo_cliente', methods=['GET', 'POST'])
 def nuevo_cliente():
     if request.method == 'POST':
-        nombre = (request.form['nombre'] or '').strip()
-        atencion = [a.strip() for a in request.form.get('atencion', '').split(',') if a.strip()]
+        nombre = (request.form.get('nombre') or '').strip()
+        atencion = [a.strip() for a in (request.form.get('atencion') or '').split(',') if a.strip()]
         direccion = request.form.get('direccion', '')
         tiempo = request.form.get('tiempo', '')
         anticipo = request.form.get('anticipo', '')
         vigencia = request.form.get('vigencia', '')
+
+        # Datos fiscales opcionales
+        rfc            = (request.form.get('rfc') or '').strip().upper()
+        razon_social   = (request.form.get('razon_social') or request.form.get('razon') or '').strip()
+        cp             = (request.form.get('cp') or '').strip()
+        regimen_fiscal = (request.form.get('regimen_fiscal') or '').strip()  # ej. 601, 612, 621, 626
+        uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # ej. G03, G01, P01
+
         if not nombre:
             flash("El nombre del cliente no puede estar vacío.")
             return redirect(url_for('nuevo_cliente'))
+
+        # Base existente
         clientes_predefinidos[nombre] = {
             "atencion": atencion,
             "direccion": direccion,
@@ -431,9 +475,19 @@ def nuevo_cliente():
             "anticipo": anticipo,
             "vigencia": vigencia
         }
+
+        # Solo guarda si vienen
+        if rfc:            clientes_predefinidos[nombre]["rfc"] = rfc
+        if razon_social:   clientes_predefinidos[nombre]["razon_social"] = razon_social
+        if cp:             clientes_predefinidos[nombre]["cp"] = cp
+        if regimen_fiscal: clientes_predefinidos[nombre]["regimen_fiscal"] = regimen_fiscal
+        if uso_cfdi:       clientes_predefinidos[nombre]["uso_cfdi"] = uso_cfdi
+
         guardar_clientes(clientes_predefinidos)
         return redirect(url_for('inicio'))
+
     return render_template('agregar_cliente.html')
+
 
 def cargar_datos():
     try:
@@ -455,6 +509,28 @@ def calcular_totales(partidas):
     total = subtotal + iva
     return subtotal, iva, total
 
+
+def calcular_totales_con_retenciones(subtotal):
+    """
+    Cotización (solo informativo):
+    - IVA 16% sobre subtotal
+    - ISR retenido 1.25% sobre subtotal (0.0125)
+    - IVA retenido 10.6667% sobre subtotal (0.106667)
+    Total = subtotal + IVA - ISR_ret - IVA_ret
+    """
+    try:
+        subtotal = float(subtotal or 0)
+    except Exception:
+        subtotal = 0.0
+
+    iva = round(subtotal * 0.16, 2)
+    isr_retenido = round(subtotal * 0.0125, 2)
+    iva_retenido = round(subtotal * 0.106667, 2)
+    total = round(subtotal + iva - isr_retenido - iva_retenido, 2)
+
+    return iva, isr_retenido, iva_retenido, total
+
+
 def abrir_drive_local(cliente_nombre):
     base = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
     cliente_seguro = (cliente_nombre or "SIN_CLIENTE").replace("/", "-").replace("\\", "-").strip()
@@ -465,6 +541,39 @@ def abrir_drive_local(cliente_nombre):
         print("📂 Abierto Drive local:", destino_dir)
     except Exception as e:
         print("⚠️ No se pudo abrir Drive local:", e)
+
+# ---------- NUEVO: registrar cotizaciones para inicio_cotizacion ----------
+def registrar_cotizacion(cot):
+    """
+    Guarda/actualiza una cotización en data/cotizaciones.json para que
+    /cotizaciones la liste. Upsert por id/folio.
+    """
+    base = Path(current_app.root_path) / "data"
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / "cotizaciones.json"
+
+    try:
+        arr = json.loads(path.read_text("utf-8")) if path.exists() else []
+        if not isinstance(arr, list):
+            arr = []
+    except Exception:
+        arr = []
+
+    cid = str(cot.get("id") or cot.get("folio") or "").strip()
+    if cid:
+        for i, q in enumerate(arr):
+            qid = str(q.get("id") or q.get("folio") or "").strip()
+            if qid and qid == cid:
+                arr[i] = {**q, **cot}
+                break
+        else:
+            arr.insert(0, cot)
+    else:
+        arr.insert(0, cot)
+
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(arr, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
 
 @app.route('/generar_pdf')
 def generar_pdf():
@@ -482,7 +591,8 @@ def generar_pdf():
         total = subtotal + iva
         return subtotal, iva, total
 
-    subtotal, iva, total = calcular_totales_mem(partidas_actuales)
+    subtotal = sum((p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0) for p in partidas_actuales)
+    iva, isr_retenido, iva_retenido, total = calcular_totales_con_retenciones(subtotal)
 
     cliente = (datos.get('cliente') or 'SIN_CLIENTE').strip()
     cot = (str(datos.get('cotizacion')) or 'S/F').strip()
@@ -500,6 +610,8 @@ def generar_pdf():
         partidas=partidas_actuales,
         subtotal=subtotal,
         iva=iva,
+        isr_retenido=isr_retenido,
+        iva_retenido=iva_retenido,
         total=total,
         img_path=img_path
     )
@@ -609,6 +721,48 @@ def generar_pdf():
     except Exception as _e:
         print("⚠️ No se pudo registrar en HistorialPDF:", _e)
 
+    # ---------- NUEVO: registrar cotización para /cotizaciones ----------
+    try:
+        conceptos = []
+        for p in partidas_actuales:
+            conceptos.append({
+                "descripcion": p.get("descripcion", "Concepto"),
+                "cantidad": float(p.get("cantidad", 1) or 1),
+                "precio_unitario": float(p.get("precio", 0) or 0),
+                "tasa_iva": 0.16,
+                "clave_prod_serv": "85121600",
+                "clave_unidad": "E48"
+            })
+
+        rec = {}
+        try:
+            if isinstance(clientes_predefinidos, dict):
+                cinfo = clientes_predefinidos.get(cliente, {})
+                if isinstance(cinfo, dict):
+                    rec = {
+                        "rfc": (cinfo.get("rfc") or "").upper(),
+                        "nombre": cinfo.get("razon_social") or cinfo.get("razon") or cinfo.get("nombre") or cliente,
+                        "cp": cinfo.get("cp") or cinfo.get("codigo_postal") or "",
+                        "regimen_fiscal": cinfo.get("regimen_fiscal") or "",
+                        "uso_cfdi": cinfo.get("uso_cfdi") or ""
+                    }
+        except Exception:
+            pass
+
+        registrar_cotizacion({
+            "id": str(cot),
+            "folio": str(cot),
+            "cliente": cliente,
+            "fecha": datetime.now().isoformat(timespec="seconds"),
+            "total": round(float(total), 2),
+            "view_url": archivo_url,           # ← AÑADIDO
+            "receptor": rec,
+            "conceptos": conceptos
+        })
+        print(f"🗂️ Cotización registrada para listado: {cot} ({cliente})")
+    except Exception as e:
+        print("⚠️ No se pudo registrar la cotización en data/cotizaciones.json:", e)
+
     mensaje = f"Cotización {cot} - {cliente}\nArchivo: {archivo_url}"
     wa_url = f"https://wa.me/?text={quote_plus(mensaje)}"
     mailto_url = f"mailto:?subject={quote_plus(f'Cotización {cot} - {cliente}')}&body={quote_plus(mensaje)}"
@@ -638,10 +792,17 @@ def editar_cliente():
     if request.method == 'POST':
         nuevo_nombre = (request.form.get('nombre') or "").strip()
         atencion = [a.strip() for a in (request.form.get('atencion') or "").split(',') if a.strip()]
-        direccion = request.form.get('direccion', '').strip()
-        tiempo = request.form.get('tiempo', '').strip()
-        anticipo = request.form.get('anticipo', '').strip()
-        vigencia = request.form.get('vigencia', '').strip()
+        direccion = (request.form.get('direccion') or '').strip()
+        tiempo    = (request.form.get('tiempo') or '').strip()
+        anticipo  = (request.form.get('anticipo') or '').strip()
+        vigencia  = (request.form.get('vigencia') or '').strip()
+
+        # Datos fiscales opcionales
+        rfc            = (request.form.get('rfc') or '').strip().upper()
+        razon_social   = (request.form.get('razon_social') or request.form.get('razon') or '').strip()
+        cp             = (request.form.get('cp') or '').strip()
+        regimen_fiscal = (request.form.get('regimen_fiscal') or '').strip()  # 601, 612, 621, 626
+        uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # G03, G01, P01
 
         if not nuevo_nombre:
             flash("El nombre del cliente no puede estar vacío.")
@@ -652,18 +813,32 @@ def editar_cliente():
             flash(f"Ya existe un cliente llamado '{nuevo_nombre}'. Elige otro nombre.")
             return redirect(url_for('editar_cliente'))
 
-        payload = {
+        # Merge con lo existente para no perder campos previos
+        merged = dict(datos)
+        merged.update({
             "atencion": atencion,
             "direccion": direccion,
             "tiempo": tiempo,
             "anticipo": anticipo,
             "vigencia": vigencia
-        }
+        })
 
+        def set_or_pop(obj, key, val):
+            if val: obj[key] = val
+            else:   obj.pop(key, None)
+
+        # Aplica opcionales solo si vienen
+        set_or_pop(merged, "rfc", rfc)
+        set_or_pop(merged, "razon_social", razon_social)
+        set_or_pop(merged, "cp", cp)
+        set_or_pop(merged, "regimen_fiscal", regimen_fiscal)
+        set_or_pop(merged, "uso_cfdi", uso_cfdi)
+
+        # Guarda y renombra si cambió el nombre
         if nuevo_nombre == nombre_actual:
-            clientes_predefinidos[nombre_actual] = payload
+            clientes_predefinidos[nombre_actual] = merged
         else:
-            clientes_predefinidos[nuevo_nombre] = payload
+            clientes_predefinidos[nuevo_nombre] = merged
             if nombre_actual in clientes_predefinidos:
                 del clientes_predefinidos[nombre_actual]
             datos_cliente['cliente'] = nuevo_nombre
@@ -672,9 +847,8 @@ def editar_cliente():
         flash("Cliente actualizado correctamente.")
         return redirect(url_for('inicio'))
 
-    return render_template('editar_cliente.html',
-                           cliente=nombre_actual,
-                           datos=datos)
+    return render_template('editar_cliente.html', cliente=nombre_actual, datos=datos)
+
 
 @app.route('/borrar_cliente', methods=['GET', 'POST'])
 def borrar_cliente():
@@ -708,13 +882,19 @@ def guardar_partidas(partidas):
 def vista_previa():
     guardar_datos(datos_cliente)
     guardar_partidas(partidas)
+
+    subtotal = sum(p['total'] for p in partidas)
+    iva, isr_retenido, iva_retenido, total = calcular_totales_con_retenciones(subtotal)
+
     return render_template(
         "plantilla_pdf.html",
         datos=datos_cliente,
         partidas=partidas,
-        subtotal=sum(p['total'] for p in partidas),
-        iva=sum(p['total'] for p in partidas) * 0.16,
-        total=sum(p['total'] for p in partidas) * 1.16,
+        subtotal=subtotal,
+        iva=iva,
+        isr_retenido=isr_retenido,
+        iva_retenido=iva_retenido,
+        total=total,
         img_path=url_for('static', filename='img/logo2.png'),
         preview=True
     )
@@ -1057,8 +1237,300 @@ def api_ultimos_pdfs():
         return jsonify({"ok": False, "error": str(e), "items": []}), 500
 
 
+def _pick_first(*vals):
+    for v in vals:
+        if isinstance(v, (list, dict)) and len(v) > 0:
+            return v
+    return {}
+
+def _get_clientes_from_modules():
+    import sys as _sys
+    candidatos_mod = ("facturacion_bp", "facturacion")
+    nombres = (
+        "clientes_predefinidos",
+        "CLIENTES_PREDEFINIDOS",
+        "clientes_sync",
+        "clientes_cache",
+        "CLIENTES_CACHE",
+    )
+    for modname in candidatos_mod:
+        mod = _sys.modules.get(modname)
+        if not mod:
+            continue
+        for nombre in nombres:
+            if hasattr(mod, nombre):
+                data = getattr(mod, nombre)
+                if isinstance(data, (list, dict)) and len(data) > 0:
+                    print(f">> ui_factura_nueva: tomado de {modname}.{nombre} items="
+                          f"{len(data) if isinstance(data, list) else len(data.keys())}")
+                    return data
+    return {}
+
+def _get_clientes_from_config():
+    cfg = current_app.config
+    claves = (
+        "clientes_predefinidos",
+        "CLIENTES_PREDEFINIDOS",
+        "clientes_sync",
+        "clientes_cache",
+        "CLIENTES_CACHE",
+    )
+    for k in claves:
+        if k in cfg and isinstance(cfg[k], (list, dict)) and len(cfg[k]) > 0:
+            print(f">> ui_factura_nueva: tomado de config[{k}] items="
+                  f"{len(cfg[k]) if isinstance(cfg[k], list) else len(cfg[k].keys())}")
+            return cfg[k]
+    return {}
+
+@app.get("/facturas/nueva")
+def ui_factura_nueva():
+    base = Path(current_app.root_path)
+
+    # 1) intenta leer archivo local
+    clientes = {}
+    for p in (
+        base / "data" / "clientes.json",
+        base / "static" / "data" / "clientes.json",
+        Path.cwd() / "data" / "clientes.json",
+    ):
+        try:
+            if p.exists() and p.stat().st_size > 2:
+                txt = p.read_text("utf-8")
+                tmp = json.loads(txt)
+                if isinstance(tmp, (dict, list)) and len(tmp) > 0:
+                    clientes = tmp
+                    print(f">> ui_factura_nueva: leído {p}")
+                    break
+        except Exception as e:
+            print(">> error leyendo", p, e)
+
+    # 2) fallback: usar la variable global
+    if not clientes:
+        global clientes_predefinidos
+        if clientes_predefinidos:
+            clientes = clientes_predefinidos
+            print(">> ui_factura_nueva: usando clientes_predefinidos global",
+                  f"items={len(clientes)}")
+
+    # 3) seguridad de tipo
+    if not isinstance(clientes, (dict, list)):
+        clientes = {}
+
+    return render_template("factura_nueva.html", clientes=clientes)
+
+
+@app.get("/pagos/nuevo")
+def ui_pago_complemento():
+    return render_template("pago_complemento.html")
+@app.get("/facturacion")
+def ui_facturacion_inicio():
+    return render_template("facturas_inicio.html")
+@app.post("/set_cliente")
+def set_cliente():
+    data = request.get_json(silent=True) or {}
+    nombre = (data.get("cliente") or "").strip()
+    if not nombre:
+        return ("falta 'cliente'", 400)
+    datos_cliente["cliente"] = nombre  # ya usas esta variable en editar_cliente
+    return ("", 204)
+
+# ---------- NUEVO: listado para inicio_cotizacion ----------
+@app.get("/api/cotizaciones/list")
+def api_cotizaciones_list():
+    base = Path(current_app.root_path) / "data"
+    path = base / "cotizaciones.json"
+    items = []
+    if path.exists():
+        try:
+            data = json.loads(path.read_text("utf-8"))
+            if isinstance(data, list):
+                items = data
+            elif isinstance(data, dict):
+                if isinstance(data.get("items"), list): items = data["items"]
+                elif isinstance(data.get("data"), list): items = data["data"]
+        except Exception:
+            pass
+    return jsonify(items), 200
+
+@app.get("/api/cotizaciones/<qid>")
+def api_cotizacion_detalle(qid):
+    """
+    Devuelve una cotización normalizada para prefilling:
+    { ok, id, cliente, fecha, folio, total, receptor{rfc,nombre,cp,regimen_fiscal,uso_cfdi}, items[] }
+    Lee de data/cotizaciones.json (o data/quotes.json) y soporta varios formatos.
+    """
+    base = Path(current_app.root_path) / "data"
+    candidatos = ["cotizaciones.json", "quotes.json"]
+    items = []
+
+    for nombre in candidatos:
+        p = base / nombre
+        if p.exists():
+            try:
+                data = json.loads(p.read_text("utf-8"))
+                if isinstance(data, list):
+                    items.extend(data)
+                elif isinstance(data, dict):
+                    if isinstance(data.get("items"), list):
+                        items.extend(data["items"])
+                    if isinstance(data.get("data"), list):
+                        items.extend(data["data"])
+            except Exception:
+                pass
+
+    if not items:
+        return jsonify(ok=False, error={"message": "No hay cotizaciones en data/."}), 404
+
+    def coincide(x):
+        vals = [str(x.get(k, "")) for k in ("id", "folio", "numero", "uuid")]
+        return str(qid) in vals
+
+    match = next((x for x in items if coincide(x)), None)
+    if not match:
+        return jsonify(ok=False, error={"message": "Cotización no encontrada"}), 404
+
+    rec_raw = match.get("receptor") or {}
+    receptor = {
+        "rfc": (rec_raw.get("rfc") or match.get("rfc") or "").upper(),
+        "nombre": rec_raw.get("nombre") or rec_raw.get("razon_social") or match.get("cliente") or "",
+        "cp": rec_raw.get("cp") or rec_raw.get("codigo_postal") or rec_raw.get("zip") or "",
+        "regimen_fiscal": rec_raw.get("regimen_fiscal") or rec_raw.get("regimen") or "",
+        "uso_cfdi": rec_raw.get("uso_cfdi") or ""
+    }
+
+    detalle = match.get("conceptos") or match.get("items") or match.get("detalles") or match.get("partidas") or []
+    items_norm = []
+    for c in (detalle if isinstance(detalle, list) else []):
+        try:
+            cantidad = float(c.get("cantidad") or c.get("qty") or 1)
+        except Exception:
+            cantidad = 1.0
+        try:
+            precio = float(c.get("precio_unitario") or c.get("valor_unitario") or c.get("price") or 0)
+        except Exception:
+            precio = 0.0
+        try:
+            tasa = float(c.get("tasa_iva") or c.get("iva") or c.get("tax_rate") or 0)
+        except Exception:
+            tasa = 0.0
+
+        items_norm.append({
+            "descripcion": c.get("descripcion") or c.get("desc") or c.get("nombre") or "Concepto",
+            "cantidad": cantidad,
+            "precio_unitario": precio,
+            "clave_prod_serv": c.get("clave_prod_serv") or c.get("clave") or c.get("cps") or "85121600",
+            "clave_unidad": c.get("clave_unidad") or c.get("unidad") or "E48",
+            "tasa_iva": tasa
+        })
+
+    total = match.get("total") or match.get("importe_total")
+    if total is None:
+        total = 0.0
+        for c in items_norm:
+            base_imp = c["cantidad"] * c["precio_unitario"]
+            total += base_imp + base_imp * c["tasa_iva"]
+
+    out = {
+        "ok": True,
+        "id": match.get("id") or match.get("folio") or match.get("numero") or match.get("uuid") or str(qid),
+        "cliente": match.get("cliente") or "",
+        "fecha": match.get("fecha") or match.get("created_at") or "",
+        "folio": match.get("folio") or match.get("numero") or "",
+        "total": total,
+        "receptor": receptor,
+        "items": items_norm
+    }
+    return jsonify(out), 200
+
+@app.get("/cotizaciones")
+@app.get("/inicio-cotizacion")
+def ui_inicio_cotizacion():
+    return render_template("inicio_cotizacion.html")
+from flask import redirect, url_for
+
+@app.get("/cotizador")
+def ui_cotizador_alias():
+    # Alias que apunta al mismo formulario que usas hoy
+    return redirect(url_for('inicio'))
+@app.get("/cotizaciones/<qid>")
+def ui_cotizacion_detalle(qid):
+    """Detalle legible de una cotización para ver datos sin PDF."""
+    base = Path(current_app.root_path) / "data"
+    path_opts = [base / "cotizaciones.json", base / "quotes.json"]
+    items = []
+    for p in path_opts:
+        if p.exists():
+            try:
+                data = json.loads(p.read_text("utf-8"))
+                if isinstance(data, list):
+                    items = data
+                elif isinstance(data, dict):
+                    if isinstance(data.get("items"), list): items = data["items"]
+                    elif isinstance(data.get("data"), list): items = data["data"]
+                break
+            except Exception:
+                pass
+
+    def match_id(x):
+        vals = [str(x.get(k, "")) for k in ("id","folio","numero","uuid")]
+        return str(qid) in vals
+
+    q = next((x for x in items if match_id(x)), None)
+    if not q:
+        return render_template("cotizacion_detalle.html", q=None), 404
+
+    # Normaliza
+    conceptos = q.get("conceptos") or q.get("items") or q.get("detalles") or q.get("partidas") or []
+    def _tot():
+        if q.get("total") is not None: return q["total"]
+        tot = 0.0
+        for c in conceptos if isinstance(conceptos, list) else []:
+            cant = float(c.get("cantidad") or c.get("qty") or 1)
+            pu   = float(c.get("precio_unitario") or c.get("valor_unitario") or c.get("price") or 0)
+            iva  = float(c.get("tasa_iva") or c.get("iva") or 0)
+            base = cant*pu
+            tot += base + base*iva
+        return round(tot, 2)
+
+    out = {
+        "id": q.get("id") or q.get("folio") or q.get("numero") or q.get("uuid") or str(qid),
+        "cliente": q.get("cliente") or (q.get("receptor") or {}).get("nombre") or "",
+        "fecha": q.get("fecha") or q.get("created_at") or "",
+        "folio": q.get("folio") or q.get("numero") or "",
+        "total": _tot(),
+        "conceptos": conceptos if isinstance(conceptos, list) else [],
+        "view_url": q.get("view_url") or q.get("pdf_url") or "",
+    }
+    return render_template("cotizacion_detalle.html", q=out), 200
+# --- Vista de clientes (lista simple) ---
+@app.get("/clientes")
+def ui_clientes():
+    # Preferir el diccionario en memoria sincronizado desde Drive
+    try:
+        data = clientes_predefinidos or {}
+    except NameError:
+        data = {}
+
+    # Fallback al archivo local si no hay nada en memoria
+    if not data:
+        base = Path(current_app.root_path) / "data"
+        path = base / "clientes.json"
+        if path.exists():
+            try:
+                data = json.loads(path.read_text("utf-8"))
+            except Exception:
+                data = {}
+
+    return render_template("clientes_inicio.html", clientes=data)
+
+
+
+
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
 

@@ -6,8 +6,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root{
-      --bg:#f5f7fb; --card:#ffffff; --ink:#1f2937; --muted:#6b7280;
-      --line:#e5e7eb; --brand:#2563eb; --ok:#22c55e; --danger:#ef4444;
+      /* Levemente más oscuro (sin cambiar el diseño) */
+      --bg:#e3e8f0;
+      --card:#ffffff;
+      --ink:#111827;
+      --muted:#4b5563;
+      --line:#c5ceda;
+      --brand:#1d4ed8;
+      --ok:#22c55e;
+      --danger:#ef4444;
       --radius:14px;
     }
     *{box-sizing:border-box}
@@ -23,13 +30,13 @@
 
     .card{
       background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
-      padding:16px; box-shadow:0 6px 20px rgba(17,24,39,.05);
+      padding:16px; box-shadow:0 8px 22px rgba(17,24,39,.06);
     }
     .section-title{font-size:1rem;margin:0 0 10px;font-weight:700}
     label{display:block;font-size:.9rem;color:var(--muted);margin:8px 0 6px}
     input,select,textarea{
       width:100%; border:1px solid var(--line); border-radius:12px; padding:12px 12px; font-size:16px;
-      background:#fbfdff; outline:none;
+      background:#edf2f8;; outline:none; color:var(--ink);
     }
     textarea{min-height:92px;resize:vertical}
     .row{display:grid;gap:12px}
@@ -38,9 +45,9 @@
     .btn{
       display:inline-flex; align-items:center; justify-content:center; gap:8px;
       padding:12px 14px; border-radius:12px; border:1px solid var(--line); cursor:pointer; font-weight:700; font-size:15px;
-      background:#f9fbff; color:#0f172a;
+      background:#f3f6ff; color:#0f172a;
     }
-    .btn:hover{background:#f1f5ff}
+    .btn:hover{background:#eaf0ff}
     .btn-primary{background:var(--brand); color:#fff; border-color:transparent}
     .btn-primary:hover{filter:brightness(.98)}
     .btn-ok{background:var(--ok); color:#04140a; border-color:transparent}
@@ -55,8 +62,8 @@
     .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
     table{width:100%;border-collapse:collapse;min-width:720px}
     th,td{padding:12px 12px;border-bottom:1px solid var(--line);text-align:left}
-    th{background:#f8fafc;font-weight:700;color:#334155}
-    tfoot td{font-weight:800;background:#f8fafc}
+    th{background:#f1f5f9;font-weight:700;color:#1f2937}
+    tfoot td{font-weight:800;background:#f1f5f9}
 
     .subtle{color:var(--muted);font-size:.88rem}
 
@@ -68,7 +75,7 @@
 <body>
   <div class="wrap">
     <div class="top">
-      <!-- quitamos botones duplicados aquí --> 
+      <!-- quitamos botones duplicados aquí -->
        <div class="top">
   <div>
     <div class="title">Cotizador HSC</div>
@@ -160,7 +167,8 @@
       <div class="row row-2">
         <div style="grid-column:1/-1">
           <label>Descripción</label>
-          <input type="text" name="descripcion" placeholder="Describe la partida…"/>
+          <!-- CAMBIO: ahora es textarea, como comentarios -->
+          <textarea name="descripcion" rows="3" placeholder="Describe la partida…"></textarea>
         </div>
         <div>
           <label>Cantidad</label>
@@ -214,25 +222,37 @@
           {% endif %}
         </tbody>
         <tfoot>
-          <tr>
-            <td colspan="3"></td>
-            <td style="text-align:right">SUBTOTAL</td>
-            <td style="text-align:right">{{ subtotal|currency }}</td>
-            <td></td>
-          </tr>
-          <tr>
-            <td colspan="3"></td>
-            <td style="text-align:right">IVA 16%</td>
-            <td style="text-align:right">{{ iva|currency }}</td>
-            <td></td>
-          </tr>
-          <tr>
-            <td colspan="3"></td>
-            <td style="text-align:right"><strong>TOTAL</strong></td>
-            <td style="text-align:right"><strong>{{ total|currency }}</strong></td>
-            <td></td>
-          </tr>
-        </tfoot>
+  <tr>
+    <td colspan="3"></td>
+    <td style="text-align:right">SUBTOTAL</td>
+    <td style="text-align:right">{{ subtotal|currency }}</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td colspan="3"></td>
+    <td style="text-align:right">IVA 16%</td>
+    <td style="text-align:right">{{ iva|currency }}</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td colspan="3"></td>
+    <td style="text-align:right">ISR retenido 1.25%</td>
+    <td style="text-align:right">-{{ isr_retenido|currency }}</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td colspan="3"></td>
+    <td style="text-align:right">IVA retenido 10.6667%</td>
+    <td style="text-align:right">-{{ iva_retenido|currency }}</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td colspan="3"></td>
+    <td style="text-align:right"><strong>TOTAL</strong></td>
+    <td style="text-align:right"><strong>{{ total|currency }}</strong></td>
+    <td></td>
+  </tr>
+</tfoot>
       </table>
     </div>
 
