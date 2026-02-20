@@ -503,7 +503,7 @@ def guardar_datos():
     datos_cliente['cotizacion'] = request.form.get('cotizacion', '')
     datos_cliente['comentarios'] = request.form.get('comentarios', '')
     datos_cliente["usar_retenciones"] = ("usar_retenciones" in request.form)
-    datos_cliente["usar_retenciones"] = (request.form.get("usar_retenciones") == "on")
+    
     return redirect(url_for('inicio'))
 
 @app.route('/agregar', methods=['POST'])
@@ -979,6 +979,7 @@ def guardar_partidas(partidas):
         json.dump(partidas, f, indent=2, ensure_ascii=False)
 
 # ============================ VISTA PREVIA (HTML en navegador) =============================
+# ============================ VISTA PREVIA (HTML en navegador) =============================
 @app.route('/vista_previa')
 def vista_previa():
     datos = dict(datos_cliente)
@@ -992,10 +993,11 @@ def vista_previa():
         isr_retenido = subtotal * 0.0125
         iva_retenido = iva * (2/3)
     else:
-        isr_retenido = 0
-        iva_retenido = 0
+        isr_retenido = 0.0
+        iva_retenido = 0.0
 
     total = subtotal + iva - isr_retenido - iva_retenido
+
     img_path = Path("img/logo.png").resolve().as_uri()
 
     return render_template(
@@ -1009,7 +1011,56 @@ def vista_previa():
         iva_retenido=iva_retenido,
         img_path=img_path,
         preview=True
-    )@app.route('/repositorio')
+    )
+
+
+@app.route('/repositorio')
+def repositorio():
+    BASE_LOCAL_DRIVE = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
+    use_drive = IS_RENDER or (not os.path.isdir(BASE_LOCAL_DRIVE))
+
+    if use_drive:
+        try:
+            service = _drive_service_cfg()
+            estructura = {}
+            resp = service.files().list(
+                q=f"'{ID_COT}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                spaces='drive',
+                fields='files(id,name)',
+                pageSize=1000
+            ).execute()
+
+            for folder in resp.get('files', []):
+                cliente = folder['name']
+                fid = folder['id']
+                files = service.files().list(
+                    q=f"'{fid}' in parents and mimeType='application/pdf' and trashed=false",
+                    spaces='drive',
+                    fields='files(id,name,webViewLink)',
+                    pageSize=1000
+                ).execute().get('files', [])
+                estructura[cliente] = [
+                    {"name": f["name"], "link": f.get("webViewLink")} for f in files
+                ]
+
+            return render_template("repositorio.html", estructura=estructura, from_drive=True)
+        except Exception as e:
+            print("⚠️ No se pudo listar desde Drive en /repositorio:", e)
+            return render_template("repositorio.html", estructura={}, from_drive=True)
+
+    estructura = {}
+    try:
+        for cliente in sorted(os.listdir(BASE_LOCAL_DRIVE)):
+            c_path = os.path.join(BASE_LOCAL_DRIVE, cliente)
+            if os.path.isdir(c_path):
+                pdfs = [a for a in os.listdir(c_path) if a.lower().endswith('.pdf')]
+                estructura[cliente] = sorted(pdfs)
+    except Exception as e:
+        print("⚠️ Error listando en local /repositorio:", e)
+        estructura = {}
+
+    return render_template("repositorio.html", estructura=estructura, from_drive=False)
+@app.route('/repositorio')
 def repositorio():
     BASE_LOCAL_DRIVE = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
     use_drive = IS_RENDER or (not os.path.isdir(BASE_LOCAL_DRIVE))
