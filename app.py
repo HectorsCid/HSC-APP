@@ -669,30 +669,20 @@ def generar_pdf():
     datos = dict(datos_cliente)
     partidas_actuales = list(partidas)
 
-    def calcular_totales_mem(partidas_lst):
-        subtotal = sum((p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0) for p in partidas_lst)
-        iva = subtotal * 0.16
-        total = subtotal + iva
-        return subtotal, iva, total
+    # Totales (mismo cálculo que en vista_previa)
+    subtotal = sum((p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0) for p in partidas_actuales)
+    iva = subtotal * 0.16
 
-    subtotal, iva, total = calcular_totales_mem(partidas_actuales)
-        # --- Retenciones (para cotización) ---
-    aplicar_retenciones = str(datos.get("aplicar_retenciones", "1")).strip().lower() not in ("0", "false", "no", "off")
-
-    if aplicar_retenciones:
-        # RESICO: ISR 1.25% sobre subtotal
+    usar_retenciones = bool(datos.get("usar_retenciones"))
+    if usar_retenciones:
         isr_retenido = subtotal * 0.0125
-
-        # IVA retenido 2/3 del IVA (equivale a 10.6667% del subtotal)
-        iva_retenido = subtotal * (0.16 * (2/3))
-
-        total_final = total - isr_retenido - iva_retenido
-        if total_final < 0:
-            total_final = 0.0
+        iva_retenido = iva * (2/3)
     else:
         isr_retenido = 0.0
         iva_retenido = 0.0
-        total_final = total
+
+    total = subtotal + iva - isr_retenido - iva_retenido
+    total_final = total
 
     cliente = (datos.get('cliente') or 'SIN_CLIENTE').strip()
     cot = (str(datos.get('cotizacion')) or 'S/F').strip()
