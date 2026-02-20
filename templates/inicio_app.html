@@ -111,7 +111,7 @@
         <h2>Cotizaciones</h2>
         <p>Crear y enviar PDFs con tu formato moderno.</p>
         <div class="actions">
-          <a class="btn primary" href="{{ url_for('inicio') }}">Abrir cotizador</a>
+          <a class="btn primary" href="cotizaciones">Abrir cotizador</a>
         </div>
       </article>
 
@@ -120,10 +120,20 @@
         <h2>Reportes</h2>
         <p>Generar reportes desde Google Sheets por <em>ID_Reporte</em>, con fotos 3×2.</p>
         <div class="actions">
-          <a class="btn" href="{{ url_for('repositorio') }}">Ver repositorio</a>
-          <a class="btn" href="/reportes">Crear reporte</a>
+    
+          <a class="btn primary" href="/reportes">Crear reporte</a>
         </div>
       </article>
+
+      <!-- Facturación -->
+<article class="card">
+  <h2>Facturación</h2>
+  <p>Timbrar facturas, ver PDF/XML y cancelar.</p>
+  <div class="actions">
+    <a class="btn primary" href="/facturacion">Abrir facturación</a>
+  </div>
+</article>
+
     </section>
 
     <div class="footer">www.hscrefrigeracion.com — <code>Servicios Industriales</code></div>
