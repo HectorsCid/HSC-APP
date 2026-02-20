@@ -65,6 +65,7 @@ SCOPES = [
 
 ID_COT = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'   # Carpeta "01. Cotizaciones" en Drive
 CLIENTES_FILENAME = 'clientes.json'           # Archivo para persistir clientes en Drive
+COTIZACIONES_FILENAME = 'cotizaciones.json'    # Archivo para persistir historial en Drive
 
 # --- Google Sheets datos ---
 SHEET_ID = "15xLRRfR_Leidnd34Cpr3ERbpJ7AaMelMxMa-9B0d6kQ"
@@ -222,6 +223,74 @@ def subir_clientes_a_drive(clientes_dict):
     except Exception as e:
         print("⚠️ No se pudo subir clientes.json a Drive:", e)
 
+
+def descargar_cotizaciones_de_drive():
+    """Descarga cotizaciones.json desde la misma carpeta (ID_COT). Si no existe, crea uno vacío [] en Drive."""
+    try:
+        service = _drive_service_cfg()
+        fid = _drive_buscar_archivo(service, COTIZACIONES_FILENAME, ID_COT)
+        if not fid:
+            # Crear archivo vacío en Drive
+            payload = b"[]"
+            media = MediaIoBaseUpload(io.BytesIO(payload), mimetype='application/json', resumable=False)
+            meta = {'name': COTIZACIONES_FILENAME, 'parents': [ID_COT]}
+            created = service.files().create(body=meta, media_body=media, fields='id').execute()
+            fid = created.get('id')
+            print("📤 cotizaciones.json creado en Drive:", fid)
+
+        request = service.files().get_media(fileId=fid)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        fh.seek(0)
+        content = fh.read().decode('utf-8') if fh.getbuffer().nbytes else "[]"
+        data = json.loads(content) if content.strip() else []
+        if not isinstance(data, list):
+            # Si por algún motivo llegó dict, intenta normalizar
+            if isinstance(data, dict):
+                if isinstance(data.get("items"), list):
+                    data = data["items"]
+                elif isinstance(data.get("data"), list):
+                    data = data["data"]
+                else:
+                    data = []
+            else:
+                data = []
+
+        # Guardar localmente en /data/cotizaciones.json (igual que registrar_cotizacion)
+        base = Path(current_app.root_path) / "data"
+        base.mkdir(parents=True, exist_ok=True)
+        path = base / "cotizaciones.json"
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        print("✅ cotizaciones.json cargado desde Drive.")
+        return data
+    except Exception as e:
+        print("⚠️ No se pudo descargar cotizaciones.json de Drive:", e)
+        return None
+
+def subir_cotizaciones_a_drive(items_list):
+    """Sube (upsert) cotizaciones.json a Drive en la carpeta ID_COT."""
+    try:
+        service = _drive_service_cfg()
+        fid = _drive_buscar_archivo(service, COTIZACIONES_FILENAME, ID_COT)
+
+        payload = json.dumps(items_list if isinstance(items_list, list) else [], ensure_ascii=False, indent=2).encode('utf-8')
+        media = MediaIoBaseUpload(io.BytesIO(payload), mimetype='application/json', resumable=False)
+
+        if fid:
+            updated = service.files().update(fileId=fid, media_body=media, fields='id').execute()
+            print("♻️ cotizaciones.json actualizado en Drive:", updated.get('id'))
+        else:
+            meta = {'name': COTIZACIONES_FILENAME, 'parents': [ID_COT]}
+            created = service.files().create(body=meta, media_body=media, fields='id').execute()
+            print("📤 cotizaciones.json creado en Drive:", created.get('id'))
+    except Exception as e:
+        print("⚠️ No se pudo subir cotizaciones.json a Drive:", e)
+
+
 # ======================= Funciones para clientes (con persistencia en Drive) ======================
 def cargar_clientes():
     if IS_RENDER:
@@ -281,6 +350,24 @@ def _bootstrap_sync_clientes():
         except Exception as e:
             print("❌ Error sincronizando clientes:", e)
             # No marcamos __did_sync_once; reintentará en el próximo request
+
+# ---------- Sync de cotizaciones.json (Drive -> local data/) ----------
+__did_sync_cotizaciones_once = False
+
+def _sync_cotizaciones_from_drive_into_local():
+    """Descarga/crea cotizaciones.json en Drive y lo deja en data/cotizaciones.json."""
+    return descargar_cotizaciones_de_drive()
+
+@app.before_request
+def _bootstrap_sync_cotizaciones():
+    global __did_sync_cotizaciones_once
+    if __did_sync_cotizaciones_once:
+        return
+    if IS_RENDER:
+        data = _sync_cotizaciones_from_drive_into_local()
+        # Marcamos como hecho aunque venga vacío (eso es válido)
+        if data is not None:
+            __did_sync_cotizaciones_once = True
 
 # -------------------------------------------------------------------
 
@@ -346,15 +433,14 @@ def inicio():
         datos_cliente['cotizacion'] = obtener_siguiente_folio()
 
     subtotal = sum(p['total'] for p in partidas)
-    iva, isr_retenido, iva_retenido, total = calcular_totales_con_retenciones(subtotal)
+    iva = subtotal * 0.16
+    total = subtotal + iva
     return render_template('inicio.html',
                            partidas=partidas,
                            datos=datos_cliente,
                            clientes=clientes_predefinidos,
                            subtotal=subtotal,
                            iva=iva,
-                           isr_retenido=isr_retenido,
-                           iva_retenido=iva_retenido,
                            total=total,
                            today=date.today().isoformat())
 
@@ -509,28 +595,6 @@ def calcular_totales(partidas):
     total = subtotal + iva
     return subtotal, iva, total
 
-
-def calcular_totales_con_retenciones(subtotal):
-    """
-    Cotización (solo informativo):
-    - IVA 16% sobre subtotal
-    - ISR retenido 1.25% sobre subtotal (0.0125)
-    - IVA retenido 10.6667% sobre subtotal (0.106667)
-    Total = subtotal + IVA - ISR_ret - IVA_ret
-    """
-    try:
-        subtotal = float(subtotal or 0)
-    except Exception:
-        subtotal = 0.0
-
-    iva = round(subtotal * 0.16, 2)
-    isr_retenido = round(subtotal * 0.0125, 2)
-    iva_retenido = round(subtotal * 0.106667, 2)
-    total = round(subtotal + iva - isr_retenido - iva_retenido, 2)
-
-    return iva, isr_retenido, iva_retenido, total
-
-
 def abrir_drive_local(cliente_nombre):
     base = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
     cliente_seguro = (cliente_nombre or "SIN_CLIENTE").replace("/", "-").replace("\\", "-").strip()
@@ -575,6 +639,10 @@ def registrar_cotizacion(cot):
     tmp.write_text(json.dumps(arr, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
 
+    # Persistencia en Drive (Render) para no perder historial
+    if IS_RENDER:
+        subir_cotizaciones_a_drive(arr)
+
 @app.route('/generar_pdf')
 def generar_pdf():
     import shutil
@@ -591,8 +659,7 @@ def generar_pdf():
         total = subtotal + iva
         return subtotal, iva, total
 
-    subtotal = sum((p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0) for p in partidas_actuales)
-    iva, isr_retenido, iva_retenido, total = calcular_totales_con_retenciones(subtotal)
+    subtotal, iva, total = calcular_totales_mem(partidas_actuales)
 
     cliente = (datos.get('cliente') or 'SIN_CLIENTE').strip()
     cot = (str(datos.get('cotizacion')) or 'S/F').strip()
@@ -610,8 +677,6 @@ def generar_pdf():
         partidas=partidas_actuales,
         subtotal=subtotal,
         iva=iva,
-        isr_retenido=isr_retenido,
-        iva_retenido=iva_retenido,
         total=total,
         img_path=img_path
     )
@@ -754,7 +819,7 @@ def generar_pdf():
             "folio": str(cot),
             "cliente": cliente,
             "fecha": datetime.now().isoformat(timespec="seconds"),
-            "total": round(float(total), 2),
+            "total": round(float(subtotal + iva), 2),
             "view_url": archivo_url,           # ← AÑADIDO
             "receptor": rec,
             "conceptos": conceptos
@@ -882,19 +947,13 @@ def guardar_partidas(partidas):
 def vista_previa():
     guardar_datos(datos_cliente)
     guardar_partidas(partidas)
-
-    subtotal = sum(p['total'] for p in partidas)
-    iva, isr_retenido, iva_retenido, total = calcular_totales_con_retenciones(subtotal)
-
     return render_template(
         "plantilla_pdf.html",
         datos=datos_cliente,
         partidas=partidas,
-        subtotal=subtotal,
-        iva=iva,
-        isr_retenido=isr_retenido,
-        iva_retenido=iva_retenido,
-        total=total,
+        subtotal=sum(p['total'] for p in partidas),
+        iva=sum(p['total'] for p in partidas) * 0.16,
+        total=sum(p['total'] for p in partidas) * 1.16,
         img_path=url_for('static', filename='img/logo2.png'),
         preview=True
     )
@@ -1531,6 +1590,4 @@ def ui_clientes():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
-
-
 
