@@ -148,7 +148,7 @@
   <section style="margin-top: 16px;">
     <div style="border: 1px dashed #e5e7eb; border-radius: 10px; padding: 12px; background: #e5e7eb;">
       <strong>Comentarios / Aclaraciones:</strong><br>
-      {{ datos.comentarios }}
+      <div style="white-space: pre-line;">{{ datos.comentarios }}</div>
     </div>
   </section>
   {% endif %}
@@ -169,7 +169,7 @@
         {% for p in partidas %}
         <tr>
           <td class="num">{{ loop.index }}</td>
-          <td class="desc">{{ p.descripcion }}</td>
+          <td class="desc" style="white-space: pre-line;">{{ p.descripcion }}</td>
           <td class="qty">{{ p.cantidad }}</td>
           <td class="price">${{ "{:,.2f}".format(p.precio) }}</td>
           <td class="line">${{ "{:,.2f}".format(p.total) }}</td>

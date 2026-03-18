@@ -251,7 +251,9 @@
           <tr>
             <td colspan="3"></td>
             <td style="text-align:right">ISR retenido 1.25%</td>
-            <td style="text-align:right">-{{ (isr_retenido or 0)|currency }}</td>
+            <td style="text-align:right">
+              {% if datos.usar_retenciones %}-{{ (isr_retenido or 0)|currency }}{% else %}—{% endif %}
+            </td>
             <td>
               <!-- checkbox al lado (se guarda en el form de datos) -->
               <label class="switch" style="justify-content:flex-end">
@@ -270,7 +272,9 @@
           <tr>
             <td colspan="3"></td>
             <td style="text-align:right">IVA retenido 10.6667%</td>
-            <td style="text-align:right">-{{ (iva_retenido or 0)|currency }}</td>
+            <td style="text-align:right">
+              {% if datos.usar_retenciones %}-{{ (iva_retenido or 0)|currency }}{% else %}—{% endif %}
+            </td>
             <td></td>
           </tr>
 
@@ -306,9 +310,11 @@
       const anticipo = document.getElementById('anticipo');
       const vigencia = document.getElementById('vigencia');
 
-      function cargarDatosCliente(nombreCliente){
+      function cargarDatosCliente(nombreCliente, atencionSeleccionada = null){
         const d = clientes[nombreCliente];
         if(!d) return;
+
+        const valorActual = atencionSeleccionada || {{ (datos.atencion[0] if datos.atencion else '') | tojson }};
 
         // Atención
         selectAtencion.innerHTML = '';
@@ -316,7 +322,13 @@
           const opt = document.createElement('option');
           opt.value = persona;
           opt.textContent = persona;
-          if(i === 0) opt.selected = true;
+
+          if (persona === valorActual) {
+            opt.selected = true;
+          } else if (!valorActual && i === 0) {
+            opt.selected = true;
+          }
+
           selectAtencion.appendChild(opt);
         });
 
@@ -331,7 +343,7 @@
 
       // Cambio de cliente
       selectCliente.addEventListener('change', () => {
-        cargarDatosCliente(selectCliente.value);
+        cargarDatosCliente(selectCliente.value, null);
       });
 
       // Botón Editar cliente
