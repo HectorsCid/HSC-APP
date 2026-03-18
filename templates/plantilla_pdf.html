@@ -105,7 +105,6 @@
     {% set total = subtotal + iva - isr_retenido - iva_retenido %}
   {% endif %}
 
-
   <!-- Encabezado -->
   <header class="header">
     <div class="brand">
@@ -141,19 +140,18 @@
       <div class="row"><div class="label">Vigencia</div><div class="value">{{ datos.vigencia or '—' }}</div></div>
       <div class="row"><div class="label">Anticipo</div><div class="value">{{ datos.anticipo or '—' }}</div></div>
       <div class="row"><div class="label">Tiempo de entrega</div><div class="value">{{ datos.tiempo or '—' }}</div></div>
-      
     </div>
   </section>
 
   <!-- Comentarios / Aclaraciones -->
-{% if datos.comentarios %}
-<section style="margin-top: 16px;">
-  <div style="border: 1px dashed #e5e7eb; border-radius: 10px; padding: 12px; background: #e5e7eb;">
-    <strong>Comentarios / Aclaraciones:</strong><br>
-    {{ datos.comentarios }}
-  </div>
-</section>
-{% endif %}
+  {% if datos.comentarios %}
+  <section style="margin-top: 16px;">
+    <div style="border: 1px dashed #e5e7eb; border-radius: 10px; padding: 12px; background: #e5e7eb;">
+      <strong>Comentarios / Aclaraciones:</strong><br>
+      {{ datos.comentarios }}
+    </div>
+  </section>
+  {% endif %}
 
   <!-- Partidas -->
   <section>
@@ -173,8 +171,8 @@
           <td class="num">{{ loop.index }}</td>
           <td class="desc">{{ p.descripcion }}</td>
           <td class="qty">{{ p.cantidad }}</td>
-          <td class="price">${{ '%.2f'|format(p.precio) }}</td>
-          <td class="line">${{ '%.2f'|format(p.total) }}</td>
+          <td class="price">${{ "{:,.2f}".format(p.precio) }}</td>
+          <td class="line">${{ "{:,.2f}".format(p.total) }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -190,27 +188,27 @@
       • Tiempos de entrega sujetos a disponibilidad.<br>
       • Cualquier cambio en el alcance puede modificar el precio.
     </div>
-   <div class="totals">
-  <table>
-    <tr><td>Subtotal</td><td style="text-align:right">${{ '%.2f'|format(subtotal) }}</td></tr>
-    <tr><td>IVA trasladado 16%</td><td style="text-align:right">${{ '%.2f'|format(iva) }}</td></tr>
-    {% if usar_retenciones %}
-            <tr><td>ISR retenido 1.25%</td><td style="text-align:right">-${{ '%.2f'|format(isr_retenido) }}</td></tr>
-            <tr><td>IVA retenido 10.6667%</td><td style="text-align:right">-${{ '%.2f'|format(iva_retenido) }}</td></tr>
-            {% endif %}
-    <tr class="strong"><td>Total</td><td style="text-align:right">${{ '%.2f'|format(total) }}</td></tr>
-  </table>
-</div>
+    <div class="totals">
+      <table>
+        <tr><td>Subtotal</td><td style="text-align:right">${{ "{:,.2f}".format(subtotal) }}</td></tr>
+        <tr><td>IVA trasladado 16%</td><td style="text-align:right">${{ "{:,.2f}".format(iva) }}</td></tr>
+        {% if usar_retenciones %}
+        <tr><td>ISR retenido 1.25%</td><td style="text-align:right">-${{ "{:,.2f}".format(isr_retenido) }}</td></tr>
+        <tr><td>IVA retenido 10.6667%</td><td style="text-align:right">-${{ "{:,.2f}".format(iva_retenido) }}</td></tr>
+        {% endif %}
+        <tr class="strong"><td>Total</td><td style="text-align:right">${{ "{:,.2f}".format(total) }}</td></tr>
+      </table>
+    </div>
   </section>
 
   <!-- Condiciones comerciales (a lo ancho) -->
-<section style="margin-top: 18px;">
-  <div style="border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px;">
-    <h4 style="margin: 0 0 6px; font-size: 12.5px; color: #374151;">Condiciones comerciales</h4>
-    <ul style="margin: 6px 0 0 16px; padding: 0;">
-      <li>Formas de pago: según anticipo indicado, para iniciar trabajo</li>
-      <li>Vigencia y alcances según esta propuesta.</li>
-      <li>La garantía en mano de obra de reparaciones tendrá un tiempo de 180 días. En el caso de las partes eléctricas, no se
+  <section style="margin-top: 18px;">
+    <div style="border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px;">
+      <h4 style="margin: 0 0 6px; font-size: 12.5px; color: #374151;">Condiciones comerciales</h4>
+      <ul style="margin: 6px 0 0 16px; padding: 0;">
+        <li>Formas de pago: según anticipo indicado, para iniciar trabajo</li>
+        <li>Vigencia y alcances según esta propuesta.</li>
+        <li>La garantía en mano de obra de reparaciones tendrá un tiempo de 180 días. En el caso de las partes eléctricas, no se
 expide garantía más allá de la que expide el fabricante. HSC no se hace responsable por fallas o daños a los equipos por
 fuego, inundación, abuso, sabotaje, dolo, desastres naturales, corrosión atmosférica o cualquier otra condición de operación
 anormal del equipo. Siempre considerando: operación de acuerdo a manuales de usuario, notificación oportuna con el
@@ -218,14 +216,14 @@ mayor detalle de la falla, no exista evidencia de choque eléctrico, arco eléct
 ±5% y variación de corriente no mayor a 5% entre fases, no exista evidencia de corto circuito en instalación de la red
 eléctrica.
 </li>
-      <li>No se reconocen cargos por los costos de operaciones o procesos interrumpidos en ningún caso por fallo del sistema.
+        <li>No se reconocen cargos por los costos de operaciones o procesos interrumpidos en ningún caso por fallo del sistema.
 </li>
-      <li>La cancelación de orden de compra causará una penalización de un 25% sobre el monto total de la misma OC.</li>
-      <li>Esta cotización no contempla seguros ni fianzas, en caso de requerirlas favor de solicitarlas para integrarlas en la
+        <li>La cancelación de orden de compra causará una penalización de un 25% sobre el monto total de la misma OC.</li>
+        <li>Esta cotización no contempla seguros ni fianzas, en caso de requerirlas favor de solicitarlas para integrarlas en la
 propuesta.</li>
-    </ul>
-  </div>
-</section>
+      </ul>
+    </div>
+  </section>
 
   <!-- Footer con numeración -->
   <footer class="pdf-footer">
