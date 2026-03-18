@@ -299,61 +299,77 @@
     {{ clientes | tojson | safe }}
   </script>
 
-  <script>
-    const clientes = JSON.parse(document.getElementById("clientes-data").textContent);
+  <!-- Datos clientes embebidos -->
+<script type="application/json" id="clientes-data">
+  {{ clientes | tojson | safe }}
+</script>
 
-    document.addEventListener('DOMContentLoaded', () => {
-      const selectCliente = document.getElementById('cliente');
-      const selectAtencion = document.getElementById('atencion');
-      const direccion = document.getElementById('direccion');
-      const tiempo = document.getElementById('tiempo');
-      const anticipo = document.getElementById('anticipo');
-      const vigencia = document.getElementById('vigencia');
+<script type="application/json" id="atencion-data">
+  {{ (datos.atencion or []) | tojson | safe }}
+</script>
 
-      function cargarDatosCliente(nombreCliente, atencionSeleccionada = null){
-        const d = clientes[nombreCliente];
-        if(!d) return;
+<script>
+  const clientes = JSON.parse(document.getElementById("clientes-data").textContent);
+  const atencionGuardada = JSON.parse(document.getElementById("atencion-data").textContent);
 
-        const valorActual = atencionSeleccionada || {{ (datos.atencion[0] if datos.atencion else '') | tojson }};
+  document.addEventListener('DOMContentLoaded', () => {
+    const selectCliente = document.getElementById('cliente');
+    const selectAtencion = document.getElementById('atencion');
+    const direccion = document.getElementById('direccion');
+    const tiempo = document.getElementById('tiempo');
+    const anticipo = document.getElementById('anticipo');
+    const vigencia = document.getElementById('vigencia');
 
-        // Atención
-        selectAtencion.innerHTML = '';
-        (d.atencion || []).forEach((persona, i) => {
-          const opt = document.createElement('option');
-          opt.value = persona;
-          opt.textContent = persona;
+    function cargarDatosCliente(nombreCliente, mantenerSeleccion = true) {
+      const d = clientes[nombreCliente];
+      if (!d) return;
 
-          if (persona === valorActual) {
-            opt.selected = true;
-          } else if (!valorActual && i === 0) {
-            opt.selected = true;
-          }
+      const valorActual = mantenerSeleccion
+        ? (selectAtencion.value || atencionGuardada[0] || "")
+        : "";
 
-          selectAtencion.appendChild(opt);
-        });
+      selectAtencion.innerHTML = '';
 
-        direccion.value = d.direccion || '';
-        tiempo.value    = d.tiempo || '';
-        anticipo.value  = d.anticipo || '';
-        vigencia.value  = d.vigencia || '';
-      }
+      (d.atencion || []).forEach((persona, i) => {
+        const opt = document.createElement('option');
+        opt.value = persona;
+        opt.textContent = persona;
 
-      // Inicial
-      if(selectCliente.value){ cargarDatosCliente(selectCliente.value); }
+        if (persona === valorActual) {
+          opt.selected = true;
+        } else if (!valorActual && i === 0) {
+          opt.selected = true;
+        }
 
-      // Cambio de cliente
-      selectCliente.addEventListener('change', () => {
-        cargarDatosCliente(selectCliente.value, null);
+        selectAtencion.appendChild(opt);
       });
 
-      // Botón Editar cliente
-      const btnEditar = document.getElementById('btnEditarCliente');
+      direccion.value = d.direccion || '';
+      tiempo.value = d.tiempo || '';
+      anticipo.value = d.anticipo || '';
+      vigencia.value = d.vigencia || '';
+    }
+
+    if (selectCliente.value) {
+      cargarDatosCliente(selectCliente.value, true);
+    }
+
+    selectCliente.addEventListener('change', () => {
+      cargarDatosCliente(selectCliente.value, false);
+    });
+
+    const btnEditar = document.getElementById('btnEditarCliente');
+    if (btnEditar) {
       btnEditar.addEventListener('click', () => {
         const c = selectCliente.value;
-        if(!c){ alert('Primero selecciona un cliente.'); return; }
+        if (!c) {
+          alert('Primero selecciona un cliente.');
+          return;
+        }
         window.location.href = "{{ url_for('editar_cliente') }}";
       });
-    });
-  </script>
+    }
+  });
+</script>
 </body>
 </html>
