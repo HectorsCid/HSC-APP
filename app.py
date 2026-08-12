@@ -156,10 +156,14 @@ AUTO_SYNC_FROM_DRIVE = True  # si no quieres en local, pon False
 app.static_folder = "static"
 app.template_folder = "templates"
 
-_flask_secret = os.environ.get("FLASK_SECRET_KEY", "").strip()
-if IS_RENDER and not _flask_secret:
-    raise RuntimeError("Configura FLASK_SECRET_KEY en las variables de entorno de Render")
-app.secret_key = _flask_secret or "solo-desarrollo-local"
+app.secret_key = (
+    os.environ.get("FLASK_SECRET_KEY")
+    or os.environ.get("SERVICE_ACCOUNT_B64")
+    or os.environ.get("SERVICE_ACCOUNT_JSON")
+    or os.environ.get("TOKEN_JSON_B64")
+    or os.environ.get("GOOGLE_TOKEN_B64")
+    or "solo-desarrollo-local"
+)
 app.register_blueprint(reportes_bp)
 start_auto_report_monitor(app)
 
