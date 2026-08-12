@@ -890,58 +890,16 @@ def _folder_web_link(drive, folder_id: str) -> str | None:
         return None
 
 def _generate_and_store_report_pdf(id_reporte: str):
-    """Genera y guarda un reporte. Es la única implementación usada por UI y monitor."""
-    data = get_reporte_con_overrides(id_reporte)
-    if not data:
-        raise LookupError("ID_Reporte no encontrado")
+    """El monitor ejecuta el mismo endpoint que usa el botón manual."""
+    endpoint = url_for("reportes.reportes_pdf_json", id_reporte=id_reporte)
+    with current_app.test_client() as client:
+        response = client.post(endpoint)
 
-    fotos = _pdf_photos(data)
-    logo_web, logo_fs = _logo_paths()
-    html = render_template(
-        "reporte_formato.html",
-        datos=data,
-        fotos=fotos,
-        embed_for_pdf=True,
-        logo_web=logo_web,
-        logo_fs=logo_fs,
-    )
-    pdf_bytes = HTML(string=html, base_url=current_app.root_path).write_pdf()
-
-    cliente = _sanitize_name(data.get("Cliente") or "Sin Cliente")
-    ronda_norm = _normalize_ronda(data.get("Ronda") or "")
-    nombre_equipo = (data.get("NombreEquipo") or "Reporte").strip().replace("/", "-")
-    filename = f"{nombre_equipo} - {id_reporte}.pdf"
-
-    drive = _drive_service_for_files()
-    if not REPORTES_ROOT_ID:
-        raise RuntimeError("REPORTES_ROOT_ID no configurado")
-
-    client_id = _ensure_folder(drive, REPORTES_ROOT_ID, cliente)
-    id_folder = _ensure_folder(drive, client_id, id_reporte)
-    file_id_a = _upsert_pdf(drive, id_folder, filename, pdf_bytes)
-
-    reportes_folder = _ensure_folder(drive, client_id, "Reportes")
-    target_parent = reportes_folder
-    if ronda_norm:
-        target_parent = _ensure_folder(drive, reportes_folder, ronda_norm)
-    file_id_b = _upsert_pdf(drive, target_parent, filename, pdf_bytes)
-
-    archivo_url = _file_web_link(drive, file_id_b) or _file_web_link(drive, file_id_a)
-    carpeta_url = _folder_web_link(drive, target_parent)
-    base_static = Path(current_app.root_path) / "static" / "reportes_pdfs" / cliente
-    base_static.mkdir(parents=True, exist_ok=True)
-    (base_static / filename).write_bytes(pdf_bytes)
-    _log_pdf_historial(cliente, id_reporte, archivo_url, carpeta_url, tipo="reporte")
-
-    return {
-        "cliente": cliente,
-        "folio": id_reporte,
-        "filename": filename,
-        "pdf_bytes": pdf_bytes,
-        "archivo_url": archivo_url,
-        "carpeta_url": carpeta_url,
-        "ronda": ronda_norm,
-    }
+    payload = response.get_json(silent=True) or {}
+    if response.status_code != 200 or not payload.get("ok"):
+        detail = payload.get("error") or f"HTTP {response.status_code}"
+        raise RuntimeError(f"Generación manual interna falló: {detail}")
+    return payload
 
 def _generated_report_ids():
     """IDs que ya tienen un PDF de tipo reporte registrado en HistorialPDF."""
@@ -1025,7 +983,10 @@ def start_auto_report_monitor(app):
             except Exception as exc:
                 _AUTO_PDF_STATUS["last_error"] = f"{type(exc).__name__}: {exc}"
                 app.logger.exception("Falló el monitor automático de reportes")
-            time.sleep(AUTO_PDF_INTERVAL)
+            # Si Google o la generación fallan, damos tres intervalos de descanso
+            # antes de reintentar para no insistir sobre un servicio saturado.
+            delay = AUTO_PDF_INTERVAL * (3 if _AUTO_PDF_STATUS.get("last_error") else 1)
+            time.sleep(delay)
 
     threading.Thread(target=monitor, name="reportes-auto-pdf", daemon=True).start()
 
