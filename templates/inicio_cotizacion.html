@@ -177,7 +177,8 @@
           <td class="muted">${escapeHTML((it.resumen||'').slice(0,80))}</td>
           <td>
             <div class="actions">
-              <a class="btn" href="${it.view_url}" target="_blank">👁️ Ver</a>
+              <a class="btn" href="${it.view_url}" target="_blank">Ver / Reimprimir</a>
+              <a class="btn btn-accent" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">Duplicar y editar</a>
               <button class="btn btn-ok" data-qid="${it.id}" data-fact-url="${it.facturar_url}" type="button">🧾 Mandar a facturar</button>
             </div>
           </td>

@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, abort, jsonify, current_app
-import os, io, re, time, json, random
+import os, io, re, time, json, random, threading
 from datetime import date, datetime
 from pathlib import Path
 import uuid
@@ -38,6 +38,23 @@ _LAST10_CACHE = {"ts": 0, "items": []}
 
 # Carpeta raíz de Drive para guardar PDFs (04. Reportes)
 REPORTES_ROOT_ID = os.environ.get("REPORTES_ROOT_ID", "13x9OPrPJNcT3E17lcyISbpL5uE6az5ty")
+
+# Generación automática. El monitor consulta los IDs recientes y usa
+# HistorialPDF como registro durable para no volver a procesarlos.
+AUTO_PDF_ENABLED = os.environ.get("REPORTES_AUTO_PDF", "1").strip().lower() not in ("0", "false", "no", "off")
+AUTO_PDF_INTERVAL = max(15, int(os.environ.get("REPORTES_AUTO_PDF_INTERVAL", "60")))
+AUTO_PDF_LOOKBACK = max(1, int(os.environ.get("REPORTES_AUTO_PDF_LOOKBACK", "25")))
+AUTO_PDF_STABILITY_SECONDS = max(0, int(os.environ.get("REPORTES_AUTO_PDF_STABILITY_SECONDS", "120")))
+_AUTO_PDF_LOCK = threading.Lock()
+_AUTO_PDF_STARTED = False
+_AUTO_PDF_FIRST_SEEN = {}
+_AUTO_PDF_STATUS = {
+    "running": False,
+    "last_check": None,
+    "last_generated": None,
+    "last_error": None,
+    "waiting_for_stability": 0,
+}
 
 # ----------------------------------------------------------------------
 # Construcción de clientes Google con token.json (como antes)
@@ -800,6 +817,154 @@ def _folder_web_link(drive, folder_id: str) -> str | None:
         return f"https://drive.google.com/drive/folders/{folder_id}"
     except Exception:
         return None
+
+def _generate_and_store_report_pdf(id_reporte: str):
+    """Genera y guarda un reporte. Es la única implementación usada por UI y monitor."""
+    data = get_reporte_con_overrides(id_reporte)
+    if not data:
+        raise LookupError("ID_Reporte no encontrado")
+
+    fotos = [f for f in (str(data.get(f"Foto{i}", "")).strip() for i in range(1, 7)) if f]
+    logo_web, logo_fs = _logo_paths()
+    html = render_template(
+        "reporte_formato.html",
+        datos=data,
+        fotos=fotos,
+        embed_for_pdf=True,
+        logo_web=logo_web,
+        logo_fs=logo_fs,
+    )
+    pdf_bytes = HTML(string=html, base_url=current_app.root_path).write_pdf()
+
+    cliente = _sanitize_name(data.get("Cliente") or "Sin Cliente")
+    ronda_norm = _normalize_ronda(data.get("Ronda") or "")
+    nombre_equipo = (data.get("NombreEquipo") or "Reporte").strip().replace("/", "-")
+    filename = f"{nombre_equipo} - {id_reporte}.pdf"
+
+    drive = _drive_service_for_files()
+    if not REPORTES_ROOT_ID:
+        raise RuntimeError("REPORTES_ROOT_ID no configurado")
+
+    client_id = _ensure_folder(drive, REPORTES_ROOT_ID, cliente)
+    id_folder = _ensure_folder(drive, client_id, id_reporte)
+    file_id_a = _upsert_pdf(drive, id_folder, filename, pdf_bytes)
+
+    reportes_folder = _ensure_folder(drive, client_id, "Reportes")
+    target_parent = reportes_folder
+    if ronda_norm:
+        target_parent = _ensure_folder(drive, reportes_folder, ronda_norm)
+    file_id_b = _upsert_pdf(drive, target_parent, filename, pdf_bytes)
+
+    archivo_url = _file_web_link(drive, file_id_b) or _file_web_link(drive, file_id_a)
+    carpeta_url = _folder_web_link(drive, target_parent)
+    base_static = Path(current_app.root_path) / "static" / "reportes_pdfs" / cliente
+    base_static.mkdir(parents=True, exist_ok=True)
+    (base_static / filename).write_bytes(pdf_bytes)
+    _log_pdf_historial(cliente, id_reporte, archivo_url, carpeta_url, tipo="reporte")
+
+    return {
+        "cliente": cliente,
+        "folio": id_reporte,
+        "filename": filename,
+        "pdf_bytes": pdf_bytes,
+        "archivo_url": archivo_url,
+        "carpeta_url": carpeta_url,
+        "ronda": ronda_norm,
+    }
+
+def _generated_report_ids():
+    """IDs que ya tienen un PDF de tipo reporte registrado en HistorialPDF."""
+    rows = _values_get(_sheets_service(), "HistorialPDF!C2:F").get("values", [])
+    return {
+        str(row[0]).strip()
+        for row in rows
+        if row and str(row[0]).strip() and len(row) >= 4 and str(row[3]).strip().lower() == "reporte"
+    }
+
+def _recent_report_ids(limit: int):
+    _, _, id_range = _resolve_id_col()
+    rows = _values_get(_sheets_service(), id_range).get("values", [])
+    seen = set()
+    result = []
+    for row in reversed(rows):
+        report_id = str(row[0]).strip() if row else ""
+        if report_id and report_id not in seen:
+            seen.add(report_id)
+            result.append(report_id)
+            if len(result) >= limit:
+                break
+    return result
+
+def process_new_reports():
+    """Procesa una vez los reportes recientes que todavía no tienen PDF registrado."""
+    if not _AUTO_PDF_LOCK.acquire(blocking=False):
+        return []
+    try:
+        _AUTO_PDF_STATUS.update(running=True, last_check=datetime.now().isoformat(timespec="seconds"), last_error=None)
+        generated = _generated_report_ids()
+        pending = [rid for rid in reversed(_recent_report_ids(AUTO_PDF_LOOKBACK)) if rid not in generated]
+        now = time.monotonic()
+
+        pending_set = set(pending)
+        for report_id in list(_AUTO_PDF_FIRST_SEEN):
+            if report_id not in pending_set:
+                _AUTO_PDF_FIRST_SEEN.pop(report_id, None)
+
+        ready = []
+        for report_id in pending:
+            first_seen = _AUTO_PDF_FIRST_SEEN.setdefault(report_id, now)
+            if now - first_seen >= AUTO_PDF_STABILITY_SECONDS:
+                ready.append(report_id)
+        _AUTO_PDF_STATUS["waiting_for_stability"] = len(pending) - len(ready)
+
+        completed = []
+        for report_id in ready:
+            try:
+                _generate_and_store_report_pdf(report_id)
+                completed.append(report_id)
+                _AUTO_PDF_FIRST_SEEN.pop(report_id, None)
+                _AUTO_PDF_STATUS["last_generated"] = report_id
+            except Exception as exc:
+                # Un reporte incompleto no impide que los siguientes se procesen.
+                _AUTO_PDF_STATUS["last_error"] = f"{report_id}: {type(exc).__name__}: {exc}"
+                current_app.logger.exception("No se pudo generar automáticamente el reporte %s", report_id)
+        return completed
+    finally:
+        _AUTO_PDF_STATUS["running"] = False
+        _AUTO_PDF_LOCK.release()
+
+def start_auto_report_monitor(app):
+    """Inicia una sola hebra daemon que detecta reportes nuevos en Sheets."""
+    global _AUTO_PDF_STARTED
+    if not AUTO_PDF_ENABLED or _AUTO_PDF_STARTED:
+        return
+    _AUTO_PDF_STARTED = True
+
+    def monitor():
+        while True:
+            try:
+                with app.app_context():
+                    # Las plantillas del reporte usan url_for(). Aunque el monitor
+                    # no atiende una petición HTTP, necesita un contexto de petición
+                    # para construir esas URLs igual que el flujo manual.
+                    with app.test_request_context("/"):
+                        process_new_reports()
+            except Exception as exc:
+                _AUTO_PDF_STATUS["last_error"] = f"{type(exc).__name__}: {exc}"
+                app.logger.exception("Falló el monitor automático de reportes")
+            time.sleep(AUTO_PDF_INTERVAL)
+
+    threading.Thread(target=monitor, name="reportes-auto-pdf", daemon=True).start()
+
+@reportes_bp.get("/reportes/auto/status")
+def reportes_auto_status():
+    return jsonify({
+        "enabled": AUTO_PDF_ENABLED,
+        "interval_seconds": AUTO_PDF_INTERVAL,
+        "lookback": AUTO_PDF_LOOKBACK,
+        "stability_seconds": AUTO_PDF_STABILITY_SECONDS,
+        **_AUTO_PDF_STATUS,
+    })
 
 # >>> meta para auxiliar (cliente/nombre_equipo)
 @reportes_bp.get("/reportes/meta/<id_reporte>")

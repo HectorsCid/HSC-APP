@@ -33,9 +33,10 @@
       <div class="row">
         <a class="btn" href="/cotizaciones">← Volver</a>
         {% if q and q.view_url %}
-          <a class="btn" href="{{ q.view_url }}" target="_blank">📄 Ver PDF</a>
+          <a class="btn" href="{{ q.view_url }}" target="_blank">Ver / Reimprimir PDF</a>
         {% endif %}
         {% if q %}
+          <a class="btn" href="/cotizaciones/{{ q.id }}/duplicar">Duplicar y editar</a>
           <a class="btn btn-ok" href="/facturas/nueva?quote_id={{ q.id }}">🧾 Mandar a facturar</a>
         {% endif %}
       </div>

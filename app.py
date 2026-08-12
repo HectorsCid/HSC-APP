@@ -14,6 +14,7 @@ from weasyprint import HTML
 import json
 import os
 import platform
+import unicodedata
 from urllib.parse import quote_plus
 from pathlib import Path
 import io
@@ -31,7 +32,7 @@ from google.auth.exceptions import RefreshError
 
 # Otros
 from werkzeug.utils import safe_join
-from reportes_bp import reportes_bp
+from reportes_bp import reportes_bp, start_auto_report_monitor
 
 from facturacion_bp import facturacion_bp
 app.register_blueprint(facturacion_bp)
@@ -155,8 +156,12 @@ AUTO_SYNC_FROM_DRIVE = True  # si no quieres en local, pon False
 app.static_folder = "static"
 app.template_folder = "templates"
 
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "superclave")
+_flask_secret = os.environ.get("FLASK_SECRET_KEY", "").strip()
+if IS_RENDER and not _flask_secret:
+    raise RuntimeError("Configura FLASK_SECRET_KEY en las variables de entorno de Render")
+app.secret_key = _flask_secret or "solo-desarrollo-local"
 app.register_blueprint(reportes_bp)
+start_auto_report_monitor(app)
 
 @app.template_filter('currency')
 def currency_filter(value):
@@ -184,12 +189,13 @@ def _drive_buscar_archivo(service, nombre, parent_id):
     return files[0]['id'] if files else None
 
 def descargar_clientes_de_drive():
+    """Descarga clientes; devuelve None si Drive falla o el archivo no es válido."""
     try:
         service = _drive_service_cfg()
         fid = _drive_buscar_archivo(service, CLIENTES_FILENAME, ID_COT)
         if not fid:
-            print("ℹ️ clientes.json no encontrado en Drive; usando vacío.")
-            return {}
+            print("clientes.json no encontrado en Drive; se conservan los datos actuales.")
+            return None
         request = service.files().get_media(fileId=fid)
         fh = io.BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
@@ -199,29 +205,33 @@ def descargar_clientes_de_drive():
         fh.seek(0)
         content = fh.read().decode('utf-8')
         data = json.loads(content)
+        if not isinstance(data, dict):
+            raise ValueError("clientes.json debe contener un objeto JSON")
         with open('clientes.json', 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
-        print("✅ clientes.json cargado desde Drive.")
+        print(f"clientes.json cargado desde Drive: {len(data)} clientes.")
         return data
     except Exception as e:
-        print("⚠️ No se pudo descargar clientes.json de Drive:", e)
-        return {}
+        print("No se pudo descargar clientes.json de Drive:", e)
+        return None
 
 def subir_clientes_a_drive(clientes_dict):
     try:
+        if not isinstance(clientes_dict, dict) or not clientes_dict:
+            raise ValueError("Se cancelo la subida para evitar reemplazar Drive con una lista vacia")
         service = _drive_service_cfg()
         fid = _drive_buscar_archivo(service, CLIENTES_FILENAME, ID_COT)
         payload = json.dumps(clientes_dict, ensure_ascii=False, indent=2).encode('utf-8')
         media = MediaIoBaseUpload(io.BytesIO(payload), mimetype='application/json', resumable=False)
         if fid:
             updated = service.files().update(fileId=fid, media_body=media, fields='id').execute()
-            print("♻️ clientes.json actualizado en Drive:", updated.get('id'))
+            print("clientes.json actualizado en Drive:", updated.get('id'))
         else:
             meta = {'name': CLIENTES_FILENAME, 'parents': [ID_COT]}
             created = service.files().create(body=meta, media_body=media, fields='id').execute()
-            print("📤 clientes.json creado en Drive:", created.get('id'))
+            print("clientes.json creado en Drive:", created.get('id'))
     except Exception as e:
-        print("⚠️ No se pudo subir clientes.json a Drive:", e)
+        print("No se pudo subir clientes.json a Drive:", e)
 
 
 def descargar_cotizaciones_de_drive():
@@ -304,7 +314,7 @@ def cargar_clientes():
             if isinstance(data, dict) and data:
                 return data
         except Exception as e:
-            print("⚠️ clientes.json local ilegible:", e)
+            print("clientes.json local ilegible:", e)
 
     data = descargar_clientes_de_drive()
     return data or {}
@@ -313,9 +323,9 @@ def guardar_clientes(clientes):
     try:
         with open("clientes.json", "w", encoding="utf-8") as f:
             json.dump(clientes, f, indent=2, ensure_ascii=False)
-        print("💾 clientes.json guardado localmente.")
+        print("clientes.json guardado localmente.")
     except Exception as e:
-        print("⚠️ No se pudo guardar clientes.json local:", e)
+        print("No se pudo guardar clientes.json local:", e)
 
     subir_clientes_a_drive(clientes)
 
@@ -323,13 +333,17 @@ clientes_predefinidos = cargar_clientes()
 
 def _sync_clientes_from_drive_into_memory():
     data = descargar_clientes_de_drive()
-    if data is not None:
+    if isinstance(data, dict) and data:
         try:
             clientes_predefinidos.clear()
             clientes_predefinidos.update(data)
-            print("🔄 clientes_predefinidos sincronizado desde Drive (startup).")
+            print(f"Clientes sincronizados desde Drive: {len(clientes_predefinidos)}.")
+            return True
         except Exception as e:
-            print("⚠️ No se pudo actualizar clientes_predefinidos:", e)
+            print("No se pudo actualizar clientes_predefinidos:", e)
+    elif data == {}:
+        print("Drive devolvio una lista vacia; se conservan los clientes actuales.")
+    return False
 
 # ---------- Reemplazo de before_first_request (Flask 3.x) ----------
 __did_sync_once = False
@@ -341,14 +355,15 @@ def _bootstrap_sync_clientes():
     need_sync = (not __did_sync_once) or (not clientes_predefinidos)
     if need_sync and (IS_RENDER or AUTO_SYNC_FROM_DRIVE):
         try:
-            _sync_clientes_from_drive_into_memory()  # esto deja clientes_predefinidos poblado si todo va bien
-            if clientes_predefinidos:   # ✅ solo marcamos done si hay datos
+            sync_ok = _sync_clientes_from_drive_into_memory()
+            if clientes_predefinidos:
                 __did_sync_once = True
-                print(f"🔄 clientes_predefinidos cargados: {len(clientes_predefinidos)}")
+                origen = "Drive" if sync_ok else "respaldo local"
+                print(f"Clientes disponibles: {len(clientes_predefinidos)} ({origen}).")
             else:
-                print("⚠️ Sync intentada pero sin datos; se volverá a intentar en el siguiente request.")
+                print("Sin clientes disponibles; se reintentara en la siguiente solicitud.")
         except Exception as e:
-            print("❌ Error sincronizando clientes:", e)
+            print("Error sincronizando clientes:", e)
             # No marcamos __did_sync_once; reintentará en el próximo request
 
 # ---------- Sync de cotizaciones.json (Drive -> local data/) ----------
@@ -426,6 +441,10 @@ def obtener_siguiente_folio():
 partidas = []
 datos_cliente = {}
 
+def _clave_orden_cliente(nombre):
+    texto = unicodedata.normalize("NFKD", str(nombre or ""))
+    return "".join(ch for ch in texto if not unicodedata.combining(ch)).casefold()
+
 # ================================= Rutas =======================================
 @app.route('/')
 def inicio():
@@ -450,6 +469,8 @@ def inicio():
         partidas=partidas,
         datos=datos_cliente,
         clientes=clientes_predefinidos,
+        clientes_orden=list(clientes_predefinidos.keys()),
+        clientes_alfabeticos=sorted(clientes_predefinidos.keys(), key=_clave_orden_cliente),
         subtotal=subtotal,
         iva=iva,
         isr_retenido=isr_retenido,
@@ -544,6 +565,13 @@ def eliminar(indice):
 
 @app.route('/limpiar')
 def limpiar():
+    partidas.clear()
+    datos_cliente.clear()
+    return redirect(url_for('inicio'))
+
+@app.route('/nueva-cotizacion')
+def nueva_cotizacion():
+    """Inicia una cotización limpia únicamente cuando el usuario lo solicita."""
     partidas.clear()
     datos_cliente.clear()
     return redirect(url_for('inicio'))
@@ -863,7 +891,8 @@ def generar_pdf():
 📂 <a href='{carpeta_url}' target='_blank'>Abrir carpeta en Drive</a><br><br>
 📱 <a href='{wa_url}' target='_blank'>Compartir por WhatsApp</a> &nbsp;|&nbsp;
 ✉️ <a href='{mailto_url}'>Enviar por Email</a><br><br>
-<a href='/'>← Volver</a>"""
+<a href='/'>← Volver a esta cotización</a> &nbsp;|&nbsp;
+<a href='{url_for("nueva_cotizacion")}'>＋ Generar nueva cotización</a>"""
 
 @app.route('/editar_cliente', methods=['GET', 'POST'])
 def editar_cliente():
@@ -1550,6 +1579,50 @@ def api_cotizacion_detalle(qid):
     }
     return jsonify(out), 200
 
+@app.get("/cotizaciones/<qid>/duplicar")
+def duplicar_cotizacion(qid):
+    """Carga una cotización histórica como una nueva, sin modificar el original."""
+    path = Path(current_app.root_path) / "data" / "cotizaciones.json"
+    try:
+        historial = json.loads(path.read_text("utf-8")) if path.exists() else []
+    except Exception:
+        historial = []
+    if not isinstance(historial, list):
+        historial = historial.get("items", []) if isinstance(historial, dict) else []
+
+    original = next((q for q in historial if str(q.get("id") or q.get("folio") or "") == str(qid)), None)
+    if not original:
+        flash("No se encontró la cotización que deseas duplicar.")
+        return redirect(url_for("ui_inicio_cotizacion"))
+
+    conceptos = original.get("conceptos") or original.get("items") or original.get("partidas") or []
+    nuevas_partidas = []
+    for concepto in conceptos if isinstance(conceptos, list) else []:
+        try:
+            cantidad = float(concepto.get("cantidad") or concepto.get("qty") or 1)
+            precio = float(concepto.get("precio_unitario") or concepto.get("precio") or concepto.get("price") or 0)
+        except (TypeError, ValueError):
+            continue
+        nuevas_partidas.append({
+            "descripcion": concepto.get("descripcion") or concepto.get("desc") or "Concepto",
+            "cantidad": int(cantidad) if cantidad.is_integer() else cantidad,
+            "precio": precio,
+            "total": cantidad * precio,
+        })
+
+    partidas.clear()
+    partidas.extend(nuevas_partidas)
+    datos_cliente.clear()
+    datos_cliente.update({
+        "cliente": original.get("cliente") or (original.get("receptor") or {}).get("nombre") or "",
+        "fecha": date.today().isoformat(),
+        "cotizacion": obtener_siguiente_folio(),
+        "comentarios": "",
+        "usar_retenciones": False,
+    })
+    flash(f"Cotización {qid} duplicada. Se asignó un folio nuevo; revisa los datos antes de generar el PDF.")
+    return redirect(url_for("inicio"))
+
 @app.get("/cotizaciones")
 @app.get("/inicio-cotizacion")
 def ui_inicio_cotizacion():
@@ -1639,4 +1712,3 @@ def ui_clientes():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
-

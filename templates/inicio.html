@@ -76,6 +76,16 @@
     }
     .switch input{ width:auto; transform:scale(1.05); }
     .hint{font-weight:600;color:var(--muted);font-size:.82rem}
+    .cliente-label-row{
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      margin:8px 0 6px;
+    }
+    .cliente-label-row > label:first-child{margin:0}
+    .orden-clientes-toggle{
+      display:inline-flex; align-items:center; gap:6px; margin:0; cursor:pointer;
+      color:var(--muted); font-size:.78rem; font-weight:600; white-space:nowrap;
+    }
+    .orden-clientes-toggle input{width:14px;height:14px;margin:0;padding:0;accent-color:var(--brand)}
   </style>
 </head>
 <body>
@@ -103,10 +113,16 @@
       <div class="card">
         <h3 class="section-title">Cliente y condiciones</h3>
 
-        <label>Cliente</label>
+        <div class="cliente-label-row">
+          <label for="cliente">Cliente</label>
+          <label class="orden-clientes-toggle" title="Desactivado: orden alfabético">
+            <input type="checkbox" id="orden-clientes" />
+            <span>Más recientes primero</span>
+          </label>
+        </div>
         <select name="cliente" id="cliente" required>
           <option value="">— Selecciona un cliente —</option>
-          {% for nombre in clientes %}
+          {% for nombre in clientes_alfabeticos %}
             <option value="{{ nombre }}" {% if datos.cliente == nombre %}selected{% endif %}>{{ nombre }}</option>
           {% endfor %}
         </select>
@@ -295,13 +311,12 @@
   </div>
 
   <!-- Datos clientes embebidos -->
-  <script type="application/json" id="clientes-data">
-    {{ clientes | tojson | safe }}
-  </script>
-
-  <!-- Datos clientes embebidos -->
 <script type="application/json" id="clientes-data">
   {{ clientes | tojson | safe }}
+</script>
+
+<script type="application/json" id="clientes-orden-data">
+  {{ clientes_orden | tojson | safe }}
 </script>
 
 <script type="application/json" id="atencion-data">
@@ -310,15 +325,36 @@
 
 <script>
   const clientes = JSON.parse(document.getElementById("clientes-data").textContent);
+  const ordenGuardadoClientes = JSON.parse(document.getElementById("clientes-orden-data").textContent);
   const atencionGuardada = JSON.parse(document.getElementById("atencion-data").textContent);
 
   document.addEventListener('DOMContentLoaded', () => {
     const selectCliente = document.getElementById('cliente');
+    const selectOrdenClientes = document.getElementById('orden-clientes');
     const selectAtencion = document.getElementById('atencion');
     const direccion = document.getElementById('direccion');
     const tiempo = document.getElementById('tiempo');
     const anticipo = document.getElementById('anticipo');
     const vigencia = document.getElementById('vigencia');
+
+    const comparadorClientes = new Intl.Collator('es', {sensitivity: 'base', numeric: true});
+
+    function ordenarClientes(modo) {
+      const seleccionado = selectCliente.value;
+      const nombres = modo === 'recientes'
+        ? [...ordenGuardadoClientes].reverse()
+        : [...ordenGuardadoClientes].sort(comparadorClientes.compare);
+
+      selectCliente.replaceChildren(new Option('— Selecciona un cliente —', ''));
+      nombres.forEach(nombre => {
+        selectCliente.add(new Option(nombre, nombre, false, nombre === seleccionado));
+      });
+    }
+
+    ordenarClientes('alfabetico');
+    selectOrdenClientes.addEventListener('change', () => {
+      ordenarClientes(selectOrdenClientes.checked ? 'recientes' : 'alfabetico');
+    });
 
     function cargarDatosCliente(nombreCliente, mantenerSeleccion = true) {
       const d = clientes[nombreCliente];
