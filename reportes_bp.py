@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, abort, jsonify, current_app
-import os, io, re, time, json, random, threading
+import os, io, re, time, json, random, threading, base64
 from datetime import date, datetime
 from pathlib import Path
 import uuid
@@ -59,14 +59,15 @@ _AUTO_PDF_STATUS = {
 # ----------------------------------------------------------------------
 # Construcción de clientes Google con token.json (como antes)
 # ----------------------------------------------------------------------
-_sheets_svc = None
+_reportes_services = threading.local()
 _drive_svc  = None
 
 def _sheets_service():
-    global _sheets_svc
-    if _sheets_svc is None:
-        _sheets_svc = get_sheets_service()
-    return _sheets_svc
+    service = getattr(_reportes_services, "sheets", None)
+    if service is None:
+        service = get_sheets_service()
+        _reportes_services.sheets = service
+    return service
 
 def _drive_service():
     global _drive_svc
@@ -377,15 +378,16 @@ def reportes_suggest():
 # ----------------------------------------------------------------------
 
 # Reuso de cliente y cachés en memoria para estabilidad
-_drive_imgs_svc = None
+_drive_img_services = threading.local()
 _IMG_PATH_ID_CACHE = {"ttl": 1800, "data": {}}  # path_str -> (file_id, ts)
 _IMG_BYTES_CACHE = {"ttl": 600, "data": {}}     # file_id -> (bytes, mime, name, ts)
 
 def _drive_service_for_imgs():
-    global _drive_imgs_svc
-    if _drive_imgs_svc is None:
-        _drive_imgs_svc = get_drive_service_user()
-    return _drive_imgs_svc
+    service = getattr(_drive_img_services, "drive", None)
+    if service is None:
+        service = get_drive_service_user()
+        _drive_img_services.drive = service
+    return service
 
 def _cache_get_path_id(path_str: str):
     ent = _IMG_PATH_ID_CACHE["data"].get(path_str)
@@ -466,6 +468,47 @@ def _resolve_path_to_id(drive, path_str: str):
         parent = files[0]['id']
     _cache_set_path_id(path_str, parent)
     return parent
+
+def _photo_data_uri(photo_ref: str) -> str | None:
+    """Descarga una foto de Drive y la devuelve incrustada para WeasyPrint."""
+    ref = (photo_ref or "").strip()
+    if not ref:
+        return None
+    drive = _drive_service_for_imgs()
+    file_id = _extract_drive_id(ref) or _resolve_path_to_id(drive, ref)
+    if not file_id:
+        return None
+    file_id = _resolve_shortcut(drive, file_id)
+    cached = _cache_get_bytes(file_id)
+    if cached:
+        bts, mime, _ = cached
+    else:
+        meta = _retry(lambda: drive.files().get(fileId=file_id, fields="mimeType,name").execute())
+        mime = meta.get("mimeType") or "image/jpeg"
+        name = meta.get("name") or "foto"
+        req = drive.files().get_media(fileId=file_id)
+        buf = io.BytesIO()
+        downloader = MediaIoBaseDownload(buf, req)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        bts = buf.getvalue()
+        if not bts:
+            return None
+        _cache_set_bytes(file_id, bts, mime, name)
+    return f"data:{mime};base64,{base64.b64encode(bts).decode('ascii')}"
+
+def _pdf_photos(data: dict) -> list[str]:
+    """Prepara fotos; una referencia aún inaccesible aplaza el PDF automático."""
+    refs = [str(data.get(f"Foto{i}", "")).strip() for i in range(1, 7)]
+    refs = [ref for ref in refs if ref]
+    photos = []
+    for ref in refs:
+        embedded = _photo_data_uri(ref)
+        if not embedded:
+            raise RuntimeError(f"Foto todavía no disponible en Drive: {ref}")
+        photos.append(embedded)
+    return photos
 
 @reportes_bp.route("/reportes/imgproxy", endpoint="reportes_imgproxy")
 def reportes_imgproxy():
@@ -705,7 +748,7 @@ def reportes_pdf(id_reporte):
         return redirect(url_for("reportes.reportes_inicio"))
 
     # IMPORTANTE: en PDF sí usamos fotos
-    fotos = [f for f in (data.get(f"Foto{i}", "").strip() for i in range(1,7)) if f]
+    fotos = _pdf_photos(data)
 
     logo_web, logo_fs = _logo_paths()
     html = render_template(
@@ -824,7 +867,7 @@ def _generate_and_store_report_pdf(id_reporte: str):
     if not data:
         raise LookupError("ID_Reporte no encontrado")
 
-    fotos = [f for f in (str(data.get(f"Foto{i}", "")).strip() for i in range(1, 7)) if f]
+    fotos = _pdf_photos(data)
     logo_web, logo_fs = _logo_paths()
     html = render_template(
         "reporte_formato.html",
@@ -993,7 +1036,7 @@ def reportes_pdf_json(id_reporte):
     if not data:
         return jsonify({"ok": False, "error": "not_found"}), 404
 
-    fotos = [f for f in (data.get(f"Foto{i}", "").strip() for i in range(1,7)) if f]
+    fotos = _pdf_photos(data)
     logo_web, logo_fs = _logo_paths()
     html = render_template(
         "reporte_formato.html",

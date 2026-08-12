@@ -1,7 +1,7 @@
 # auth_google.py
 # HSC deploy marker: 2025-08-29  (forzar rebuild en Render)
 
-import os, json, base64, sys
+import os, json, base64, sys, threading
 from functools import lru_cache
 
 from googleapiclient.discovery import build
@@ -23,6 +23,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/spreadsheets.readonly",
 ]
+
+# Los clientes de google-api-python-client mantienen estado de conexión y no
+# deben compartirse entre el monitor automático y los hilos de Gunicorn.
+_thread_services = threading.local()
 
 # =======================================================================================
 #                                     Service Account
@@ -68,10 +72,13 @@ def get_drive_service():
     """Drive usando cuenta de servicio."""
     return build("drive", "v3", credentials=_sa_credentials(), cache_discovery=False)
 
-@lru_cache(maxsize=1)
 def get_sheets_service():
-    """Sheets usando cuenta de servicio."""
-    return build("sheets", "v4", credentials=_sa_credentials(), cache_discovery=False)
+    """Sheets usando una conexión independiente por hilo."""
+    service = getattr(_thread_services, "sheets", None)
+    if service is None:
+        service = build("sheets", "v4", credentials=_sa_credentials(), cache_discovery=False)
+        _thread_services.sheets = service
+    return service
 
 # =======================================================================================
 #                                        Usuario

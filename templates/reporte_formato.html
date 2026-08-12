@@ -309,7 +309,7 @@
         <div class="photos">
           {% for f in fotos if f %}
             <div class="ph">
-              <img src="{{ url_for('reportes.reportes_imgproxy', url=f, _external=True) }}" alt="foto {{ loop.index }}">
+              <img src="{{ f if embed_for_pdf else url_for('reportes.reportes_imgproxy', url=f, _external=True) }}" alt="foto {{ loop.index }}">
             </div>
           {% endfor %}
           {% for _ in range(6 - (fotos|length)) %}
