@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, abort, jsonify, current_app
-import os, io, re, time, json, random, threading, base64
+import os, io, re, time, json, random, threading, base64, gc
 from datetime import date, datetime
 from pathlib import Path
 import uuid
@@ -10,6 +10,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from googleapiclient.errors import HttpError
 from weasyprint import HTML
+from PIL import Image, ImageOps
 from werkzeug.utils import secure_filename
 from auth_google import get_drive_service_user, get_sheets_service, get_drive_service
 
@@ -414,9 +415,33 @@ def _cache_get_bytes(file_id: str):
 
 def _cache_set_bytes(file_id: str, bts: bytes, mime: str, name: str):
     # Limit simple: no más de 40MB por entrada
-    if len(bts) > 40 * 1024 * 1024:
+    max_entry = 6 * 1024 * 1024
+    max_total = 24 * 1024 * 1024
+    if len(bts) > max_entry:
         return
-    _IMG_BYTES_CACHE["data"][file_id] = (bts, mime, name, time.time())
+    entries = _IMG_BYTES_CACHE["data"]
+    current = sum(len(item[0]) for item in entries.values())
+    while entries and current + len(bts) > max_total:
+        oldest_key = min(entries, key=lambda key: entries[key][3])
+        old = entries.pop(oldest_key)
+        current -= len(old[0])
+    entries[file_id] = (bts, mime, name, time.time())
+
+def _optimize_photo_bytes(bts: bytes) -> tuple[bytes, str]:
+    """Reduce una foto para el PDF sin modificar el archivo original."""
+    with Image.open(io.BytesIO(bts)) as image:
+        image = ImageOps.exif_transpose(image)
+        image.thumbnail((1400, 1400), Image.Resampling.LANCZOS)
+        if image.mode != "RGB":
+            if "A" in image.getbands():
+                background = Image.new("RGB", image.size, "white")
+                background.paste(image, mask=image.getchannel("A"))
+                image = background
+            else:
+                image = image.convert("RGB")
+        output = io.BytesIO()
+        image.save(output, format="JPEG", quality=80, optimize=True)
+        return output.getvalue(), "image/jpeg"
 
 _DRIVE_PATTERNS = [
     r'drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)',
@@ -495,7 +520,8 @@ def _photo_data_uri(photo_ref: str) -> str | None:
         bts = buf.getvalue()
         if not bts:
             return None
-        _cache_set_bytes(file_id, bts, mime, name)
+    bts, mime = _optimize_photo_bytes(bts)
+    _cache_set_bytes(file_id, bts, mime, "foto.jpg")
     return f"data:{mime};base64,{base64.b64encode(bts).decode('ascii')}"
 
 def _pdf_photos(data: dict) -> list[str]:
