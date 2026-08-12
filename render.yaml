@@ -13,5 +13,7 @@ services:
         value: "60"
       - key: REPORTES_AUTO_PDF_STABILITY_SECONDS
         value: "120"
+      - key: REPORTES_AUTO_PDF_BATCH_SIZE
+        value: "1"
       - key: FLASK_SECRET_KEY
         generateValue: true

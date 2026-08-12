@@ -46,6 +46,7 @@ AUTO_PDF_ENABLED = os.environ.get("REPORTES_AUTO_PDF", "1").strip().lower() not 
 AUTO_PDF_INTERVAL = max(15, int(os.environ.get("REPORTES_AUTO_PDF_INTERVAL", "60")))
 AUTO_PDF_LOOKBACK = max(1, int(os.environ.get("REPORTES_AUTO_PDF_LOOKBACK", "25")))
 AUTO_PDF_STABILITY_SECONDS = max(0, int(os.environ.get("REPORTES_AUTO_PDF_STABILITY_SECONDS", "120")))
+AUTO_PDF_BATCH_SIZE = max(1, int(os.environ.get("REPORTES_AUTO_PDF_BATCH_SIZE", "1")))
 _AUTO_PDF_LOCK = threading.Lock()
 _AUTO_PDF_STARTED = False
 _AUTO_PDF_FIRST_SEEN = {}
@@ -55,6 +56,7 @@ _AUTO_PDF_STATUS = {
     "last_generated": None,
     "last_error": None,
     "waiting_for_stability": 0,
+    "pending_ready": 0,
 }
 
 # ----------------------------------------------------------------------
@@ -985,9 +987,10 @@ def process_new_reports():
             if now - first_seen >= AUTO_PDF_STABILITY_SECONDS:
                 ready.append(report_id)
         _AUTO_PDF_STATUS["waiting_for_stability"] = len(pending) - len(ready)
+        _AUTO_PDF_STATUS["pending_ready"] = len(ready)
 
         completed = []
-        for report_id in ready:
+        for report_id in ready[:AUTO_PDF_BATCH_SIZE]:
             try:
                 _generate_and_store_report_pdf(report_id)
                 completed.append(report_id)
@@ -997,6 +1000,7 @@ def process_new_reports():
                 # Un reporte incompleto no impide que los siguientes se procesen.
                 _AUTO_PDF_STATUS["last_error"] = f"{report_id}: {type(exc).__name__}: {exc}"
                 current_app.logger.exception("No se pudo generar automáticamente el reporte %s", report_id)
+        gc.collect()
         return completed
     finally:
         _AUTO_PDF_STATUS["running"] = False
@@ -1032,6 +1036,7 @@ def reportes_auto_status():
         "interval_seconds": AUTO_PDF_INTERVAL,
         "lookback": AUTO_PDF_LOOKBACK,
         "stability_seconds": AUTO_PDF_STABILITY_SECONDS,
+        "batch_size": AUTO_PDF_BATCH_SIZE,
         **_AUTO_PDF_STATUS,
     })
 
