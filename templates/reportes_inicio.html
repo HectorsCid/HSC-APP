@@ -51,6 +51,15 @@
     .auto-box{margin-top:16px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card)}
     .auto-box h3{margin:0 0 6px}
     .auto-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+    .auto-progress{margin-top:12px}
+    .progress-head{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:12px;margin-bottom:7px}
+    .attempt-dots{display:flex;gap:7px;align-items:center}
+    .attempt-dot{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18)}
+    .attempt-dot.done{background:#22c55e;border-color:#22c55e}
+    .attempt-dot.active{background:#86efac;border-color:#86efac;animation:pulse 1s infinite alternate}
+    .progress-track{height:5px;border-radius:999px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:9px}
+    .progress-fill{height:100%;width:0;background:#22c55e;transition:width .35s ease}
+    @keyframes pulse{from{transform:scale(.8);opacity:.55}to{transform:scale(1.25);opacity:1}}
 
     /* --- Consolita de últimos generados --- */
     .tiny-list{display:flex;flex-direction:column;gap:10px}
@@ -104,6 +113,18 @@
         <div class="auto-box">
           <h3>Generación automática</h3>
           <div class="muted" id="auto-status">Consulta programada cada 8 horas.</div>
+          <div class="auto-progress" id="auto-progress" hidden>
+            <div class="progress-head">
+              <span id="auto-attempt">Conectando…</span>
+              <span id="auto-elapsed">00:00</span>
+            </div>
+            <div class="attempt-dots" id="auto-dots" aria-label="Intentos de conexión">
+              <span class="attempt-dot"></span><span class="attempt-dot"></span>
+              <span class="attempt-dot"></span><span class="attempt-dot"></span>
+              <span class="attempt-dot"></span>
+            </div>
+            <div class="progress-track"><div class="progress-fill" id="auto-progress-fill"></div></div>
+          </div>
           <div class="auto-actions">
             <button class="btn" id="btn-procesar-pendientes" type="button">Procesar pendientes ahora</button>
           </div>
@@ -230,6 +251,66 @@
 
     const $autoBtn = document.getElementById('btn-procesar-pendientes');
     const $autoStatus = document.getElementById('auto-status');
+    const $autoProgress = document.getElementById('auto-progress');
+    const $autoAttempt = document.getElementById('auto-attempt');
+    const $autoElapsed = document.getElementById('auto-elapsed');
+    const $autoFill = document.getElementById('auto-progress-fill');
+    const $autoDots = [...document.querySelectorAll('.attempt-dot')];
+    let autoPollTimer = null;
+
+    const phaseLabels = {
+      reading_history:'Leyendo historial de PDF…',
+      reading_reports:'Revisando reportes realizados…',
+      waiting_stability:'Esperando que termine la sincronización…',
+      generating:'Generando PDF…',
+      queue_pause:'PDF terminado; preparando el siguiente…',
+      finishing:'Finalizando revisión…',
+      error:'La revisión terminó con un error.',
+      idle:'Sin pendientes. Próxima revisión automática en hasta 8 horas.'
+    };
+
+    function formatElapsed(startedAt){
+      if(!startedAt) return '00:00';
+      const started = new Date(startedAt);
+      const seconds = Math.max(0, Math.floor((Date.now() - started.getTime()) / 1000));
+      return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
+    }
+
+    function renderAutoState(data){
+      const active = !!(data.running || data.queue_active);
+      $autoProgress.hidden = !active;
+      $autoBtn.disabled = !!data.running;
+      $autoStatus.textContent = data.last_error || phaseLabels[data.phase] || (active ? 'Procesando…' : phaseLabels.idle);
+      if(!active) return;
+
+      const attempt = Math.max(0, Number(data.attempt || 0));
+      const maxAttempts = Math.max(1, Number(data.max_attempts || 5));
+      $autoAttempt.textContent = attempt ? `Intento ${attempt} de ${maxAttempts}` : 'Preparando conexión…';
+      $autoElapsed.textContent = formatElapsed(data.operation_started_at);
+      $autoDots.forEach((dot, index) => {
+        dot.classList.toggle('done', attempt > index + 1);
+        dot.classList.toggle('active', attempt === index + 1 || (!attempt && index === 0));
+      });
+      const elapsed = data.operation_started_at
+        ? Math.max(0, (Date.now() - new Date(data.operation_started_at).getTime()) / 1000)
+        : 0;
+      $autoFill.style.width = `${Math.min(100, (elapsed / 165) * 100)}%`;
+    }
+
+    async function refreshAutoStatus(continuePolling=true){
+      try{
+        const r = await fetch('/reportes/auto/status', {cache:'no-store'});
+        const data = await r.json();
+        renderAutoState(data);
+        clearTimeout(autoPollTimer);
+        if(continuePolling && (data.running || data.queue_active)){
+          autoPollTimer = setTimeout(() => refreshAutoStatus(true), 3000);
+        }
+      }catch(e){
+        $autoStatus.textContent = 'No se pudo consultar el estado.';
+      }
+    }
+
     $autoBtn?.addEventListener('click', async () => {
       $autoBtn.disabled = true;
       $autoStatus.textContent = 'Iniciando revisión…';
@@ -238,14 +319,16 @@
         const data = await r.json();
         if(!r.ok || !data.ok){ throw new Error(data.error || 'No se pudo iniciar'); }
         $autoStatus.textContent = data.already_running
-          ? 'La fila ya se está procesando.'
+          ? 'La fila ya se está procesando; se programó otra revisión al terminar.'
           : 'Revisión solicitada. Puedes cerrar esta página.';
+        setTimeout(() => refreshAutoStatus(true), 800);
       }catch(e){
         $autoStatus.textContent = `No se pudo iniciar: ${e.message}`;
       }finally{
         $autoBtn.disabled = false;
       }
     });
+    refreshAutoStatus(true);
   </script>
   <script>
   // Delegación: capturar clicks en "Generar PDF" de ambas columnas

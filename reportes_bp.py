@@ -54,6 +54,10 @@ _AUTO_PDF_STARTED = False
 _AUTO_PDF_FIRST_SEEN = {}
 _AUTO_PDF_STATUS = {
     "running": False,
+    "phase": "idle",
+    "attempt": 0,
+    "max_attempts": 5,
+    "operation_started_at": None,
     "last_check": None,
     "last_generated": None,
     "last_error": None,
@@ -98,6 +102,9 @@ def _drive_service():
 def _retry(callable_fn, *, retries=4, base_delay=0.5):
     last = None
     for attempt in range(retries + 1):
+        if threading.current_thread().name == "reportes-auto-pdf":
+            _AUTO_PDF_STATUS["attempt"] = attempt + 1
+            _AUTO_PDF_STATUS["max_attempts"] = retries + 1
         if attempt:
             delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
             time.sleep(delay)
@@ -970,8 +977,16 @@ def process_new_reports():
     if not _AUTO_PDF_LOCK.acquire(blocking=False):
         return []
     try:
-        _AUTO_PDF_STATUS.update(running=True, last_check=datetime.now().isoformat(timespec="seconds"), last_error=None)
+        _AUTO_PDF_STATUS.update(
+            running=True,
+            phase="reading_history",
+            attempt=0,
+            operation_started_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+            last_check=datetime.now().isoformat(timespec="seconds"),
+            last_error=None,
+        )
         generated = _generated_report_ids()
+        _AUTO_PDF_STATUS["phase"] = "reading_reports"
         pending = [rid for rid in reversed(_recent_report_ids(AUTO_PDF_LOOKBACK)) if rid not in generated]
         now = time.monotonic()
 
@@ -987,10 +1002,12 @@ def process_new_reports():
                 ready.append(report_id)
         _AUTO_PDF_STATUS["waiting_for_stability"] = len(pending) - len(ready)
         _AUTO_PDF_STATUS["pending_ready"] = len(ready)
+        _AUTO_PDF_STATUS["phase"] = "waiting_stability" if pending and not ready else "generating" if ready else "finishing"
 
         completed = []
         for report_id in ready[:AUTO_PDF_BATCH_SIZE]:
             try:
+                _AUTO_PDF_STATUS["phase"] = "generating"
                 _generate_and_store_report_pdf(report_id)
                 completed.append(report_id)
                 _AUTO_PDF_FIRST_SEEN.pop(report_id, None)
@@ -998,6 +1015,7 @@ def process_new_reports():
             except Exception as exc:
                 # Un reporte incompleto no impide que los siguientes se procesen.
                 _AUTO_PDF_STATUS["last_error"] = f"{report_id}: {type(exc).__name__}: {exc}"
+                _AUTO_PDF_STATUS["phase"] = "error"
                 current_app.logger.exception("No se pudo generar automáticamente el reporte %s", report_id)
         gc.collect()
         return completed
@@ -1021,6 +1039,7 @@ def start_auto_report_monitor(app):
                         with app.test_request_context("/"):
                             completed = process_new_reports()
                     if completed:
+                        _AUTO_PDF_STATUS["phase"] = "queue_pause"
                         time.sleep(AUTO_PDF_QUEUE_DELAY)
                         continue
                     if _AUTO_PDF_STATUS.get("waiting_for_stability", 0) > 0:
@@ -1030,10 +1049,13 @@ def start_auto_report_monitor(app):
             except Exception as exc:
                 _AUTO_PDF_STATUS["last_error"] = f"{type(exc).__name__}: {exc}"
                 _AUTO_PDF_STATUS["running"] = False
+                _AUTO_PDF_STATUS["phase"] = "error"
                 _reset_auto_sheets_service()
                 app.logger.exception("Falló el monitor automático de reportes")
             finally:
                 _AUTO_PDF_STATUS["queue_active"] = False
+                if not _AUTO_PDF_STATUS.get("last_error"):
+                    _AUTO_PDF_STATUS["phase"] = "idle"
 
             # Duerme hasta la siguiente revisión programada. El botón de la UI
             # despierta este mismo hilo sin crear procesos paralelos.
@@ -1059,6 +1081,7 @@ def reportes_auto_run():
     if not AUTO_PDF_ENABLED:
         return jsonify({"ok": False, "error": "Generación automática desactivada"}), 409
     if _AUTO_PDF_STATUS.get("queue_active"):
+        _AUTO_PDF_WAKE_EVENT.set()
         return jsonify({"ok": True, "already_running": True})
     _AUTO_PDF_WAKE_EVENT.set()
     return jsonify({"ok": True, "queued": True})
