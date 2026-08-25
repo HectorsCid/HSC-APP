@@ -48,6 +48,9 @@
     .muted{color:var(--muted);font-size:12px}
     .chip{font-size:12px;padding:4px 8px;border-radius:999px;background:var(--chip);color:var(--chip-tx);border:1px solid var(--chip-bd)}
     .empty{border:1px dashed var(--border);border-radius:14px;padding:14px;text-align:center;color:var(--muted)}
+    .auto-box{margin-top:16px;padding:14px;border:1px solid var(--border);border-radius:14px;background:var(--card)}
+    .auto-box h3{margin:0 0 6px}
+    .auto-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
 
     /* --- Consolita de últimos generados --- */
     .tiny-list{display:flex;flex-direction:column;gap:10px}
@@ -88,6 +91,7 @@
         </form>
         <div class="links">
           <a class="link" href="{{ url_for('inicio_app') }}">← Panel HSC</a>
+          <a class="link" href="{{ url_for('reportes.diag_nuevo') }}">Generar reporte de trabajo</a>
           <a class="link" href="{{ url_for('reportes.reportes_debug') }}">Debug de reportes</a>
         </div>
 
@@ -97,22 +101,29 @@
           <div class="empty">Escribe un ID y pulsa <strong>Continuar</strong> para cargar las acciones aquí.</div>
         </div>
 
-        <!-- (2) Consola: últimos 5 reportes generados (solo tipo=reporte) -->
-        <div class="aux-header">Últimos generados <span class="muted">(reportes)</span></div>
-        <div id="console-ultimos" class="tiny-list">
-          <div class="empty muted">Actualizando…</div>
+        <div class="auto-box">
+          <h3>Generación automática</h3>
+          <div class="muted" id="auto-status">Consulta programada cada 8 horas.</div>
+          <div class="auto-actions">
+            <button class="btn" id="btn-procesar-pendientes" type="button">Procesar pendientes ahora</button>
+          </div>
         </div>
-        <div class="muted" id="console-status" style="margin-top:6px;">&nbsp;</div>
       </div>
 
       <!-- Derecha: Últimos 10 -->
       <div class="card">
         <div class="header-row">
-          <h3>Últimos 10</h3>
-          <a class="btn" href="{{ url_for('reportes.diag_nuevo') }}">generar reporte de trabajo</a>
+          <h3>Reportes recientes</h3>
+          {% if recent_loaded %}
+            <a class="btn" href="{{ url_for('reportes.reportes_inicio') }}">Ocultar</a>
+          {% else %}
+            <a class="btn" href="{{ url_for('reportes.reportes_inicio', recent=1) }}">Cargar recientes</a>
+          {% endif %}
         </div>
         <div class="list">
-          {% if ultimos_items and ultimos_items|length > 0 %}
+          {% if not recent_loaded %}
+            <div class="empty">La lista se carga únicamente cuando la necesitas.</div>
+          {% elif ultimos_items and ultimos_items|length > 0 %}
             {% for it in ultimos_items %}
               <div class="item">
                 <div class="left">
@@ -217,52 +228,24 @@
       }
     });
 
-    // ---------- 2) Consola: últimos 5 PDFs tipo=reporte ----------
-    const $console = document.getElementById('console-ultimos');
-    const $cStatus = document.getElementById('console-status');
-
-    async function fetchUltimosReportes(){
+    const $autoBtn = document.getElementById('btn-procesar-pendientes');
+    const $autoStatus = document.getElementById('auto-status');
+    $autoBtn?.addEventListener('click', async () => {
+      $autoBtn.disabled = true;
+      $autoStatus.textContent = 'Iniciando revisión…';
       try{
-        $console.innerHTML = `<div class="empty muted">Actualizando…</div>`;
-        const r = await fetch(`/api/ultimos-pdfs?limit=5&tipo=reporte`, {cache:'no-store'});
+        const r = await fetch('/reportes/auto/run', {method:'POST'});
         const data = await r.json();
-        if(!data.ok){ throw new Error(data.error || 'No ok'); }
-        renderConsole(data.items || []);
-        const now = new Date();
-        $cStatus.textContent = `Actualizado ${now.toLocaleTimeString()}`;
+        if(!r.ok || !data.ok){ throw new Error(data.error || 'No se pudo iniciar'); }
+        $autoStatus.textContent = data.already_running
+          ? 'La fila ya se está procesando.'
+          : 'Revisión solicitada. Puedes cerrar esta página.';
       }catch(e){
-        console.error(e);
-        $console.innerHTML = `<div class="empty muted">No se pudo cargar el historial.</div>`;
-        $cStatus.textContent = 'Error al actualizar';
+        $autoStatus.textContent = `No se pudo iniciar: ${e.message}`;
+      }finally{
+        $autoBtn.disabled = false;
       }
-    }
-
-    function renderConsole(items){
-      if(!items.length){
-        $console.innerHTML = `<div class="empty muted">Sin PDFs recientes.</div>`;
-        return;
-      }
-      $console.innerHTML = items.map(it => {
-        const fecha = it.timestamp ? new Date(it.timestamp).toLocaleString() : '';
-        const folio = it.folio ? `Folio ${it.folio}` : '—';
-        const archivo = it.archivo_url ? `<a class="link-pill" href="${it.archivo_url}" target="_blank">Abrir PDF</a>` : '';
-        const carpeta = it.carpeta_url ? `<a class="link-pill" href="${it.carpeta_url}" target="_blank">Carpeta</a>` : '';
-        return `
-          <div class="tiny-item">
-            <div class="tiny-left">
-              <div class="tiny-title">${it.cliente || '—'}</div>
-              <div class="tiny-meta"><span>${folio}</span><span>•</span><span>${fecha}</span></div>
-              <div class="tiny-links">${archivo}${carpeta}</div>
-            </div>
-            <div class="right-chip"><span class="chip">PDF</span></div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    // Auto-refresh cada 20s
-    setInterval(fetchUltimosReportes, 20000);
-    fetchUltimosReportes();
+    });
   </script>
   <script>
   // Delegación: capturar clicks en "Generar PDF" de ambas columnas
@@ -287,8 +270,6 @@
       const data = await r.json();
 
       if(data && data.ok){
-        // Actualiza consola
-        await fetchUltimosReportes();
         // Feedback sutil
         a.textContent = 'Listo ✓';
         setTimeout(()=>{ a.textContent = 'Generar PDF'; a.style.pointerEvents=''; }, 1200);

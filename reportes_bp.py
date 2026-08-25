@@ -43,11 +43,13 @@ REPORTES_ROOT_ID = os.environ.get("REPORTES_ROOT_ID", "13x9OPrPJNcT3E17lcyISbpL5
 # Generación automática. El monitor consulta los IDs recientes y usa
 # HistorialPDF como registro durable para no volver a procesarlos.
 AUTO_PDF_ENABLED = os.environ.get("REPORTES_AUTO_PDF", "1").strip().lower() not in ("0", "false", "no", "off")
-AUTO_PDF_INTERVAL = max(15, int(os.environ.get("REPORTES_AUTO_PDF_INTERVAL", "60")))
+AUTO_PDF_INTERVAL = max(60, int(os.environ.get("REPORTES_AUTO_PDF_INTERVAL", "28800")))
 AUTO_PDF_LOOKBACK = max(1, int(os.environ.get("REPORTES_AUTO_PDF_LOOKBACK", "25")))
 AUTO_PDF_STABILITY_SECONDS = max(0, int(os.environ.get("REPORTES_AUTO_PDF_STABILITY_SECONDS", "120")))
 AUTO_PDF_BATCH_SIZE = max(1, int(os.environ.get("REPORTES_AUTO_PDF_BATCH_SIZE", "1")))
+AUTO_PDF_QUEUE_DELAY = max(30, int(os.environ.get("REPORTES_AUTO_PDF_QUEUE_DELAY", "120")))
 _AUTO_PDF_LOCK = threading.Lock()
+_AUTO_PDF_WAKE_EVENT = threading.Event()
 _AUTO_PDF_STARTED = False
 _AUTO_PDF_FIRST_SEEN = {}
 _AUTO_PDF_STATUS = {
@@ -57,6 +59,7 @@ _AUTO_PDF_STATUS = {
     "last_error": None,
     "waiting_for_stability": 0,
     "pending_ready": 0,
+    "queue_active": False,
 }
 
 # ----------------------------------------------------------------------
@@ -732,21 +735,26 @@ def reportes_inicio():
         return redirect(url_for("reportes.reportes_prev", id_reporte=id_reporte))
 
     ultimos_items = []
+    recent_loaded = (request.args.get("recent") == "1")
     force = (request.args.get("refresh") == "1")
-    try:
-        if SHEET_ID and SHEET_TAB:
-            ultimos_items = _get_ultimos_10_items_cached(force_refresh=force)
-        else:
-            flash("Configura REPORTES_SHEET_ID / REPORTES_TAB para listar folios.")
-    except Exception as e:
-        if _LAST10_CACHE["items"]:
-            ultimos_items = _LAST10_CACHE["items"]
-            flash("Mostrando lista en caché por un problema temporal al leer Sheets.")
-        else:
-            flash(f"No se pudo leer Google Sheets: {e}")
-            ultimos_items = []
+    if recent_loaded:
+        try:
+            if SHEET_ID and SHEET_TAB:
+                ultimos_items = _get_ultimos_10_items_cached(force_refresh=force)
+            else:
+                flash("Configura REPORTES_SHEET_ID / REPORTES_TAB para listar folios.")
+        except Exception as e:
+            if _LAST10_CACHE["items"]:
+                ultimos_items = _LAST10_CACHE["items"]
+                flash("Mostrando lista en caché por un problema temporal al leer Sheets.")
+            else:
+                flash(f"No se pudo leer Google Sheets: {e}")
 
-    return render_template("reportes_inicio.html", ultimos_items=ultimos_items)
+    return render_template(
+        "reportes_inicio.html",
+        ultimos_items=ultimos_items,
+        recent_loaded=recent_loaded,
+    )
 
 @reportes_bp.route("/reportes/prev/<id_reporte>")
 def reportes_prev(id_reporte):
@@ -1006,22 +1014,31 @@ def start_auto_report_monitor(app):
 
     def monitor():
         while True:
+            _AUTO_PDF_STATUS["queue_active"] = True
             try:
-                with app.app_context():
-                    # Las plantillas del reporte usan url_for(). Aunque el monitor
-                    # no atiende una petición HTTP, necesita un contexto de petición
-                    # para construir esas URLs igual que el flujo manual.
-                    with app.test_request_context("/"):
-                        process_new_reports()
+                while True:
+                    with app.app_context():
+                        with app.test_request_context("/"):
+                            completed = process_new_reports()
+                    if completed:
+                        time.sleep(AUTO_PDF_QUEUE_DELAY)
+                        continue
+                    if _AUTO_PDF_STATUS.get("waiting_for_stability", 0) > 0:
+                        time.sleep(max(1, AUTO_PDF_STABILITY_SECONDS))
+                        continue
+                    break
             except Exception as exc:
                 _AUTO_PDF_STATUS["last_error"] = f"{type(exc).__name__}: {exc}"
                 _AUTO_PDF_STATUS["running"] = False
                 _reset_auto_sheets_service()
                 app.logger.exception("Falló el monitor automático de reportes")
-            # Si Google o la generación fallan, damos tres intervalos de descanso
-            # antes de reintentar para no insistir sobre un servicio saturado.
-            delay = AUTO_PDF_INTERVAL * (3 if _AUTO_PDF_STATUS.get("last_error") else 1)
-            time.sleep(delay)
+            finally:
+                _AUTO_PDF_STATUS["queue_active"] = False
+
+            # Duerme hasta la siguiente revisión programada. El botón de la UI
+            # despierta este mismo hilo sin crear procesos paralelos.
+            _AUTO_PDF_WAKE_EVENT.wait(AUTO_PDF_INTERVAL)
+            _AUTO_PDF_WAKE_EVENT.clear()
 
     threading.Thread(target=monitor, name="reportes-auto-pdf", daemon=True).start()
 
@@ -1033,8 +1050,18 @@ def reportes_auto_status():
         "lookback": AUTO_PDF_LOOKBACK,
         "stability_seconds": AUTO_PDF_STABILITY_SECONDS,
         "batch_size": AUTO_PDF_BATCH_SIZE,
+        "queue_delay_seconds": AUTO_PDF_QUEUE_DELAY,
         **_AUTO_PDF_STATUS,
     })
+
+@reportes_bp.post("/reportes/auto/run")
+def reportes_auto_run():
+    if not AUTO_PDF_ENABLED:
+        return jsonify({"ok": False, "error": "Generación automática desactivada"}), 409
+    if _AUTO_PDF_STATUS.get("queue_active"):
+        return jsonify({"ok": True, "already_running": True})
+    _AUTO_PDF_WAKE_EVENT.set()
+    return jsonify({"ok": True, "queued": True})
 
 # >>> meta para auxiliar (cliente/nombre_equipo)
 @reportes_bp.get("/reportes/meta/<id_reporte>")
