@@ -22,6 +22,8 @@
     input[type=text]{flex:1;min-width:0;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);color:var(--text)}
     .btn{padding:10px 14px;border-radius:12px;border:1px solid rgba(34,197,94,.45);background:var(--accent-bg);color:#d1fae5;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;white-space:nowrap;transition:.15s}
     .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(34,197,94,.18)}
+    .btn-stop{display:none;border-color:rgba(248,113,113,.45);background:rgba(127,29,29,.22);color:#fecaca}
+    .btn-stop.visible{display:inline-block}
     .links{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
     a.link{color:var(--blue);text-decoration:none}
 
@@ -156,6 +158,7 @@
           </div>
           <div class="auto-actions">
             <button class="btn" id="btn-procesar-pendientes" type="button">Procesar pendientes ahora</button>
+            <button class="btn btn-stop" id="btn-detener-revision" type="button">Detener revisión</button>
           </div>
         </div>
       </div>
@@ -279,6 +282,7 @@
     });
 
     const $autoBtn = document.getElementById('btn-procesar-pendientes');
+    const $autoStopBtn = document.getElementById('btn-detener-revision');
     const $autoStatus = document.getElementById('auto-status');
     const $autoProgress = document.getElementById('auto-progress');
     const $autoAttempt = document.getElementById('auto-attempt');
@@ -293,12 +297,15 @@
     const phaseLabels = {
       reading_history:'Leyendo historial de PDF…',
       reading_reports:'Revisando reportes realizados…',
+      retrying:'Google está tardando; preparando otro intento…',
       waiting_stability:'Esperando que termine la sincronización…',
       generating:'Generando PDF…',
       queue_pause:'PDF terminado; preparando el siguiente…',
       finishing:'Finalizando revisión…',
       starting:'Iniciando revisión…',
       complete:'Proceso terminado.',
+      cancelling:'Deteniendo la revisión de forma segura…',
+      cancelled:'Revisión detenida. Puedes iniciarla nuevamente cuando quieras.',
       error:'La revisión terminó con un error.',
       idle:'Sin pendientes. Próxima revisión automática en hasta 8 horas.'
     };
@@ -316,6 +323,8 @@
       const hasResult = !!data.finished_at;
       $autoProgress.hidden = !active && !hasResult;
       $autoBtn.disabled = !!data.running;
+      $autoStopBtn.classList.toggle('visible', active);
+      $autoStopBtn.disabled = !!data.cancel_requested;
       if(data.last_error){
         $autoStatus.textContent = `Error: ${data.last_error}`;
       }else if(data.phase === 'complete' && Number(data.detected || 0) === 0){
@@ -351,6 +360,7 @@
       $autoAttempt.textContent = attempt ? `Intento ${attempt} de ${maxAttempts}` : 'Preparando conexión…';
       $autoElapsed.textContent = formatElapsed(data.operation_started_at, active ? null : data.finished_at);
       $autoDots.forEach((dot, index) => {
+        dot.style.display = index < maxAttempts ? '' : 'none';
         dot.classList.toggle('done', attempt > index + 1);
         dot.classList.toggle('active', attempt === index + 1 || (!attempt && index === 0));
       });
@@ -389,6 +399,22 @@
         $autoStatus.textContent = `No se pudo iniciar: ${e.message}`;
       }finally{
         $autoBtn.disabled = false;
+      }
+    });
+    $autoStopBtn?.addEventListener('click', async () => {
+      $autoStopBtn.disabled = true;
+      $autoStatus.textContent = 'Deteniendo la revisión…';
+      try{
+        const r = await fetch('/reportes/auto/cancel', {method:'POST'});
+        const data = await r.json();
+        if(!r.ok || !data.ok){ throw new Error(data.error || 'No se pudo detener'); }
+        $autoStatus.textContent = data.already_stopped
+          ? 'La revisión ya estaba detenida.'
+          : 'Solicitud recibida. Si hay un PDF en proceso, terminará ese archivo y se detendrá.';
+        setTimeout(() => refreshAutoStatus(true), 500);
+      }catch(e){
+        $autoStatus.textContent = `No se pudo detener: ${e.message}`;
+        $autoStopBtn.disabled = false;
       }
     });
     refreshAutoStatus(true);

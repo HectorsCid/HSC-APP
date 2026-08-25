@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, abort, jsonify, current_app
 import os, io, re, time, json, random, threading, base64, gc, socket
+import requests
 from datetime import date, datetime
 from pathlib import Path
 import uuid
@@ -12,7 +13,7 @@ from googleapiclient.errors import HttpError
 from weasyprint import HTML
 from PIL import Image, ImageOps
 from werkzeug.utils import secure_filename
-from auth_google import get_drive_service_user, get_sheets_service, get_drive_service
+from auth_google import get_drive_service_user, get_sheets_service, get_drive_service, get_sheets_authorized_session
 
 # ----------------------------------------------------------------------
 # Blueprint
@@ -50,13 +51,14 @@ AUTO_PDF_BATCH_SIZE = max(1, int(os.environ.get("REPORTES_AUTO_PDF_BATCH_SIZE", 
 AUTO_PDF_QUEUE_DELAY = max(30, int(os.environ.get("REPORTES_AUTO_PDF_QUEUE_DELAY", "120")))
 _AUTO_PDF_LOCK = threading.Lock()
 _AUTO_PDF_WAKE_EVENT = threading.Event()
+_AUTO_PDF_CANCEL_EVENT = threading.Event()
 _AUTO_PDF_STARTED = False
 _AUTO_PDF_FIRST_SEEN = {}
 _AUTO_PDF_STATUS = {
     "running": False,
     "phase": "idle",
     "attempt": 0,
-    "max_attempts": 5,
+    "max_attempts": 3,
     "operation_started_at": None,
     "finished_at": None,
     "reviewed": 0,
@@ -68,6 +70,7 @@ _AUTO_PDF_STATUS = {
     "completed": 0,
     "errors": 0,
     "current_report": None,
+    "cancel_requested": False,
     "last_check": None,
     "last_generated": None,
     "last_error": None,
@@ -86,7 +89,7 @@ def _sheets_service():
     service = getattr(_reportes_services, "sheets", None)
     if service is None:
         is_auto_monitor = threading.current_thread().name == "reportes-auto-pdf"
-        service = get_sheets_service(timeout=30) if is_auto_monitor else get_sheets_service()
+        service = get_sheets_service(timeout=15) if is_auto_monitor else get_sheets_service()
         # El monitor trabaja en su propio hilo. Limitamos únicamente sus
         # conexiones para que una petición de Google no lo bloquee indefinidamente.
         _reportes_services.sheets = service
@@ -107,14 +110,23 @@ def _drive_service():
 # Helpers de reintento (429/500/503)
 # ----------------------------------------------------------------------
 def _retry(callable_fn, *, retries=4, base_delay=0.5):
+    is_auto_monitor = threading.current_thread().name == "reportes-auto-pdf"
+    if is_auto_monitor:
+        retries = min(retries, 2)
     last = None
     for attempt in range(retries + 1):
-        if threading.current_thread().name == "reportes-auto-pdf":
+        if is_auto_monitor and _AUTO_PDF_CANCEL_EVENT.is_set():
+            raise _AutoProcessingCancelled()
+        if is_auto_monitor:
             _AUTO_PDF_STATUS["attempt"] = attempt + 1
             _AUTO_PDF_STATUS["max_attempts"] = retries + 1
         if attempt:
             delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
-            time.sleep(delay)
+            if is_auto_monitor:
+                if _AUTO_PDF_CANCEL_EVENT.wait(delay):
+                    raise _AutoProcessingCancelled()
+            else:
+                time.sleep(delay)
         try:
             return callable_fn()
         except HttpError as e:
@@ -127,6 +139,9 @@ def _retry(callable_fn, *, retries=4, base_delay=0.5):
             continue
     if last:
         raise last
+
+class _AutoProcessingCancelled(Exception):
+    """Detiene de forma segura únicamente la revisión automática actual."""
 
 # ----------------------------------------------------------------------
 # Sheets utils
@@ -937,9 +952,44 @@ def _generate_and_store_report_pdf(id_reporte: str):
         raise RuntimeError(f"Generación manual interna falló: {detail}")
     return payload
 
+def _auto_sheets_read(ranges):
+    """Lee rangos por REST con un límite real y una conexión nueva por intento."""
+    url = f"https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values:batchGet"
+    last_error = None
+    for attempt in range(1, 4):
+        if _AUTO_PDF_CANCEL_EVENT.is_set():
+            raise _AutoProcessingCancelled()
+        _AUTO_PDF_STATUS.update(attempt=attempt, max_attempts=3)
+        session = None
+        try:
+            session = get_sheets_authorized_session()
+            response = session.get(
+                url,
+                params=[("ranges", value) for value in ranges],
+                timeout=(5, 15),
+            )
+            if response.status_code in (429, 500, 502, 503, 504):
+                raise requests.HTTPError(f"Google respondió HTTP {response.status_code}", response=response)
+            response.raise_for_status()
+            return response.json()
+        except (requests.Timeout, requests.ConnectionError, requests.HTTPError) as exc:
+            last_error = exc
+            _AUTO_PDF_STATUS["phase"] = "retrying"
+            if attempt < 3 and _AUTO_PDF_CANCEL_EVENT.wait(attempt * 1.5):
+                raise _AutoProcessingCancelled()
+        finally:
+            if session is not None:
+                session.close()
+    raise RuntimeError(f"Google Sheets no respondió después de 3 intentos: {last_error}")
+
 def _generated_report_ids():
     """IDs que ya tienen un PDF de tipo reporte registrado en HistorialPDF."""
-    rows = _values_get(_sheets_service(), "HistorialPDF!C2:F").get("values", [])
+    if threading.current_thread().name == "reportes-auto-pdf":
+        response = _auto_sheets_read(["HistorialPDF!C2:F"])
+        value_ranges = response.get("valueRanges", [])
+        rows = value_ranges[0].get("values", []) if value_ranges else []
+    else:
+        rows = _values_get(_sheets_service(), "HistorialPDF!C2:F").get("values", [])
     return {
         str(row[0]).strip()
         for row in rows
@@ -947,8 +997,13 @@ def _generated_report_ids():
     }
 
 def _recent_report_ids(limit: int):
-    _, _, id_range = _resolve_id_col()
-    headers = _get_headers()
+    is_auto = threading.current_thread().name == "reportes-auto-pdf"
+    if is_auto:
+        header_response = _auto_sheets_read([f"{SHEET_TAB}!A1:ZZ1"])
+        header_ranges = header_response.get("valueRanges", [])
+        headers = header_ranges[0].get("values", [[]])[0] if header_ranges else []
+    else:
+        headers = _get_headers()
     realizado_idx = next(
         (i for i, header in enumerate(headers) if str(header).strip().casefold() == "realizado"),
         None,
@@ -956,9 +1011,15 @@ def _recent_report_ids(limit: int):
     if realizado_idx is None:
         raise RuntimeError("No se encontró la columna Realizado en la hoja Reportes")
 
+    id_idx = next(
+        (i for i, header in enumerate(headers) if str(header).strip() == "ID_Reporte"),
+        0,
+    )
+    id_letter = _col_idx_to_letter(id_idx)
+    id_range = f"{SHEET_TAB}!{id_letter}2:{id_letter}"
     realizado_letter = _col_idx_to_letter(realizado_idx)
     realizado_range = f"{SHEET_TAB}!{realizado_letter}2:{realizado_letter}"
-    response = _values_batch_get(_sheets_service(), [id_range, realizado_range])
+    response = _auto_sheets_read([id_range, realizado_range]) if is_auto else _values_batch_get(_sheets_service(), [id_range, realizado_range])
     value_ranges = response.get("valueRanges", [])
     id_rows = value_ranges[0].get("values", []) if len(value_ranges) > 0 else []
     realizado_rows = value_ranges[1].get("values", []) if len(value_ranges) > 1 else []
@@ -983,7 +1044,7 @@ def _recent_report_ids(limit: int):
             drafts += 1
         if considered >= limit:
             break
-    if threading.current_thread().name == "reportes-auto-pdf":
+    if is_auto:
         _AUTO_PDF_STATUS.update(
             reviewed=considered,
             drafts=drafts,
@@ -1032,6 +1093,8 @@ def process_new_reports():
 
         completed = []
         for report_id in ready[:AUTO_PDF_BATCH_SIZE]:
+            if _AUTO_PDF_CANCEL_EVENT.is_set():
+                raise _AutoProcessingCancelled()
             try:
                 _AUTO_PDF_STATUS["phase"] = "generating"
                 _AUTO_PDF_STATUS["current_report"] = report_id
@@ -1041,6 +1104,8 @@ def process_new_reports():
                 _AUTO_PDF_STATUS["queued"] = max(0, int(_AUTO_PDF_STATUS.get("queued") or 0) - 1)
                 _AUTO_PDF_FIRST_SEEN.pop(report_id, None)
                 _AUTO_PDF_STATUS["last_generated"] = report_id
+            except _AutoProcessingCancelled:
+                raise
             except Exception as exc:
                 # Un reporte incompleto no impide que los siguientes se procesen.
                 _AUTO_PDF_STATUS["last_error"] = f"{report_id}: {type(exc).__name__}: {exc}"
@@ -1062,7 +1127,12 @@ def start_auto_report_monitor(app):
     _AUTO_PDF_STARTED = True
 
     def monitor():
+        # Un despliegue no dispara consultas ni PDFs. La primera ejecución ocurre
+        # por el botón o al cumplirse el intervalo automático.
+        _AUTO_PDF_WAKE_EVENT.wait(AUTO_PDF_INTERVAL)
+        _AUTO_PDF_WAKE_EVENT.clear()
         while True:
+            _AUTO_PDF_CANCEL_EVENT.clear()
             _AUTO_PDF_STATUS.update(
                 queue_active=True,
                 phase="starting",
@@ -1078,6 +1148,7 @@ def start_auto_report_monitor(app):
                 completed=0,
                 errors=0,
                 current_report=None,
+                cancel_requested=False,
                 last_error=None,
                 waiting_for_stability=0,
                 pending_ready=0,
@@ -1089,14 +1160,19 @@ def start_auto_report_monitor(app):
                             completed = process_new_reports()
                     if completed:
                         _AUTO_PDF_STATUS["phase"] = "queue_pause"
-                        time.sleep(AUTO_PDF_QUEUE_DELAY)
+                        if _AUTO_PDF_CANCEL_EVENT.wait(AUTO_PDF_QUEUE_DELAY):
+                            raise _AutoProcessingCancelled()
                         continue
                     if _AUTO_PDF_STATUS.get("waiting_for_stability", 0) > 0:
-                        time.sleep(max(1, AUTO_PDF_STABILITY_SECONDS))
+                        if _AUTO_PDF_CANCEL_EVENT.wait(max(1, AUTO_PDF_STABILITY_SECONDS)):
+                            raise _AutoProcessingCancelled()
                         continue
                     if not _AUTO_PDF_STATUS.get("last_error"):
                         _AUTO_PDF_STATUS["phase"] = "complete"
                     break
+            except _AutoProcessingCancelled:
+                _AUTO_PDF_STATUS["phase"] = "cancelled"
+                _AUTO_PDF_STATUS["last_error"] = None
             except Exception as exc:
                 _AUTO_PDF_STATUS["last_error"] = f"{type(exc).__name__}: {exc}"
                 _AUTO_PDF_STATUS["running"] = False
@@ -1137,6 +1213,15 @@ def reportes_auto_run():
         return jsonify({"ok": True, "already_running": True})
     _AUTO_PDF_WAKE_EVENT.set()
     return jsonify({"ok": True, "queued": True})
+
+@reportes_bp.post("/reportes/auto/cancel")
+def reportes_auto_cancel():
+    if not _AUTO_PDF_STATUS.get("queue_active"):
+        return jsonify({"ok": True, "already_stopped": True})
+    _AUTO_PDF_STATUS["cancel_requested"] = True
+    _AUTO_PDF_STATUS["phase"] = "cancelling"
+    _AUTO_PDF_CANCEL_EVENT.set()
+    return jsonify({"ok": True, "cancelling": True})
 
 # >>> meta para auxiliar (cliente/nombre_equipo)
 @reportes_bp.get("/reportes/meta/<id_reporte>")

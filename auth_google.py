@@ -10,6 +10,7 @@ from google_auth_httplib2 import AuthorizedHttp
 from google.oauth2.service_account import Credentials as SA_Credentials
 from google.oauth2.credentials import Credentials as UserCreds
 from google.auth.transport.requests import Request
+from google.auth.transport.requests import AuthorizedSession
 from google.auth.exceptions import RefreshError
 
 # Intento de imports opcionales de Flask (solo si se está dentro de una request)
@@ -87,6 +88,13 @@ def get_sheets_service(timeout=None):
         service = build("sheets", "v4", credentials=_sa_credentials(), cache_discovery=False)
         _thread_services.sheets = service
     return service
+
+def get_sheets_authorized_session():
+    """Sesión REST nueva para lecturas automáticas con timeout estricto."""
+    credentials = SA_Credentials.from_service_account_info(
+        _load_service_account_info(), scopes=SCOPES
+    )
+    return AuthorizedSession(credentials)
 
 # =======================================================================================
 #                                        Usuario
