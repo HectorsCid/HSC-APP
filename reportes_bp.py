@@ -912,16 +912,38 @@ def _generated_report_ids():
 
 def _recent_report_ids(limit: int):
     _, _, id_range = _resolve_id_col()
-    rows = _values_get(_sheets_service(), id_range).get("values", [])
+    headers = _get_headers()
+    realizado_idx = next(
+        (i for i, header in enumerate(headers) if str(header).strip().casefold() == "realizado"),
+        None,
+    )
+    if realizado_idx is None:
+        raise RuntimeError("No se encontró la columna Realizado en la hoja Reportes")
+
+    realizado_letter = _col_idx_to_letter(realizado_idx)
+    realizado_range = f"{SHEET_TAB}!{realizado_letter}2:{realizado_letter}"
+    response = _values_batch_get(_sheets_service(), [id_range, realizado_range])
+    value_ranges = response.get("valueRanges", [])
+    id_rows = value_ranges[0].get("values", []) if len(value_ranges) > 0 else []
+    realizado_rows = value_ranges[1].get("values", []) if len(value_ranges) > 1 else []
+
     seen = set()
     result = []
-    for row in reversed(rows):
+    considered = 0
+    for index in range(len(id_rows) - 1, -1, -1):
+        row = id_rows[index]
         report_id = str(row[0]).strip() if row else ""
-        if report_id and report_id not in seen:
-            seen.add(report_id)
+        if not report_id or report_id in seen:
+            continue
+
+        seen.add(report_id)
+        considered += 1
+        realizado_row = realizado_rows[index] if index < len(realizado_rows) else []
+        realizado = str(realizado_row[0]).strip().casefold() if realizado_row else ""
+        if realizado in ("true", "verdadero", "sí", "si", "1"):
             result.append(report_id)
-            if len(result) >= limit:
-                break
+        if considered >= limit:
+            break
     return result
 
 def process_new_reports():
