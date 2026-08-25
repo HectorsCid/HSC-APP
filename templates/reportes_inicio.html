@@ -147,14 +147,14 @@
             <div class="progress-track"><div class="progress-fill" id="auto-progress-fill"></div></div>
             <div class="current-report" id="auto-current" hidden></div>
           </div>
-          <div class="auto-stats" id="auto-stats" hidden>
-            <div class="auto-stat"><strong id="stat-reviewed">0</strong><span>Revisados</span></div>
-            <div class="auto-stat"><strong id="stat-drafts">0</strong><span>Borradores</span></div>
-            <div class="auto-stat"><strong id="stat-existing">0</strong><span>Ya generados</span></div>
-            <div class="auto-stat"><strong id="stat-detected">0</strong><span>Detectados</span></div>
-            <div class="auto-stat"><strong id="stat-queued">0</strong><span>En cola</span></div>
-            <div class="auto-stat"><strong id="stat-completed">0</strong><span>Completados</span></div>
-            <div class="auto-stat"><strong id="stat-errors">0</strong><span>Errores</span></div>
+          <div class="auto-stats" id="auto-stats">
+            <div class="auto-stat"><strong id="stat-reviewed">—</strong><span>Revisados</span></div>
+            <div class="auto-stat"><strong id="stat-drafts">—</strong><span>Borradores</span></div>
+            <div class="auto-stat"><strong id="stat-existing">—</strong><span>Ya generados</span></div>
+            <div class="auto-stat"><strong id="stat-detected">—</strong><span>Detectados</span></div>
+            <div class="auto-stat"><strong id="stat-queued">—</strong><span>En cola</span></div>
+            <div class="auto-stat"><strong id="stat-completed">—</strong><span>Completados</span></div>
+            <div class="auto-stat"><strong id="stat-errors">—</strong><span>Errores</span></div>
           </div>
           <div class="auto-actions">
             <button class="btn" id="btn-procesar-pendientes" type="button">Procesar pendientes ahora</button>
@@ -307,7 +307,7 @@
       cancelling:'Deteniendo la revisión de forma segura…',
       cancelled:'Revisión detenida. Puedes iniciarla nuevamente cuando quieras.',
       error:'La revisión terminó con un error.',
-      idle:'Sin pendientes. Próxima revisión automática en hasta 8 horas.'
+      idle:'Aún no se ha realizado una revisión. Puedes iniciarla ahora.'
     };
 
     function formatElapsed(startedAt, finishedAt=null){
@@ -336,7 +336,8 @@
       }
 
       const reviewed = Number(data.reviewed || 0);
-      $autoStats.hidden = !reviewed && !active && !hasResult;
+      $autoStats.hidden = false;
+      const neverReviewed = !data.last_check && !active && !hasResult;
       const values = {
         reviewed,
         drafts:Number(data.drafts || 0),
@@ -348,7 +349,7 @@
       };
       statIds.forEach(key => {
         const el = document.getElementById(`stat-${key}`);
-        if(el) el.textContent = values[key];
+        if(el) el.textContent = neverReviewed ? '—' : values[key];
       });
 
       $autoCurrent.hidden = !data.current_report;

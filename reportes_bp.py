@@ -52,6 +52,7 @@ AUTO_PDF_QUEUE_DELAY = max(30, int(os.environ.get("REPORTES_AUTO_PDF_QUEUE_DELAY
 _AUTO_PDF_LOCK = threading.Lock()
 _AUTO_PDF_WAKE_EVENT = threading.Event()
 _AUTO_PDF_CANCEL_EVENT = threading.Event()
+_AUTO_PDF_CYCLE_LOCK = threading.Lock()
 _AUTO_PDF_STARTED = False
 _AUTO_PDF_FIRST_SEEN = {}
 _AUTO_PDF_STATUS = {
@@ -1119,78 +1120,79 @@ def process_new_reports():
         _AUTO_PDF_STATUS["running"] = False
         _AUTO_PDF_LOCK.release()
 
+def _run_auto_report_cycle(app):
+    """Ejecuta una revisión completa; sirve al botón y al horario automático."""
+    if not _AUTO_PDF_CYCLE_LOCK.acquire(blocking=False):
+        return
+    _AUTO_PDF_CANCEL_EVENT.clear()
+    _AUTO_PDF_STATUS.update(
+        queue_active=True, phase="starting", attempt=0,
+        operation_started_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        finished_at=None, reviewed=0, drafts=0, realized=0,
+        already_generated=0, detected=0, queued=0, completed=0, errors=0,
+        current_report=None, cancel_requested=False, last_error=None,
+        waiting_for_stability=0, pending_ready=0,
+    )
+    try:
+        while True:
+            with app.app_context():
+                with app.test_request_context("/"):
+                    completed = process_new_reports()
+            if _AUTO_PDF_CANCEL_EVENT.is_set():
+                raise _AutoProcessingCancelled()
+            if completed:
+                _AUTO_PDF_STATUS["phase"] = "queue_pause"
+                if _AUTO_PDF_CANCEL_EVENT.wait(AUTO_PDF_QUEUE_DELAY):
+                    raise _AutoProcessingCancelled()
+                continue
+            if _AUTO_PDF_STATUS.get("waiting_for_stability", 0) > 0:
+                if _AUTO_PDF_CANCEL_EVENT.wait(max(1, AUTO_PDF_STABILITY_SECONDS)):
+                    raise _AutoProcessingCancelled()
+                continue
+            if not _AUTO_PDF_STATUS.get("last_error"):
+                _AUTO_PDF_STATUS["phase"] = "complete"
+            break
+    except _AutoProcessingCancelled:
+        _AUTO_PDF_STATUS.update(phase="cancelled", last_error=None)
+    except Exception as exc:
+        _AUTO_PDF_STATUS.update(
+            last_error=f"{type(exc).__name__}: {exc}", running=False, phase="error"
+        )
+        _reset_auto_sheets_service()
+        app.logger.exception("Falló el monitor automático de reportes")
+    finally:
+        _AUTO_PDF_STATUS.update(
+            queue_active=False, running=False, current_report=None,
+            finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        )
+        _AUTO_PDF_CYCLE_LOCK.release()
+
+def _launch_auto_report_cycle(app):
+    """Inicia el ciclo directamente y devuelve False si ya existe uno."""
+    if _AUTO_PDF_STATUS.get("queue_active") or _AUTO_PDF_CYCLE_LOCK.locked():
+        return False
+    _AUTO_PDF_STATUS.update(queue_active=True, phase="starting", finished_at=None)
+    threading.Thread(
+        target=_run_auto_report_cycle,
+        args=(app,),
+        name="reportes-auto-pdf",
+        daemon=True,
+    ).start()
+    return True
+
 def start_auto_report_monitor(app):
-    """Inicia una sola hebra daemon que detecta reportes nuevos en Sheets."""
+    """Programa una revisión cada 8 horas sin ejecutar una al desplegar."""
     global _AUTO_PDF_STARTED
     if not AUTO_PDF_ENABLED or _AUTO_PDF_STARTED:
         return
     _AUTO_PDF_STARTED = True
 
-    def monitor():
-        # Un despliegue no dispara consultas ni PDFs. La primera ejecución ocurre
-        # por el botón o al cumplirse el intervalo automático.
-        _AUTO_PDF_WAKE_EVENT.wait(AUTO_PDF_INTERVAL)
-        _AUTO_PDF_WAKE_EVENT.clear()
+    def scheduler():
         while True:
-            _AUTO_PDF_CANCEL_EVENT.clear()
-            _AUTO_PDF_STATUS.update(
-                queue_active=True,
-                phase="starting",
-                attempt=0,
-                operation_started_at=datetime.now().astimezone().isoformat(timespec="seconds"),
-                finished_at=None,
-                reviewed=0,
-                drafts=0,
-                realized=0,
-                already_generated=0,
-                detected=0,
-                queued=0,
-                completed=0,
-                errors=0,
-                current_report=None,
-                cancel_requested=False,
-                last_error=None,
-                waiting_for_stability=0,
-                pending_ready=0,
-            )
-            try:
-                while True:
-                    with app.app_context():
-                        with app.test_request_context("/"):
-                            completed = process_new_reports()
-                    if completed:
-                        _AUTO_PDF_STATUS["phase"] = "queue_pause"
-                        if _AUTO_PDF_CANCEL_EVENT.wait(AUTO_PDF_QUEUE_DELAY):
-                            raise _AutoProcessingCancelled()
-                        continue
-                    if _AUTO_PDF_STATUS.get("waiting_for_stability", 0) > 0:
-                        if _AUTO_PDF_CANCEL_EVENT.wait(max(1, AUTO_PDF_STABILITY_SECONDS)):
-                            raise _AutoProcessingCancelled()
-                        continue
-                    if not _AUTO_PDF_STATUS.get("last_error"):
-                        _AUTO_PDF_STATUS["phase"] = "complete"
-                    break
-            except _AutoProcessingCancelled:
-                _AUTO_PDF_STATUS["phase"] = "cancelled"
-                _AUTO_PDF_STATUS["last_error"] = None
-            except Exception as exc:
-                _AUTO_PDF_STATUS["last_error"] = f"{type(exc).__name__}: {exc}"
-                _AUTO_PDF_STATUS["running"] = False
-                _AUTO_PDF_STATUS["phase"] = "error"
-                _reset_auto_sheets_service()
-                app.logger.exception("Falló el monitor automático de reportes")
-            finally:
-                _AUTO_PDF_STATUS["queue_active"] = False
-                _AUTO_PDF_STATUS["running"] = False
-                _AUTO_PDF_STATUS["current_report"] = None
-                _AUTO_PDF_STATUS["finished_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+            time.sleep(AUTO_PDF_INTERVAL)
+            _launch_auto_report_cycle(app)
 
-            # Duerme hasta la siguiente revisión programada. El botón de la UI
-            # despierta este mismo hilo sin crear procesos paralelos.
-            _AUTO_PDF_WAKE_EVENT.wait(AUTO_PDF_INTERVAL)
-            _AUTO_PDF_WAKE_EVENT.clear()
-
-    threading.Thread(target=monitor, name="reportes-auto-pdf", daemon=True).start()
+    threading.Thread(target=scheduler, name="reportes-auto-scheduler", daemon=True).start()
 
 @reportes_bp.get("/reportes/auto/status")
 def reportes_auto_status():
@@ -1208,11 +1210,10 @@ def reportes_auto_status():
 def reportes_auto_run():
     if not AUTO_PDF_ENABLED:
         return jsonify({"ok": False, "error": "Generación automática desactivada"}), 409
-    if _AUTO_PDF_STATUS.get("queue_active"):
-        _AUTO_PDF_WAKE_EVENT.set()
+    app = current_app._get_current_object()
+    if not _launch_auto_report_cycle(app):
         return jsonify({"ok": True, "already_running": True})
-    _AUTO_PDF_WAKE_EVENT.set()
-    return jsonify({"ok": True, "queued": True})
+    return jsonify({"ok": True, "started": True})
 
 @reportes_bp.post("/reportes/auto/cancel")
 def reportes_auto_cancel():
