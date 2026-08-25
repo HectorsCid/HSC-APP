@@ -3,8 +3,10 @@
 
 import os, json, base64, sys, threading
 from functools import lru_cache
+import httplib2
 
 from googleapiclient.discovery import build
+from google_auth_httplib2 import AuthorizedHttp
 from google.oauth2.service_account import Credentials as SA_Credentials
 from google.oauth2.credentials import Credentials as UserCreds
 from google.auth.transport.requests import Request
@@ -72,8 +74,14 @@ def get_drive_service():
     """Drive usando cuenta de servicio."""
     return build("drive", "v3", credentials=_sa_credentials(), cache_discovery=False)
 
-def get_sheets_service():
+def get_sheets_service(timeout=None):
     """Sheets usando una conexión independiente por hilo."""
+    if timeout is not None:
+        authorized_http = AuthorizedHttp(
+            _sa_credentials(),
+            http=httplib2.Http(timeout=float(timeout)),
+        )
+        return build("sheets", "v4", http=authorized_http, cache_discovery=False)
     service = getattr(_thread_services, "sheets", None)
     if service is None:
         service = build("sheets", "v4", credentials=_sa_credentials(), cache_discovery=False)

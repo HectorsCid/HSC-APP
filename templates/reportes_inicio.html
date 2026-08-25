@@ -19,7 +19,7 @@
     .grid{display:grid;gap:20px;grid-template-columns:1fr 1fr}
     .card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:18px;padding:20px;box-shadow:0 12px 30px rgba(0,0,0,.35)}
     .row{display:flex;gap:10px}
-    input[type=text]{flex:1;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);color:var(--text)}
+    input[type=text]{flex:1;min-width:0;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);color:var(--text)}
     .btn{padding:10px 14px;border-radius:12px;border:1px solid rgba(34,197,94,.45);background:var(--accent-bg);color:#d1fae5;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;white-space:nowrap;transition:.15s}
     .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(34,197,94,.18)}
     .links{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
@@ -59,7 +59,26 @@
     .attempt-dot.active{background:#86efac;border-color:#86efac;animation:pulse 1s infinite alternate}
     .progress-track{height:5px;border-radius:999px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:9px}
     .progress-fill{height:100%;width:0;background:#22c55e;transition:width .35s ease}
+    .progress-fill.indeterminate{width:35%;animation:indeterminate 1.35s ease-in-out infinite}
+    .auto-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:12px}
+    .auto-stat{padding:8px;border-radius:10px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08)}
+    .auto-stat strong{display:block;font-size:16px;color:#e5e7eb}
+    .auto-stat span{font-size:11px;color:var(--muted)}
+    .current-report{margin-top:9px;font-size:12px;color:#d1fae5}
+    .auto-stats[hidden],.auto-progress[hidden],.current-report[hidden]{display:none!important}
     @keyframes pulse{from{transform:scale(.8);opacity:.55}to{transform:scale(1.25);opacity:1}}
+    @keyframes indeterminate{from{transform:translateX(-110%)}to{transform:translateX(300%)}}
+    @media(max-width:520px){.auto-stats{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:600px){
+      body{padding:14px}
+      .card{padding:14px}
+      .row{flex-direction:column}
+      .row .btn{width:100%;text-align:center}
+      .item{align-items:flex-start;flex-direction:column}
+      .actions{width:100%;flex-wrap:wrap}
+      .actions .btn{flex:1;text-align:center}
+      .eq,.cliente{max-width:100%}
+    }
 
     /* --- Consolita de últimos generados --- */
     .tiny-list{display:flex;flex-direction:column;gap:10px}
@@ -124,6 +143,16 @@
               <span class="attempt-dot"></span>
             </div>
             <div class="progress-track"><div class="progress-fill" id="auto-progress-fill"></div></div>
+            <div class="current-report" id="auto-current" hidden></div>
+          </div>
+          <div class="auto-stats" id="auto-stats" hidden>
+            <div class="auto-stat"><strong id="stat-reviewed">0</strong><span>Revisados</span></div>
+            <div class="auto-stat"><strong id="stat-drafts">0</strong><span>Borradores</span></div>
+            <div class="auto-stat"><strong id="stat-existing">0</strong><span>Ya generados</span></div>
+            <div class="auto-stat"><strong id="stat-detected">0</strong><span>Detectados</span></div>
+            <div class="auto-stat"><strong id="stat-queued">0</strong><span>En cola</span></div>
+            <div class="auto-stat"><strong id="stat-completed">0</strong><span>Completados</span></div>
+            <div class="auto-stat"><strong id="stat-errors">0</strong><span>Errores</span></div>
           </div>
           <div class="auto-actions">
             <button class="btn" id="btn-procesar-pendientes" type="button">Procesar pendientes ahora</button>
@@ -255,7 +284,10 @@
     const $autoAttempt = document.getElementById('auto-attempt');
     const $autoElapsed = document.getElementById('auto-elapsed');
     const $autoFill = document.getElementById('auto-progress-fill');
+    const $autoCurrent = document.getElementById('auto-current');
+    const $autoStats = document.getElementById('auto-stats');
     const $autoDots = [...document.querySelectorAll('.attempt-dot')];
+    const statIds = ['reviewed','drafts','existing','detected','queued','completed','errors'];
     let autoPollTimer = null;
 
     const phaseLabels = {
@@ -265,36 +297,67 @@
       generating:'Generando PDF…',
       queue_pause:'PDF terminado; preparando el siguiente…',
       finishing:'Finalizando revisión…',
+      starting:'Iniciando revisión…',
+      complete:'Proceso terminado.',
       error:'La revisión terminó con un error.',
       idle:'Sin pendientes. Próxima revisión automática en hasta 8 horas.'
     };
 
-    function formatElapsed(startedAt){
+    function formatElapsed(startedAt, finishedAt=null){
       if(!startedAt) return '00:00';
       const started = new Date(startedAt);
-      const seconds = Math.max(0, Math.floor((Date.now() - started.getTime()) / 1000));
+      const end = finishedAt ? new Date(finishedAt).getTime() : Date.now();
+      const seconds = Math.max(0, Math.floor((end - started.getTime()) / 1000));
       return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
     }
 
     function renderAutoState(data){
       const active = !!(data.running || data.queue_active);
-      $autoProgress.hidden = !active;
+      const hasResult = !!data.finished_at;
+      $autoProgress.hidden = !active && !hasResult;
       $autoBtn.disabled = !!data.running;
-      $autoStatus.textContent = data.last_error || phaseLabels[data.phase] || (active ? 'Procesando…' : phaseLabels.idle);
-      if(!active) return;
+      if(data.last_error){
+        $autoStatus.textContent = `Error: ${data.last_error}`;
+      }else if(data.phase === 'complete' && Number(data.detected || 0) === 0){
+        $autoStatus.textContent = 'Revisión terminada: no se detectaron reportes pendientes.';
+      }else if(data.phase === 'complete'){
+        $autoStatus.textContent = `Proceso terminado: ${Number(data.completed || 0)} de ${Number(data.detected || 0)} completados.`;
+      }else{
+        $autoStatus.textContent = phaseLabels[data.phase] || (active ? 'Procesando…' : phaseLabels.idle);
+      }
+
+      const reviewed = Number(data.reviewed || 0);
+      $autoStats.hidden = !reviewed && !active && !hasResult;
+      const values = {
+        reviewed,
+        drafts:Number(data.drafts || 0),
+        existing:Number(data.already_generated || 0),
+        detected:Number(data.detected || 0),
+        queued:Number(data.queued || 0),
+        completed:Number(data.completed || 0),
+        errors:Number(data.errors || 0)
+      };
+      statIds.forEach(key => {
+        const el = document.getElementById(`stat-${key}`);
+        if(el) el.textContent = values[key];
+      });
+
+      $autoCurrent.hidden = !data.current_report;
+      $autoCurrent.textContent = data.current_report ? `Generando ahora: ${data.current_report}` : '';
+      if(!active && !hasResult) return;
 
       const attempt = Math.max(0, Number(data.attempt || 0));
       const maxAttempts = Math.max(1, Number(data.max_attempts || 5));
       $autoAttempt.textContent = attempt ? `Intento ${attempt} de ${maxAttempts}` : 'Preparando conexión…';
-      $autoElapsed.textContent = formatElapsed(data.operation_started_at);
+      $autoElapsed.textContent = formatElapsed(data.operation_started_at, active ? null : data.finished_at);
       $autoDots.forEach((dot, index) => {
         dot.classList.toggle('done', attempt > index + 1);
         dot.classList.toggle('active', attempt === index + 1 || (!attempt && index === 0));
       });
-      const elapsed = data.operation_started_at
-        ? Math.max(0, (Date.now() - new Date(data.operation_started_at).getTime()) / 1000)
-        : 0;
-      $autoFill.style.width = `${Math.min(100, (elapsed / 165) * 100)}%`;
+      const detected = Number(data.detected || 0);
+      const processed = Number(data.completed || 0) + Number(data.errors || 0);
+      $autoFill.classList.toggle('indeterminate', active && detected === 0);
+      $autoFill.style.width = detected > 0 ? `${Math.min(100, (processed / detected) * 100)}%` : (active ? '' : '100%');
     }
 
     async function refreshAutoStatus(continuePolling=true){

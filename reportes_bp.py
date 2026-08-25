@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, abort, jsonify, current_app
-import os, io, re, time, json, random, threading, base64, gc
+import os, io, re, time, json, random, threading, base64, gc, socket
 from datetime import date, datetime
 from pathlib import Path
 import uuid
@@ -58,6 +58,16 @@ _AUTO_PDF_STATUS = {
     "attempt": 0,
     "max_attempts": 5,
     "operation_started_at": None,
+    "finished_at": None,
+    "reviewed": 0,
+    "drafts": 0,
+    "realized": 0,
+    "already_generated": 0,
+    "detected": 0,
+    "queued": 0,
+    "completed": 0,
+    "errors": 0,
+    "current_report": None,
     "last_check": None,
     "last_generated": None,
     "last_error": None,
@@ -75,13 +85,10 @@ _drive_svc  = None
 def _sheets_service():
     service = getattr(_reportes_services, "sheets", None)
     if service is None:
-        service = get_sheets_service()
+        is_auto_monitor = threading.current_thread().name == "reportes-auto-pdf"
+        service = get_sheets_service(timeout=30) if is_auto_monitor else get_sheets_service()
         # El monitor trabaja en su propio hilo. Limitamos únicamente sus
         # conexiones para que una petición de Google no lo bloquee indefinidamente.
-        if threading.current_thread().name == "reportes-auto-pdf":
-            http = getattr(service, "_http", None)
-            if http is not None:
-                http.timeout = 30
         _reportes_services.sheets = service
     return service
 
@@ -115,6 +122,9 @@ def _retry(callable_fn, *, retries=4, base_delay=0.5):
                 last = e
                 continue
             raise
+        except (TimeoutError, socket.timeout) as e:
+            last = e
+            continue
     if last:
         raise last
 
@@ -956,6 +966,7 @@ def _recent_report_ids(limit: int):
     seen = set()
     result = []
     considered = 0
+    drafts = 0
     for index in range(len(id_rows) - 1, -1, -1):
         row = id_rows[index]
         report_id = str(row[0]).strip() if row else ""
@@ -968,8 +979,16 @@ def _recent_report_ids(limit: int):
         realizado = str(realizado_row[0]).strip().casefold() if realizado_row else ""
         if realizado in ("true", "verdadero", "sí", "si", "1"):
             result.append(report_id)
+        else:
+            drafts += 1
         if considered >= limit:
             break
+    if threading.current_thread().name == "reportes-auto-pdf":
+        _AUTO_PDF_STATUS.update(
+            reviewed=considered,
+            drafts=drafts,
+            realized=len(result),
+        )
     return result
 
 def process_new_reports():
@@ -981,13 +1000,20 @@ def process_new_reports():
             running=True,
             phase="reading_history",
             attempt=0,
-            operation_started_at=datetime.now().astimezone().isoformat(timespec="seconds"),
             last_check=datetime.now().isoformat(timespec="seconds"),
             last_error=None,
         )
         generated = _generated_report_ids()
         _AUTO_PDF_STATUS["phase"] = "reading_reports"
-        pending = [rid for rid in reversed(_recent_report_ids(AUTO_PDF_LOOKBACK)) if rid not in generated]
+        recent_realized = _recent_report_ids(AUTO_PDF_LOOKBACK)
+        pending = [rid for rid in reversed(recent_realized) if rid not in generated]
+        completed_so_far = int(_AUTO_PDF_STATUS.get("completed") or 0)
+        detected = max(int(_AUTO_PDF_STATUS.get("detected") or 0), completed_so_far + len(pending))
+        _AUTO_PDF_STATUS.update(
+            already_generated=max(0, len(recent_realized) - len(pending)),
+            detected=detected,
+            queued=len(pending),
+        )
         now = time.monotonic()
 
         pending_set = set(pending)
@@ -1008,18 +1034,23 @@ def process_new_reports():
         for report_id in ready[:AUTO_PDF_BATCH_SIZE]:
             try:
                 _AUTO_PDF_STATUS["phase"] = "generating"
+                _AUTO_PDF_STATUS["current_report"] = report_id
                 _generate_and_store_report_pdf(report_id)
                 completed.append(report_id)
+                _AUTO_PDF_STATUS["completed"] = int(_AUTO_PDF_STATUS.get("completed") or 0) + 1
+                _AUTO_PDF_STATUS["queued"] = max(0, int(_AUTO_PDF_STATUS.get("queued") or 0) - 1)
                 _AUTO_PDF_FIRST_SEEN.pop(report_id, None)
                 _AUTO_PDF_STATUS["last_generated"] = report_id
             except Exception as exc:
                 # Un reporte incompleto no impide que los siguientes se procesen.
                 _AUTO_PDF_STATUS["last_error"] = f"{report_id}: {type(exc).__name__}: {exc}"
                 _AUTO_PDF_STATUS["phase"] = "error"
+                _AUTO_PDF_STATUS["errors"] = int(_AUTO_PDF_STATUS.get("errors") or 0) + 1
                 current_app.logger.exception("No se pudo generar automáticamente el reporte %s", report_id)
         gc.collect()
         return completed
     finally:
+        _AUTO_PDF_STATUS["current_report"] = None
         _AUTO_PDF_STATUS["running"] = False
         _AUTO_PDF_LOCK.release()
 
@@ -1032,7 +1063,25 @@ def start_auto_report_monitor(app):
 
     def monitor():
         while True:
-            _AUTO_PDF_STATUS["queue_active"] = True
+            _AUTO_PDF_STATUS.update(
+                queue_active=True,
+                phase="starting",
+                attempt=0,
+                operation_started_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+                finished_at=None,
+                reviewed=0,
+                drafts=0,
+                realized=0,
+                already_generated=0,
+                detected=0,
+                queued=0,
+                completed=0,
+                errors=0,
+                current_report=None,
+                last_error=None,
+                waiting_for_stability=0,
+                pending_ready=0,
+            )
             try:
                 while True:
                     with app.app_context():
@@ -1045,6 +1094,8 @@ def start_auto_report_monitor(app):
                     if _AUTO_PDF_STATUS.get("waiting_for_stability", 0) > 0:
                         time.sleep(max(1, AUTO_PDF_STABILITY_SECONDS))
                         continue
+                    if not _AUTO_PDF_STATUS.get("last_error"):
+                        _AUTO_PDF_STATUS["phase"] = "complete"
                     break
             except Exception as exc:
                 _AUTO_PDF_STATUS["last_error"] = f"{type(exc).__name__}: {exc}"
@@ -1054,8 +1105,9 @@ def start_auto_report_monitor(app):
                 app.logger.exception("Falló el monitor automático de reportes")
             finally:
                 _AUTO_PDF_STATUS["queue_active"] = False
-                if not _AUTO_PDF_STATUS.get("last_error"):
-                    _AUTO_PDF_STATUS["phase"] = "idle"
+                _AUTO_PDF_STATUS["running"] = False
+                _AUTO_PDF_STATUS["current_report"] = None
+                _AUTO_PDF_STATUS["finished_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
 
             # Duerme hasta la siguiente revisión programada. El botón de la UI
             # despierta este mismo hilo sin crear procesos paralelos.
