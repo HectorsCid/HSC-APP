@@ -69,8 +69,19 @@ def _sheets_service():
     service = getattr(_reportes_services, "sheets", None)
     if service is None:
         service = get_sheets_service()
+        # El monitor trabaja en su propio hilo. Limitamos únicamente sus
+        # conexiones para que una petición de Google no lo bloquee indefinidamente.
+        if threading.current_thread().name == "reportes-auto-pdf":
+            http = getattr(service, "_http", None)
+            if http is not None:
+                http.timeout = 30
         _reportes_services.sheets = service
     return service
+
+def _reset_auto_sheets_service():
+    """Descarta solo la conexión Sheets del hilo automático después de un fallo."""
+    if threading.current_thread().name == "reportes-auto-pdf":
+        _reportes_services.sheets = None
 
 def _drive_service():
     global _drive_svc
@@ -1004,6 +1015,8 @@ def start_auto_report_monitor(app):
                         process_new_reports()
             except Exception as exc:
                 _AUTO_PDF_STATUS["last_error"] = f"{type(exc).__name__}: {exc}"
+                _AUTO_PDF_STATUS["running"] = False
+                _reset_auto_sheets_service()
                 app.logger.exception("Falló el monitor automático de reportes")
             # Si Google o la generación fallan, damos tres intervalos de descanso
             # antes de reintentar para no insistir sobre un servicio saturado.
