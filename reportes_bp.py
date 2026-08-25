@@ -48,7 +48,7 @@ AUTO_PDF_INTERVAL = max(60, int(os.environ.get("REPORTES_AUTO_PDF_INTERVAL", "28
 AUTO_PDF_LOOKBACK = max(1, int(os.environ.get("REPORTES_AUTO_PDF_LOOKBACK", "25")))
 AUTO_PDF_STABILITY_SECONDS = max(0, int(os.environ.get("REPORTES_AUTO_PDF_STABILITY_SECONDS", "120")))
 AUTO_PDF_BATCH_SIZE = max(1, int(os.environ.get("REPORTES_AUTO_PDF_BATCH_SIZE", "1")))
-AUTO_PDF_QUEUE_DELAY = max(30, int(os.environ.get("REPORTES_AUTO_PDF_QUEUE_DELAY", "120")))
+AUTO_PDF_QUEUE_DELAY = max(30, int(os.environ.get("REPORTES_AUTO_PDF_QUEUE_DELAY", "30")))
 _AUTO_PDF_LOCK = threading.Lock()
 _AUTO_PDF_WAKE_EVENT = threading.Event()
 _AUTO_PDF_CANCEL_EVENT = threading.Event()
@@ -1141,6 +1141,9 @@ def _run_auto_report_cycle(app):
             if _AUTO_PDF_CANCEL_EVENT.is_set():
                 raise _AutoProcessingCancelled()
             if completed:
+                if int(_AUTO_PDF_STATUS.get("queued") or 0) == 0:
+                    _AUTO_PDF_STATUS["phase"] = "complete"
+                    break
                 _AUTO_PDF_STATUS["phase"] = "queue_pause"
                 if _AUTO_PDF_CANCEL_EVENT.wait(AUTO_PDF_QUEUE_DELAY):
                     raise _AutoProcessingCancelled()

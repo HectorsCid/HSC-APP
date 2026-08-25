@@ -16,6 +16,6 @@ services:
       - key: REPORTES_AUTO_PDF_BATCH_SIZE
         value: "1"
       - key: REPORTES_AUTO_PDF_QUEUE_DELAY
-        value: "120"
+        value: "30"
       - key: FLASK_SECRET_KEY
         generateValue: true
