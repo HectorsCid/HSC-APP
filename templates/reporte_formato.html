@@ -48,23 +48,23 @@
     h3{ font-size:14px; margin:12px 0 8px; }
     .photos{
       display:grid;
-      grid-template-columns: repeat(3, 1fr);
-      grid-auto-rows: 41mm;    /* alto fijo por fila (2 filas) */
-      gap:4px;
+      grid-template-columns: repeat(2, 1fr);
+      grid-auto-rows: 60mm;    /* tres filas; fotos más grandes sin salir de A4 */
+      gap:5px;
       page-break-inside: avoid;
     }
      .page2{ break-before: page; page-break-before: always; } /* forzamos que P2 inicie página */
     h3{ font-size:14px; margin:12px 0 8px; }
     .ph{
       width:100%;
-      height:41mm;            /* coincide con auto-rows */
+      height:60mm;            /* coincide con auto-rows */
       border-radius:8px;
       overflow:hidden;
       border:1px solid var(--line);
-      background:#f9fafb;
+      background:#fff;
       page-break-inside: avoid;
     }
-    .ph img{ width:100%; height:100%; object-fit:cover; display:block; }
+    .ph img{ width:100%; height:100%; object-fit:contain; display:block; }
     .placeholder{ display:grid; place-items:center; color:#9ca3af; font-size:12px; height:100%; }
 
     /* Footer (sin numeración) */

@@ -456,7 +456,7 @@ def _optimize_photo_bytes(bts: bytes) -> tuple[bytes, str]:
             else:
                 image = image.convert("RGB")
         output = io.BytesIO()
-        image.save(output, format="JPEG", quality=80, optimize=True)
+        image.save(output, format="JPEG", quality=85, optimize=True)
         return output.getvalue(), "image/jpeg"
 
 _DRIVE_PATTERNS = [
