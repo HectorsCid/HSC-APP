@@ -10,10 +10,11 @@ def ping_root():
 
 from markupsafe import escape
 from datetime import date, datetime
-from weasyprint import HTML
 import json
 import os
 import platform
+import threading
+import time
 import unicodedata
 from urllib.parse import quote_plus
 from pathlib import Path
@@ -25,7 +26,13 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload, MediaIoBaseDownload
-from auth_google import get_drive_service, get_sheets_service, get_drive_service_user
+from auth_google import (
+    get_drive_service,
+    get_sheets_service,
+    get_drive_service_user,
+    reset_thread_google_services,
+)
+from pdf_runtime import PdfRendererBusy, render_pdf_file
 
 # NEW: para detectar RefreshError con claridad
 from google.auth.exceptions import RefreshError
@@ -67,6 +74,11 @@ SCOPES = [
 ID_COT = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'   # Carpeta "01. Cotizaciones" en Drive
 CLIENTES_FILENAME = 'clientes.json'           # Archivo para persistir clientes en Drive
 COTIZACIONES_FILENAME = 'cotizaciones.json'    # Archivo para persistir historial en Drive
+
+# Protegen las escrituras tipo read/modify/write. En Render hay dos hilos web y
+# una sincronización de arranque en segundo plano; ninguno debe pisar al otro.
+_CLIENTES_DATA_LOCK = threading.RLock()
+_COTIZACIONES_DATA_LOCK = threading.RLock()
 
 # --- Google Sheets datos ---
 SHEET_ID = "15xLRRfR_Leidnd34Cpr3ERbpJ7AaMelMxMa-9B0d6kQ"
@@ -277,7 +289,9 @@ def descargar_cotizaciones_de_drive():
         base = Path(current_app.root_path) / "data"
         base.mkdir(parents=True, exist_ok=True)
         path = base / "cotizaciones.json"
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_path = path.with_suffix(".sync.tmp")
+        tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_path.replace(path)
 
         print("✅ cotizaciones.json cargado desde Drive.")
         return data
@@ -307,10 +321,7 @@ def subir_cotizaciones_a_drive(items_list):
 
 # ======================= Funciones para clientes (con persistencia en Drive) ======================
 def cargar_clientes():
-    if IS_RENDER:
-        data = descargar_clientes_de_drive()
-        return data or {}
-
+    """Carga solo el respaldo local; la red se sincroniza fuera de la petición."""
     if os.path.exists("clientes.json"):
         try:
             with open("clientes.json", "r", encoding="utf-8") as f:
@@ -319,74 +330,128 @@ def cargar_clientes():
                 return data
         except Exception as e:
             print("clientes.json local ilegible:", e)
-
-    data = descargar_clientes_de_drive()
-    return data or {}
+    return {}
 
 def guardar_clientes(clientes):
-    try:
-        with open("clientes.json", "w", encoding="utf-8") as f:
-            json.dump(clientes, f, indent=2, ensure_ascii=False)
-        print("clientes.json guardado localmente.")
-    except Exception as e:
-        print("No se pudo guardar clientes.json local:", e)
+    with _CLIENTES_DATA_LOCK:
+        snapshot = dict(clientes)
+        try:
+            with open("clientes.json", "w", encoding="utf-8") as f:
+                json.dump(snapshot, f, indent=2, ensure_ascii=False)
+            print("clientes.json guardado localmente.")
+        except Exception as e:
+            print("No se pudo guardar clientes.json local:", e)
 
-    subir_clientes_a_drive(clientes)
+        subir_clientes_a_drive(snapshot)
 
 clientes_predefinidos = cargar_clientes()
 
 def _sync_clientes_from_drive_into_memory():
-    data = descargar_clientes_de_drive()
-    if isinstance(data, dict) and data:
-        try:
-            clientes_predefinidos.clear()
-            clientes_predefinidos.update(data)
-            print(f"Clientes sincronizados desde Drive: {len(clientes_predefinidos)}.")
-            return True
-        except Exception as e:
-            print("No se pudo actualizar clientes_predefinidos:", e)
-    elif data == {}:
-        print("Drive devolvio una lista vacia; se conservan los clientes actuales.")
+    global clientes_predefinidos
+    with _CLIENTES_DATA_LOCK:
+        data = descargar_clientes_de_drive()
+        if isinstance(data, dict) and data:
+            try:
+                # Reemplazo atómico: una petición nunca itera un dict a medio actualizar.
+                clientes_predefinidos = dict(data)
+                print(f"Clientes sincronizados desde Drive: {len(clientes_predefinidos)}.")
+                return True
+            except Exception as e:
+                print("No se pudo actualizar clientes_predefinidos:", e)
+        elif data == {}:
+            print("Drive devolvio una lista vacia; se conservan los clientes actuales.")
     return False
 
-# ---------- Reemplazo de before_first_request (Flask 3.x) ----------
+# ---------- Sincronización inicial sin bloquear solicitudes ----------
 __did_sync_once = False
-
-@app.before_request
-def _bootstrap_sync_clientes():
-    global __did_sync_once, clientes_predefinidos
-    # Si no se ha sincronizado exitosamente o la memoria está vacía → intenta cargar
-    need_sync = (not __did_sync_once) or (not clientes_predefinidos)
-    if need_sync and (IS_RENDER or AUTO_SYNC_FROM_DRIVE):
-        try:
-            sync_ok = _sync_clientes_from_drive_into_memory()
-            if clientes_predefinidos:
-                __did_sync_once = True
-                origen = "Drive" if sync_ok else "respaldo local"
-                print(f"Clientes disponibles: {len(clientes_predefinidos)} ({origen}).")
-            else:
-                print("Sin clientes disponibles; se reintentara en la siguiente solicitud.")
-        except Exception as e:
-            print("Error sincronizando clientes:", e)
-            # No marcamos __did_sync_once; reintentará en el próximo request
-
-# ---------- Sync de cotizaciones.json (Drive -> local data/) ----------
 __did_sync_cotizaciones_once = False
+__bootstrap_sync_lock = threading.Lock()
+__bootstrap_sync_last_attempt = 0.0
+BOOTSTRAP_SYNC_RETRY_SECONDS = 60
 
 def _sync_cotizaciones_from_drive_into_local():
     """Descarga/crea cotizaciones.json en Drive y lo deja en data/cotizaciones.json."""
-    return descargar_cotizaciones_de_drive()
+    with _COTIZACIONES_DATA_LOCK:
+        return descargar_cotizaciones_de_drive()
+
+def _bootstrap_sync_worker(app_obj):
+    global __did_sync_once, __did_sync_cotizaciones_once
+    try:
+        with app_obj.app_context():
+            if not __did_sync_once and (IS_RENDER or AUTO_SYNC_FROM_DRIVE):
+                sync_ok = _sync_clientes_from_drive_into_memory()
+                if sync_ok:
+                    __did_sync_once = True
+                    print(f"Clientes disponibles: {len(clientes_predefinidos)} (Drive).")
+            if IS_RENDER and not __did_sync_cotizaciones_once:
+                data = _sync_cotizaciones_from_drive_into_local()
+                if data is not None:
+                    __did_sync_cotizaciones_once = True
+    except Exception as exc:
+        app_obj.logger.exception("Falló la sincronización inicial con Drive: %s", exc)
+    finally:
+        reset_thread_google_services()
+        __bootstrap_sync_lock.release()
+
 
 @app.before_request
-def _bootstrap_sync_cotizaciones():
-    global __did_sync_cotizaciones_once
-    if __did_sync_cotizaciones_once:
+def _schedule_bootstrap_sync():
+    """Programa la carga de Drive y permite que la página responda de inmediato."""
+    global __bootstrap_sync_last_attempt
+    endpoint = request.endpoint or ""
+    if (
+        endpoint in {"healthz", "health", "health_check", "static"}
+        or endpoint.endswith("reportes_auto_status")
+    ):
         return
-    if IS_RENDER:
-        data = _sync_cotizaciones_from_drive_into_local()
-        # Marcamos como hecho aunque venga vacío (eso es válido)
-        if data is not None:
-            __did_sync_cotizaciones_once = True
+    clients_done = __did_sync_once or not (IS_RENDER or AUTO_SYNC_FROM_DRIVE)
+    quotes_done = __did_sync_cotizaciones_once or not IS_RENDER
+    if clients_done and quotes_done:
+        return
+    now = time.monotonic()
+    if now - __bootstrap_sync_last_attempt < BOOTSTRAP_SYNC_RETRY_SECONDS:
+        return
+    if not __bootstrap_sync_lock.acquire(blocking=False):
+        return
+    __bootstrap_sync_last_attempt = now
+    try:
+        threading.Thread(
+            target=_bootstrap_sync_worker,
+            args=(current_app._get_current_object(),),
+            name="google-bootstrap-sync",
+            daemon=True,
+        ).start()
+    except Exception:
+        __bootstrap_sync_lock.release()
+        raise
+
+
+_CLIENT_MUTATION_ENDPOINTS = {"nuevo_cliente", "editar_cliente", "borrar_cliente"}
+_QUOTE_MUTATION_ENDPOINTS = {"generar_pdf"}
+
+
+@app.before_request
+def _guard_bootstrap_writes():
+    """Nunca sube a Drive un respaldo parcial mientras termina el arranque."""
+    if not IS_RENDER:
+        return None
+    endpoint = request.endpoint or ""
+    clients_required = endpoint in _CLIENT_MUTATION_ENDPOINTS
+    quotes_required = endpoint in _QUOTE_MUTATION_ENDPOINTS
+    if not clients_required and not quotes_required:
+        return None
+    if (not clients_required or __did_sync_once) and (
+        not quotes_required or (__did_sync_once and __did_sync_cotizaciones_once)
+    ):
+        return None
+
+    response = make_response(
+        "Los datos todavía se están sincronizando con Google Drive. "
+        "Espera unos segundos y vuelve a intentarlo; no se guardó ningún cambio.",
+        503,
+    )
+    response.headers["Retry-After"] = "10"
+    return response
 
 # -------------------------------------------------------------------
 
@@ -601,23 +666,23 @@ def nuevo_cliente():
             flash("El nombre del cliente no puede estar vacío.")
             return redirect(url_for('nuevo_cliente'))
 
-        # Base existente
-        clientes_predefinidos[nombre] = {
-            "atencion": atencion,
-            "direccion": direccion,
-            "tiempo": tiempo,
-            "anticipo": anticipo,
-            "vigencia": vigencia
-        }
+        with _CLIENTES_DATA_LOCK:
+            clientes_predefinidos[nombre] = {
+                "atencion": atencion,
+                "direccion": direccion,
+                "tiempo": tiempo,
+                "anticipo": anticipo,
+                "vigencia": vigencia
+            }
 
-        # Solo guarda si vienen
-        if rfc:            clientes_predefinidos[nombre]["rfc"] = rfc
-        if razon_social:   clientes_predefinidos[nombre]["razon_social"] = razon_social
-        if cp:             clientes_predefinidos[nombre]["cp"] = cp
-        if regimen_fiscal: clientes_predefinidos[nombre]["regimen_fiscal"] = regimen_fiscal
-        if uso_cfdi:       clientes_predefinidos[nombre]["uso_cfdi"] = uso_cfdi
+            # Solo guarda si vienen
+            if rfc:            clientes_predefinidos[nombre]["rfc"] = rfc
+            if razon_social:   clientes_predefinidos[nombre]["razon_social"] = razon_social
+            if cp:             clientes_predefinidos[nombre]["cp"] = cp
+            if regimen_fiscal: clientes_predefinidos[nombre]["regimen_fiscal"] = regimen_fiscal
+            if uso_cfdi:       clientes_predefinidos[nombre]["uso_cfdi"] = uso_cfdi
 
-        guardar_clientes(clientes_predefinidos)
+            guardar_clientes(clientes_predefinidos)
         return redirect(url_for('inicio'))
 
     return render_template('agregar_cliente.html')
@@ -660,36 +725,37 @@ def registrar_cotizacion(cot):
     Guarda/actualiza una cotización en data/cotizaciones.json para que
     /cotizaciones la liste. Upsert por id/folio.
     """
-    base = Path(current_app.root_path) / "data"
-    base.mkdir(parents=True, exist_ok=True)
-    path = base / "cotizaciones.json"
+    with _COTIZACIONES_DATA_LOCK:
+        base = Path(current_app.root_path) / "data"
+        base.mkdir(parents=True, exist_ok=True)
+        path = base / "cotizaciones.json"
 
-    try:
-        arr = json.loads(path.read_text("utf-8")) if path.exists() else []
-        if not isinstance(arr, list):
+        try:
+            arr = json.loads(path.read_text("utf-8")) if path.exists() else []
+            if not isinstance(arr, list):
+                arr = []
+        except Exception:
             arr = []
-    except Exception:
-        arr = []
 
-    cid = str(cot.get("id") or cot.get("folio") or "").strip()
-    if cid:
-        for i, q in enumerate(arr):
-            qid = str(q.get("id") or q.get("folio") or "").strip()
-            if qid and qid == cid:
-                arr[i] = {**q, **cot}
-                break
+        cid = str(cot.get("id") or cot.get("folio") or "").strip()
+        if cid:
+            for i, q in enumerate(arr):
+                qid = str(q.get("id") or q.get("folio") or "").strip()
+                if qid and qid == cid:
+                    arr[i] = {**q, **cot}
+                    break
+            else:
+                arr.insert(0, cot)
         else:
             arr.insert(0, cot)
-    else:
-        arr.insert(0, cot)
 
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(arr, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(arr, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(path)
 
-    # Persistencia en Drive (Render) para no perder historial
-    if IS_RENDER:
-        subir_cotizaciones_a_drive(arr)
+        # Persistencia en Drive (Render) para no perder historial
+        if IS_RENDER:
+            subir_cotizaciones_a_drive(arr)
 
 @app.route('/generar_pdf')
 def generar_pdf():
@@ -738,7 +804,11 @@ def generar_pdf():
         total_final=total_final,
         img_path=img_path
     )
-    HTML(string=html).write_pdf(ruta_pdf)
+    try:
+        render_pdf_file(html, ruta_pdf, wait_timeout=5)
+    except PdfRendererBusy:
+        flash("Hay otro PDF procesándose. Inténtalo nuevamente en unos segundos.", "warning")
+        return redirect(url_for("inicio"))
 
     def guardar_respaldo_local(ruta_pdf_local, cliente_nombre, nombre_arch):
         ruta_respaldo_dir = os.path.join('static', 'cotizaciones', cliente_nombre.replace("/", "-").replace("\\", "-"))
@@ -959,15 +1029,16 @@ def editar_cliente():
         set_or_pop(merged, "uso_cfdi", uso_cfdi)
 
         # Guarda y renombra si cambió el nombre
-        if nuevo_nombre == nombre_actual:
-            clientes_predefinidos[nombre_actual] = merged
-        else:
-            clientes_predefinidos[nuevo_nombre] = merged
-            if nombre_actual in clientes_predefinidos:
-                del clientes_predefinidos[nombre_actual]
-            datos_cliente['cliente'] = nuevo_nombre
+        with _CLIENTES_DATA_LOCK:
+            if nuevo_nombre == nombre_actual:
+                clientes_predefinidos[nombre_actual] = merged
+            else:
+                clientes_predefinidos[nuevo_nombre] = merged
+                if nombre_actual in clientes_predefinidos:
+                    del clientes_predefinidos[nombre_actual]
+                datos_cliente['cliente'] = nuevo_nombre
 
-        guardar_clientes(clientes_predefinidos)
+            guardar_clientes(clientes_predefinidos)
         flash("Cliente actualizado correctamente.")
         return redirect(url_for('inicio'))
 
@@ -982,13 +1053,14 @@ def borrar_cliente():
     cliente = datos_cliente['cliente']
 
     if request.method == 'POST':
-        if cliente in clientes_predefinidos:
-            del clientes_predefinidos[cliente]
-            guardar_clientes(clientes_predefinidos)
-            datos_cliente.clear()
-            return redirect(url_for('inicio'))
-        else:
-            return "Cliente no encontrado.", 404
+        with _CLIENTES_DATA_LOCK:
+            if cliente in clientes_predefinidos:
+                del clientes_predefinidos[cliente]
+                guardar_clientes(clientes_predefinidos)
+                datos_cliente.clear()
+                return redirect(url_for('inicio'))
+            else:
+                return "Cliente no encontrado.", 404
 
     return render_template('borrar_cliente.html', cliente=cliente)
 
@@ -1183,7 +1255,7 @@ def _health_snapshot():
 
     # Usuario (token.json / TOKEN_JSON_B64)
     try:
-        usr = get_drive_service_user()
+        usr = get_drive_service_user(timeout=6)
         who_usr = usr.about().get(fields="user(displayName,emailAddress)").execute().get('user', {})
         who_s = f"{who_usr.get('displayName','')} <{who_usr.get('emailAddress','')}>"
         health["usuario"] = {"ok": True, "label": "OK", "hint": who_s, "needs_reconnect": False}
@@ -1196,7 +1268,7 @@ def _health_snapshot():
 
     # Service account
     try:
-        svc = get_drive_service()
+        svc = get_drive_service(timeout=6)
         who_svc = svc.about().get(fields="user(emailAddress)").execute().get('user', {}).get('emailAddress', '')
         health["service"] = {"ok": True, "label": "OK", "hint": who_svc}
     except Exception as e:
@@ -1224,12 +1296,19 @@ def _health_snapshot():
 @app.route('/health-check')
 def health_check():
     """Probar conexiones sin modificar datos (para los semáforos)."""
-    return jsonify(_health_snapshot())
+    try:
+        return jsonify(_health_snapshot())
+    finally:
+        reset_thread_google_services()
 
 # --- Healthcheck para la UI de /inicio-app ---
-@app.get("/health")
-def health():
-    out = {
+_HEALTH_CACHE = {"ts": 0.0, "ttl": 60.0, "payload": None}
+_HEALTH_CACHE_LOCK = threading.Lock()
+_HEALTH_REFRESH_LOCK = threading.Lock()
+
+
+def _empty_ui_health():
+    return {
         "user_ok": False,
         "user_email": None,
         "sa_ok": False,
@@ -1239,9 +1318,13 @@ def health():
         "needs_reconnect": False,
     }
 
-    # Usuario (token.json via TOKEN_JSON_B64 en Render)
+
+def _compute_ui_health():
+    """Hace el diagnóstico lento fuera de los hilos que atienden la web."""
+    out = _empty_ui_health()
+
     try:
-        usr = get_drive_service_user()
+        usr = get_drive_service_user(timeout=6)
         who_u = usr.about().get(fields="user(displayName,emailAddress)").execute().get("user", {})
         out["user_ok"] = True
         out["user_email"] = who_u.get("emailAddress")
@@ -1250,33 +1333,76 @@ def health():
     except Exception:
         pass
 
-    # Service account
     try:
-        svc = get_drive_service()
+        svc = get_drive_service(timeout=6)
         who_s = svc.about().get(fields="user(emailAddress)").execute().get("user", {})
         out["sa_ok"] = True
         out["sa_email"] = who_s.get("emailAddress")
     except Exception:
         pass
 
-    # Drive acceso a la carpeta madre
     try:
-        # Usa la cuenta de servicio para listar la carpeta madre
-        svc = get_drive_service()
-        svc.files().get(fileId=ID_COT, fields="id").execute()
+        get_drive_service(timeout=6).files().get(fileId=ID_COT, fields="id").execute()
         out["drive_ok"] = True
     except Exception:
         pass
 
-    # Sheets (leer encabezado)
     try:
-        sh = get_sheets_service()
         rng = f"{SHEET_TAB}!A1:A1"
-        _ = sh.spreadsheets().values().get(spreadsheetId=SHEET_ID, range=rng).execute()
+        get_sheets_service(timeout=6).spreadsheets().values().get(
+            spreadsheetId=SHEET_ID, range=rng
+        ).execute()
         out["sheets_ok"] = True
     except Exception:
         pass
 
+    return out
+
+
+def _health_refresh_worker(app_obj):
+    try:
+        with app_obj.app_context():
+            payload = _compute_ui_health()
+            with _HEALTH_CACHE_LOCK:
+                _HEALTH_CACHE.update(ts=time.monotonic(), payload=dict(payload))
+    except Exception as exc:
+        app_obj.logger.exception("Falló la comprobación de salud de Google: %s", exc)
+    finally:
+        reset_thread_google_services()
+        _HEALTH_REFRESH_LOCK.release()
+
+
+def _launch_health_refresh(app_obj):
+    """Single-flight: nunca ocupa ambos hilos web con el mismo diagnóstico."""
+    if not _HEALTH_REFRESH_LOCK.acquire(blocking=False):
+        return False
+    try:
+        threading.Thread(
+            target=_health_refresh_worker,
+            args=(app_obj,),
+            name="google-health-refresh",
+            daemon=True,
+        ).start()
+    except Exception:
+        _HEALTH_REFRESH_LOCK.release()
+        raise
+    return True
+
+
+@app.get("/health")
+def health():
+    now = time.monotonic()
+    with _HEALTH_CACHE_LOCK:
+        cached = dict(_HEALTH_CACHE["payload"]) if _HEALTH_CACHE["payload"] is not None else None
+        fresh = cached is not None and now - _HEALTH_CACHE["ts"] < _HEALTH_CACHE["ttl"]
+    if fresh:
+        cached.update(stale=False, refreshing=False, checking=False)
+        return jsonify(cached)
+
+    _launch_health_refresh(current_app._get_current_object())
+    refreshing = _HEALTH_REFRESH_LOCK.locked()
+    out = cached if cached is not None else _empty_ui_health()
+    out.update(stale=cached is not None, refreshing=refreshing, checking=cached is None)
     return jsonify(out)
 
 # === OAuth local-only: renovar token y devolver Base64 listo para Render ===
@@ -1314,9 +1440,8 @@ def oauth_renew_local():
 # ============================ MAIN (solo local) ============================
 @app.route('/inicio-app')
 def inicio_app():
-    # Pasamos el snapshot para pintar semáforos en SSR
-    health = _health_snapshot()
-    return render_template('inicio_app.html', IS_RENDER=IS_RENDER, health=health)
+    # Los semáforos consultan /health una sola vez desde el navegador.
+    return render_template('inicio_app.html', IS_RENDER=IS_RENDER, health=None)
 
 # --- Healthcheck muy ligero para Render ---
 @app.route("/healthz")
@@ -1711,6 +1836,27 @@ def ui_clientes():
 
 
 
+
+
+def _start_initial_drive_sync():
+    """En Render carga datos al fondo sin retrasar el arranque web."""
+    global __bootstrap_sync_last_attempt
+    if not IS_RENDER or not __bootstrap_sync_lock.acquire(blocking=False):
+        return
+    __bootstrap_sync_last_attempt = time.monotonic()
+    try:
+        threading.Thread(
+            target=_bootstrap_sync_worker,
+            args=(app,),
+            name="google-bootstrap-sync",
+            daemon=True,
+        ).start()
+    except Exception:
+        __bootstrap_sync_lock.release()
+        raise
+
+
+_start_initial_drive_sync()
 
 
 if __name__ == "__main__":

@@ -2,7 +2,6 @@
 # HSC deploy marker: 2025-08-29  (forzar rebuild en Render)
 
 import os, json, base64, sys, threading
-from functools import lru_cache
 import httplib2
 
 from googleapiclient.discovery import build
@@ -30,6 +29,66 @@ SCOPES = [
 # Los clientes de google-api-python-client mantienen estado de conexión y no
 # deben compartirse entre el monitor automático y los hilos de Gunicorn.
 _thread_services = threading.local()
+GOOGLE_HTTP_TIMEOUT = max(5.0, float(os.environ.get("GOOGLE_HTTP_TIMEOUT", "20")))
+GOOGLE_REFRESH_TIMEOUT = max(5.0, float(os.environ.get("GOOGLE_REFRESH_TIMEOUT", "12")))
+
+
+class _BoundedRequest(Request):
+    """Impide que la renovación OAuth deje un hilo bloqueado durante minutos."""
+
+    def __call__(self, url, method="GET", body=None, headers=None, timeout=120, **kwargs):
+        try:
+            bounded_timeout = min(float(timeout), GOOGLE_REFRESH_TIMEOUT)
+        except (TypeError, ValueError):
+            bounded_timeout = GOOGLE_REFRESH_TIMEOUT
+        return super().__call__(
+            url=url,
+            method=method,
+            body=body,
+            headers=headers,
+            timeout=bounded_timeout,
+            **kwargs,
+        )
+
+
+def _close_service(service):
+    try:
+        http = getattr(service, "_http", None)
+        if http and hasattr(http, "close"):
+            http.close()
+    except Exception:
+        pass
+
+
+def reset_thread_google_services():
+    """Descarta únicamente las conexiones Google del hilo actual."""
+    services = getattr(_thread_services, "services", {})
+    for service in services.values():
+        _close_service(service)
+    _thread_services.services = {}
+    _thread_services.user_credentials = None
+    _thread_services.sa_credentials = None
+
+
+def _thread_service(key, api, version, credentials, timeout=None, fresh=False):
+    """Crea un transporte httplib2 independiente para cada hilo."""
+    timeout = GOOGLE_HTTP_TIMEOUT if timeout is None else max(5.0, float(timeout))
+    services = getattr(_thread_services, "services", None)
+    if services is None:
+        services = {}
+        _thread_services.services = services
+    cache_key = f"{key}:{timeout:g}"
+    if fresh:
+        _close_service(services.pop(cache_key, None))
+    service = services.get(cache_key)
+    if service is None:
+        authorized_http = AuthorizedHttp(
+            credentials,
+            http=httplib2.Http(timeout=timeout),
+        )
+        service = build(api, version, http=authorized_http, cache_discovery=False)
+        services[cache_key] = service
+    return service
 
 # =======================================================================================
 #                                     Service Account
@@ -65,36 +124,32 @@ def _load_service_account_info():
         "Configura SERVICE_ACCOUNT_B64/SERVICE_ACCOUNT_JSON/SERVICE_ACCOUNT_FILE o sube 'service_account.json'."
     )
 
-@lru_cache(maxsize=1)
 def _sa_credentials():
-    info = _load_service_account_info()
-    return SA_Credentials.from_service_account_info(info, scopes=SCOPES)
+    credentials = getattr(_thread_services, "sa_credentials", None)
+    if credentials is None:
+        info = _load_service_account_info()
+        credentials = SA_Credentials.from_service_account_info(info, scopes=SCOPES)
+        _thread_services.sa_credentials = credentials
+    return credentials
 
-@lru_cache(maxsize=1)
-def get_drive_service():
-    """Drive usando cuenta de servicio."""
-    return build("drive", "v3", credentials=_sa_credentials(), cache_discovery=False)
+def get_drive_service(timeout=None, fresh=False):
+    """Drive con cuenta de servicio y una conexión independiente por hilo."""
+    return _thread_service(
+        "drive_sa", "drive", "v3", _sa_credentials(), timeout=timeout, fresh=fresh
+    )
 
-def get_sheets_service(timeout=None):
+def get_sheets_service(timeout=None, fresh=False):
     """Sheets usando una conexión independiente por hilo."""
-    if timeout is not None:
-        authorized_http = AuthorizedHttp(
-            _sa_credentials(),
-            http=httplib2.Http(timeout=float(timeout)),
-        )
-        return build("sheets", "v4", http=authorized_http, cache_discovery=False)
-    service = getattr(_thread_services, "sheets", None)
-    if service is None:
-        service = build("sheets", "v4", credentials=_sa_credentials(), cache_discovery=False)
-        _thread_services.sheets = service
-    return service
+    return _thread_service(
+        "sheets_sa", "sheets", "v4", _sa_credentials(), timeout=timeout, fresh=fresh
+    )
 
 def get_sheets_authorized_session():
     """Sesión REST nueva para lecturas automáticas con timeout estricto."""
     credentials = SA_Credentials.from_service_account_info(
         _load_service_account_info(), scopes=SCOPES
     )
-    return AuthorizedSession(credentials)
+    return AuthorizedSession(credentials, refresh_timeout=GOOGLE_REFRESH_TIMEOUT)
 
 # =======================================================================================
 #                                        Usuario
@@ -196,12 +251,15 @@ def _invalidate_local_token_files():
         except Exception as e:
             print(f"⚠️ No se pudo eliminar token inválido ({p}): {type(e).__name__}: {e}", file=sys.stderr)
 
-@lru_cache(maxsize=1)
 def _user_credentials():
     """
     Construye credenciales de usuario (OAuth) desde token.json y las refresca si es necesario.
     Lanza RuntimeError si no hay token disponible o si el refresh falla.
     """
+    cached = getattr(_thread_services, "user_credentials", None)
+    if cached is not None:
+        return cached
+
     data = _load_user_token()
     if not data:
         raise RuntimeError(
@@ -214,7 +272,7 @@ def _user_credentials():
     # Refrescar si está expirado y tenemos refresh_token
     try:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            creds.refresh(_BoundedRequest())
     except RefreshError as e:
         # Manejo suave: limpiar copias locales, avisar y re-lanzar error claro
         _invalidate_local_token_files()
@@ -222,17 +280,24 @@ def _user_credentials():
         # Nota: no podemos borrar secrets de entorno en tiempo de ejecución.
         raise RuntimeError("Google OAuth RefreshError: token expirado o revocado. Vuelve a conectar Google.") from e
 
+    _thread_services.user_credentials = creds
     return creds
 
-@lru_cache(maxsize=1)
-def get_drive_service_user():
-    """Drive autenticado como el USUARIO (token.json). Úsalo para SUBIR/LEER archivos privados."""
-    return build("drive", "v3", credentials=_user_credentials(), cache_discovery=False)
+def get_drive_service_user(timeout=None, fresh=False):
+    """Drive del usuario con una conexión independiente por hilo."""
+    if fresh:
+        reset_thread_google_services()
+    return _thread_service(
+        "drive_user", "drive", "v3", _user_credentials(), timeout=timeout, fresh=fresh
+    )
 
-@lru_cache(maxsize=1)
-def get_sheets_service_user():
-    """Sheets autenticado como el USUARIO (token.json)."""
-    return build("sheets", "v4", credentials=_user_credentials(), cache_discovery=False)
+def get_sheets_service_user(timeout=None, fresh=False):
+    """Sheets del usuario con una conexión independiente por hilo."""
+    if fresh:
+        reset_thread_google_services()
+    return _thread_service(
+        "sheets_user", "sheets", "v4", _user_credentials(), timeout=timeout, fresh=fresh
+    )
 
 
 

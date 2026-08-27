@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, abort, jsonify, current_app
-import os, io, re, time, json, random, threading, base64, gc, socket
+import os, io, re, time, json, random, threading, base64, socket, ssl
 import requests
+import httplib2
 from datetime import date, datetime
 from pathlib import Path
 import uuid
@@ -10,10 +11,24 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from googleapiclient.errors import HttpError
-from weasyprint import HTML
+from google.auth.exceptions import TransportError
 from PIL import Image, ImageOps
 from werkzeug.utils import secure_filename
-from auth_google import get_drive_service_user, get_sheets_service, get_drive_service, get_sheets_authorized_session
+from auth_google import (
+    get_drive_service_user,
+    get_sheets_service,
+    get_drive_service,
+    get_sheets_authorized_session,
+    reset_thread_google_services,
+)
+from pdf_runtime import (
+    PdfRendererBusy,
+    pdf_render_slot,
+    render_pdf_bytes,
+    render_pdf_file,
+    release_pdf_memory,
+    rss_megabytes,
+)
 
 # ----------------------------------------------------------------------
 # Blueprint
@@ -47,12 +62,15 @@ AUTO_PDF_ENABLED = os.environ.get("REPORTES_AUTO_PDF", "1").strip().lower() not 
 AUTO_PDF_INTERVAL = max(60, int(os.environ.get("REPORTES_AUTO_PDF_INTERVAL", "28800")))
 AUTO_PDF_LOOKBACK = max(1, int(os.environ.get("REPORTES_AUTO_PDF_LOOKBACK", "25")))
 AUTO_PDF_STABILITY_SECONDS = max(0, int(os.environ.get("REPORTES_AUTO_PDF_STABILITY_SECONDS", "120")))
-AUTO_PDF_BATCH_SIZE = max(1, int(os.environ.get("REPORTES_AUTO_PDF_BATCH_SIZE", "1")))
 AUTO_PDF_QUEUE_DELAY = max(30, int(os.environ.get("REPORTES_AUTO_PDF_QUEUE_DELAY", "30")))
+PHOTO_TARGET_SIZE = (1400, 1400)
+PHOTO_MAX_SOURCE_PIXELS = 80_000_000
+PHOTO_MAX_DECODE_PIXELS = 25_000_000
 _AUTO_PDF_LOCK = threading.Lock()
 _AUTO_PDF_WAKE_EVENT = threading.Event()
 _AUTO_PDF_CANCEL_EVENT = threading.Event()
 _AUTO_PDF_CYCLE_LOCK = threading.Lock()
+_AUTO_PDF_STATE_LOCK = threading.Lock()
 _AUTO_PDF_STARTED = False
 _AUTO_PDF_FIRST_SEEN = {}
 _AUTO_PDF_STATUS = {
@@ -84,7 +102,6 @@ _AUTO_PDF_STATUS = {
 # Construcción de clientes Google con token.json (como antes)
 # ----------------------------------------------------------------------
 _reportes_services = threading.local()
-_drive_svc  = None
 
 def _sheets_service():
     service = getattr(_reportes_services, "sheets", None)
@@ -102,10 +119,16 @@ def _reset_auto_sheets_service():
         _reportes_services.sheets = None
 
 def _drive_service():
-    global _drive_svc
-    if _drive_svc is None:
-        _drive_svc = get_drive_service()
-    return _drive_svc
+    return get_drive_service()
+
+
+def _discard_reportes_google_connections():
+    """Descarta la conexión dañada del hilo antes de la siguiente operación."""
+    reset_thread_google_services()
+    _reportes_services.sheets = None
+    image_services = globals().get("_drive_img_services")
+    if image_services is not None:
+        image_services.drive = None
 
 # ----------------------------------------------------------------------
 # Helpers de reintento (429/500/503)
@@ -131,15 +154,47 @@ def _retry(callable_fn, *, retries=4, base_delay=0.5):
         try:
             return callable_fn()
         except HttpError as e:
-            if getattr(e, "resp", None) and e.resp.status in (429, 500, 503):
+            status = getattr(getattr(e, "resp", None), "status", None)
+            content = getattr(e, "content", b"") or b""
+            retryable_403 = status == 403 and any(
+                marker in content
+                for marker in (b"rateLimitExceeded", b"userRateLimitExceeded", b"backendError")
+            )
+            if status in (429, 500, 502, 503, 504) or retryable_403:
                 last = e
+                _discard_reportes_google_connections()
                 continue
             raise
-        except (TimeoutError, socket.timeout) as e:
+        except (
+            TimeoutError,
+            socket.timeout,
+            ssl.SSLError,
+            ConnectionError,
+            OSError,
+            httplib2.HttpLib2Error,
+            TransportError,
+        ) as e:
             last = e
+            _discard_reportes_google_connections()
             continue
     if last:
         raise last
+
+
+def _sheets_call(operation, **retry_kwargs):
+    return _retry(lambda: operation(_sheets_service()), **retry_kwargs)
+
+
+def _drive_img_call(operation, **retry_kwargs):
+    return _retry(lambda: operation(_drive_service_for_imgs()), **retry_kwargs)
+
+
+def _drive_files_call(operation, **retry_kwargs):
+    return _retry(lambda: operation(_drive_service_for_files()), **retry_kwargs)
+
+
+def _drive_sa_call(operation, **retry_kwargs):
+    return _retry(lambda: operation(_drive_service()), **retry_kwargs)
 
 class _AutoProcessingCancelled(Exception):
     """Detiene de forma segura únicamente la revisión automática actual."""
@@ -147,19 +202,19 @@ class _AutoProcessingCancelled(Exception):
 # ----------------------------------------------------------------------
 # Sheets utils
 # ----------------------------------------------------------------------
-def _values_get(svc, rng):
-    return _retry(lambda: svc.spreadsheets().values().get(
+def _values_get(rng):
+    return _sheets_call(lambda svc: svc.spreadsheets().values().get(
         spreadsheetId=SHEET_ID, range=rng
     ).execute())
 
-def _values_batch_get(svc, ranges):
-    return _retry(lambda: svc.spreadsheets().values().batchGet(
+def _values_batch_get(ranges):
+    return _sheets_call(lambda svc: svc.spreadsheets().values().batchGet(
         spreadsheetId=SHEET_ID, ranges=ranges
     ).execute())
 
-def _values_append(svc, rng, rows):
+def _values_append(rng, rows):
     body = {"values": rows}
-    return _retry(lambda: svc.spreadsheets().values().append(
+    return _sheets_call(lambda svc: svc.spreadsheets().values().append(
         spreadsheetId=SHEET_ID,
         range=rng,
         valueInputOption="RAW",
@@ -167,11 +222,13 @@ def _values_append(svc, rng, rows):
         body=body
     ).execute())
 
-def _spreadsheet_meta(svc, fields=None):
-    req = svc.spreadsheets().get(spreadsheetId=SHEET_ID)
-    if fields:
-        req = svc.spreadsheets().get(spreadsheetId=SHEET_ID, fields=fields)
-    return _retry(lambda: req.execute())
+def _spreadsheet_meta(fields=None):
+    def operation(svc):
+        kwargs = {"spreadsheetId": SHEET_ID}
+        if fields:
+            kwargs["fields"] = fields
+        return svc.spreadsheets().get(**kwargs).execute()
+    return _sheets_call(operation)
 
 # Encabezados y columnas (memo con TTL)
 _HEADERS_CACHE = {"ts": 0, "ttl": 300, "val": []}
@@ -180,8 +237,7 @@ def _get_headers():
     now = time.time()
     if _HEADERS_CACHE["val"] and (now - _HEADERS_CACHE["ts"] < _HEADERS_CACHE["ttl"]):
         return _HEADERS_CACHE["val"]
-    svc = _sheets_service()
-    res = _values_get(svc, f"{SHEET_TAB}!A1:ZZ1")
+    res = _values_get(f"{SHEET_TAB}!A1:ZZ1")
     hdr = res.get("values", [[]])[0]
     _HEADERS_CACHE["val"] = hdr
     _HEADERS_CACHE["ts"] = now
@@ -233,11 +289,9 @@ def get_ultimos_10_items():
     Devuelve [{id_reporte, nombre_equipo, cliente}] para los 10 IDs recientes **únicos**,
     resolviendo cada uno con get_reporte_con_overrides para consistencia 1:1.
     """
-    svc = _sheets_service()
-
     # 1) Leer columna real de ID_Reporte
     _, _, id_range = _resolve_id_col()
-    col_vals = _values_get(svc, id_range).get("values", [])
+    col_vals = _values_get(id_range).get("values", [])
     ids = [r[0].strip() for r in col_vals if r and str(r[0]).strip()]
     if not ids:
         return []
@@ -273,9 +327,8 @@ def get_ultimos_10_items():
 
 def get_reporte_by_id(id_reporte: str):
     """Devuelve el dict {columna: valor} de la ÚLTIMA fila con match EXACTO."""
-    svc = _sheets_service()
     _, _, id_range = _resolve_id_col()
-    col_vals = _values_get(svc, id_range).get("values", [])
+    col_vals = _values_get(id_range).get("values", [])
     values = [(r[0].strip() if r and str(r[0]).strip() else "") for r in col_vals]
     last_row_idx = None
     for i, val in enumerate(values, start=2):
@@ -284,7 +337,7 @@ def get_reporte_by_id(id_reporte: str):
     if not last_row_idx:
         return None
 
-    row = _values_get(svc, f"{SHEET_TAB}!A{last_row_idx}:ZZ{last_row_idx}").get("values", [[]])[0]
+    row = _values_get(f"{SHEET_TAB}!A{last_row_idx}:ZZ{last_row_idx}").get("values", [[]])[0]
     headers = _get_headers()
     data = {headers[i]: (row[i] if i < len(row) else "") for i in range(len(headers))}
     data.setdefault("ID_Reporte", id_reporte)
@@ -324,8 +377,7 @@ def _resolve_clientes_tab_title():
     if CLIENTES_GID_ENV.strip():
         try:
             gid_int = int(CLIENTES_GID_ENV.strip())
-            svc = _sheets_service()
-            meta = _spreadsheet_meta(svc, fields="sheets(properties(sheetId,title))")
+            meta = _spreadsheet_meta(fields="sheets(properties(sheetId,title))")
             for sh in meta.get("sheets", []):
                 props = sh.get("properties", {})
                 if props.get("sheetId") == gid_int:
@@ -340,9 +392,8 @@ def _load_clientes_cache(force=False):
         return
     tab = _resolve_clientes_tab_title()
     try:
-        svc = _sheets_service()
-        hdr = _values_get(svc, f"{tab}!A1:ZZ1").get("values", [[]])[0]
-        rows = _values_get(svc, f"{tab}!A2:ZZ").get("values", [])
+        hdr = _values_get(f"{tab}!A1:ZZ1").get("values", [[]])[0]
+        rows = _values_get(f"{tab}!A2:ZZ").get("values", [])
         by_id = {}
         try:
             idx_id = hdr.index("ID_Cliente")
@@ -405,9 +456,8 @@ def _get_all_ids_cached(ttl_sec: int = 180):
     global _cache_ids, _cache_ids_ts
     now = time.time()
     if not _cache_ids or (now - _cache_ids_ts) > ttl_sec:
-        svc = _sheets_service()
         _, _, id_range = _resolve_id_col()
-        col_vals = _values_get(svc, id_range).get("values", [])
+        col_vals = _values_get(id_range).get("values", [])
         _cache_ids = [r[0].strip() for r in col_vals if r and str(r[0]).strip()]
         _cache_ids_ts = now
     return _cache_ids
@@ -431,6 +481,8 @@ def reportes_suggest():
 _drive_img_services = threading.local()
 _IMG_PATH_ID_CACHE = {"ttl": 1800, "data": {}}  # path_str -> (file_id, ts)
 _IMG_BYTES_CACHE = {"ttl": 600, "data": {}}     # file_id -> (bytes, mime, name, ts)
+_IMG_CACHE_LOCK = threading.RLock()
+_IMG_PATH_ID_CACHE_MAX = 1000
 
 def _drive_service_for_imgs():
     service = getattr(_drive_img_services, "drive", None)
@@ -439,28 +491,67 @@ def _drive_service_for_imgs():
         _drive_img_services.drive = service
     return service
 
+
+def _download_drive_image(file_id: str, *, max_chunks=None) -> bytes:
+    """Reinicia cliente, request y buffer completos después de un fallo de red."""
+    def operation(drive):
+        request_obj = drive.files().get_media(fileId=file_id)
+        buffer = io.BytesIO()
+        downloader = MediaIoBaseDownload(buffer, request_obj)
+        done = False
+        chunks = 0
+        while not done:
+            if (
+                threading.current_thread().name == "reportes-auto-pdf"
+                and _AUTO_PDF_CANCEL_EVENT.is_set()
+            ):
+                raise _AutoProcessingCancelled()
+            _, done = downloader.next_chunk()
+            chunks += 1
+            if max_chunks is not None and chunks >= max_chunks and not done:
+                raise TimeoutError(
+                    f"Drive no terminó la descarga después de {max_chunks} bloques"
+                )
+        payload = buffer.getvalue()
+        if not payload:
+            raise RuntimeError("Drive devolvió una imagen vacía")
+        return payload
+
+    return _drive_img_call(operation)
+
 def _cache_get_path_id(path_str: str):
-    ent = _IMG_PATH_ID_CACHE["data"].get(path_str)
-    if not ent:
-        return None
-    file_id, ts = ent
-    if time.time() - ts > _IMG_PATH_ID_CACHE["ttl"]:
-        _IMG_PATH_ID_CACHE["data"].pop(path_str, None)
-        return None
-    return file_id
+    with _IMG_CACHE_LOCK:
+        ent = _IMG_PATH_ID_CACHE["data"].get(path_str)
+        if not ent:
+            return None
+        file_id, ts = ent
+        if time.time() - ts > _IMG_PATH_ID_CACHE["ttl"]:
+            _IMG_PATH_ID_CACHE["data"].pop(path_str, None)
+            return None
+        return file_id
 
 def _cache_set_path_id(path_str: str, file_id: str):
-    _IMG_PATH_ID_CACHE["data"][path_str] = (file_id, time.time())
+    with _IMG_CACHE_LOCK:
+        now = time.time()
+        entries = _IMG_PATH_ID_CACHE["data"]
+        expired = [key for key, (_, ts) in entries.items() if now - ts > _IMG_PATH_ID_CACHE["ttl"]]
+        for key in expired:
+            entries.pop(key, None)
+        while len(entries) >= _IMG_PATH_ID_CACHE_MAX:
+            oldest_key = min(entries, key=lambda key: entries[key][1])
+            entries.pop(oldest_key, None)
+        entries[path_str] = (file_id, now)
 
 def _cache_get_bytes(file_id: str):
-    ent = _IMG_BYTES_CACHE["data"].get(file_id)
-    if not ent:
-        return None
-    bts, mime, name, ts = ent
-    if time.time() - ts > _IMG_BYTES_CACHE["ttl"]:
-        _IMG_BYTES_CACHE["data"].pop(file_id, None)
-        return None
-    return bts, mime, name
+    with _IMG_CACHE_LOCK:
+        ent = _IMG_BYTES_CACHE["data"].get(file_id)
+        if not ent:
+            return None
+        bts, mime, name, ts = ent
+        if time.time() - ts > _IMG_BYTES_CACHE["ttl"]:
+            _IMG_BYTES_CACHE["data"].pop(file_id, None)
+            return None
+        return bts, mime, name
 
 def _cache_set_bytes(file_id: str, bts: bytes, mime: str, name: str):
     # Limit simple: no más de 40MB por entrada
@@ -468,19 +559,48 @@ def _cache_set_bytes(file_id: str, bts: bytes, mime: str, name: str):
     max_total = 24 * 1024 * 1024
     if len(bts) > max_entry:
         return
-    entries = _IMG_BYTES_CACHE["data"]
-    current = sum(len(item[0]) for item in entries.values())
-    while entries and current + len(bts) > max_total:
-        oldest_key = min(entries, key=lambda key: entries[key][3])
-        old = entries.pop(oldest_key)
-        current -= len(old[0])
-    entries[file_id] = (bts, mime, name, time.time())
+    with _IMG_CACHE_LOCK:
+        entries = _IMG_BYTES_CACHE["data"]
+        now = time.time()
+        expired = [key for key, item in entries.items() if now - item[3] > _IMG_BYTES_CACHE["ttl"]]
+        for key in expired:
+            entries.pop(key, None)
+        current = sum(len(item[0]) for item in entries.values())
+        while entries and current + len(bts) > max_total:
+            oldest_key = min(entries, key=lambda key: entries[key][3])
+            old = entries.pop(oldest_key)
+            current -= len(old[0])
+        entries[file_id] = (bts, mime, name, now)
+
+
+def _clear_pdf_photo_cache():
+    """Las colas usan fotos distintas; conservarlas solo eleva la memoria."""
+    with _IMG_CACHE_LOCK:
+        _IMG_BYTES_CACHE["data"].clear()
 
 def _optimize_photo_bytes(bts: bytes) -> tuple[bytes, str]:
     """Reduce una foto para el PDF sin modificar el archivo original."""
-    with Image.open(io.BytesIO(bts)) as image:
-        image = ImageOps.exif_transpose(image)
-        image.thumbnail((1400, 1400), Image.Resampling.LANCZOS)
+    if not bts:
+        raise ValueError("la imagen está vacía")
+
+    with Image.open(io.BytesIO(bts)) as source:
+        width, height = source.size
+        if width <= 0 or height <= 0:
+            raise ValueError("dimensiones de imagen inválidas")
+        if width * height > PHOTO_MAX_SOURCE_PIXELS:
+            raise ValueError(
+                f"la imagen supera el límite de {PHOTO_MAX_SOURCE_PIXELS // 1_000_000} megapíxeles"
+            )
+
+        # JPEG permite reducir desde el decodificador antes de cargar todos los
+        # píxeles. Debe ocurrir antes de corregir la orientación EXIF.
+        if (source.format or "").upper() in ("JPEG", "JPG", "MPO"):
+            source.draft("RGB", PHOTO_TARGET_SIZE)
+        if source.width * source.height > PHOTO_MAX_DECODE_PIXELS:
+            raise ValueError("la imagen requiere demasiada memoria para procesarse")
+
+        image = ImageOps.exif_transpose(source)
+        image.thumbnail(PHOTO_TARGET_SIZE, Image.Resampling.LANCZOS)
         if image.mode != "RGB":
             if "A" in image.getbands():
                 background = Image.new("RGB", image.size, "white")
@@ -506,8 +626,10 @@ def _extract_drive_id(url: str):
             return m.group(1)
     return None
 
-def _resolve_shortcut(drive, file_id: str):
-    meta = _retry(lambda: drive.files().get(fileId=file_id, fields="mimeType,shortcutDetails/targetId").execute())
+def _resolve_shortcut(file_id: str):
+    meta = _drive_img_call(lambda drive: drive.files().get(
+        fileId=file_id, fields="mimeType,shortcutDetails/targetId"
+    ).execute())
     if meta.get("mimeType") == "application/vnd.google-apps.shortcut":
         return meta.get("shortcutDetails", {}).get("targetId") or file_id
     return file_id
@@ -520,7 +642,7 @@ def _normalize_relpath(p: str) -> str:
         p = p[idx + len(key):].strip("/")
     return p
 
-def _resolve_path_to_id(drive, path_str: str):
+def _resolve_path_to_id(path_str: str):
     if not REPORTES_ROOT_ID:
         return None
     cached = _cache_get_path_id(path_str)
@@ -533,7 +655,7 @@ def _resolve_path_to_id(drive, path_str: str):
         mime_filter = "" if is_last else " and mimeType='application/vnd.google-apps.folder'"
         safe = part.replace("'", "\\'")
         q = "name='{}' and '{}' in parents and trashed=false{}".format(safe, parent, mime_filter)
-        res = _retry(lambda: drive.files().list(
+        res = _drive_img_call(lambda drive, q=q: drive.files().list(
             q=q, spaces='drive', fields='files(id,name,mimeType)', pageSize=50
         ).execute())
         files = res.get('files', [])
@@ -548,27 +670,21 @@ def _photo_data_uri(photo_ref: str) -> str | None:
     ref = (photo_ref or "").strip()
     if not ref:
         return None
-    drive = _drive_service_for_imgs()
-    file_id = _extract_drive_id(ref) or _resolve_path_to_id(drive, ref)
+    file_id = _extract_drive_id(ref) or _resolve_path_to_id(ref)
     if not file_id:
         return None
-    file_id = _resolve_shortcut(drive, file_id)
+    file_id = _resolve_shortcut(file_id)
     cached = _cache_get_bytes(file_id)
     if cached:
         bts, mime, _ = cached
+        return f"data:{mime};base64,{base64.b64encode(bts).decode('ascii')}"
     else:
-        meta = _retry(lambda: drive.files().get(fileId=file_id, fields="mimeType,name").execute())
+        meta = _drive_img_call(lambda drive: drive.files().get(
+            fileId=file_id, fields="mimeType,name"
+        ).execute())
         mime = meta.get("mimeType") or "image/jpeg"
         name = meta.get("name") or "foto"
-        req = drive.files().get_media(fileId=file_id)
-        buf = io.BytesIO()
-        downloader = MediaIoBaseDownload(buf, req)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        bts = buf.getvalue()
-        if not bts:
-            return None
+        bts = _download_drive_image(file_id)
     bts, mime = _optimize_photo_bytes(bts)
     _cache_set_bytes(file_id, bts, mime, "foto.jpg")
     return f"data:{mime};base64,{base64.b64encode(bts).decode('ascii')}"
@@ -605,14 +721,12 @@ def reportes_imgproxy():
         return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
 
     try:
-        drive = _drive_service_for_imgs()
-
         # 1) ¿Es un ID de archivo de Drive en la URL?
         file_id = _extract_drive_id(url)
 
         # 2) ¿Es una ruta tipo ".../04. Reportes/<Cliente>/<ID>/archivo.jpg"?
         if not file_id:
-            maybe = _resolve_path_to_id(drive, url)
+            maybe = _resolve_path_to_id(url)
             if maybe:
                 file_id = maybe
 
@@ -621,7 +735,7 @@ def reportes_imgproxy():
             return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
 
         # Atajo (shortcuts) -> resolver target real
-        file_id = _resolve_shortcut(drive, file_id)
+        file_id = _resolve_shortcut(file_id)
 
         # ¿Tenemos bytes en caché?
         cached = _cache_get_bytes(file_id)
@@ -632,30 +746,13 @@ def reportes_imgproxy():
             return resp
 
         # Metadatos (para saber mimetype y nombre)
-        meta = _retry(lambda: drive.files().get(
+        meta = _drive_img_call(lambda drive: drive.files().get(
             fileId=file_id, fields="mimeType,name"
         ).execute())
         name = meta.get("name", "img")
         mime = meta.get("mimeType", "image/jpeg") or "image/jpeg"
 
-        # Descargar bytes
-        req = drive.files().get_media(fileId=file_id)
-        buf = io.BytesIO()
-        downloader = MediaIoBaseDownload(buf, req)
-        done = False
-        # Pequeño límite de chunks para evitar loop infinito por red mala
-        max_iters = 20
-        iters = 0
-        while not done and iters < max_iters:
-            _, done = downloader.next_chunk()
-            iters += 1
-        buf.seek(0)
-
-        # Si no descargó, devolver PNG transparente
-        if buf.getbuffer().nbytes == 0:
-            return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
-
-        bts = buf.getvalue()
+        bts = _download_drive_image(file_id, max_chunks=20)
         _cache_set_bytes(file_id, bts, mime, name)
 
         # Cabeceras cacheables para que WeasyPrint no golpee varias veces
@@ -677,37 +774,52 @@ def _sanitize_name(name: str) -> str:
     # Evitar caracteres problemáticos
     return re.sub(r'[\\/:*?"<>|]+', '-', (name or "")).strip() or "Sin nombre"
 
-def _ensure_folder(drive, parent_id: str, name: str) -> str:
+def _ensure_folder(parent_id: str, name: str) -> str:
     safe = _sanitize_name(name)
     safe_q = safe.replace("'", "\\'")
     q = (
         "name='{}' and '{}' in parents and "
         "mimeType='application/vnd.google-apps.folder' and trashed=false"
     ).format(safe_q, parent_id)
-    found = _retry(lambda: drive.files().list(q=q, spaces='drive', fields='files(id,name)', pageSize=1).execute()) \
-        .get('files', [])
-    if found:
-        return found[0]['id']
-    meta = {
-        "name": safe,
-        "mimeType": "application/vnd.google-apps.folder",
-        "parents": [parent_id]
-    }
-    return _retry(lambda: drive.files().create(body=meta, fields="id").execute())["id"]
 
-def _upsert_pdf(drive, parent_id: str, filename: str, pdf_bytes: bytes) -> str:
+    def operation(drive):
+        found = drive.files().list(
+            q=q, spaces='drive', fields='files(id,name)', pageSize=1
+        ).execute().get('files', [])
+        if found:
+            return found[0]['id']
+        meta = {
+            "name": safe,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [parent_id]
+        }
+        return drive.files().create(body=meta, fields="id").execute()["id"]
+
+    return _drive_files_call(operation)
+
+
+def _upsert_pdf(parent_id: str, filename: str, pdf_bytes: bytes) -> str:
     safe_name = _sanitize_name(filename)
     safe_q = safe_name.replace("'", "\\'")
     q = "name='{}' and '{}' in parents and trashed=false".format(safe_q, parent_id)
-    existing = _retry(lambda: drive.files().list(q=q, spaces='drive', fields='files(id,name)', pageSize=1).execute()) \
-        .get('files', [])
-    media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype="application/pdf", resumable=False)
-    if existing:
-        file_id = existing[0]['id']
-        _retry(lambda: drive.files().update(fileId=file_id, media_body=media).execute())
-        return file_id
-    meta = {"name": safe_name, "parents": [parent_id], "mimeType": "application/pdf"}
-    return _retry(lambda: drive.files().create(body=meta, media_body=media, fields="id").execute())["id"]
+
+    def operation(drive):
+        existing = drive.files().list(
+            q=q, spaces='drive', fields='files(id,name)', pageSize=1
+        ).execute().get('files', [])
+        media = MediaIoBaseUpload(
+            io.BytesIO(pdf_bytes), mimetype="application/pdf", resumable=False
+        )
+        if existing:
+            file_id = existing[0]['id']
+            drive.files().update(fileId=file_id, media_body=media).execute()
+            return file_id
+        meta = {"name": safe_name, "parents": [parent_id], "mimeType": "application/pdf"}
+        return drive.files().create(
+            body=meta, media_body=media, fields="id"
+        ).execute()["id"]
+
+    return _drive_files_call(operation)
 
 def _normalize_ronda(val: str) -> str | None:
     v = (val or "").strip()
@@ -744,6 +856,30 @@ def _logo_paths():
     if not logo_fs_path:
         return None, None
     return logo_web, logo_fs_path.as_uri()
+
+
+def _render_report_pdf_bytes(data: dict, *, wait_timeout: float) -> bytes:
+    """Único motor para el botón manual y la generación automática."""
+    with pdf_render_slot(wait_timeout=wait_timeout):
+        fotos = None
+        html = None
+        try:
+            fotos = _pdf_photos(data)
+            logo_web, logo_fs = _logo_paths()
+            html = render_template(
+                "reporte_formato.html",
+                datos=data,
+                fotos=fotos,
+                embed_for_pdf=True,
+                logo_web=logo_web,
+                logo_fs=logo_fs,
+            )
+            return render_pdf_bytes(html, base_url=current_app.root_path, wait_timeout=0)
+        finally:
+            html = None
+            fotos = None
+            _clear_pdf_photo_cache()
+            release_pdf_memory()
 
 # ----------------------------------------------------------------------
 # Rutas (vista principal y clásicos)
@@ -827,20 +963,11 @@ def reportes_pdf(id_reporte):
         flash("ID_Reporte no encontrado en la hoja.")
         return redirect(url_for("reportes.reportes_inicio"))
 
-    # IMPORTANTE: en PDF sí usamos fotos
-    fotos = _pdf_photos(data)
-
-    logo_web, logo_fs = _logo_paths()
-    html = render_template(
-        "reporte_formato.html",
-        datos=data,
-        fotos=fotos,
-        embed_for_pdf=True,
-        logo_web=logo_web,
-        logo_fs=logo_fs,
-    )
-
-    pdf_bytes = HTML(string=html, base_url=current_app.root_path).write_pdf()
+    try:
+        pdf_bytes = _render_report_pdf_bytes(data, wait_timeout=5)
+    except PdfRendererBusy:
+        flash("Hay otro PDF procesándose. Inténtalo nuevamente en unos segundos.", "warning")
+        return redirect(url_for("reportes.reportes_prev", id_reporte=id_reporte))
 
     # 2) Si se pidió forzar descarga, la damos y salimos (opcional)
     if force_download:
@@ -860,23 +987,22 @@ def reportes_pdf(id_reporte):
     filename = f"{nombre_equipo} - {id_reporte}.pdf"
 
     try:
-        drive = _drive_service_for_files()
         if not REPORTES_ROOT_ID:
             raise RuntimeError("No está configurado REPORTES_ROOT_ID")
 
         # Cliente
-        client_id = _ensure_folder(drive, REPORTES_ROOT_ID, cliente)
+        client_id = _ensure_folder(REPORTES_ROOT_ID, cliente)
 
         # Ruta A: /04. Reportes/<Cliente>/<ID_Reporte>/
-        id_folder = _ensure_folder(drive, client_id, id_reporte)
-        _upsert_pdf(drive, id_folder, filename, pdf_bytes)
+        id_folder = _ensure_folder(client_id, id_reporte)
+        _upsert_pdf(id_folder, filename, pdf_bytes)
 
         # Ruta B: /04. Reportes/<Cliente>/Reportes[/Ronda N]/
-        reportes_folder = _ensure_folder(drive, client_id, "Reportes")
+        reportes_folder = _ensure_folder(client_id, "Reportes")
         target_parent = reportes_folder
         if ronda_norm:
-            target_parent = _ensure_folder(drive, reportes_folder, ronda_norm)
-        file_id_B = _upsert_pdf(drive, target_parent, filename, pdf_bytes)
+            target_parent = _ensure_folder(reportes_folder, ronda_norm)
+        file_id_B = _upsert_pdf(target_parent, filename, pdf_bytes)
 
         # 4) Respaldo local
         base_static = Path(current_app.root_path) / "static" / "reportes_pdfs" / cliente
@@ -890,8 +1016,8 @@ def reportes_pdf(id_reporte):
 
         # >>> REGISTRO CORRECTO EN HistorialPDF!A:F (orden real)
         try:
-            archivo_url = _file_web_link(drive, file_id_B)
-            carpeta_url = _folder_web_link(drive, target_parent)
+            archivo_url = _file_web_link(file_id_B)
+            carpeta_url = _folder_web_link(target_parent)
             _log_pdf_historial(cliente, id_reporte, archivo_url, carpeta_url, tipo="reporte")
         except Exception:
             pass
@@ -911,31 +1037,43 @@ def reportes_pdf(id_reporte):
 # ====================== NUEVO: snapshot/aux para la UI ======================
 
 # >>> append a HistorialPDF (A:F)  ← incluye columna Tipo en la 6ª POSICIÓN
-def _hist_append(rows):
+def _hist_append(rows, *, strict=False):
     try:
-        svc = _sheets_service()
-        return _values_append(svc, "HistorialPDF!A:F", rows)
+        return _values_append("HistorialPDF!A:F", rows)
     except Exception:
+        current_app.logger.exception("No se pudo registrar el PDF en HistorialPDF")
+        if strict:
+            raise
         return None
 
 # >>> log a HistorialPDF (en el orden correcto de encabezados reales)
-def _log_pdf_historial(cliente, folio_o_id, archivo_url, carpeta_url, tipo="reporte"):
+def _log_pdf_historial(cliente, folio_o_id, archivo_url, carpeta_url, tipo="reporte", *, strict=False):
     try:
         # Orden correcto: [timestamp, cliente, folio, archivo_url, carpeta_url, tipo]
         ts = datetime.now().isoformat(timespec="seconds")
-        _hist_append([[ts, cliente or "", str(folio_o_id or ""), archivo_url or "", carpeta_url or "", tipo or ""]])
+        result = _hist_append(
+            [[ts, cliente or "", str(folio_o_id or ""), archivo_url or "", carpeta_url or "", tipo or ""]],
+            strict=strict,
+        )
+        if strict and not result:
+            raise RuntimeError("Google Sheets no confirmó el registro en HistorialPDF")
+        return result
     except Exception:
-        pass
+        if strict:
+            raise
+        return None
 
 # >>> helpers para obtener links web
-def _file_web_link(drive, file_id: str) -> str | None:
+def _file_web_link(file_id: str) -> str | None:
     try:
-        meta = _retry(lambda: drive.files().get(fileId=file_id, fields="webViewLink").execute())
+        meta = _drive_files_call(lambda drive: drive.files().get(
+            fileId=file_id, fields="webViewLink"
+        ).execute())
         return meta.get("webViewLink")
     except Exception:
         return None
 
-def _folder_web_link(drive, folder_id: str) -> str | None:
+def _folder_web_link(folder_id: str) -> str | None:
     try:
         return f"https://drive.google.com/drive/folders/{folder_id}"
     except Exception:
@@ -945,7 +1083,7 @@ def _generate_and_store_report_pdf(id_reporte: str):
     """El monitor ejecuta el mismo endpoint que usa el botón manual."""
     endpoint = url_for("reportes.reportes_pdf_json", id_reporte=id_reporte)
     with current_app.test_client() as client:
-        response = client.post(endpoint)
+        response = client.post(endpoint, headers={"X-HSC-Auto-PDF": "1"})
 
     payload = response.get_json(silent=True) or {}
     if response.status_code != 200 or not payload.get("ok"):
@@ -990,7 +1128,7 @@ def _generated_report_ids():
         value_ranges = response.get("valueRanges", [])
         rows = value_ranges[0].get("values", []) if value_ranges else []
     else:
-        rows = _values_get(_sheets_service(), "HistorialPDF!C2:F").get("values", [])
+        rows = _values_get("HistorialPDF!C2:F").get("values", [])
     return {
         str(row[0]).strip()
         for row in rows
@@ -1020,7 +1158,7 @@ def _recent_report_ids(limit: int):
     id_range = f"{SHEET_TAB}!{id_letter}2:{id_letter}"
     realizado_letter = _col_idx_to_letter(realizado_idx)
     realizado_range = f"{SHEET_TAB}!{realizado_letter}2:{realizado_letter}"
-    response = _auto_sheets_read([id_range, realizado_range]) if is_auto else _values_batch_get(_sheets_service(), [id_range, realizado_range])
+    response = _auto_sheets_read([id_range, realizado_range]) if is_auto else _values_batch_get([id_range, realizado_range])
     value_ranges = response.get("valueRanges", [])
     id_rows = value_ranges[0].get("values", []) if len(value_ranges) > 0 else []
     realizado_rows = value_ranges[1].get("values", []) if len(value_ranges) > 1 else []
@@ -1093,16 +1231,18 @@ def process_new_reports():
         _AUTO_PDF_STATUS["phase"] = "waiting_stability" if pending and not ready else "generating" if ready else "finishing"
 
         completed = []
-        for report_id in ready[:AUTO_PDF_BATCH_SIZE]:
+        # La cola se conserva en memoria y se procesa de uno en uno. Así no se
+        # releen HistorialPDF y columnas completas después de cada documento.
+        for position, report_id in enumerate(ready):
             if _AUTO_PDF_CANCEL_EVENT.is_set():
                 raise _AutoProcessingCancelled()
             try:
                 _AUTO_PDF_STATUS["phase"] = "generating"
                 _AUTO_PDF_STATUS["current_report"] = report_id
+                release_pdf_memory()
                 _generate_and_store_report_pdf(report_id)
                 completed.append(report_id)
                 _AUTO_PDF_STATUS["completed"] = int(_AUTO_PDF_STATUS.get("completed") or 0) + 1
-                _AUTO_PDF_STATUS["queued"] = max(0, int(_AUTO_PDF_STATUS.get("queued") or 0) - 1)
                 _AUTO_PDF_FIRST_SEEN.pop(report_id, None)
                 _AUTO_PDF_STATUS["last_generated"] = report_id
             except _AutoProcessingCancelled:
@@ -1113,7 +1253,19 @@ def process_new_reports():
                 _AUTO_PDF_STATUS["phase"] = "error"
                 _AUTO_PDF_STATUS["errors"] = int(_AUTO_PDF_STATUS.get("errors") or 0) + 1
                 current_app.logger.exception("No se pudo generar automáticamente el reporte %s", report_id)
-        gc.collect()
+            finally:
+                _AUTO_PDF_STATUS["queued"] = max(0, int(_AUTO_PDF_STATUS.get("queued") or 0) - 1)
+                _clear_pdf_photo_cache()
+                release_pdf_memory()
+                current_app.logger.info(
+                    "Reporte automático %s terminado; memoria=%s MB",
+                    report_id,
+                    rss_megabytes(),
+                )
+            if position < len(ready) - 1:
+                _AUTO_PDF_STATUS["phase"] = "queue_pause"
+                if _AUTO_PDF_CANCEL_EVENT.wait(AUTO_PDF_QUEUE_DELAY):
+                    raise _AutoProcessingCancelled()
         return completed
     finally:
         _AUTO_PDF_STATUS["current_report"] = None
@@ -1123,16 +1275,13 @@ def process_new_reports():
 def _run_auto_report_cycle(app):
     """Ejecuta una revisión completa; sirve al botón y al horario automático."""
     if not _AUTO_PDF_CYCLE_LOCK.acquire(blocking=False):
+        with _AUTO_PDF_STATE_LOCK:
+            _AUTO_PDF_STATUS.update(
+                queue_active=False,
+                phase="error",
+                last_error="No se pudo adquirir el coordinador de la cola",
+            )
         return
-    _AUTO_PDF_CANCEL_EVENT.clear()
-    _AUTO_PDF_STATUS.update(
-        queue_active=True, phase="starting", attempt=0,
-        operation_started_at=datetime.now().astimezone().isoformat(timespec="seconds"),
-        finished_at=None, reviewed=0, drafts=0, realized=0,
-        already_generated=0, detected=0, queued=0, completed=0, errors=0,
-        current_report=None, cancel_requested=False, last_error=None,
-        waiting_for_stability=0, pending_ready=0,
-    )
     try:
         while True:
             with app.app_context():
@@ -1164,24 +1313,39 @@ def _run_auto_report_cycle(app):
         _reset_auto_sheets_service()
         app.logger.exception("Falló el monitor automático de reportes")
     finally:
-        _AUTO_PDF_STATUS.update(
-            queue_active=False, running=False, current_report=None,
-            finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
-        )
+        _discard_reportes_google_connections()
+        with _AUTO_PDF_STATE_LOCK:
+            _AUTO_PDF_STATUS.update(
+                queue_active=False, running=False, current_report=None,
+                finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+            )
         _AUTO_PDF_CYCLE_LOCK.release()
 
 def _launch_auto_report_cycle(app):
     """Inicia el ciclo directamente y devuelve False si ya existe uno."""
-    if _AUTO_PDF_STATUS.get("queue_active") or _AUTO_PDF_CYCLE_LOCK.locked():
-        return False
-    _AUTO_PDF_STATUS.update(queue_active=True, phase="starting", finished_at=None)
-    threading.Thread(
-        target=_run_auto_report_cycle,
-        args=(app,),
-        name="reportes-auto-pdf",
-        daemon=True,
-    ).start()
-    return True
+    with _AUTO_PDF_STATE_LOCK:
+        if _AUTO_PDF_STATUS.get("queue_active") or _AUTO_PDF_CYCLE_LOCK.locked():
+            return False
+        _AUTO_PDF_CANCEL_EVENT.clear()
+        _AUTO_PDF_STATUS.update(
+            queue_active=True, phase="starting", attempt=0,
+            operation_started_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+            finished_at=None, reviewed=0, drafts=0, realized=0,
+            already_generated=0, detected=0, queued=0, completed=0, errors=0,
+            current_report=None, cancel_requested=False, last_error=None,
+            waiting_for_stability=0, pending_ready=0,
+        )
+        try:
+            threading.Thread(
+                target=_run_auto_report_cycle,
+                args=(app,),
+                name="reportes-auto-pdf",
+                daemon=True,
+            ).start()
+        except Exception:
+            _AUTO_PDF_STATUS.update(queue_active=False, phase="error")
+            raise
+        return True
 
 def start_auto_report_monitor(app):
     """Programa una revisión cada 8 horas sin ejecutar una al desplegar."""
@@ -1204,8 +1368,11 @@ def reportes_auto_status():
         "interval_seconds": AUTO_PDF_INTERVAL,
         "lookback": AUTO_PDF_LOOKBACK,
         "stability_seconds": AUTO_PDF_STABILITY_SECONDS,
-        "batch_size": AUTO_PDF_BATCH_SIZE,
+        "batch_size": 1,
+        "processing_mode": "sequential",
+        "concurrency": 1,
         "queue_delay_seconds": AUTO_PDF_QUEUE_DELAY,
+        "memory_mb": rss_megabytes(),
         **_AUTO_PDF_STATUS,
     })
 
@@ -1220,11 +1387,12 @@ def reportes_auto_run():
 
 @reportes_bp.post("/reportes/auto/cancel")
 def reportes_auto_cancel():
-    if not _AUTO_PDF_STATUS.get("queue_active"):
-        return jsonify({"ok": True, "already_stopped": True})
-    _AUTO_PDF_STATUS["cancel_requested"] = True
-    _AUTO_PDF_STATUS["phase"] = "cancelling"
-    _AUTO_PDF_CANCEL_EVENT.set()
+    with _AUTO_PDF_STATE_LOCK:
+        if not _AUTO_PDF_STATUS.get("queue_active"):
+            return jsonify({"ok": True, "already_stopped": True})
+        _AUTO_PDF_STATUS["cancel_requested"] = True
+        _AUTO_PDF_STATUS["phase"] = "cancelling"
+        _AUTO_PDF_CANCEL_EVENT.set()
     return jsonify({"ok": True, "cancelling": True})
 
 # >>> meta para auxiliar (cliente/nombre_equipo)
@@ -1254,17 +1422,11 @@ def reportes_pdf_json(id_reporte):
     if not data:
         return jsonify({"ok": False, "error": "not_found"}), 404
 
-    fotos = _pdf_photos(data)
-    logo_web, logo_fs = _logo_paths()
-    html = render_template(
-        "reporte_formato.html",
-        datos=data,
-        fotos=fotos,
-        embed_for_pdf=True,
-        logo_web=logo_web,
-        logo_fs=logo_fs,
-    )
-    pdf_bytes = HTML(string=html, base_url=current_app.root_path).write_pdf()
+    is_auto = request.headers.get("X-HSC-Auto-PDF") == "1"
+    try:
+        pdf_bytes = _render_report_pdf_bytes(data, wait_timeout=45 if is_auto else 5)
+    except PdfRendererBusy as exc:
+        return jsonify({"ok": False, "error": "pdf_busy", "detail": str(exc)}), 409
 
     # 2) Guardar en Drive (dos rutas, como en reportes_pdf)
     cliente = _sanitize_name(data.get("Cliente") or "Sin Cliente")
@@ -1273,26 +1435,25 @@ def reportes_pdf_json(id_reporte):
     filename = f"{nombre_equipo} - {id_reporte}.pdf"
 
     try:
-        drive = _drive_service_for_files()
         if not REPORTES_ROOT_ID:
             raise RuntimeError("REPORTES_ROOT_ID no configurado")
 
-        client_id = _ensure_folder(drive, REPORTES_ROOT_ID, cliente)
+        client_id = _ensure_folder(REPORTES_ROOT_ID, cliente)
 
         # A) /<Cliente>/<ID_Reporte>/
-        id_folder = _ensure_folder(drive, client_id, id_reporte)
-        file_id_A = _upsert_pdf(drive, id_folder, filename, pdf_bytes)
+        id_folder = _ensure_folder(client_id, id_reporte)
+        file_id_A = _upsert_pdf(id_folder, filename, pdf_bytes)
 
         # B) /<Cliente>/Reportes[/Ronda N]/
-        reportes_folder = _ensure_folder(drive, client_id, "Reportes")
+        reportes_folder = _ensure_folder(client_id, "Reportes")
         target_parent = reportes_folder
         if ronda_norm:
-            target_parent = _ensure_folder(drive, reportes_folder, ronda_norm)
-        file_id_B = _upsert_pdf(drive, target_parent, filename, pdf_bytes)
+            target_parent = _ensure_folder(reportes_folder, ronda_norm)
+        file_id_B = _upsert_pdf(target_parent, filename, pdf_bytes)
 
         # Links web (tomamos el de B como “archivo_url” por ser la vista agregada)
-        archivo_url = _file_web_link(drive, file_id_B) or _file_web_link(drive, file_id_A)
-        carpeta_url = _folder_web_link(drive, target_parent)
+        archivo_url = _file_web_link(file_id_B) or _file_web_link(file_id_A)
+        carpeta_url = _folder_web_link(target_parent)
 
         # Respaldo local
         base_static = Path(current_app.root_path) / "static" / "reportes_pdfs" / cliente
@@ -1300,7 +1461,14 @@ def reportes_pdf_json(id_reporte):
         (base_static / filename).write_bytes(pdf_bytes)
 
         # Historial con orden correcto (col A..F)
-        _log_pdf_historial(cliente, id_reporte, archivo_url, carpeta_url, tipo="reporte")
+        _log_pdf_historial(
+            cliente,
+            id_reporte,
+            archivo_url,
+            carpeta_url,
+            tipo="reporte",
+            strict=is_auto,
+        )
 
         return jsonify({
             "ok": True,
@@ -1320,14 +1488,13 @@ def reportes_pdf_json(id_reporte):
 @reportes_bp.route("/reportes/debug")
 def reportes_debug():
     try:
-        svc = _sheets_service()
         cfg = f"SHEET_ID={SHEET_ID!r}, SHEET_TAB={SHEET_TAB!r}, RANGE={SHEET_ID_REPORTE_RANGE!r}"
-        meta = _spreadsheet_meta(svc)
+        meta = _spreadsheet_meta()
         title = meta.get("properties", {}).get("title")
-        hdr = _values_get(svc, f"{SHEET_TAB}!A1:ZZ1").get("values", [])
+        hdr = _values_get(f"{SHEET_TAB}!A1:ZZ1").get("values", [])
 
         idx, letter, id_range = _resolve_id_col()
-        sample_vals = _values_get(svc, id_range).get("values", [])
+        sample_vals = _values_get(id_range).get("values", [])
         sample_vals = [r[0] for r in sample_vals if r and r[0]]
 
         head5 = sample_vals[:5]
@@ -1335,8 +1502,9 @@ def reportes_debug():
 
         # whoami Drive
         try:
-            drive = _drive_service()
-            who = _retry(lambda: drive.about().get(fields="user(displayName,emailAddress)").execute())
+            who = _drive_sa_call(
+                lambda drive: drive.about().get(fields="user(displayName,emailAddress)").execute()
+            )
             who_s = f"{who.get('user',{}).get('displayName','')} <{who.get('user',{}).get('emailAddress','')}>"
         except Exception as ee:
             who_s = f"(no disponible: {type(ee).__name__})"
@@ -1444,10 +1612,17 @@ def diag_prev():
         if not f or not getattr(f, "filename", ""): continue
         fname = secure_filename(f.filename)
         stem = Path(fname).stem[:40] or f"foto{i+1}"
-        ext = Path(fname).suffix.lower() or ".jpg"
-        safe_name = f"{i+1:02d}_{stem}{ext}"
+        safe_name = f"{i+1:02d}_{stem}.jpg"
         dst = sess_dir / safe_name
-        f.save(dst)
+        try:
+            raw = f.stream.read(15 * 1024 * 1024 + 1)
+            if len(raw) > 15 * 1024 * 1024:
+                raise ValueError("la foto supera 15 MB")
+            optimized, _ = _optimize_photo_bytes(raw)
+            dst.write_bytes(optimized)
+        except Exception as exc:
+            flash(f"No se pudo usar la foto {i + 1}: {exc}", "warning")
+            continue
         fotos_meta.append({
             "filename": safe_name,
             "web_path": url_for('static', filename=f"diag_uploads/{token}/{safe_name}"),
@@ -1555,16 +1730,22 @@ def diag_pdf(token):
     force_download = (request.args.get("dl") == "1")
     if force_download:
         # Genera a memoria y descarga
-        from weasyprint import HTML
-        pdf_bytes = HTML(string=html, base_url=current_app.root_path).write_pdf()
+        try:
+            pdf_bytes = render_pdf_bytes(html, base_url=current_app.root_path, wait_timeout=5)
+        except PdfRendererBusy:
+            flash("Hay otro PDF procesándose. Inténtalo nuevamente en unos segundos.", "warning")
+            return redirect(url_for("reportes.diag_nuevo"))
         return send_file(io.BytesIO(pdf_bytes),
                          mimetype="application/pdf",
                          as_attachment=True,
                          download_name=pdf_name)
 
     # Guardar en /static/diag_pdfs y regresar al form
-    from weasyprint import HTML
-    HTML(string=html, base_url=current_app.root_path).write_pdf(str(pdf_path))
+    try:
+        render_pdf_file(html, str(pdf_path), base_url=current_app.root_path, wait_timeout=5)
+    except PdfRendererBusy:
+        flash("Hay otro PDF procesándose. Inténtalo nuevamente en unos segundos.", "warning")
+        return redirect(url_for("reportes.diag_nuevo"))
     flash(f"PDF generado: {pdf_path}", "success")
     return redirect(url_for("reportes.diag_nuevo"))
 

@@ -152,17 +152,31 @@
       return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }
 
-    async function runHealth(){
-      setPill($('st-user'),'warn','Comprobando…');
-      setPill($('st-sa'),'warn','Comprobando…');
-      setPill($('st-drive'),'warn','Comprobando…');
-      setPill($('st-sheets'),'warn','Comprobando…');
-      $('lastCheck').textContent = 'Verificando…';
+    let healthRunId = 0;
+    async function runHealth(attempt = 0, runId = null){
+      if(runId === null){
+        runId = ++healthRunId;
+        setPill($('st-user'),'warn','Comprobando…');
+        setPill($('st-sa'),'warn','Comprobando…');
+        setPill($('st-drive'),'warn','Comprobando…');
+        setPill($('st-sheets'),'warn','Comprobando…');
+        $('lastCheck').textContent = 'Verificando…';
+      }
 
       try{
         const r = await fetch('/health', {headers:{'Accept':'application/json'}, cache:'no-store'});
         if(!r.ok) throw new Error('HTTP '+r.status);
         const j = await r.json();
+
+        if(j.checking){
+          $('lastCheck').textContent = 'Comprobando conexiones sin detener la página…';
+          if(attempt < 35){
+            setTimeout(() => {
+              if(runId === healthRunId) runHealth(attempt + 1, runId);
+            }, 1000);
+          }
+          return;
+        }
 
         // Usuario -> SOLO "OK"
         if(j.user_ok){
@@ -178,7 +192,14 @@
         setPill($('st-drive'),  j.drive_ok  ? 'ok':'err', j.drive_ok  ? 'OK':'Error');
         setPill($('st-sheets'), j.sheets_ok ? 'ok':'err', j.sheets_ok ? 'OK':'Error');
 
-        $('lastCheck').textContent = 'Última verificación: ' + stamp();
+        if(j.refreshing && attempt < 35){
+          $('lastCheck').textContent = 'Mostrando último estado; actualizando…';
+          setTimeout(() => {
+            if(runId === healthRunId) runHealth(attempt + 1, runId);
+          }, 1000);
+        }else{
+          $('lastCheck').textContent = 'Última verificación: ' + stamp();
+        }
       }catch(e){
         setPill($('st-user'),'err','Error');
         setPill($('st-sa'),'err','Error');
