@@ -79,6 +79,43 @@ class RuntimeGuardTests(unittest.TestCase):
         self.assertIsNot(main_first, from_thread[0])
         self.assertEqual(len(built), 2)
 
+    def test_google_discovery_build_is_serialized(self):
+        state_lock = threading.Lock()
+        active = 0
+        max_active = 0
+        barrier = threading.Barrier(2)
+
+        def fake_build(*args, **kwargs):
+            nonlocal active, max_active
+            with state_lock:
+                active += 1
+                max_active = max(max_active, active)
+            try:
+                time.sleep(0.05)
+                return object()
+            finally:
+                with state_lock:
+                    active -= 1
+
+        def build_in_thread():
+            auth_google.reset_thread_google_services()
+            barrier.wait()
+            auth_google.get_drive_service()
+
+        with (
+            patch.object(auth_google, "build", side_effect=fake_build),
+            patch.object(auth_google, "AuthorizedHttp", side_effect=lambda *args, **kwargs: object()),
+            patch.object(auth_google.httplib2, "Http", side_effect=lambda *args, **kwargs: object()),
+            patch.object(auth_google, "_sa_credentials", return_value=object()),
+        ):
+            threads = [threading.Thread(target=build_in_thread) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        self.assertEqual(max_active, 1)
+
     def test_light_pages_start_without_waiting_for_google(self):
         import app as app_module
 
@@ -163,6 +200,30 @@ class RuntimeGuardTests(unittest.TestCase):
         self.assertEqual(add_client.status_code, 503)
         self.assertEqual(generate_quote.status_code, 503)
         self.assertEqual(add_client.headers.get("Retry-After"), "10")
+
+    def test_health_probes_have_an_overall_deadline(self):
+        import app as app_module
+
+        release = threading.Event()
+
+        def blocked_service(*args, **kwargs):
+            release.wait(1)
+            raise TimeoutError("blocked")
+
+        with (
+            patch.object(app_module, "_HEALTH_PROBE_DEADLINE_SECONDS", 0.05),
+            patch.object(app_module, "get_drive_service", side_effect=blocked_service),
+            patch.object(app_module, "get_drive_service_user", side_effect=blocked_service),
+            patch.object(app_module, "get_sheets_service", side_effect=blocked_service),
+        ):
+            started = time.monotonic()
+            result = app_module._compute_ui_health()
+            elapsed = time.monotonic() - started
+            release.set()
+
+        self.assertLess(elapsed, 0.25)
+        self.assertFalse(result["drive_ok"])
+        self.assertFalse(result["sheets_ok"])
 
 
 if __name__ == "__main__":

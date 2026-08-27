@@ -29,6 +29,7 @@ SCOPES = [
 # Los clientes de google-api-python-client mantienen estado de conexión y no
 # deben compartirse entre el monitor automático y los hilos de Gunicorn.
 _thread_services = threading.local()
+_discovery_build_lock = threading.Lock()
 GOOGLE_HTTP_TIMEOUT = max(5.0, float(os.environ.get("GOOGLE_HTTP_TIMEOUT", "20")))
 GOOGLE_REFRESH_TIMEOUT = max(5.0, float(os.environ.get("GOOGLE_REFRESH_TIMEOUT", "12")))
 
@@ -86,7 +87,11 @@ def _thread_service(key, api, version, credentials, timeout=None, fresh=False):
             credentials,
             http=httplib2.Http(timeout=timeout),
         )
-        service = build(api, version, http=authorized_http, cache_discovery=False)
+        # googleapiclient importa discovery_cache de forma perezosa. En un
+        # arranque nuevo, dos builds simultáneos pueden dejar ese módulo a medio
+        # inicializar y provocar el error "partially initialized module".
+        with _discovery_build_lock:
+            service = build(api, version, http=authorized_http, cache_discovery=False)
         services[cache_key] = service
     return service
 

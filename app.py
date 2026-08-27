@@ -1305,6 +1305,7 @@ def health_check():
 _HEALTH_CACHE = {"ts": 0.0, "ttl": 60.0, "payload": None}
 _HEALTH_CACHE_LOCK = threading.Lock()
 _HEALTH_REFRESH_LOCK = threading.Lock()
+_HEALTH_PROBE_DEADLINE_SECONDS = 15.0
 
 
 def _empty_ui_health():
@@ -1322,40 +1323,54 @@ def _empty_ui_health():
 def _compute_ui_health():
     """Hace el diagnóstico lento fuera de los hilos que atienden la web."""
     out = _empty_ui_health()
+    result_lock = threading.Lock()
 
-    try:
-        usr = get_drive_service_user(timeout=6)
-        who_u = usr.about().get(fields="user(displayName,emailAddress)").execute().get("user", {})
-        out["user_ok"] = True
-        out["user_email"] = who_u.get("emailAddress")
-    except RefreshError:
-        out["needs_reconnect"] = True
-    except Exception:
-        pass
+    def user_probe():
+        try:
+            usr = get_drive_service_user(timeout=6)
+            who = usr.about().get(fields="user(displayName,emailAddress)").execute().get("user", {})
+            with result_lock:
+                out.update(user_ok=True, user_email=who.get("emailAddress"))
+        except RefreshError:
+            with result_lock:
+                out["needs_reconnect"] = True
 
-    try:
+    def service_probe():
         svc = get_drive_service(timeout=6)
-        who_s = svc.about().get(fields="user(emailAddress)").execute().get("user", {})
-        out["sa_ok"] = True
-        out["sa_email"] = who_s.get("emailAddress")
-    except Exception:
-        pass
+        who = svc.about().get(fields="user(emailAddress)").execute().get("user", {})
+        with result_lock:
+            out.update(sa_ok=True, sa_email=who.get("emailAddress"))
 
-    try:
+    def drive_probe():
         get_drive_service(timeout=6).files().get(fileId=ID_COT, fields="id").execute()
-        out["drive_ok"] = True
-    except Exception:
-        pass
+        with result_lock:
+            out["drive_ok"] = True
 
-    try:
+    def sheets_probe():
         rng = f"{SHEET_TAB}!A1:A1"
         get_sheets_service(timeout=6).spreadsheets().values().get(
             spreadsheetId=SHEET_ID, range=rng
         ).execute()
-        out["sheets_ok"] = True
-    except Exception:
-        pass
+        with result_lock:
+            out["sheets_ok"] = True
 
+    def run_probe(probe):
+        try:
+            probe()
+        except Exception:
+            pass
+        finally:
+            reset_thread_google_services()
+
+    threads = [
+        threading.Thread(target=run_probe, args=(probe,), daemon=True)
+        for probe in (user_probe, service_probe, drive_probe, sheets_probe)
+    ]
+    for thread in threads:
+        thread.start()
+    deadline = time.monotonic() + _HEALTH_PROBE_DEADLINE_SECONDS
+    for thread in threads:
+        thread.join(max(0, deadline - time.monotonic()))
     return out
 
 
