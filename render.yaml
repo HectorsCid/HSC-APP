@@ -12,7 +12,7 @@ services:
       - key: REPORTES_AUTO_PDF_INTERVAL
         value: "28800"
       - key: REPORTES_AUTO_PDF_STABILITY_SECONDS
-        value: "120"
+        value: "15"
       - key: REPORTES_AUTO_PDF_BATCH_SIZE
         value: "1"
       - key: REPORTES_AUTO_PDF_QUEUE_DELAY
