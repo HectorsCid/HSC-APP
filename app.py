@@ -401,6 +401,7 @@ def _schedule_bootstrap_sync():
     endpoint = request.endpoint or ""
     if (
         endpoint in {"healthz", "health", "health_check", "static"}
+        or endpoint.startswith("reportes.")
         or endpoint.endswith("reportes_auto_status")
     ):
         return
@@ -1871,7 +1872,8 @@ def _start_initial_drive_sync():
         raise
 
 
-_start_initial_drive_sync()
+# La sincronización de clientes/cotizaciones se inicia de forma diferida desde
+# sus propias páginas. No debe competir con el arranque web ni con reportes.
 
 
 if __name__ == "__main__":
