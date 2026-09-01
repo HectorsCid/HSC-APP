@@ -787,6 +787,34 @@ def _clave_orden_cliente(nombre):
     texto = unicodedata.normalize("NFKD", str(nombre or ""))
     return "".join(ch for ch in texto if not unicodedata.combining(ch)).casefold()
 
+
+def _cotizacion_tiene_cambios_sin_guardar():
+    tiene_contenido = bool(
+        partidas
+        or datos_cliente.get("cliente")
+        or datos_cliente.get("nombre_borrador")
+        or datos_cliente.get("comentarios")
+        or datos_cliente.get("cotizacion")
+    )
+    if not tiene_contenido:
+        return False
+    folio = str(datos_cliente.get("cotizacion") or "").strip()
+    if not folio:
+        return True
+    with _BORRADORES_DATA_LOCK:
+        guardados = _leer_borradores_locales()
+    borrador = next((
+        item for item in guardados
+        if str(item.get("id") or item.get("folio") or "").strip() == folio
+    ), None)
+    if not borrador:
+        return True
+    return (
+        (borrador.get("datos") or {}) != dict(datos_cliente)
+        or (borrador.get("partidas") or []) != [dict(item) for item in partidas]
+        or (borrador.get("costos_internos") or {}) != costos_internos
+    )
+
 # ================================= Rutas =======================================
 @app.route('/')
 def inicio():
@@ -802,6 +830,7 @@ def inicio():
         iva_retenido = 0
 
     total = subtotal + iva - isr_retenido - iva_retenido
+    cambios_sin_guardar = _cotizacion_tiene_cambios_sin_guardar()
 
     return render_template(
         'inicio.html',
@@ -815,6 +844,7 @@ def inicio():
         isr_retenido=isr_retenido,
         iva_retenido=iva_retenido,
         total=total,
+        cambios_sin_guardar=cambios_sin_guardar,
         today=date.today().isoformat()
     )
 

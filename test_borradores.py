@@ -59,6 +59,8 @@ class BorradoresTest(unittest.TestCase):
         self.assertEqual(cotizador.datos_cliente["cliente"], "Cliente de prueba")
         self.assertEqual(cotizador.datos_cliente["nombre_borrador"], "Tuberías Bticino")
         self.assertEqual(len(cotizador.partidas), 1)
+        pagina_guardada = self.client.get("/")
+        self.assertIn(b"let cotizacionConCambios = false", pagina_guardada.data)
 
         response = self.client.post("/borradores/9001/eliminar")
         self.assertEqual(response.status_code, 302)
@@ -71,12 +73,14 @@ class BorradoresTest(unittest.TestCase):
         self.assertIn(b"Guardar borrador", form.data)
         self.assertIn(b"Nombre del borrador", form.data)
         self.assertIn(b"Escribe un nombre para identificar este borrador", form.data)
+        self.assertIn(b"Salir de la cotizaci", form.data)
         self.assertIn(b'href="/cotizaciones"', form.data)
 
         listado = self.client.get("/cotizaciones")
         self.assertEqual(listado.status_code, 200)
         self.assertIn(b"Borradores", listado.data)
         self.assertIn(b"Continuar editando", listado.data)
+        self.assertNotIn(b"Si el formulario actual no se guard", listado.data)
 
     def test_folio_se_asigna_hasta_guardar_borrador(self):
         original = cotizador.obtener_siguiente_folio

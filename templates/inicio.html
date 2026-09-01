@@ -144,8 +144,8 @@
           <span class="theme-track" aria-hidden="true"><span class="theme-knob"></span></span>
           <span class="theme-text" id="theme-label">Modo</span>
         </button>
-        <a class="btn" href="/inicio-app">🏠 Inicio</a>
-        <a class="btn" href="/cotizaciones">📋 Cotizaciones</a>
+        <a class="btn salida-cotizacion" href="/inicio-app">🏠 Inicio</a>
+        <a class="btn salida-cotizacion" href="/cotizaciones">📋 Cotizaciones</a>
         <button
           id="btn-guardar-borrador"
           class="btn btn-primary"
@@ -426,6 +426,7 @@
   const clientes = JSON.parse(document.getElementById("clientes-data").textContent);
   const ordenGuardadoClientes = JSON.parse(document.getElementById("clientes-orden-data").textContent);
   const atencionGuardada = JSON.parse(document.getElementById("atencion-data").textContent);
+  let cotizacionConCambios = {{ cambios_sin_guardar | tojson }};
 
   document.addEventListener('DOMContentLoaded', () => {
     const selectCliente = document.getElementById('cliente');
@@ -437,6 +438,20 @@
     const vigencia = document.getElementById('vigencia');
     const btnGuardarBorrador = document.getElementById('btn-guardar-borrador');
     const nombreBorrador = document.getElementById('nombre-borrador');
+
+    document.querySelectorAll('form').forEach(form => {
+      form.addEventListener('input', () => { cotizacionConCambios = true; });
+      form.addEventListener('change', () => { cotizacionConCambios = true; });
+    });
+    document.querySelectorAll('.salida-cotizacion').forEach(link => {
+      link.addEventListener('click', event => {
+        if (!cotizacionConCambios) return;
+        const salir = window.confirm(
+          '¿Salir de la cotización actual? Los cambios que no hayas guardado como borrador podrían perderse al iniciar otra cotización.'
+        );
+        if (!salir) event.preventDefault();
+      });
+    });
 
     if (btnGuardarBorrador && nombreBorrador) {
       btnGuardarBorrador.addEventListener('click', event => {
