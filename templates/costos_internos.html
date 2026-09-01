@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Costos internos · Cotización {{ folio }}</title>
+  <style>
+    :root{
+      --bg:#e3e8f0;--card:#fff;--ink:#111827;--muted:#4b5563;--line:#c5ceda;
+      --brand:#1d4ed8;--ok:#16a34a;--danger:#ef4444;--soft:#edf2f8;--radius:14px;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Roboto,system-ui,sans-serif}
+    .wrap{max-width:1180px;margin:auto;padding:18px}
+    .top,.actions,.row-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .top{justify-content:space-between;margin-bottom:14px}
+    h1{font-size:1.35rem;margin:0}.subtle{color:var(--muted);font-size:.88rem}
+    .layout{display:grid;gap:16px;grid-template-columns:minmax(0,1.45fr) minmax(300px,.55fr)}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:0 8px 22px rgba(17,24,39,.06)}
+    .cost-row{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:#fafcff}
+    .row-head{justify-content:space-between;margin-bottom:8px}.row-title{font-weight:800}
+    .fields{display:grid;grid-template-columns:1.2fr 2fr .75fr 1fr 1fr .7fr;gap:10px;align-items:end}
+    label{display:block;color:var(--muted);font-size:.78rem;font-weight:700;margin-bottom:5px}
+    input,select,textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--soft);color:var(--ink);font-size:15px}
+    textarea{min-height:65px;resize:vertical}.full{grid-column:1/-1}
+    .line-total{font-weight:800;text-align:right;padding:10px 2px;white-space:nowrap}
+    .btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:11px;padding:11px 13px;background:#f3f6ff;color:#0f172a;font-weight:800;text-decoration:none;cursor:pointer}
+    .btn-primary{background:var(--brand);color:#fff;border-color:transparent}.btn-ok{background:var(--ok);color:#fff;border-color:transparent}
+    .btn-danger{background:#fee2e2;color:#991b1b;border-color:#fecaca;padding:7px 10px}
+    .summary{position:sticky;top:14px}.summary h2{font-size:1.05rem;margin:0 0 12px}
+    .summary-row{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid var(--line)}
+    .summary-row strong{white-space:nowrap}.final{font-size:1.08rem;color:#14532d}
+    .config{display:grid;gap:10px;margin-top:14px}.config-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .flash{background:#dcfce7;color:#14532d;border:1px solid #86efac;padding:11px 13px;border-radius:11px;margin-bottom:12px;font-weight:700}
+    .privacy{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:11px;padding:10px;margin:12px 0;font-size:.86rem}
+    @media(max-width:900px){.layout{grid-template-columns:1fr}.summary{position:static}}
+    @media(max-width:700px){
+      .fields{grid-template-columns:1fr 1fr}.field-name,.full{grid-column:1/-1}
+      .top .actions{width:100%}.top .btn{flex:1 1 auto}
+    }
+    @media(max-width:430px){.fields,.config-pair{grid-template-columns:1fr}.field-name,.full{grid-column:auto}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <h1>Minicotizador interno</h1>
+        <div class="subtle">Cotización {{ folio or 'sin folio' }} · Costos privados</div>
+      </div>
+      <div class="actions">
+        <a class="btn" href="{{ url_for('inicio') }}">← Volver a la cotización</a>
+      </div>
+    </div>
+
+    {% with mensajes = get_flashed_messages() %}
+      {% if mensajes %}<div class="flash">{% for m in mensajes %}{{ m }}{% endfor %}</div>{% endif %}
+    {% endwith %}
+
+    <form id="cost-form" method="post" action="{{ url_for('guardar_costos_internos') }}">
+      <div class="layout">
+        <section class="card">
+          <div class="row-head">
+            <div>
+              <strong>Materiales, mano de obra y gastos</strong>
+              <div class="subtle">Agrega tantos conceptos como necesites.</div>
+            </div>
+            <button id="add-row" class="btn" type="button">＋ Agregar concepto</button>
+          </div>
+
+          <div id="cost-rows">
+            {% set filas = costos['items'] if costos['items'] else [{}] %}
+            {% for item in filas %}
+              <div class="cost-row" data-cost-row>
+                <div class="row-head"><span class="row-title">Concepto</span><button class="btn btn-danger" type="button" data-remove>Quitar</button></div>
+                <div class="fields">
+                  <div><label>Tipo</label><select name="categoria">{% for value,label in categorias %}<option value="{{ value }}" {% if item.get('categoria','material') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+                  <div class="field-name"><label>Nombre o descripción</label><input name="nombre" value="{{ item.get('nombre','') }}" placeholder="Ej. Tubería de cobre" /></div>
+                  <div><label>Cantidad</label><input name="cantidad" type="number" min="0" step="0.01" value="{{ item.get('cantidad','') }}" /></div>
+                  <div><label>Unidad</label><select name="unidad">{% for unidad in unidades %}<option value="{{ unidad }}" {% if item.get('unidad','Pieza') == unidad %}selected{% endif %}>{{ unidad }}</option>{% endfor %}</select></div>
+                  <div><label>Costo por unidad</label><input name="costo_unitario" type="number" min="0" step="0.01" value="{{ item.get('costo_unitario','') }}" /></div>
+                  <div><label>Merma %</label><input name="merma" type="number" min="0" step="0.01" value="{{ item.get('merma',0) }}" /></div>
+                  <div class="full"><label>Nota interna opcional</label><textarea name="nota" placeholder="Proveedor, referencia o aclaración">{{ item.get('nota','') }}</textarea></div>
+                </div>
+                <div class="line-total">Total: <span data-line-total>$0.00</span></div>
+              </div>
+            {% endfor %}
+          </div>
+        </section>
+
+        <aside class="card summary">
+          <h2>Resumen interno</h2>
+          <div class="summary-row"><span>Costo directo</span><strong id="sum-directo">{{ totales.costo_directo|currency }}</strong></div>
+          <div class="summary-row"><span>Gastos adicionales</span><strong id="sum-extras">{{ totales.gastos_extra|currency }}</strong></div>
+          <div class="summary-row"><span>Costo total</span><strong id="sum-costo">{{ totales.costo_total|currency }}</strong></div>
+          <div class="summary-row"><span>Ganancia</span><strong id="sum-ganancia">{{ totales.ganancia|currency }}</strong></div>
+          <div class="summary-row"><span>Precio sugerido</span><strong id="sum-sugerido">{{ totales.precio_sugerido|currency }}</strong></div>
+          <div class="summary-row final"><span>Precio final sin IVA</span><strong id="sum-final">{{ totales.precio_final|currency }}</strong></div>
+          <div class="summary-row"><span>Referencia con IVA</span><strong id="sum-iva">{{ totales.precio_con_iva|currency }}</strong></div>
+
+          <div class="config">
+            <div><label>Otros gastos o imprevistos</label><input id="gastos-extra" name="gastos_extra" type="number" min="0" step="0.01" value="{{ costos.get('gastos_extra',0) }}" /></div>
+            <div class="config-pair">
+              <div><label>Tipo de ganancia</label><select id="ganancia-modo" name="ganancia_modo"><option value="porcentaje" {% if costos.get('ganancia_modo') != 'monto' %}selected{% endif %}>% sobre el costo</option><option value="monto" {% if costos.get('ganancia_modo') == 'monto' %}selected{% endif %}>Monto fijo</option></select></div>
+              <div><label>Ganancia</label><input id="ganancia-valor" name="ganancia_valor" type="number" min="0" step="0.01" value="{{ costos.get('ganancia_valor',0) }}" /></div>
+            </div>
+            <div><label>Redondear hacia arriba</label><select id="redondeo" name="redondeo"><option value="1" {% if costos.get('redondeo',1)|float == 1 %}selected{% endif %}>Sin redondeo</option><option value="10" {% if costos.get('redondeo')|float == 10 %}selected{% endif %}>A $10</option><option value="50" {% if costos.get('redondeo')|float == 50 %}selected{% endif %}>A $50</option><option value="100" {% if costos.get('redondeo')|float == 100 %}selected{% endif %}>A $100</option></select></div>
+            <div><label>Descripción que verá el cliente</label><textarea name="descripcion_publica">{{ costos.get('descripcion_publica','Suministro de materiales y servicios') }}</textarea></div>
+          </div>
+
+          <div class="privacy">Este desglose se guarda únicamente en el borrador interno. El cliente solo verá la descripción pública y el precio final.</div>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit" name="accion" value="guardar">Guardar cálculo</button>
+            <button class="btn btn-ok" type="submit" name="accion" value="transferir">Usar precio en la cotización</button>
+          </div>
+        </aside>
+      </div>
+    </form>
+  </div>
+
+  <template id="row-template">
+    <div class="cost-row" data-cost-row>
+      <div class="row-head"><span class="row-title">Concepto</span><button class="btn btn-danger" type="button" data-remove>Quitar</button></div>
+      <div class="fields">
+        <div><label>Tipo</label><select name="categoria">{% for value,label in categorias %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+        <div class="field-name"><label>Nombre o descripción</label><input name="nombre" placeholder="Ej. Tubería de cobre" /></div>
+        <div><label>Cantidad</label><input name="cantidad" type="number" min="0" step="0.01" /></div>
+        <div><label>Unidad</label><select name="unidad">{% for unidad in unidades %}<option value="{{ unidad }}">{{ unidad }}</option>{% endfor %}</select></div>
+        <div><label>Costo por unidad</label><input name="costo_unitario" type="number" min="0" step="0.01" /></div>
+        <div><label>Merma %</label><input name="merma" type="number" min="0" step="0.01" value="0" /></div>
+        <div class="full"><label>Nota interna opcional</label><textarea name="nota" placeholder="Proveedor, referencia o aclaración"></textarea></div>
+      </div>
+      <div class="line-total">Total: <span data-line-total>$0.00</span></div>
+    </div>
+  </template>
+
+  <script>
+    const money = value => Number(value || 0).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
+    const numberOf = input => Math.max(0, Number(input.value || 0) || 0);
+
+    function recalculate(){
+      let direct = 0;
+      document.querySelectorAll('[data-cost-row]').forEach(row => {
+        const qty = numberOf(row.querySelector('[name="cantidad"]'));
+        const unit = numberOf(row.querySelector('[name="costo_unitario"]'));
+        const waste = numberOf(row.querySelector('[name="merma"]'));
+        const total = qty * unit * (1 + waste / 100);
+        direct += total;
+        row.querySelector('[data-line-total]').textContent = money(total);
+      });
+      const extras = numberOf(document.getElementById('gastos-extra'));
+      const cost = direct + extras;
+      const gainValue = numberOf(document.getElementById('ganancia-valor'));
+      const gain = document.getElementById('ganancia-modo').value === 'monto' ? gainValue : cost * gainValue / 100;
+      const suggested = cost + gain;
+      const rounding = Math.max(1, Number(document.getElementById('redondeo').value || 1));
+      const finalPrice = suggested ? Math.ceil(suggested / rounding) * rounding : 0;
+      document.getElementById('sum-directo').textContent = money(direct);
+      document.getElementById('sum-extras').textContent = money(extras);
+      document.getElementById('sum-costo').textContent = money(cost);
+      document.getElementById('sum-ganancia').textContent = money(gain);
+      document.getElementById('sum-sugerido').textContent = money(suggested);
+      document.getElementById('sum-final').textContent = money(finalPrice);
+      document.getElementById('sum-iva').textContent = money(finalPrice * 1.16);
+    }
+
+    document.getElementById('add-row').addEventListener('click', () => {
+      document.getElementById('cost-rows').append(document.getElementById('row-template').content.cloneNode(true));
+      recalculate();
+    });
+    document.getElementById('cost-form').addEventListener('click', event => {
+      const button = event.target.closest('[data-remove]');
+      if(!button) return;
+      button.closest('[data-cost-row]').remove();
+      if(!document.querySelector('[data-cost-row]')) document.getElementById('add-row').click();
+      recalculate();
+    });
+    document.getElementById('cost-form').addEventListener('input', recalculate);
+    document.getElementById('cost-form').addEventListener('change', recalculate);
+    recalculate();
+  </script>
+</body>
+</html>

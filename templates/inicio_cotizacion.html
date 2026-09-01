@@ -4,11 +4,27 @@
   <meta charset="UTF-8" />
   <title>Inicio · Cotizaciones</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    (() => {
+      const saved = localStorage.getItem('hsc-theme');
+      document.documentElement.dataset.theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    })();
+  </script>
   <style>
     :root{
       --bg:#ffffff; --card:#f9fafb; --ink:#1f2937; --muted:#6b7280;
       --line:#e5e7eb; --brand:#374151; --ok:#22c55e; --accent:#3b82f6; --danger:#ef4444;
       --radius:14px;
+      --field:#ffffff;--button:#ffffff;--button-hover:#f3f4f6;--table-head:#f8fafc;
+      --shadow:rgba(17,24,39,.05);--ok-flash:#dcfce7;--ok-flash-ink:#14532d;
+      --err-flash:#fee2e2;--err-flash-ink:#7f1d1d;
+    }
+    html[data-theme="dark"]{
+      --bg:#0b1020;--card:#171d2d;--ink:#e5e7eb;--muted:#a3b2c7;
+      --line:#334155;--brand:#2563eb;--field:#20283a;--button:#20283a;
+      --button-hover:#29344a;--table-head:#20283a;--shadow:rgba(0,0,0,.3);
+      --ok-flash:rgba(20,83,45,.28);--ok-flash-ink:#bbf7d0;
+      --err-flash:rgba(127,29,29,.25);--err-flash-ink:#fecaca;
     }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
@@ -17,27 +33,44 @@
     .title{font-size:1.25rem;font-weight:800}
     .pill{font-size:.85rem;color:var(--muted)}
     .actions{display:flex;gap:10px;flex-wrap:wrap}
-    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);cursor:pointer;font-weight:700;font-size:14px;background:#fff;color:#0f172a;text-decoration:none}
-    .btn:hover{background:#f3f4f6}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 11px;border-radius:10px;border:1px solid var(--line);cursor:pointer;font-weight:700;font-size:13px;background:var(--button);color:var(--ink);text-decoration:none;white-space:nowrap}
+    .btn:hover{background:var(--button-hover)}
     .btn-primary{background:var(--brand);color:#fff;border-color:transparent}
     .btn-accent{background:var(--accent);color:#fff;border-color:transparent}
     .btn-ok{background:var(--ok);color:#fff;border-color:transparent}
     .btn-danger{background:var(--danger);color:#fff;border-color:transparent}
+    .tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+    .tab-active{background:var(--brand);color:#fff;border-color:transparent}
+    form.inline{display:inline;margin:0}
 
-    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:0 6px 20px rgba(17,24,39,.05)}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px;box-shadow:0 6px 20px var(--shadow)}
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .grow{flex:1}
-    input[type="search"]{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:15px;background:#fff;outline:none}
+    input[type="search"]{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:14px;background:var(--field);color:var(--ink);outline:none}
 
-    .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:10px}
-    table{width:100%;border-collapse:collapse;min-width:860px}
-    th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;font-size:14px}
-    th{background:#f8fafc;font-weight:700;color:#334155}
+    .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--field);margin-top:10px;max-height:475px;scrollbar-gutter:stable}
+    table{width:100%;border-collapse:collapse;min-width:980px}
+    th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;line-height:1.3}
+    th{background:var(--table-head);font-weight:700;color:var(--ink);position:sticky;top:0;z-index:2}
     td.numeric{text-align:right;white-space:nowrap}
+    .summary-cell{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:260px}
+    .table-actions{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
+    .table-actions .btn{padding:7px 9px;border-radius:9px;font-size:12px;line-height:1.15}
     .muted{color:var(--muted)}
     .flash{display:none;margin:12px 0;padding:10px 12px;border-radius:12px;font-weight:600}
-    .flash.ok{display:block;background:#dcfce7;border:1px solid #bbf7d0;color:#14532d}
-    .flash.err{display:block;background:#fee2e2;border:1px solid #fecaca;color:#7f1d1d}
+    .flash.ok{display:block;background:var(--ok-flash);border:1px solid var(--line);color:var(--ok-flash-ink)}
+    .flash.err{display:block;background:var(--err-flash);border:1px solid var(--line);color:var(--err-flash-ink)}
+    .theme-toggle{display:inline-flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);font-weight:700;cursor:pointer}
+    .theme-track{width:38px;height:21px;padding:2px;border-radius:999px;background:#94a3b8;transition:.2s;display:flex}
+    .theme-knob{width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:.2s}
+    html[data-theme="dark"] .theme-track{background:#22c55e}
+    html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
+    .theme-text{font-size:.78rem;white-space:nowrap}
+    @media(max-width:700px){
+      .top{align-items:flex-start;flex-wrap:wrap}
+      .top>.actions{width:100%}
+      .table-wrap{max-height:65vh}
+    }
   </style>
 </head>
 <body>
@@ -48,14 +81,27 @@
         <div class="pill">Lista reciente con acciones</div>
       </div>
       <div class="actions">
+        <button class="theme-toggle" type="button" id="theme-toggle" role="switch" aria-label="Cambiar modo de color">
+          <span class="theme-track" aria-hidden="true"><span class="theme-knob"></span></span>
+          <span class="theme-text" id="theme-label">Modo</span>
+        </button>
         <a class="btn" href="/inicio-app">🏠 Inicio</a>
-        <a id="lnkNueva" class="btn btn-accent" href="/cotizador">🆕 Nueva cotización</a>
+        <a
+          id="lnkNueva"
+          class="btn btn-accent"
+          href="{{ url_for('nueva_cotizacion') }}"
+          onclick="return confirm('¿Iniciar una cotización nueva? Si el formulario actual no se guardó como borrador, sus cambios se perderán.');"
+        >🆕 Nueva cotización</a>
       </div>
     </div>
 
     <div id="msg" class="flash"></div>
 
     <div class="card">
+      <div class="tabs" aria-label="Tipo de cotizaciones">
+        <button id="tabFinalizadas" class="btn tab-active" type="button">Finalizadas</button>
+        <button id="tabBorradores" class="btn" type="button">Borradores</button>
+      </div>
       <div class="row">
         <input id="q" type="search" class="grow" placeholder="Buscar por cliente, folio o concepto…" />
         <button id="btnReload" class="btn" type="button">🔄 Actualizar</button>
@@ -70,7 +116,7 @@
               <th style="width:12%">Folio</th>
               <th style="width:12%">Total</th>
               <th>Resumen</th>
-              <th style="width:180px">Acciones</th>
+              <th style="width:350px">Acciones</th>
             </tr>
           </thead>
           <tbody id="tbody">
@@ -82,6 +128,21 @@
   </div>
 
   <script>
+  const themeToggle = document.getElementById('theme-toggle');
+  const themeLabel = document.getElementById('theme-label');
+  function refreshThemeToggle(){
+    const dark = document.documentElement.dataset.theme === 'dark';
+    themeToggle.setAttribute('aria-checked', String(dark));
+    themeLabel.textContent = dark ? 'Oscuro' : 'Claro';
+  }
+  themeToggle.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem('hsc-theme', next);
+    refreshThemeToggle();
+  });
+  refreshThemeToggle();
+
   (function(){
     const tbody = document.getElementById('tbody');
     const q = document.getElementById('q');
@@ -106,6 +167,17 @@
         }catch{}
       }
       return [];
+    }
+
+    async function fetchDrafts(){
+      try{
+        const r = await fetch('/api/borradores/list', {headers:{'Accept':'application/json'}});
+        if(!r.ok) return [];
+        const raw = await r.json();
+        return Array.isArray(raw) ? raw : [];
+      }catch{
+        return [];
+      }
     }
 
     const money = n => {
@@ -163,9 +235,25 @@
       return { id, cliente, fecha, folio, total, resumen, view_url, facturar_url, _raw: raw };
     }
 
+    function normalizeDraft(raw, i){
+      const id = raw.id || raw.folio || String(i+1);
+      const datos = raw.datos || {};
+      const lineas = Array.isArray(raw.partidas) ? raw.partidas : [];
+      return {
+        id,
+        cliente: raw.cliente || datos.cliente || 'Sin cliente',
+        fecha: raw.actualizado || raw.fecha || datos.fecha || '',
+        folio: raw.folio || datos.cotizacion || id,
+        total: raw.total,
+        resumen: lineas.length ? (lineas[0].descripcion || '') : 'Sin partidas todavía',
+        borrador: true
+      };
+    }
+
     function renderRows(list){
       if(!list.length){
-        tbody.innerHTML = `<tr><td colspan="6" class="muted">Sin cotizaciones.</td></tr>`;
+        const emptyText = MODE === 'borradores' ? 'No hay borradores guardados.' : 'Sin cotizaciones.';
+        tbody.innerHTML = `<tr><td colspan="6" class="muted">${emptyText}</td></tr>`;
         return;
       }
       tbody.innerHTML = list.map(it => `
@@ -174,12 +262,19 @@
           <td>${escapeHTML(fmtDate(it.fecha)||'')}</td>
           <td>${escapeHTML(String(it.folio||''))}</td>
           <td class="numeric">${it.total!=null ? money(it.total) : ''}</td>
-          <td class="muted">${escapeHTML((it.resumen||'').slice(0,80))}</td>
+          <td class="muted"><div class="summary-cell">${escapeHTML((it.resumen||'').slice(0,100))}</div></td>
           <td>
-            <div class="actions">
-              <a class="btn" href="${it.view_url}" target="_blank">Ver / Reimprimir</a>
-              <a class="btn btn-accent" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">Duplicar y editar</a>
-              <button class="btn btn-ok" data-qid="${it.id}" data-fact-url="${it.facturar_url}" type="button">🧾 Mandar a facturar</button>
+            <div class="table-actions">
+              ${it.borrador ? `
+                <a class="btn btn-accent" href="/borradores/${encodeURIComponent(it.id)}/continuar">Continuar editando</a>
+                <form class="inline" method="post" action="/borradores/${encodeURIComponent(it.id)}/eliminar" onsubmit="return confirm('¿Eliminar este borrador? Esta acción no se puede deshacer.');">
+                  <button class="btn btn-danger" type="submit">Eliminar</button>
+                </form>
+              ` : `
+                <a class="btn" href="${it.view_url}" target="_blank">Ver / Reimprimir</a>
+                <a class="btn btn-accent" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">Duplicar y editar</a>
+                <button class="btn btn-ok" data-qid="${it.id}" data-fact-url="${it.facturar_url}" type="button">🧾 Mandar a facturar</button>
+              `}
             </div>
           </td>
         </tr>
@@ -199,25 +294,44 @@
     }
 
     let DATA = [];
+    let DRAFTS = [];
+    let MODE = 'finalizadas';
+
+    function currentData(){
+      return MODE === 'borradores' ? DRAFTS : DATA;
+    }
+
+    function setMode(mode){
+      MODE = mode;
+      document.getElementById('tabFinalizadas').classList.toggle('tab-active', mode === 'finalizadas');
+      document.getElementById('tabBorradores').classList.toggle('tab-active', mode === 'borradores');
+      q.value = '';
+      renderRows(currentData());
+    }
+
     async function load(){
-      msg(true,'Cargando cotizaciones…');
-      const items = await fetchList();
+      msg(true,'Cargando cotizaciones y borradores…');
+      const [items, drafts] = await Promise.all([fetchList(), fetchDrafts()]);
       DATA = items.map(normalize);
-      renderRows(DATA);
-      msg(true, `Cargadas ${DATA.length} cotizaciones.`);
+      DRAFTS = drafts.map(normalizeDraft);
+      renderRows(currentData());
+      msg(true, `${DATA.length} finalizadas · ${DRAFTS.length} borradores.`);
       setTimeout(()=>{ document.getElementById('msg').className='flash'; }, 1200);
     }
 
     q.addEventListener('input', ()=>{
       const term = q.value.trim().toLowerCase();
-      if(!term) { renderRows(DATA); return; }
-      const f = DATA.filter(it => {
+      const source = currentData();
+      if(!term) { renderRows(source); return; }
+      const f = source.filter(it => {
         return [it.cliente, it.folio, it.resumen].some(v => String(v||'').toLowerCase().includes(term));
       });
       renderRows(f);
     });
 
     document.getElementById('btnReload').addEventListener('click', load);
+    document.getElementById('tabFinalizadas').addEventListener('click', ()=>setMode('finalizadas'));
+    document.getElementById('tabBorradores').addEventListener('click', ()=>setMode('borradores'));
     load();
   })();
   </script>

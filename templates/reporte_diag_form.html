@@ -32,6 +32,11 @@
   }
   textarea{min-height:110px;resize:vertical}
   .hint{font-size:12px;color:var(--muted);margin-top:4px}
+  .client-picker{display:grid;grid-template-columns:minmax(220px,1fr) minmax(260px,1.35fr);gap:12px}
+  .saved-photos{margin-top:10px;padding:10px 12px;border:1px dashed var(--border);border-radius:10px;color:var(--muted);font-size:13px}
+  .saved-photos strong{color:var(--text)}
+  .check{display:flex;align-items:center;gap:8px;margin-top:8px;color:#cbd5e1;font-size:13px}
+  select option{background:#111827;color:var(--text)}
 
   /* Material */
   table{width:100%;border-collapse:collapse;margin-top:8px}
@@ -43,7 +48,7 @@
   .btn-secondary{border-color:#64748b;background:rgba(100,116,139,.18);color:#e2e8f0}
 
   @media (max-width:900px){
-    .grid-2{grid-template-columns:1fr}
+    .grid-2,.client-picker{grid-template-columns:1fr}
   }
 </style>
 </head>
@@ -59,30 +64,41 @@
 
       <!-- FORMULARIO -->
       <form method="post" action="{{ url_for('reportes.diag_prev') }}" enctype="multipart/form-data">
+        <input type="hidden" name="edit_token" value="{{ edit_token or '' }}">
         <div class="grid grid-2">
           <!-- Columna izquierda -->
           <div class="grid">
             <div>
               <label>Cliente *</label>
-              <input type="text" name="cliente" required autofocus>
+              <div class="client-picker">
+                <select id="cliente_catalogo" aria-label="Elegir cliente existente">
+                  <option value="">Cliente ocasional / escribir manualmente</option>
+                  {% for cliente in clientes_catalogo %}
+                    <option value="{{ cliente.nombre }}" {% if form_data.get('cliente','') == cliente.nombre %}selected{% endif %}>{{ cliente.nombre }}</option>
+                  {% endfor %}
+                </select>
+                <input type="text" id="cliente" name="cliente" value="{{ form_data.get('cliente','') }}" placeholder="Nombre del cliente" required autofocus>
+              </div>
+              <div class="hint">Elige uno de la lista o captura un cliente ocasional. Los clientes ocasionales no se guardan.</div>
             </div>
 
             <div>
               <label>Dirección</label>
-              <input type="text" name="direccion" placeholder="Calle, número, colonia, ciudad">
+              <input type="text" id="direccion" name="direccion" value="{{ form_data.get('direccion','') }}" placeholder="Calle, número, colonia, ciudad">
             </div>
 
             <div class="row">
               <div class="col">
                 <label>Departamento</label>
-                <input type="text" name="departamento" placeholder="Ej. Mantenimiento">
+                <input type="text" name="departamento" value="{{ form_data.get('departamento','') }}" placeholder="Ej. Mantenimiento">
               </div>
             </div>
 
             <div>
               <label>Solicitante</label>
               <!-- Se mapea al campo existente "atencion" del backend -->
-              <input type="text" name="atencion" placeholder="Nombre de quien solicita">
+              <input type="text" id="atencion" name="atencion" value="{{ form_data.get('atencion','') }}" placeholder="Nombre de quien solicita" list="atenciones_cliente">
+              <datalist id="atenciones_cliente"></datalist>
             </div>
           </div>
 
@@ -91,11 +107,11 @@
             <div>
               <label>Fecha inicio *</label>
               <!-- Se mapea al campo existente "fecha" -->
-              <input type="date" name="fecha" value="{{ fecha_hoy }}" required>
+              <input type="date" name="fecha" value="{{ form_data.get('fecha') or fecha_hoy }}" required>
             </div>
             <div>
               <label>Fecha fin</label>
-              <input type="date" name="fecha_fin">
+              <input type="date" name="fecha_fin" value="{{ form_data.get('fecha_fin','') }}">
             </div>
           </div>
         </div>
@@ -105,32 +121,28 @@
           <div class="row">
             <div class="col">
               <label>Trabajo solicitado</label>
-              <input type="text" name="trabajo_solicitado" placeholder="Revisión, reubicación, diagnóstico, etc.">
+              <input type="text" name="trabajo_solicitado" value="{{ form_data.get('trabajo_solicitado','') }}" placeholder="Revisión, reubicación, diagnóstico, etc.">
             </div>
             <div class="col">
               <label>Tipo de mantenimiento</label>
               <select name="tipo_mantenimiento">
-                <option value="" selected>— Selecciona —</option>
-                <option>Correctivo</option>
-                <option>Preventivo</option>
-                <option>Predictivo</option>
-                <option>Diagnóstico</option>
-                <option>Instalación</option>
-                <option>Reubicación</option>
-                <option>Otro</option>
+                <option value="" {% if not form_data.get('tipo_mantenimiento') %}selected{% endif %}>— Selecciona —</option>
+                {% for tipo in ['Correctivo','Preventivo','Predictivo','Diagnóstico','Instalación','Reubicación','Otro'] %}
+                  <option {% if form_data.get('tipo_mantenimiento') == tipo %}selected{% endif %}>{{ tipo }}</option>
+                {% endfor %}
               </select>
             </div>
           </div>
 
           <div style="margin-top:12px">
             <label>Descripción de la falla</label>
-            <textarea name="descripcion_falla" placeholder="Describe la falla reportada"></textarea>
+            <textarea name="descripcion_falla" placeholder="Describe la falla reportada">{{ form_data.get('descripcion_falla','') }}</textarea>
           </div>
 
           <div style="margin-top:12px">
             <label>Trabajo realizado</label>
             <!-- IMPORTANTE: este campo se llama "trabajo" para que el PDF actual lo muestre -->
-            <textarea name="trabajo" placeholder="Describe el trabajo realizado"></textarea>
+            <textarea name="trabajo" placeholder="Describe el trabajo realizado">{{ form_data.get('trabajo','') }}</textarea>
           </div>
 
           <div style="margin-top:12px">
@@ -141,16 +153,17 @@
                 <tr><th style="width:120px">Cantidad</th><th>Descripción</th><th style="width:120px">Acciones</th></tr>
               </thead>
               <tbody>
-                <!-- Fila inicial -->
-                <tr>
-                  <td><input type="text" name="part_cant[]" placeholder="0"></td>
-                  <td>
-                    <input type="text" name="part_desc[]" placeholder="Refacción / material">
-                    <!-- precio oculto = 0 (el backend ya lo soporta) -->
-                    <input type="hidden" name="part_precio[]" value="0">
-                  </td>
-                  <td><button type="button" class="btn-secondary btn" onclick="delRow(this)">Quitar</button></td>
-                </tr>
+                {% set filas_material = form_partes if form_partes else [{}] %}
+                {% for parte in filas_material %}
+                  <tr>
+                    <td><input type="text" name="part_cant[]" value="{{ parte.get('cantidad','') }}" placeholder="0"></td>
+                    <td>
+                      <input type="text" name="part_desc[]" value="{{ parte.get('descripcion','') }}" placeholder="Refacción / material">
+                      <input type="hidden" name="part_precio[]" value="0">
+                    </td>
+                    <td><button type="button" class="btn-secondary btn" onclick="delRow(this)">Quitar</button></td>
+                  </tr>
+                {% endfor %}
               </tbody>
             </table>
             <div class="actions">
@@ -161,12 +174,12 @@
           <div class="row" style="margin-top:12px">
             <div class="col">
               <label>Observaciones</label>
-              <textarea name="observaciones" rows="5" placeholder="Observaciones (5 renglones aprox.)"></textarea>
+              <textarea name="observaciones" rows="5" placeholder="Observaciones (5 renglones aprox.)">{{ form_data.get('observaciones','') }}</textarea>
             </div>
             <div class="col">
               <label>Garantía</label>
               <!-- Se mapea a "notas" para que el PDF lo muestre -->
-              <input type="text" name="notas" placeholder="Ej. 30 días sobre mano de obra">
+              <input type="text" name="notas" value="{{ form_data.get('notas','') }}" placeholder="Ej. 30 días sobre mano de obra">
             </div>
           </div>
         </div>
@@ -175,18 +188,62 @@
         <div class="card">
           <label>Fotos (hasta 6)</label>
           <input type="file" name="fotos" accept="image/*" multiple>
-          <div class="hint">Se adjuntan ahora; se imprimen en la segunda página del PDF.</div>
+          {% if form_fotos %}
+            <div class="saved-photos"><strong>{{ form_fotos|length }} foto(s) conservada(s).</strong> Puedes agregar {{ 6 - form_fotos|length }} más.</div>
+            <label class="check"><input type="checkbox" name="reemplazar_fotos" value="1"> Reemplazar las fotos conservadas por las que seleccione ahora</label>
+          {% endif %}
+          <div class="hint">Máximo 6; se imprimen en la segunda página del PDF.</div>
         </div>
 
         <div class="actions">
           <button class="btn" type="submit">Vista previa del PDF</button>
-          <a class="btn-secondary" href="{{ url_for('reportes.reportes_inicio') }}">Cancelar</a>
+          <a class="btn btn-secondary" href="{{ url_for('reportes.reportes_inicio') }}">Cancelar</a>
         </div>
       </form>
     </div>
   </div>
 
   <script>
+    const CLIENTES = {{ clientes_catalogo | tojson }};
+    const clientesPorNombre = new Map(CLIENTES.map(c => [c.nombre, c]));
+    const selectorCliente = document.getElementById('cliente_catalogo');
+    const campoCliente = document.getElementById('cliente');
+    const campoDireccion = document.getElementById('direccion');
+    const campoAtencion = document.getElementById('atencion');
+    const listaAtenciones = document.getElementById('atenciones_cliente');
+
+    function actualizarAtenciones(cliente){
+      listaAtenciones.innerHTML = '';
+      (cliente?.atenciones || []).forEach(nombre => {
+        const option = document.createElement('option');
+        option.value = nombre;
+        listaAtenciones.appendChild(option);
+      });
+    }
+
+    selectorCliente.addEventListener('change', () => {
+      const cliente = clientesPorNombre.get(selectorCliente.value);
+      if(!cliente){
+        campoCliente.value = '';
+        campoCliente.focus();
+        actualizarAtenciones(null);
+        return;
+      }
+      campoCliente.value = cliente.nombre;
+      campoDireccion.value = cliente.direccion || '';
+      campoAtencion.value = (cliente.atenciones || [])[0] || '';
+      actualizarAtenciones(cliente);
+    });
+
+    campoCliente.addEventListener('input', () => {
+      if(campoCliente.value !== selectorCliente.value){
+        selectorCliente.value = '';
+        actualizarAtenciones(null);
+      }
+    });
+
+    actualizarAtenciones(clientesPorNombre.get(selectorCliente.value));
+
     const MAX_ROWS = 10;
     function addRow(){
       const tbody = document.querySelector('#tbl-material tbody');

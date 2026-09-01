@@ -4,12 +4,28 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Reportes — Selección</title>
+  <script>
+    (() => {
+      const saved = localStorage.getItem('hsc-theme');
+      document.documentElement.dataset.theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    })();
+  </script>
   <style>
     :root{
       --bg:#0b1020; --card:rgba(255,255,255,.04); --card2:rgba(255,255,255,.06);
       --border:rgba(255,255,255,.12); --text:#e5e7eb; --muted:#a3b2c7;
       --accent:#22c55e; --accent-bg:rgba(34,197,94,.12);
       --blue:#93c5fd; --chip:#e0f2fe; --chip-bd:#bae6fd; --chip-tx:#0369a1;
+      --card-top:rgba(255,255,255,.05);--card-bottom:rgba(255,255,255,.02);
+      --field:rgba(255,255,255,.04);--shadow:rgba(0,0,0,.35);
+      --accent-text:#d1fae5;--danger-text:#fca5a5;
+    }
+    html[data-theme="light"]{
+      --bg:#e3e8f0;--card:#ffffff;--card2:#f8fafc;
+      --border:#c5ceda;--text:#111827;--muted:#4b5563;
+      --accent:#16a34a;--accent-bg:#e8f7ed;--blue:#1d4ed8;
+      --card-top:#ffffff;--card-bottom:#ffffff;--field:#edf2f8;--shadow:rgba(17,24,39,.08);
+      --accent-text:#14532d;--danger-text:#b91c1c;
     }
     *{box-sizing:border-box}
     body{margin:0;font-family:"Segoe UI",system-ui,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:28px}
@@ -17,15 +33,26 @@
     h1{margin:0 0 8px}
     p{margin:0 0 16px;color:var(--muted)}
     .grid{display:grid;gap:20px;grid-template-columns:1fr 1fr}
-    .card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:18px;padding:20px;box-shadow:0 12px 30px rgba(0,0,0,.35)}
+    .card{background:linear-gradient(180deg,var(--card-top),var(--card-bottom));border:1px solid var(--border);border-radius:18px;padding:20px;box-shadow:0 12px 30px var(--shadow)}
     .row{display:flex;gap:10px}
-    input[type=text]{flex:1;min-width:0;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);color:var(--text)}
-    .btn{padding:10px 14px;border-radius:12px;border:1px solid rgba(34,197,94,.45);background:var(--accent-bg);color:#d1fae5;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;white-space:nowrap;transition:.15s}
+    input[type=text]{flex:1;min-width:0;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--field);color:var(--text)}
+    .btn{padding:10px 14px;border-radius:12px;border:1px solid rgba(34,197,94,.45);background:var(--accent-bg);color:var(--accent-text);font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;white-space:nowrap;transition:.15s}
     .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(34,197,94,.18)}
     .btn-stop{display:none;border-color:rgba(248,113,113,.45);background:rgba(127,29,29,.22);color:#fecaca}
     .btn-stop.visible{display:inline-block}
-    .links{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
-    a.link{color:var(--blue);text-decoration:none}
+    .nav-actions{margin-top:14px;display:flex;gap:9px;flex-wrap:wrap}
+    .btn-nav{border-color:rgba(59,130,246,.28);background:rgba(59,130,246,.08);color:var(--blue)}
+    .btn-nav:hover{box-shadow:0 6px 16px rgba(59,130,246,.14)}
+    .btn-nav-primary{border-color:rgba(34,197,94,.45);background:var(--accent-bg);color:var(--accent-text)}
+
+    .page-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px}
+    .page-head p{margin-bottom:0}
+    .theme-toggle{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:999px;background:var(--card);color:var(--text);font-weight:700;cursor:pointer}
+    .theme-track{width:38px;height:21px;padding:2px;border-radius:999px;background:#94a3b8;transition:.2s;display:flex}
+    .theme-knob{width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:.2s}
+    html[data-theme="dark"] .theme-track{background:#22c55e}
+    html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
+    .theme-text{font-size:.78rem;white-space:nowrap}
 
     .header-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
 
@@ -37,16 +64,16 @@
     .meta{display:flex;flex-direction:column;gap:2px;min-width:0}
     .id{font-weight:700}
     .eq{color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
-    .cliente{color:#cbd5e1;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+    .cliente{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
     .actions{display:flex;gap:8px;flex-shrink:0}
     @media (max-width:900px){
       .grid{grid-template-columns:1fr}
       .eq,.cliente{max-width:60vw}
     }
-    .flash{margin:8px 0;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.03);color:#fca5a5}
+    .flash{margin:8px 0;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--danger-text)}
 
     /* --- Auxiliar permanente (selección manual) --- */
-    .aux-header{margin-top:14px;margin-bottom:6px;font-weight:700;color:#e2e8f0;display:flex;align-items:center;gap:8px}
+    .aux-header{margin-top:14px;margin-bottom:6px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:8px}
     .muted{color:var(--muted);font-size:12px}
     .chip{font-size:12px;padding:4px 8px;border-radius:999px;background:var(--chip);color:var(--chip-tx);border:1px solid var(--chip-bd)}
     .empty{border:1px dashed var(--border);border-radius:14px;padding:14px;text-align:center;color:var(--muted)}
@@ -56,26 +83,29 @@
     .auto-progress{margin-top:12px}
     .progress-head{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:12px;margin-bottom:7px}
     .attempt-dots{display:flex;gap:7px;align-items:center}
-    .attempt-dot{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18)}
+    .attempt-dot{width:10px;height:10px;border-radius:50%;background:var(--card2);border:1px solid var(--border)}
     .attempt-dot.done{background:#22c55e;border-color:#22c55e}
     .attempt-dot.active{background:#86efac;border-color:#86efac;animation:pulse 1s infinite alternate}
-    .progress-track{height:5px;border-radius:999px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:9px}
+    .progress-track{height:5px;border-radius:999px;background:var(--border);overflow:hidden;margin-top:9px}
     .progress-fill{height:100%;width:0;background:#22c55e;transition:width .35s ease}
     .progress-fill.indeterminate{width:35%;animation:indeterminate 1.35s ease-in-out infinite}
     .auto-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:12px}
-    .auto-stat{padding:8px;border-radius:10px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08)}
-    .auto-stat strong{display:block;font-size:16px;color:#e5e7eb}
+    .auto-stat{padding:8px;border-radius:10px;background:var(--card2);border:1px solid var(--border)}
+    .auto-stat strong{display:block;font-size:16px;color:var(--text)}
     .auto-stat span{font-size:11px;color:var(--muted)}
-    .current-report{margin-top:9px;font-size:12px;color:#d1fae5}
+    .current-report{margin-top:9px;font-size:12px;color:var(--accent-text)}
     .auto-stats[hidden],.auto-progress[hidden],.current-report[hidden]{display:none!important}
     @keyframes pulse{from{transform:scale(.8);opacity:.55}to{transform:scale(1.25);opacity:1}}
     @keyframes indeterminate{from{transform:translateX(-110%)}to{transform:translateX(300%)}}
     @media(max-width:520px){.auto-stats{grid-template-columns:repeat(2,1fr)}}
     @media(max-width:600px){
       body{padding:14px}
+      .page-head{align-items:flex-start}
       .card{padding:14px}
       .row{flex-direction:column}
       .row .btn{width:100%;text-align:center}
+      .nav-actions{display:grid;grid-template-columns:1fr}
+      .nav-actions .btn{width:100%;text-align:center}
       .item{align-items:flex-start;flex-direction:column}
       .actions{width:100%;flex-wrap:wrap}
       .actions .btn{flex:1;text-align:center}
@@ -89,14 +119,22 @@
     .tiny-title{font-weight:600}
     .tiny-meta{font-size:12px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
     .tiny-links{display:flex;gap:8px;flex-wrap:wrap}
-    .link-pill{font-size:12px;text-decoration:none;border:1px solid var(--border);padding:6px 8px;border-radius:999px;background:transparent;color:#dbeafe}
+    .link-pill{font-size:12px;text-decoration:none;border:1px solid var(--border);padding:6px 8px;border-radius:999px;background:transparent;color:var(--blue)}
     .right-chip{display:flex;align-items:center}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Generar reporte</h1>
-    <p>Elige un <strong>ID_Reporte</strong> o ingrésalo manualmente.</p>
+    <div class="page-head">
+      <div>
+        <h1>Generar reporte</h1>
+        <p>Elige un <strong>ID_Reporte</strong> o ingrésalo manualmente.</p>
+      </div>
+      <button class="theme-toggle" type="button" id="theme-toggle" role="switch" aria-label="Cambiar modo de color">
+        <span class="theme-track" aria-hidden="true"><span class="theme-knob"></span></span>
+        <span class="theme-text" id="theme-label">Modo</span>
+      </button>
+    </div>
 
     {% with msgs = get_flashed_messages() %}
       {% if msgs %}
@@ -119,10 +157,10 @@
           </div>
           <datalist id="id-suggest"></datalist>
         </form>
-        <div class="links">
-          <a class="link" href="{{ url_for('inicio_app') }}">← Panel HSC</a>
-          <a class="link" href="{{ url_for('reportes.diag_nuevo') }}">Generar reporte de trabajo</a>
-          <a class="link" href="{{ url_for('reportes.reportes_debug') }}">Debug de reportes</a>
+        <div class="nav-actions">
+          <a class="btn btn-nav" href="{{ url_for('inicio_app') }}">← Panel HSC</a>
+          <a class="btn btn-nav btn-nav-primary" href="{{ url_for('reportes.diag_nuevo') }}">Generar reporte de trabajo</a>
+          <a class="btn btn-nav" href="{{ url_for('reportes.reportes_debug') }}">Debug de reportes</a>
         </div>
 
         <!-- (1) Auxiliar permanente: aquí se muestra la SELECCIÓN MANUAL -->
@@ -207,6 +245,21 @@
   </div>
 
   <script>
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeLabel = document.getElementById('theme-label');
+    function refreshThemeToggle(){
+      const dark = document.documentElement.dataset.theme === 'dark';
+      themeToggle.setAttribute('aria-checked', String(dark));
+      themeLabel.textContent = dark ? 'Oscuro' : 'Claro';
+    }
+    themeToggle.addEventListener('click', () => {
+      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem('hsc-theme', next);
+      refreshThemeToggle();
+    });
+    refreshThemeToggle();
+
     // ---------- Autocomplete (igual que tenías) ----------
     const $in = document.querySelector('#id-manual');
     const $dl = document.querySelector('#id-suggest');

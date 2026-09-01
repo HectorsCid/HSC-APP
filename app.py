@@ -19,6 +19,7 @@ import unicodedata
 from urllib.parse import quote_plus
 from pathlib import Path
 import io
+import math
 
 # Google / OAuth
 from google.oauth2.credentials import Credentials
@@ -74,11 +75,13 @@ SCOPES = [
 ID_COT = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'   # Carpeta "01. Cotizaciones" en Drive
 CLIENTES_FILENAME = 'clientes.json'           # Archivo para persistir clientes en Drive
 COTIZACIONES_FILENAME = 'cotizaciones.json'    # Archivo para persistir historial en Drive
+BORRADORES_FILENAME = 'borradores_cotizaciones.json'
 
 # Protegen las escrituras tipo read/modify/write. En Render hay dos hilos web y
 # una sincronización de arranque en segundo plano; ninguno debe pisar al otro.
 _CLIENTES_DATA_LOCK = threading.RLock()
 _COTIZACIONES_DATA_LOCK = threading.RLock()
+_BORRADORES_DATA_LOCK = threading.RLock()
 
 # --- Google Sheets datos ---
 SHEET_ID = "15xLRRfR_Leidnd34Cpr3ERbpJ7AaMelMxMa-9B0d6kQ"
@@ -319,6 +322,75 @@ def subir_cotizaciones_a_drive(items_list):
         print("⚠️ No se pudo subir cotizaciones.json a Drive:", e)
 
 
+def _ruta_borradores():
+    base = Path(current_app.root_path) / "data"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / BORRADORES_FILENAME
+
+
+def _leer_borradores_locales():
+    path = _ruta_borradores()
+    try:
+        data = json.loads(path.read_text("utf-8")) if path.exists() else []
+        return data if isinstance(data, list) else []
+    except Exception as e:
+        print("⚠️ No se pudieron leer los borradores locales:", e)
+        return []
+
+
+def _escribir_borradores_locales(items):
+    path = _ruta_borradores()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def descargar_borradores_de_drive():
+    """Sincroniza el respaldo de borradores sin mezclarlo con cotizaciones terminadas."""
+    try:
+        service = _drive_service_cfg()
+        fid = _drive_buscar_archivo(service, BORRADORES_FILENAME, ID_COT)
+        if not fid:
+            _escribir_borradores_locales([])
+            print("ℹ️ Todavía no existe un respaldo de borradores en Drive.")
+            return []
+
+        request_drive = service.files().get_media(fileId=fid)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request_drive)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        content = fh.getvalue().decode("utf-8") if fh.getbuffer().nbytes else "[]"
+        data = json.loads(content) if content.strip() else []
+        if not isinstance(data, list):
+            data = []
+        _escribir_borradores_locales(data)
+        print(f"✅ Borradores cargados desde Drive: {len(data)}.")
+        return data
+    except Exception as e:
+        print("⚠️ No se pudieron descargar los borradores de Drive:", e)
+        return None
+
+
+def subir_borradores_a_drive(items):
+    """Actualiza el respaldo; devuelve False para poder avisar si Google falla."""
+    try:
+        service = _drive_service_cfg()
+        fid = _drive_buscar_archivo(service, BORRADORES_FILENAME, ID_COT)
+        payload = json.dumps(items, ensure_ascii=False, indent=2).encode("utf-8")
+        media = MediaIoBaseUpload(io.BytesIO(payload), mimetype="application/json", resumable=False)
+        if fid:
+            service.files().update(fileId=fid, media_body=media, fields="id").execute()
+        else:
+            meta = {"name": BORRADORES_FILENAME, "parents": [ID_COT]}
+            service.files().create(body=meta, media_body=media, fields="id").execute()
+        return True
+    except Exception as e:
+        print("⚠️ No se pudieron respaldar los borradores en Drive:", e)
+        return False
+
+
 # ======================= Funciones para clientes (con persistencia en Drive) ======================
 def cargar_clientes():
     """Carga solo el respaldo local; la red se sincroniza fuera de la petición."""
@@ -365,6 +437,7 @@ def _sync_clientes_from_drive_into_memory():
 # ---------- Sincronización inicial sin bloquear solicitudes ----------
 __did_sync_once = False
 __did_sync_cotizaciones_once = False
+__did_sync_borradores_once = False
 __bootstrap_sync_lock = threading.Lock()
 __bootstrap_sync_last_attempt = 0.0
 BOOTSTRAP_SYNC_RETRY_SECONDS = 60
@@ -374,8 +447,12 @@ def _sync_cotizaciones_from_drive_into_local():
     with _COTIZACIONES_DATA_LOCK:
         return descargar_cotizaciones_de_drive()
 
+def _sync_borradores_from_drive_into_local():
+    with _BORRADORES_DATA_LOCK:
+        return descargar_borradores_de_drive()
+
 def _bootstrap_sync_worker(app_obj):
-    global __did_sync_once, __did_sync_cotizaciones_once
+    global __did_sync_once, __did_sync_cotizaciones_once, __did_sync_borradores_once
     try:
         with app_obj.app_context():
             if not __did_sync_once and (IS_RENDER or AUTO_SYNC_FROM_DRIVE):
@@ -387,6 +464,10 @@ def _bootstrap_sync_worker(app_obj):
                 data = _sync_cotizaciones_from_drive_into_local()
                 if data is not None:
                     __did_sync_cotizaciones_once = True
+            if IS_RENDER and not __did_sync_borradores_once:
+                data = _sync_borradores_from_drive_into_local()
+                if data is not None:
+                    __did_sync_borradores_once = True
     except Exception as exc:
         app_obj.logger.exception("Falló la sincronización inicial con Drive: %s", exc)
     finally:
@@ -407,7 +488,8 @@ def _schedule_bootstrap_sync():
         return
     clients_done = __did_sync_once or not (IS_RENDER or AUTO_SYNC_FROM_DRIVE)
     quotes_done = __did_sync_cotizaciones_once or not IS_RENDER
-    if clients_done and quotes_done:
+    drafts_done = __did_sync_borradores_once or not IS_RENDER
+    if clients_done and quotes_done and drafts_done:
         return
     now = time.monotonic()
     if now - __bootstrap_sync_last_attempt < BOOTSTRAP_SYNC_RETRY_SECONDS:
@@ -429,6 +511,9 @@ def _schedule_bootstrap_sync():
 
 _CLIENT_MUTATION_ENDPOINTS = {"nuevo_cliente", "editar_cliente", "borrar_cliente"}
 _QUOTE_MUTATION_ENDPOINTS = {"generar_pdf"}
+_DRAFT_MUTATION_ENDPOINTS = {
+    "guardar_borrador", "eliminar_borrador", "guardar_costos_internos", "generar_pdf"
+}
 
 
 @app.before_request
@@ -439,11 +524,12 @@ def _guard_bootstrap_writes():
     endpoint = request.endpoint or ""
     clients_required = endpoint in _CLIENT_MUTATION_ENDPOINTS
     quotes_required = endpoint in _QUOTE_MUTATION_ENDPOINTS
-    if not clients_required and not quotes_required:
+    drafts_required = endpoint in _DRAFT_MUTATION_ENDPOINTS
+    if not clients_required and not quotes_required and not drafts_required:
         return None
     if (not clients_required or __did_sync_once) and (
         not quotes_required or (__did_sync_once and __did_sync_cotizaciones_once)
-    ):
+    ) and (not drafts_required or __did_sync_borradores_once):
         return None
 
     response = make_response(
@@ -510,6 +596,61 @@ def obtener_siguiente_folio():
 # =========================== Variables de trabajo ==============================
 partidas = []
 datos_cliente = {}
+costos_internos = {
+    "items": [],
+    "gastos_extra": 0.0,
+    "ganancia_modo": "porcentaje",
+    "ganancia_valor": 0.0,
+    "redondeo": 1.0,
+    "descripcion_publica": "Suministro de materiales y servicios",
+}
+
+def _reiniciar_costos_internos():
+    costos_internos.clear()
+    costos_internos.update({
+        "items": [],
+        "gastos_extra": 0.0,
+        "ganancia_modo": "porcentaje",
+        "ganancia_valor": 0.0,
+        "redondeo": 1.0,
+        "descripcion_publica": "Suministro de materiales y servicios",
+    })
+
+def _numero_seguro(valor, default=0.0):
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return float(default)
+
+def _totales_costos_internos():
+    costo_directo = 0.0
+    for item in costos_internos.get("items", []):
+        cantidad = _numero_seguro(item.get("cantidad"))
+        unitario = _numero_seguro(item.get("costo_unitario"))
+        merma = max(0.0, _numero_seguro(item.get("merma")))
+        total_linea = cantidad * unitario * (1 + merma / 100)
+        item["total"] = round(total_linea, 2)
+        costo_directo += total_linea
+
+    gastos_extra = max(0.0, _numero_seguro(costos_internos.get("gastos_extra")))
+    costo_total = costo_directo + gastos_extra
+    valor_ganancia = max(0.0, _numero_seguro(costos_internos.get("ganancia_valor")))
+    if costos_internos.get("ganancia_modo") == "monto":
+        ganancia = valor_ganancia
+    else:
+        ganancia = costo_total * valor_ganancia / 100
+    sugerido = costo_total + ganancia
+    redondeo = max(1.0, _numero_seguro(costos_internos.get("redondeo"), 1))
+    precio_final = math.ceil(sugerido / redondeo) * redondeo if sugerido else 0.0
+    return {
+        "costo_directo": round(costo_directo, 2),
+        "gastos_extra": round(gastos_extra, 2),
+        "costo_total": round(costo_total, 2),
+        "ganancia": round(ganancia, 2),
+        "precio_sugerido": round(sugerido, 2),
+        "precio_final": round(precio_final, 2),
+        "precio_con_iva": round(precio_final * 1.16, 2),
+    }
 
 def _clave_orden_cliente(nombre):
     texto = unicodedata.normalize("NFKD", str(nombre or ""))
@@ -584,6 +725,11 @@ def clientes_refresh_cache():
 
 @app.route('/guardar_datos', methods=['POST'])
 def guardar_datos():
+    _actualizar_datos_cliente_desde_form()
+    return redirect(url_for('inicio'))
+
+def _actualizar_datos_cliente_desde_form():
+    """Copia el formulario activo sin generar PDF ni alterar el historial."""
     datos_cliente['cliente'] = request.form.get('cliente')
     datos_cliente['atencion'] = request.form.getlist('atencion')
     datos_cliente['direccion'] = request.form.get('direccion', '')
@@ -594,17 +740,20 @@ def guardar_datos():
     datos_cliente['cotizacion'] = request.form.get('cotizacion', '')
     datos_cliente['comentarios'] = request.form.get('comentarios', '')
     datos_cliente["usar_retenciones"] = ("usar_retenciones" in request.form)
-    
-    return redirect(url_for('inicio'))
 
 @app.route('/agregar', methods=['POST'])
 def agregar():
-    descripcion = request.form['descripcion']
+    descripcion = (request.form.get('descripcion') or '').strip()
+    if not descripcion:
+        flash("❌ Escribe la descripción de la partida.")
+        return redirect(url_for('inicio'))
     try:
         cantidad = int(request.form['cantidad'])
-        precio = float(request.form['precio'])
-    except ValueError:
-        flash("❌ Error: Ingresa valores numéricos válidos en cantidad y precio.")
+        precio_texto = (request.form.get('precio') or '').strip()
+        precio_pendiente = not precio_texto
+        precio = float(precio_texto) if precio_texto else 0.0
+    except (TypeError, ValueError):
+        flash("❌ Error: Ingresa una cantidad y un precio válidos, o deja el precio vacío si está pendiente.")
         return redirect(url_for('inicio'))
 
     total = cantidad * precio
@@ -612,16 +761,25 @@ def agregar():
         'descripcion': descripcion,
         'cantidad': cantidad,
         'precio': precio,
-        'total': total
+        'total': total,
+        'precio_pendiente': precio_pendiente,
     })
     return redirect(url_for('inicio'))
 
 @app.route('/editar/<int:indice>', methods=['GET', 'POST'])
 def editar(indice):
     if request.method == 'POST':
-        partidas[indice]['descripcion'] = request.form['descripcion']
-        partidas[indice]['cantidad'] = int(request.form['cantidad'])
-        partidas[indice]['precio'] = float(request.form['precio'])
+        try:
+            cantidad = int(request.form['cantidad'])
+            precio_texto = (request.form.get('precio') or '').strip()
+            precio = float(precio_texto) if precio_texto else 0.0
+        except (TypeError, ValueError):
+            flash("❌ Ingresa una cantidad válida; el precio puede quedar vacío mientras sea borrador.")
+            return redirect(url_for('editar', indice=indice))
+        partidas[indice]['descripcion'] = (request.form.get('descripcion') or '').strip()
+        partidas[indice]['cantidad'] = cantidad
+        partidas[indice]['precio'] = precio
+        partidas[indice]['precio_pendiente'] = not precio_texto
         partidas[indice]['total'] = partidas[indice]['cantidad'] * partidas[indice]['precio']
         return redirect(url_for('inicio'))
     else:
@@ -637,6 +795,7 @@ def eliminar(indice):
 def limpiar():
     partidas.clear()
     datos_cliente.clear()
+    _reiniciar_costos_internos()
     return redirect(url_for('inicio'))
 
 @app.route('/nueva-cotizacion')
@@ -644,6 +803,7 @@ def nueva_cotizacion():
     """Inicia una cotización limpia únicamente cuando el usuario lo solicita."""
     partidas.clear()
     datos_cliente.clear()
+    _reiniciar_costos_internos()
     return redirect(url_for('inicio'))
 
 @app.route('/nuevo_cliente', methods=['GET', 'POST'])
@@ -758,9 +918,253 @@ def registrar_cotizacion(cot):
         if IS_RENDER:
             subir_cotizaciones_a_drive(arr)
 
+
+def _guardar_o_actualizar_borrador(borrador):
+    with _BORRADORES_DATA_LOCK:
+        items = _leer_borradores_locales()
+        draft_id = str(borrador.get("id") or borrador.get("folio") or "").strip()
+        for index, item in enumerate(items):
+            item_id = str(item.get("id") or item.get("folio") or "").strip()
+            if draft_id and item_id == draft_id:
+                items[index] = borrador
+                break
+        else:
+            items.insert(0, borrador)
+        _escribir_borradores_locales(items)
+        return (not IS_RENDER) or subir_borradores_a_drive(items)
+
+
+def _eliminar_borrador_por_id(draft_id):
+    with _BORRADORES_DATA_LOCK:
+        items = _leer_borradores_locales()
+        draft_id = str(draft_id or "").strip()
+        restantes = [
+            item for item in items
+            if str(item.get("id") or item.get("folio") or "").strip() != draft_id
+        ]
+        if len(restantes) == len(items):
+            return False, True
+        _escribir_borradores_locales(restantes)
+        drive_ok = (not IS_RENDER) or subir_borradores_a_drive(restantes)
+        return True, drive_ok
+
+
+def _construir_borrador_actual():
+    if not datos_cliente.get("cotizacion"):
+        datos_cliente["cotizacion"] = obtener_siguiente_folio()
+    folio = str(datos_cliente.get("cotizacion") or "").strip()
+    subtotal = sum(float(item.get("total") or 0) for item in partidas)
+    iva = subtotal * 0.16
+    if datos_cliente.get("usar_retenciones"):
+        total_borrador = subtotal + iva - (subtotal * 0.0125) - (iva * (2 / 3))
+    else:
+        total_borrador = subtotal + iva
+    return {
+        "id": folio,
+        "folio": folio,
+        "estado": "borrador",
+        "cliente": (datos_cliente.get("cliente") or "").strip(),
+        "fecha": datos_cliente.get("fecha") or "",
+        "actualizado": datetime.now().isoformat(timespec="seconds"),
+        "datos": dict(datos_cliente),
+        "partidas": [dict(item) for item in partidas],
+        "costos_internos": json.loads(json.dumps(costos_internos, ensure_ascii=False)),
+        "total": round(total_borrador, 2),
+    }
+
+
+@app.post('/borradores/guardar')
+def guardar_borrador():
+    _actualizar_datos_cliente_desde_form()
+    borrador = _construir_borrador_actual()
+    folio = borrador["folio"]
+    drive_ok = _guardar_o_actualizar_borrador(borrador)
+    if drive_ok:
+        flash(f"Borrador {folio} guardado correctamente.")
+    else:
+        flash(
+            f"Borrador {folio} guardado temporalmente, pero Google Drive no respondió. "
+            "Vuelve a guardarlo antes de cerrar para confirmar el respaldo."
+        )
+    return redirect(url_for("inicio"))
+
+
+@app.get('/api/borradores/list')
+def api_borradores_list():
+    with _BORRADORES_DATA_LOCK:
+        items = _leer_borradores_locales()
+    items.sort(key=lambda item: str(item.get("actualizado") or ""), reverse=True)
+    return jsonify(items), 200
+
+
+@app.get('/borradores/<draft_id>/continuar')
+def continuar_borrador(draft_id):
+    with _BORRADORES_DATA_LOCK:
+        items = _leer_borradores_locales()
+    borrador = next((
+        item for item in items
+        if str(item.get("id") or item.get("folio") or "") == str(draft_id)
+    ), None)
+    if not borrador:
+        flash("No se encontró el borrador solicitado.")
+        return redirect(url_for("ui_inicio_cotizacion"))
+
+    datos = borrador.get("datos") if isinstance(borrador.get("datos"), dict) else {}
+    lineas = borrador.get("partidas") if isinstance(borrador.get("partidas"), list) else []
+    datos_cliente.clear()
+    datos_cliente.update(datos)
+    datos_cliente["cotizacion"] = str(borrador.get("folio") or draft_id)
+    partidas.clear()
+    partidas.extend(dict(item) for item in lineas if isinstance(item, dict))
+    costos_guardados = borrador.get("costos_internos")
+    _reiniciar_costos_internos()
+    if isinstance(costos_guardados, dict):
+        costos_internos.update(costos_guardados)
+    flash(f"Borrador {draft_id} cargado. Puedes continuar editándolo.")
+    return redirect(url_for("inicio"))
+
+
+@app.post('/borradores/<draft_id>/eliminar')
+def eliminar_borrador(draft_id):
+    eliminado, drive_ok = _eliminar_borrador_por_id(draft_id)
+    if not eliminado:
+        flash("El borrador ya no existe.")
+    elif drive_ok:
+        flash(f"Borrador {draft_id} eliminado.")
+    else:
+        flash("El borrador se eliminó localmente, pero Google Drive no respondió.")
+    return redirect(url_for("ui_inicio_cotizacion"))
+
+
+@app.post('/costos-internos/abrir')
+def abrir_costos_internos():
+    _actualizar_datos_cliente_desde_form()
+    if not datos_cliente.get("cotizacion"):
+        datos_cliente["cotizacion"] = obtener_siguiente_folio()
+    return redirect(url_for("ver_costos_internos"))
+
+
+@app.get('/costos-internos')
+def ver_costos_internos():
+    categorias = [
+        ("material", "Material"),
+        ("mano_obra", "Mano de obra"),
+        ("flete", "Flete o transporte"),
+        ("viaticos", "Viáticos"),
+        ("renta", "Renta de herramienta/equipo"),
+        ("subcontrato", "Subcontratación"),
+        ("otro", "Otro"),
+    ]
+    unidades = [
+        "Pieza", "Metro", "m²", "m³", "Kilogramo", "Gramo", "Litro",
+        "Mililitro", "Hora", "Jornada", "Día", "Servicio", "Lote",
+        "Viaje", "Caja", "Paquete", "Rollo",
+    ]
+    return render_template(
+        "costos_internos.html",
+        costos=costos_internos,
+        totales=_totales_costos_internos(),
+        categorias=categorias,
+        unidades=unidades,
+        folio=datos_cliente.get("cotizacion") or "",
+    )
+
+
+@app.post('/costos-internos/guardar')
+def guardar_costos_internos():
+    categorias_validas = {
+        "material", "mano_obra", "flete", "viaticos", "renta", "subcontrato", "otro"
+    }
+    categorias = request.form.getlist("categoria")
+    nombres = request.form.getlist("nombre")
+    cantidades = request.form.getlist("cantidad")
+    unidades = request.form.getlist("unidad")
+    costos = request.form.getlist("costo_unitario")
+    mermas = request.form.getlist("merma")
+    notas = request.form.getlist("nota")
+
+    items = []
+    total_filas = max(
+        len(categorias), len(nombres), len(cantidades), len(unidades),
+        len(costos), len(mermas), len(notas), 0
+    )
+    for index in range(total_filas):
+        nombre = (nombres[index] if index < len(nombres) else "").strip()
+        if not nombre:
+            continue
+        categoria = categorias[index] if index < len(categorias) else "material"
+        if categoria not in categorias_validas:
+            categoria = "otro"
+        cantidad = max(0.0, _numero_seguro(cantidades[index] if index < len(cantidades) else 0))
+        costo_unitario = max(0.0, _numero_seguro(costos[index] if index < len(costos) else 0))
+        merma = max(0.0, _numero_seguro(mermas[index] if index < len(mermas) else 0))
+        items.append({
+            "categoria": categoria,
+            "nombre": nombre,
+            "cantidad": cantidad,
+            "unidad": (unidades[index] if index < len(unidades) else "Pieza").strip() or "Pieza",
+            "costo_unitario": costo_unitario,
+            "merma": merma,
+            "nota": (notas[index] if index < len(notas) else "").strip(),
+        })
+
+    costos_internos["items"] = items
+    costos_internos["gastos_extra"] = max(0.0, _numero_seguro(request.form.get("gastos_extra")))
+    modo = request.form.get("ganancia_modo")
+    costos_internos["ganancia_modo"] = modo if modo in {"porcentaje", "monto"} else "porcentaje"
+    costos_internos["ganancia_valor"] = max(0.0, _numero_seguro(request.form.get("ganancia_valor")))
+    redondeo = _numero_seguro(request.form.get("redondeo"), 1)
+    costos_internos["redondeo"] = redondeo if redondeo in {1.0, 10.0, 50.0, 100.0} else 1.0
+    costos_internos["descripcion_publica"] = (
+        request.form.get("descripcion_publica") or "Suministro de materiales y servicios"
+    ).strip()
+
+    accion = request.form.get("accion") or "guardar"
+    totales = _totales_costos_internos()
+    if accion == "transferir":
+        precio = totales["precio_final"]
+        if precio <= 0:
+            flash("Agrega costos antes de transferir un precio a la cotización.")
+            return redirect(url_for("ver_costos_internos"))
+        descripcion = costos_internos["descripcion_publica"]
+        linea = next((p for p in partidas if p.get("origen_costos_internos")), None)
+        nuevos_datos = {
+            "descripcion": descripcion,
+            "cantidad": 1,
+            "precio": precio,
+            "total": precio,
+            "precio_pendiente": False,
+            "origen_costos_internos": True,
+        }
+        if linea is None:
+            partidas.append(nuevos_datos)
+        else:
+            linea.update(nuevos_datos)
+
+    borrador = _construir_borrador_actual()
+    drive_ok = _guardar_o_actualizar_borrador(borrador)
+    if accion == "transferir":
+        if drive_ok:
+            flash("Precio interno transferido a la cotización. El desglose permanece privado.")
+        else:
+            flash("El precio se transfirió, pero Google Drive no confirmó el respaldo del desglose.")
+        return redirect(url_for("inicio"))
+    if drive_ok:
+        flash(f"Cálculo interno guardado en el borrador {borrador['folio']}.")
+    else:
+        flash("El cálculo quedó local, pero Google Drive no respondió. Intenta guardarlo otra vez.")
+    return redirect(url_for("ver_costos_internos"))
+
 @app.route('/generar_pdf')
 def generar_pdf():
     import shutil
+    pendientes = [p for p in partidas if p.get("precio_pendiente")]
+    if pendientes:
+        flash(
+            "No se puede generar el PDF: hay partidas con precio pendiente. "
+            "Complétalas o guarda la cotización como borrador."
+        )
+        return redirect(url_for("inicio"))
     # Congelar datos a disco
     guardar_datos(datos_cliente)
     guardar_partidas(partidas)
@@ -956,6 +1360,12 @@ def generar_pdf():
         print(f"🗂️ Cotización registrada para listado: {cot} ({cliente})")
     except Exception as e:
         print("⚠️ No se pudo registrar la cotización en data/cotizaciones.json:", e)
+
+    # Si este folio venía de un borrador, el PDF ya lo convirtió en cotización terminada.
+    try:
+        _eliminar_borrador_por_id(cot)
+    except Exception as e:
+        print("⚠️ No se pudo retirar el borrador ya finalizado:", e)
 
     mensaje = f"Cotización {cot} - {cliente}\nArchivo: {archivo_url}"
     wa_url = f"https://wa.me/?text={quote_plus(mensaje)}"
@@ -1758,6 +2168,7 @@ def duplicar_cotizacion(qid):
     partidas.clear()
     partidas.extend(nuevas_partidas)
     datos_cliente.clear()
+    _reiniciar_costos_internos()
     datos_cliente.update({
         "cliente": original.get("cliente") or (original.get("receptor") or {}).get("nombre") or "",
         "fecha": date.today().isoformat(),

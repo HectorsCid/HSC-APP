@@ -1551,16 +1551,108 @@ def _mxn(n):
     except Exception:
         return "$0.00"
 
+def _diag_pick(rec, *keys):
+    """Devuelve el primer campo no vacio, tolerando variantes de encabezados."""
+    for key in keys:
+        value = rec.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+def _diag_clientes_catalogo():
+    """Catalogo liviano para el formulario manual; nunca modifica Clientes."""
+    clientes = {}
+
+    # Primero reutiliza clientes.json, que ya usa el cotizador y no requiere
+    # una consulta adicional a Google para abrir el formulario.
+    for path in (
+        Path(current_app.root_path) / "clientes.json",
+        Path(current_app.root_path) / "data" / "clientes.json",
+    ):
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(raw, dict):
+            continue
+        for nombre, info in raw.items():
+            info = info if isinstance(info, dict) else {}
+            nombre = str(nombre or "").strip()
+            if not nombre:
+                continue
+            atenciones = info.get("atencion", [])
+            if isinstance(atenciones, str):
+                atenciones = [atenciones]
+            clientes[nombre.casefold()] = {
+                "nombre": nombre,
+                "direccion": str(info.get("direccion") or "").strip(),
+                "atenciones": [str(x).strip() for x in atenciones if str(x).strip()],
+            }
+
+    # Completa con la hoja Clientes solo si ya esta en cache o no existe el
+    # catalogo local. Asi abrir el formulario no agrega consultas innecesarias.
+    if not clientes and not _clientes_cache.get("by_id"):
+        _load_clientes_cache()
+    for rec in _clientes_cache.get("by_id", {}).values():
+        if not isinstance(rec, dict):
+            continue
+        nombre = _diag_pick(rec, "NombreCliente", "Nombre", "Cliente", "RazonSocial", "Razón Social")
+        if not nombre:
+            continue
+        key = nombre.casefold()
+        actual = clientes.get(key, {"nombre": nombre, "direccion": "", "atenciones": []})
+        direccion = _diag_pick(rec, "Direccion", "Dirección", "Domicilio")
+        atencion = _diag_pick(
+            rec, "Atencion", "Atención", "Solicitante", "Responsable",
+            "NombreContacto", "Contacto"
+        )
+        if direccion:
+            actual["direccion"] = direccion
+        if atencion and atencion not in actual["atenciones"]:
+            actual["atenciones"].append(atencion)
+        clientes[key] = actual
+
+    return sorted(clientes.values(), key=lambda c: c["nombre"].casefold())
+
+def _diag_payload_temporal(token):
+    """Carga una vista previa existente para continuar editandola."""
+    token = (token or "").strip()
+    if not re.fullmatch(r"[0-9a-f]{32}", token):
+        return None
+    _, _, tmp_dir = _diag_paths()
+    meta_path = tmp_dir / f"{token}.json"
+    if not meta_path.exists():
+        return None
+    try:
+        payload = json.loads(meta_path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
 @reportes_bp.get("/reportes/diag/nuevo")
 def diag_nuevo():
     # Formulario del “Reporte de trabajo”
     hoy = date.today().isoformat()
-    return render_template("reporte_diag_form.html", fecha_hoy=hoy)
+    token = (request.args.get("token") or "").strip()
+    payload = _diag_payload_temporal(token) if token else None
+    if token and not payload:
+        flash("La vista previa anterior ya vencio. Inicia nuevamente el reporte.", "warning")
+    return render_template(
+        "reporte_diag_form.html",
+        fecha_hoy=hoy,
+        edit_token=token if payload else "",
+        form_data=(payload or {}).get("datos", {}),
+        form_partes=(payload or {}).get("partes", []),
+        form_fotos=(payload or {}).get("fotos", []),
+        clientes_catalogo=_diag_clientes_catalogo(),
+    )
 
 @reportes_bp.post("/reportes/diag/prev")
 def diag_prev():
     up_dir, pdf_dir, tmp_dir = _diag_paths()
-    token = uuid.uuid4().hex 
+    edit_token = (request.form.get("edit_token") or "").strip()
+    previous_payload = _diag_payload_temporal(edit_token)
+    token = edit_token if previous_payload else uuid.uuid4().hex
 
     # ----- Datos del formulario (sin id_reporte) -----
     datos = {
@@ -1604,11 +1696,14 @@ def diag_prev():
             })
 
     # ----- Fotos (hasta 6) -----
-    fotos_meta = []
+    fotos_meta = list((previous_payload or {}).get("fotos", []))
+    if request.form.get("reemplazar_fotos") == "1":
+        fotos_meta = []
     files = request.files.getlist("fotos")
     sess_dir = (up_dir / token)
     sess_dir.mkdir(parents=True, exist_ok=True)
-    for i, f in enumerate(files[:6]):
+    available = max(0, 6 - len(fotos_meta))
+    for i, f in enumerate(files[:available], start=len(fotos_meta)):
         if not f or not getattr(f, "filename", ""): continue
         fname = secure_filename(f.filename)
         stem = Path(fname).stem[:40] or f"foto{i+1}"
@@ -1628,6 +1723,8 @@ def diag_prev():
             "web_path": url_for('static', filename=f"diag_uploads/{token}/{safe_name}"),
             "fs_uri": dst.resolve().as_uri()
         })
+    if len([f for f in files if f and getattr(f, "filename", "")]) > available:
+        flash("El reporte admite un maximo de 6 fotos; se conservaron las primeras seis.", "warning")
 
     # ----- Persistir JSON temporal -----
     payload = {

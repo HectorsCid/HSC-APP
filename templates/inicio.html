@@ -4,6 +4,12 @@
   <meta charset="UTF-8" />
   <title>Cotizador HSC</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    (() => {
+      const saved = localStorage.getItem('hsc-theme');
+      document.documentElement.dataset.theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    })();
+  </script>
   <style>
     :root{
       --bg:#e3e8f0;
@@ -15,12 +21,36 @@
       --ok:#22c55e;
       --danger:#ef4444;
       --radius:14px;
+      --field:#edf2f8;
+      --button:#f3f6ff;
+      --button-hover:#eaf0ff;
+      --table-head:#f1f5f9;
+      --shadow:rgba(17,24,39,.06);
+      --flash-bg:#fee2e2;
+      --flash-ink:#7f1d1d;
+      --flash-line:#fecaca;
+    }
+    html[data-theme="dark"]{
+      --bg:#0b1020;
+      --card:#171d2d;
+      --ink:#e5e7eb;
+      --muted:#a3b2c7;
+      --line:#334155;
+      --brand:#2563eb;
+      --field:#20283a;
+      --button:#20283a;
+      --button-hover:#29344a;
+      --table-head:#20283a;
+      --shadow:rgba(0,0,0,.3);
+      --flash-bg:rgba(127,29,29,.24);
+      --flash-ink:#fecaca;
+      --flash-line:rgba(248,113,113,.42);
     }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
     a{color:inherit}
     .wrap{max-width:1100px;margin:0 auto;padding:18px}
-    .top{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .top{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px}
     .title{font-size:1.25rem;font-weight:800;letter-spacing:.2px}
     .pill{font-size:.85rem;color:var(--muted)}
 
@@ -29,14 +59,15 @@
 
     .card{
       background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
-      padding:16px; box-shadow:0 8px 22px rgba(17,24,39,.06);
+      padding:16px; box-shadow:0 8px 22px var(--shadow);
     }
     .section-title{font-size:1rem;margin:0 0 10px;font-weight:700}
     label{display:block;font-size:.9rem;color:var(--muted);margin:8px 0 6px}
     input,select,textarea{
       width:100%; border:1px solid var(--line); border-radius:12px; padding:12px 12px; font-size:16px;
-      background:#edf2f8; outline:none; color:var(--ink);
+      background:var(--field); outline:none; color:var(--ink);
     }
+    option{background:var(--card);color:var(--ink)}
     textarea{min-height:92px;resize:vertical}
     .row{display:grid;gap:12px}
     @media(min-width:560px){ .row-2{grid-template-columns:1fr 1fr} }
@@ -44,25 +75,29 @@
     .btn{
       display:inline-flex; align-items:center; justify-content:center; gap:8px;
       padding:12px 14px; border-radius:12px; border:1px solid var(--line); cursor:pointer; font-weight:700; font-size:15px;
-      background:#f3f6ff; color:#0f172a;
+      background:var(--button); color:var(--ink);
     }
-    .btn:hover{background:#eaf0ff}
+    .btn:hover{background:var(--button-hover)}
     .btn-primary{background:var(--brand); color:#fff; border-color:transparent}
     .btn-primary:hover{filter:brightness(.98)}
     .btn-ok{background:var(--ok); color:#04140a; border-color:transparent}
     .btn-danger{background:var(--danger); color:#fff; border-color:transparent}
     .actions{display:flex;flex-wrap:wrap;gap:10px}
+    @media(max-width:620px){
+      .top > .actions{width:100%}
+      .top > .actions .btn{flex:1 1 auto}
+    }
 
     .flash{
-      background:#fee2e2; color:#7f1d1d; border:1px solid #fecaca;
+      background:var(--flash-bg); color:var(--flash-ink); border:1px solid var(--flash-line);
       padding:10px 12px; border-radius:12px; margin:12px 0; font-weight:600;
     }
 
     .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
     table{width:100%;border-collapse:collapse;min-width:720px}
     th,td{padding:12px 12px;border-bottom:1px solid var(--line);text-align:left}
-    th{background:#f1f5f9;font-weight:700;color:#1f2937}
-    tfoot td{font-weight:800;background:#f1f5f9}
+    th{background:var(--table-head);font-weight:700;color:var(--ink)}
+    tfoot td{font-weight:800;background:var(--table-head)}
 
     .subtle{color:var(--muted);font-size:.88rem}
 
@@ -72,7 +107,7 @@
     /* Switch compacto en tabla */
     .switch{
       display:inline-flex; align-items:center; gap:8px; white-space:nowrap;
-      font-weight:700; font-size:.9rem; color:#111827;
+      font-weight:700; font-size:.9rem; color:var(--ink);
     }
     .switch input{ width:auto; transform:scale(1.05); }
     .hint{font-weight:600;color:var(--muted);font-size:.82rem}
@@ -86,6 +121,15 @@
       color:var(--muted); font-size:.78rem; font-weight:600; white-space:nowrap;
     }
     .orden-clientes-toggle input{width:14px;height:14px;margin:0;padding:0;accent-color:var(--brand)}
+    .theme-toggle{
+      display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);
+      border-radius:999px;background:var(--card);color:var(--ink);font-weight:700;cursor:pointer;
+    }
+    .theme-track{width:38px;height:21px;padding:2px;border-radius:999px;background:#94a3b8;transition:.2s;display:flex}
+    .theme-knob{width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:.2s}
+    html[data-theme="dark"] .theme-track{background:#22c55e}
+    html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
+    .theme-text{font-size:.78rem;white-space:nowrap}
   </style>
 </head>
 <body>
@@ -95,8 +139,34 @@
         <div class="title">Cotizador HSC</div>
         <div class="pill">Esta vez vamos a vender</div>
       </div>
-      <div>
+      <div class="actions">
+        <button class="theme-toggle" type="button" id="theme-toggle" role="switch" aria-label="Cambiar modo de color">
+          <span class="theme-track" aria-hidden="true"><span class="theme-knob"></span></span>
+          <span class="theme-text" id="theme-label">Modo</span>
+        </button>
         <a class="btn" href="/inicio-app">🏠 Inicio</a>
+        <a class="btn" href="/cotizaciones">📋 Cotizaciones</a>
+        <button
+          class="btn btn-primary"
+          type="submit"
+          form="form-datos"
+          formaction="{{ url_for('guardar_borrador') }}"
+          formmethod="post"
+          formnovalidate
+        >💾 Guardar borrador</button>
+        <button
+          class="btn"
+          type="submit"
+          form="form-datos"
+          formaction="{{ url_for('abrir_costos_internos') }}"
+          formmethod="post"
+          formnovalidate
+        >🧮 Costos internos</button>
+        <a
+          class="btn btn-danger"
+          href="{{ url_for('limpiar') }}"
+          onclick="return confirm('¿Limpiar toda la cotización? Se borrarán el cliente, los datos capturados y todas las partidas.');"
+        >🧹 Limpiar formulario</a>
       </div>
     </div>
 
@@ -204,6 +274,7 @@
         <div>
           <label>Precio</label>
           <input type="number" name="precio" step="0.01" min="0" />
+          <div class="hint">Puedes dejarlo vacío y guardar la cotización como borrador.</div>
         </div>
       </div>
       <div class="actions" style="margin-top:10px">
@@ -232,8 +303,12 @@
             <td>{{ loop.index }}</td>
             <td>{{ p.descripcion }}</td>
             <td style="text-align:center">{{ p.cantidad }}</td>
-            <td style="text-align:right">{{ p.precio|currency }}</td>
-            <td style="text-align:right">{{ p.total|currency }}</td>
+            <td style="text-align:right">
+              {% if p.precio_pendiente %}<span class="hint">Pendiente</span>{% else %}{{ p.precio|currency }}{% endif %}
+            </td>
+            <td style="text-align:right">
+              {% if p.precio_pendiente %}—{% else %}{{ p.total|currency }}{% endif %}
+            </td>
             <td class="t-actions">
               <div class="actions" style="gap:8px">
                 <a class="btn" href="{{ url_for('editar', indice=loop.index0) }}">✏️ Editar</a>
@@ -304,10 +379,6 @@
       </table>
     </div>
 
-    <div class="actions" style="margin-top:12px">
-      <a class="btn" href="{{ url_for('limpiar') }}">🧹 Limpiar todo</a>
-      <a class="btn" href="{{ url_for('repositorio') }}">📂 Ver cotizaciones guardadas</a>
-    </div>
   </div>
 
   <!-- Datos clientes embebidos -->
@@ -324,6 +395,21 @@
 </script>
 
 <script>
+  const themeToggle = document.getElementById('theme-toggle');
+  const themeLabel = document.getElementById('theme-label');
+  function refreshThemeToggle(){
+    const dark = document.documentElement.dataset.theme === 'dark';
+    themeToggle.setAttribute('aria-checked', String(dark));
+    themeLabel.textContent = dark ? 'Oscuro' : 'Claro';
+  }
+  themeToggle.addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem('hsc-theme', next);
+    refreshThemeToggle();
+  });
+  refreshThemeToggle();
+
   const clientes = JSON.parse(document.getElementById("clientes-data").textContent);
   const ordenGuardadoClientes = JSON.parse(document.getElementById("clientes-orden-data").textContent);
   const atencionGuardada = JSON.parse(document.getElementById("atencion-data").textContent);

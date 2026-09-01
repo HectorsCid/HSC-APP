@@ -76,8 +76,8 @@
         <div>
           <label for="precio">Precio (MXN)</label>
           <input id="precio" name="precio" type="number" inputmode="decimal" step="0.01" min="0"
-                 value="{{ '%.2f'|format(partida.precio) }}" required />
-          <div class="hint">Admite decimales.</div>
+                 value="{% if not partida.precio_pendiente %}{{ '%.2f'|format(partida.precio) }}{% endif %}" />
+          <div class="hint">Admite decimales. Déjalo vacío si todavía está pendiente.</div>
         </div>
       </div>
 

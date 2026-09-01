@@ -84,7 +84,7 @@
   <div class="actions-bar">
     <div class="left"><strong>Reporte de trabajo</strong></div>
     <div class="right">
-      <a class="btn" href="{{ url_for('reportes.diag_nuevo') }}">← Regresar</a>
+      <a class="btn" href="{{ url_for('reportes.diag_nuevo', token=token) }}">← Regresar y editar</a>
       <a class="btn primary" href="{{ url_for('reportes.diag_pdf', token=token) }}?dl=1">Generar PDF</a>
     </div>
   </div>

@@ -5,69 +5,40 @@
   <title>Editar cliente</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root{
-      --bg:#f5f7fb;       /* fondo general */
-      --card:#ffffff;     /* tarjetas claras */
-      --text:#1f2937;     /* texto oscuro */
-      --muted:#6b7280;    /* gris medio */
-      --accent:#22c55e;   /* verde de acción */
-      --danger:#ef4444;   /* rojo de alerta */
-      --radius:16px;
-    }
+    :root{ --bg:#f5f7fb; --card:#ffffff; --text:#1f2937; --muted:#6b7280; --accent:#22c55e; --danger:#ef4444; --radius:16px; }
     *{box-sizing:border-box}
-    html,body{
-      margin:0;
-      background:var(--bg);
-      color:var(--text);
-      font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif
-    }
+    html,body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
     .wrap{max-width:720px;margin:0 auto;padding:16px}
     .topbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
     .back{color:var(--muted);text-decoration:none;font-size:.95rem}
-    .card{
-      background:var(--card);
-      border:1px solid #e5e7eb;
-      border-radius:var(--radius);
-      padding:16px;
-      box-shadow:0 6px 20px rgba(17,24,39,.08);
-    }
+    .card{background:var(--card);border:1px solid #e5e7eb;border-radius:var(--radius);padding:16px;box-shadow:0 6px 20px rgba(17,24,39,.08)}
     h1{font-size:1.2rem;margin:4px 0 16px}
     label{display:block;font-size:.9rem;color:var(--muted);margin-bottom:6px}
-    input, textarea{
-      width:100%;
-      background:#ffffff;
-      color:var(--text);
-      border:1px solid #e5e7eb;
-      border-radius:12px;
-      padding:14px 12px;
-      font-size:16px;
-      outline:none;
-    }
+    input, textarea, select{width:100%;background:#ffffff;color:var(--text);border:1px solid #e5e7eb;border-radius:12px;padding:14px 12px;font-size:16px;outline:none}
     textarea{min-height:110px; resize:vertical}
     .grid{display:grid; gap:12px}
     .grid-2{grid-template-columns:1fr 1fr}
     @media(max-width:560px){ .grid-2{grid-template-columns:1fr} }
     .actions{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap}
-    .btn{
-      flex:1; text-align:center; padding:14px 16px; border:none; border-radius:12px;
-      font-weight:600; font-size:16px; cursor:pointer
-    }
+    .btn{flex:1; text-align:center; padding:14px 16px; border:none; border-radius:12px; font-weight:600; font-size:16px; cursor:pointer}
     .btn-primary{background:var(--accent); color:#04140a}
     .btn-ghost{background:transparent; border:1px solid #e5e7eb; color:var(--text); text-decoration:none}
     .hint{font-size:.8rem;color:var(--muted);margin-top:6px}
+    fieldset{border:1px solid #e5e7eb;border-radius:12px;padding:12px}
+    legend{padding:0 6px;color:var(--muted);font-size:.9rem}
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="topbar">
       <a class="back" href="{{ url_for('inicio') }}">← Volver</a>
-      <h1>Editar cliente: {{ cliente }}</h1>
+      <h1>Editar cliente: {{ cliente }} · fisc v1</h1>
     </div>
 
     {% set atn = datos.atencion %}
     {% set atencion_val = (atn | join(', ') ) if (atn is iterable and atn is not string) else (atn or '') %}
 
-    <form class="card grid" method="post" action="">
+    <form class="card grid" method="post" action="{{ url_for('editar_cliente') }}">
       <div>
         <label for="nombre">Nombre del cliente</label>
         <input id="nombre" name="nombre" type="text" value="{{ cliente }}" required autocapitalize="words" />
@@ -99,6 +70,52 @@
         <label for="anticipo">Anticipo (texto libre)</label>
         <input id="anticipo" name="anticipo" type="text" value="{{ datos.anticipo or '' }}" />
       </div>
+
+      <!-- NUEVO: Datos fiscales opcionales -->
+      <fieldset>
+        <legend>Datos fiscales (opcional)</legend>
+
+        <div class="grid grid-2">
+          <div>
+            <label for="rfc">RFC</label>
+            <input id="rfc" name="rfc" type="text" value="{{ (datos.rfc or '') | upper }}" placeholder="XAXX010101000" style="text-transform:uppercase" />
+          </div>
+          <div>
+            <label for="cp">Código postal</label>
+            <input id="cp" name="cp" type="text" value="{{ datos.cp or '' }}" placeholder="Ej. 01234" />
+          </div>
+        </div>
+
+        <div>
+          <label for="razon_social">Razón social</label>
+          <input id="razon_social" name="razon_social" type="text" value="{{ datos.razon_social or datos.razon or '' }}" placeholder="Nombre o razón social" />
+        </div>
+
+        <div class="grid grid-2">
+          <div>
+            <label for="regimen_fiscal">Régimen fiscal</label>
+            <select id="regimen_fiscal" name="regimen_fiscal">
+              <option value="">— Selecciona —</option>
+              <option value="601" {% if (datos.regimen_fiscal|string) == '601' %}selected{% endif %}>601 - General de Ley Personas Morales</option>
+              <option value="612" {% if (datos.regimen_fiscal|string) == '612' %}selected{% endif %}>612 - PF con Actividades Empresariales</option>
+              <option value="621" {% if (datos.regimen_fiscal|string) == '621' %}selected{% endif %}>621 - Incorporación Fiscal</option>
+              <option value="626" {% if (datos.regimen_fiscal|string) == '626' %}selected{% endif %}>626 - RESICO</option>
+            </select>
+          </div>
+          <div>
+            <label for="uso_cfdi">Uso de CFDI</label>
+            <select id="uso_cfdi" name="uso_cfdi">
+              <option value="">— Selecciona —</option>
+              <option value="G03" {% if (datos.uso_cfdi|string) == 'G03' %}selected{% endif %}>G03 - Gastos en general</option>
+              <option value="G01" {% if (datos.uso_cfdi|string) == 'G01' %}selected{% endif %}>G01 - Adquisición de mercancías</option>
+              <option value="P01" {% if (datos.uso_cfdi|string) == 'P01' %}selected{% endif %}>P01 - Por definir</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="hint">Si no vas a facturar, puedes dejar estos campos vacíos.</div>
+      </fieldset>
+      <!-- FIN NUEVO -->
 
       <div class="actions">
         <button class="btn btn-primary" type="submit">Guardar cambios</button>
