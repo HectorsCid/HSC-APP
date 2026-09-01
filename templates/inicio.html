@@ -237,6 +237,16 @@
         <label>No. Cotización</label>
         <input type="text" name="cotizacion" value="{{ datos.cotizacion or '' }}"/>
 
+        <label>Nombre del borrador</label>
+        <input
+          type="text"
+          name="nombre_borrador"
+          value="{{ datos.nombre_borrador or '' }}"
+          placeholder="Ej. Tuberías Bticino, bombas Bticino…"
+          maxlength="120"
+        />
+        <div class="hint">Es una referencia interna para encontrarlo fácilmente; no aparece en el PDF.</div>
+
         <label style="margin-top:10px">Retenciones</label>
         <div class="switch" style="margin-top:6px">
           <input

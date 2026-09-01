@@ -241,6 +241,7 @@
       const lineas = Array.isArray(raw.partidas) ? raw.partidas : [];
       return {
         id,
+        nombre_borrador: raw.nombre_borrador || datos.nombre_borrador || '',
         cliente: raw.cliente || datos.cliente || 'Sin cliente',
         fecha: raw.actualizado || raw.fecha || datos.fecha || '',
         folio: raw.folio || datos.cotizacion || id,
@@ -258,7 +259,9 @@
       }
       tbody.innerHTML = list.map(it => `
         <tr>
-          <td>${escapeHTML(it.cliente||'')}</td>
+          <td>${it.borrador && it.nombre_borrador
+            ? `<strong>${escapeHTML(it.nombre_borrador)}</strong><div class="muted">${escapeHTML(it.cliente||'')}</div>`
+            : escapeHTML(it.cliente||'')}</td>
           <td>${escapeHTML(fmtDate(it.fecha)||'')}</td>
           <td>${escapeHTML(String(it.folio||''))}</td>
           <td class="numeric">${it.total!=null ? money(it.total) : ''}</td>
@@ -324,7 +327,7 @@
       const source = currentData();
       if(!term) { renderRows(source); return; }
       const f = source.filter(it => {
-        return [it.cliente, it.folio, it.resumen].some(v => String(v||'').toLowerCase().includes(term));
+        return [it.nombre_borrador, it.cliente, it.folio, it.resumen].some(v => String(v||'').toLowerCase().includes(term));
       });
       renderRows(f);
     });

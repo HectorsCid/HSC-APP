@@ -34,6 +34,7 @@ class BorradoresTest(unittest.TestCase):
         })
         response = self.client.post("/borradores/guardar", data={
             "cliente": "Cliente de prueba",
+            "nombre_borrador": "Tuberías Bticino",
             "atencion": "Compras",
             "direccion": "Dirección de prueba",
             "fecha": "2026-08-31",
@@ -47,6 +48,7 @@ class BorradoresTest(unittest.TestCase):
         drafts = response.get_json()
         self.assertEqual(len(drafts), 1)
         self.assertEqual(drafts[0]["folio"], "9001")
+        self.assertEqual(drafts[0]["nombre_borrador"], "Tuberías Bticino")
         self.assertEqual(drafts[0]["partidas"][0]["descripcion"], "Material pendiente")
 
         cotizador.partidas.clear()
@@ -55,6 +57,7 @@ class BorradoresTest(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(cotizador.datos_cliente["cotizacion"], "9001")
         self.assertEqual(cotizador.datos_cliente["cliente"], "Cliente de prueba")
+        self.assertEqual(cotizador.datos_cliente["nombre_borrador"], "Tuberías Bticino")
         self.assertEqual(len(cotizador.partidas), 1)
 
         response = self.client.post("/borradores/9001/eliminar")
@@ -66,6 +69,7 @@ class BorradoresTest(unittest.TestCase):
         form = self.client.get("/")
         self.assertEqual(form.status_code, 200)
         self.assertIn(b"Guardar borrador", form.data)
+        self.assertIn(b"Nombre del borrador", form.data)
         self.assertIn(b'href="/cotizaciones"', form.data)
 
         listado = self.client.get("/cotizaciones")

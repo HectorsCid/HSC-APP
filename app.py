@@ -829,6 +829,7 @@ def _actualizar_datos_cliente_desde_form():
     datos_cliente['tiempo'] = request.form.get('tiempo', '')
     datos_cliente['vigencia'] = request.form.get('vigencia', '')
     datos_cliente['cotizacion'] = request.form.get('cotizacion', '')
+    datos_cliente['nombre_borrador'] = (request.form.get('nombre_borrador') or '').strip()
     datos_cliente['comentarios'] = request.form.get('comentarios', '')
     datos_cliente["usar_retenciones"] = ("usar_retenciones" in request.form)
 
@@ -1055,6 +1056,7 @@ def _construir_borrador_actual():
         "folio": folio,
         "estado": "borrador",
         "cliente": (datos_cliente.get("cliente") or "").strip(),
+        "nombre_borrador": (datos_cliente.get("nombre_borrador") or "").strip(),
         "fecha": datos_cliente.get("fecha") or "",
         "actualizado": datetime.now().isoformat(timespec="seconds"),
         "datos": dict(datos_cliente),
