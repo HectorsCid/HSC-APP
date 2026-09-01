@@ -17,16 +17,27 @@
     h1{font-size:1.35rem;margin:0}.subtle{color:var(--muted);font-size:.88rem}
     .layout{display:grid;gap:16px;grid-template-columns:minmax(0,1.45fr) minmax(300px,.55fr)}
     .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:0 8px 22px rgba(17,24,39,.06)}
-    .cost-row{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:#fafcff}
-    .row-head{justify-content:space-between;margin-bottom:8px}.row-title{font-weight:800}
-    .fields{display:grid;grid-template-columns:1.2fr 2fr .75fr 1fr 1fr .7fr;gap:10px;align-items:end}
+    .entry-panel{border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0;background:#fafcff}
+    .entry-title{font-size:.82rem;font-weight:800;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.03em}
+    .entry-fields,.item-fields{display:grid;grid-template-columns:1.05fr 1.75fr .62fr .9fr .9fr .58fr;gap:8px;align-items:end}
+    .entry-note{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-top:8px}
+    .cost-list{display:flex;flex-direction:column;gap:7px}
+    .list-head{display:grid;grid-template-columns:1.05fr 1.75fr .62fr .9fr .9fr .58fr 1fr auto;gap:8px;padding:0 9px;color:var(--muted);font-size:.7rem;font-weight:800}
+    .cost-row{border:1px solid var(--line);border-radius:10px;padding:8px;background:#fafcff}
+    .item-fields{grid-template-columns:1.05fr 1.75fr .62fr .9fr .9fr .58fr 1fr auto;align-items:center}
+    .item-note{grid-column:1/7;display:grid;grid-template-columns:70px 1fr;gap:7px;align-items:center;margin-top:7px}
+    .item-note span{font-size:.72rem;color:var(--muted);font-weight:700}
+    .empty-list{border:1px dashed var(--line);border-radius:10px;padding:16px;text-align:center;color:var(--muted);font-size:.85rem}
     label{display:block;color:var(--muted);font-size:.78rem;font-weight:700;margin-bottom:5px}
     input,select,textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--soft);color:var(--ink);font-size:15px}
     textarea{min-height:65px;resize:vertical}.full{grid-column:1/-1}
-    .line-total{font-weight:800;text-align:right;padding:10px 2px;white-space:nowrap}
+    .cost-row input,.cost-row select{padding:7px 8px;border-radius:8px;font-size:13px}
+    .cost-row label{display:none}
+    .line-total{font-weight:800;text-align:right;white-space:nowrap;font-size:.82rem}
     .btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:11px;padding:11px 13px;background:#f3f6ff;color:#0f172a;font-weight:800;text-decoration:none;cursor:pointer}
     .btn-primary{background:var(--brand);color:#fff;border-color:transparent}.btn-ok{background:var(--ok);color:#fff;border-color:transparent}
-    .btn-danger{background:#fee2e2;color:#991b1b;border-color:#fecaca;padding:7px 10px}
+    .btn-danger{background:#fee2e2;color:#991b1b;border-color:#fecaca;padding:7px 9px}
+    .cost-row .btn-danger{padding:7px 8px;font-size:12px;border-radius:8px}
     .summary{position:sticky;top:14px}.summary h2{font-size:1.05rem;margin:0 0 12px}
     .summary-row{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid var(--line)}
     .summary-row strong{white-space:nowrap}.final{font-size:1.08rem;color:#14532d}
@@ -35,10 +46,13 @@
     .privacy{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:11px;padding:10px;margin:12px 0;font-size:.86rem}
     @media(max-width:900px){.layout{grid-template-columns:1fr}.summary{position:static}}
     @media(max-width:700px){
-      .fields{grid-template-columns:1fr 1fr}.field-name,.full{grid-column:1/-1}
+      .entry-fields{grid-template-columns:1fr 1fr}.field-name,.full{grid-column:1/-1}
+      .list-head{display:none}.item-fields{grid-template-columns:1fr 1fr}.item-fields>*{min-width:0}
+      .cost-row label{display:block}
+      .item-name{grid-column:1/-1}.item-note{grid-column:1/-1}.line-total{text-align:left}
       .top .actions{width:100%}.top .btn{flex:1 1 auto}
     }
-    @media(max-width:430px){.fields,.config-pair{grid-template-columns:1fr}.field-name,.full{grid-column:auto}}
+    @media(max-width:430px){.entry-fields,.item-fields,.entry-note,.config-pair{grid-template-columns:1fr}.field-name,.full,.item-name{grid-column:auto}.item-note{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -63,28 +77,46 @@
           <div class="row-head">
             <div>
               <strong>Materiales, mano de obra y gastos</strong>
-              <div class="subtle">Agrega tantos conceptos como necesites.</div>
+              <div class="subtle">Captura arriba; los conceptos agregados aparecen en la lista editable.</div>
             </div>
-            <button id="add-row" class="btn" type="button">＋ Agregar concepto</button>
           </div>
 
-          <div id="cost-rows">
-            {% set filas = costos['items'] if costos['items'] else [{}] %}
-            {% for item in filas %}
+          <div class="entry-panel">
+            <div class="entry-title">Nuevo concepto</div>
+            <div class="entry-fields">
+              <div><label>Tipo</label><select id="new-categoria">{% for value,label in categorias %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
+              <div class="field-name"><label>Nombre o descripción</label><input id="new-nombre" placeholder="Ej. Tubería de cobre" /></div>
+              <div><label>Cantidad</label><input id="new-cantidad" type="number" min="0" step="0.01" /></div>
+              <div><label>Unidad</label><select id="new-unidad">{% for unidad in unidades %}<option value="{{ unidad }}">{{ unidad }}</option>{% endfor %}</select></div>
+              <div><label>Costo por unidad</label><input id="new-costo" type="number" min="0" step="0.01" /></div>
+              <div><label>Merma %</label><input id="new-merma" type="number" min="0" step="0.01" value="0" /></div>
+            </div>
+            <div class="entry-note">
+              <div><label>Nota interna opcional</label><input id="new-nota" placeholder="Proveedor, referencia o aclaración" /></div>
+              <button id="add-row" class="btn" type="button">＋ Agregar concepto</button>
+            </div>
+          </div>
+
+          <div class="list-head" aria-hidden="true">
+            <span>Tipo</span><span>Descripción</span><span>Cant.</span><span>Unidad</span><span>Costo unit.</span><span>Merma</span><span>Total</span><span></span>
+          </div>
+          <div id="cost-rows" class="cost-list">
+            {% for item in costos['items'] %}
               <div class="cost-row" data-cost-row>
-                <div class="row-head"><span class="row-title">Concepto</span><button class="btn btn-danger" type="button" data-remove>Quitar</button></div>
-                <div class="fields">
+                <div class="item-fields">
                   <div><label>Tipo</label><select name="categoria">{% for value,label in categorias %}<option value="{{ value }}" {% if item.get('categoria','material') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-                  <div class="field-name"><label>Nombre o descripción</label><input name="nombre" value="{{ item.get('nombre','') }}" placeholder="Ej. Tubería de cobre" /></div>
+                  <div class="item-name"><label>Nombre o descripción</label><input name="nombre" value="{{ item.get('nombre','') }}" placeholder="Ej. Tubería de cobre" /></div>
                   <div><label>Cantidad</label><input name="cantidad" type="number" min="0" step="0.01" value="{{ item.get('cantidad','') }}" /></div>
                   <div><label>Unidad</label><select name="unidad">{% for unidad in unidades %}<option value="{{ unidad }}" {% if item.get('unidad','Pieza') == unidad %}selected{% endif %}>{{ unidad }}</option>{% endfor %}</select></div>
                   <div><label>Costo por unidad</label><input name="costo_unitario" type="number" min="0" step="0.01" value="{{ item.get('costo_unitario','') }}" /></div>
                   <div><label>Merma %</label><input name="merma" type="number" min="0" step="0.01" value="{{ item.get('merma',0) }}" /></div>
-                  <div class="full"><label>Nota interna opcional</label><textarea name="nota" placeholder="Proveedor, referencia o aclaración">{{ item.get('nota','') }}</textarea></div>
+                  <div class="line-total">Total: <span data-line-total>$0.00</span></div>
+                  <button class="btn btn-danger" type="button" data-remove>Quitar</button>
+                  <div class="item-note"><span>Nota</span><input name="nota" value="{{ item.get('nota','') }}" placeholder="Proveedor, referencia o aclaración" /></div>
                 </div>
-                <div class="line-total">Total: <span data-line-total>$0.00</span></div>
               </div>
             {% endfor %}
+            <div id="empty-list" class="empty-list" {% if costos['items'] %}hidden{% endif %}>Aún no hay conceptos. Captura uno arriba y pulsa <strong>Agregar concepto</strong>.</div>
           </div>
         </section>
 
@@ -120,23 +152,28 @@
 
   <template id="row-template">
     <div class="cost-row" data-cost-row>
-      <div class="row-head"><span class="row-title">Concepto</span><button class="btn btn-danger" type="button" data-remove>Quitar</button></div>
-      <div class="fields">
+      <div class="item-fields">
         <div><label>Tipo</label><select name="categoria">{% for value,label in categorias %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
-        <div class="field-name"><label>Nombre o descripción</label><input name="nombre" placeholder="Ej. Tubería de cobre" /></div>
+        <div class="item-name"><label>Nombre o descripción</label><input name="nombre" placeholder="Ej. Tubería de cobre" /></div>
         <div><label>Cantidad</label><input name="cantidad" type="number" min="0" step="0.01" /></div>
         <div><label>Unidad</label><select name="unidad">{% for unidad in unidades %}<option value="{{ unidad }}">{{ unidad }}</option>{% endfor %}</select></div>
         <div><label>Costo por unidad</label><input name="costo_unitario" type="number" min="0" step="0.01" /></div>
         <div><label>Merma %</label><input name="merma" type="number" min="0" step="0.01" value="0" /></div>
-        <div class="full"><label>Nota interna opcional</label><textarea name="nota" placeholder="Proveedor, referencia o aclaración"></textarea></div>
+        <div class="line-total">Total: <span data-line-total>$0.00</span></div>
+        <button class="btn btn-danger" type="button" data-remove>Quitar</button>
+        <div class="item-note"><span>Nota</span><input name="nota" placeholder="Proveedor, referencia o aclaración" /></div>
       </div>
-      <div class="line-total">Total: <span data-line-total>$0.00</span></div>
     </div>
   </template>
 
   <script>
     const money = value => Number(value || 0).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
     const numberOf = input => Math.max(0, Number(input.value || 0) || 0);
+    const emptyList = document.getElementById('empty-list');
+
+    function refreshEmptyState(){
+      emptyList.hidden = Boolean(document.querySelector('[data-cost-row]'));
+    }
 
     function recalculate(){
       let direct = 0;
@@ -165,18 +202,35 @@
     }
 
     document.getElementById('add-row').addEventListener('click', () => {
-      document.getElementById('cost-rows').append(document.getElementById('row-template').content.cloneNode(true));
+      const fragment = document.getElementById('row-template').content.cloneNode(true);
+      const row = fragment.querySelector('[data-cost-row]');
+      row.querySelector('[name="categoria"]').value = document.getElementById('new-categoria').value;
+      row.querySelector('[name="nombre"]').value = document.getElementById('new-nombre').value;
+      row.querySelector('[name="cantidad"]').value = document.getElementById('new-cantidad').value;
+      row.querySelector('[name="unidad"]').value = document.getElementById('new-unidad').value;
+      row.querySelector('[name="costo_unitario"]').value = document.getElementById('new-costo').value;
+      row.querySelector('[name="merma"]').value = document.getElementById('new-merma').value || '0';
+      row.querySelector('[name="nota"]').value = document.getElementById('new-nota').value;
+      document.getElementById('cost-rows').insertBefore(fragment, emptyList);
+      document.getElementById('new-nombre').value = '';
+      document.getElementById('new-cantidad').value = '';
+      document.getElementById('new-costo').value = '';
+      document.getElementById('new-merma').value = '0';
+      document.getElementById('new-nota').value = '';
+      document.getElementById('new-nombre').focus();
+      refreshEmptyState();
       recalculate();
     });
     document.getElementById('cost-form').addEventListener('click', event => {
       const button = event.target.closest('[data-remove]');
       if(!button) return;
       button.closest('[data-cost-row]').remove();
-      if(!document.querySelector('[data-cost-row]')) document.getElementById('add-row').click();
+      refreshEmptyState();
       recalculate();
     });
     document.getElementById('cost-form').addEventListener('input', recalculate);
     document.getElementById('cost-form').addEventListener('change', recalculate);
+    refreshEmptyState();
     recalculate();
   </script>
 </body>
