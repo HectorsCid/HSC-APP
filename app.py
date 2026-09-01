@@ -713,9 +713,10 @@ def _numero_seguro(valor, default=0.0):
     except (TypeError, ValueError):
         return float(default)
 
-def _totales_costos_internos():
+def _totales_costos_internos(costos=None):
+    costos = costos if isinstance(costos, dict) else costos_internos
     costo_directo = 0.0
-    for item in costos_internos.get("items", []):
+    for item in costos.get("items", []):
         cantidad = _numero_seguro(item.get("cantidad"))
         unitario = _numero_seguro(item.get("costo_unitario"))
         merma = max(0.0, _numero_seguro(item.get("merma")))
@@ -723,15 +724,15 @@ def _totales_costos_internos():
         item["total"] = round(total_linea, 2)
         costo_directo += total_linea
 
-    gastos_extra = max(0.0, _numero_seguro(costos_internos.get("gastos_extra")))
+    gastos_extra = max(0.0, _numero_seguro(costos.get("gastos_extra")))
     costo_total = costo_directo + gastos_extra
-    valor_ganancia = max(0.0, _numero_seguro(costos_internos.get("ganancia_valor")))
-    if costos_internos.get("ganancia_modo") == "monto":
+    valor_ganancia = max(0.0, _numero_seguro(costos.get("ganancia_valor")))
+    if costos.get("ganancia_modo") == "monto":
         ganancia = valor_ganancia
     else:
         ganancia = costo_total * valor_ganancia / 100
     sugerido = costo_total + ganancia
-    redondeo = max(1.0, _numero_seguro(costos_internos.get("redondeo"), 1))
+    redondeo = max(1.0, _numero_seguro(costos.get("redondeo"), 1))
     precio_final = math.ceil(sugerido / redondeo) * redondeo if sugerido else 0.0
     return {
         "costo_directo": round(costo_directo, 2),
@@ -742,6 +743,34 @@ def _totales_costos_internos():
         "precio_final": round(precio_final, 2),
         "precio_con_iva": round(precio_final * 1.16, 2),
     }
+
+
+def _transferir_desglose_a_partidas(desglose):
+    desglose_id = str(desglose.get("id") or "").strip()
+    precio = _totales_costos_internos(desglose)["precio_final"]
+    if not desglose_id or precio <= 0:
+        return False
+    descripcion = (
+        desglose.get("descripcion_publica") or "Suministro de materiales y servicios"
+    ).strip()
+    linea = next((
+        p for p in partidas
+        if str(p.get("costos_internos_id") or "") == desglose_id
+    ), None)
+    nuevos_datos = {
+        "descripcion": descripcion,
+        "cantidad": 1,
+        "precio": precio,
+        "total": precio,
+        "precio_pendiente": False,
+        "origen_costos_internos": True,
+        "costos_internos_id": desglose_id,
+    }
+    if linea is None:
+        partidas.append(nuevos_datos)
+    else:
+        linea.update(nuevos_datos)
+    return True
 
 def _clave_orden_cliente(nombre):
     texto = unicodedata.normalize("NFKD", str(nombre or ""))
@@ -1249,29 +1278,19 @@ def guardar_costos_internos():
     accion = request.form.get("accion") or "guardar"
     totales = _totales_costos_internos()
     if accion == "transferir":
-        precio = totales["precio_final"]
-        if precio <= 0:
+        if not _transferir_desglose_a_partidas(costos_internos):
             flash("Agrega costos antes de transferir un precio a la cotización.")
             return redirect(url_for("ver_costos_internos"))
-        descripcion = costos_internos["descripcion_publica"]
-        linea = next((
-            p for p in partidas
-            if str(p.get("costos_internos_id") or "") == desglose_id
-        ), None)
-        nuevos_datos = {
-            "descripcion": descripcion,
-            "cantidad": 1,
-            "precio": precio,
-            "total": precio,
-            "precio_pendiente": False,
-            "origen_costos_internos": True,
-            "costos_internos_id": desglose_id,
-        }
-        if linea is None:
-            partidas.append(nuevos_datos)
-        else:
-            linea.update(nuevos_datos)
         _guardar_desglose_activo()
+    elif accion == "transferir_todos":
+        procesadas = sum(
+            1 for desglose in costos_internos.get("desgloses", [])
+            if _transferir_desglose_a_partidas(desglose)
+        )
+        omitidas = len(costos_internos.get("desgloses", [])) - procesadas
+        if not procesadas:
+            flash("No hay cálculos con precio para enviar a la cotización.")
+            return redirect(url_for("ver_costos_internos"))
 
     borrador = _construir_borrador_actual()
     drive_ok = _guardar_o_actualizar_borrador(borrador)
@@ -1280,6 +1299,16 @@ def guardar_costos_internos():
             flash("Precio interno transferido a la cotización. El desglose permanece privado.")
         else:
             flash("El precio se transfirió, pero Google Drive no confirmó el respaldo del desglose.")
+        return redirect(url_for("inicio"))
+    if accion == "transferir_todos":
+        detalle_omitidas = f" Se omitieron {omitidas} cálculos vacíos." if omitidas else ""
+        if drive_ok:
+            flash(f"{procesadas} partidas enviadas o actualizadas en la cotización.{detalle_omitidas}")
+        else:
+            flash(
+                f"{procesadas} partidas se enviaron, pero Google Drive no confirmó el respaldo."
+                f"{detalle_omitidas}"
+            )
         return redirect(url_for("inicio"))
     if drive_ok:
         flash(f"Cálculo interno guardado en el borrador {borrador['folio']}.")

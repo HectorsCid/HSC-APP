@@ -157,6 +157,13 @@
           <div class="actions">
             <button class="btn btn-primary" type="submit" name="accion" value="guardar">Guardar cálculo</button>
             <button class="btn btn-ok" type="submit" name="accion" value="transferir">Usar precio en la cotización</button>
+            <button
+              class="btn btn-ok"
+              type="submit"
+              name="accion"
+              value="transferir_todos"
+              onclick="return confirm('¿Enviar todos los cálculos guardados a la cotización? Los ya vinculados se actualizarán.');"
+            >Usar todas en la cotización</button>
           </div>
         </aside>
       </div>

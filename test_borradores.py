@@ -175,13 +175,25 @@ class BorradoresTest(unittest.TestCase):
         self.assertEqual(cotizador.partidas[0]["precio"], 175.0)
         self.assertEqual(cotizador.partidas[1]["precio"], 250.0)
 
+        cotizador.partidas.clear()
+        cotizador.partidas.append({
+            "descripcion": "Partida normal", "cantidad": 1,
+            "precio": 999.0, "total": 999.0,
+        })
+        form["accion"] = "transferir_todos"
+        self.client.post("/costos-internos/guardar", data=form)
+        self.assertEqual(len(cotizador.partidas), 3)
+        self.assertEqual([p["precio"] for p in cotizador.partidas], [999.0, 175.0, 250.0])
+        self.client.post("/costos-internos/guardar", data=form)
+        self.assertEqual(len(cotizador.partidas), 3)
+
         self.client.post("/borradores/guardar", data={
             "cliente": "Cliente interno", "cotizacion": "9005",
         })
         cotizador.partidas.clear()
         cotizador._reiniciar_costos_internos()
         self.client.get("/borradores/9005/continuar")
-        self.assertEqual(len(cotizador.partidas), 2)
+        self.assertEqual(len(cotizador.partidas), 3)
         self.assertEqual(len(cotizador.costos_internos["desgloses"]), 2)
 
 
