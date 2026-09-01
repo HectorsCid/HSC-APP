@@ -44,7 +44,8 @@
     .config{display:grid;gap:10px;margin-top:14px}.config-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     .flash{background:#dcfce7;color:#14532d;border:1px solid #86efac;padding:11px 13px;border-radius:11px;margin-bottom:12px;font-weight:700}
     .privacy{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:11px;padding:10px;margin:12px 0;font-size:.86rem}
-    @media(max-width:900px){.layout{grid-template-columns:1fr}.summary{position:static}}
+    .work-selector{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:14px;padding:11px;border:1px solid var(--line);border-radius:11px;background:#fafcff}
+    @media(max-width:900px){.layout{grid-template-columns:1fr}.summary{position:static}.work-selector{grid-template-columns:1fr}}
     @media(max-width:700px){
       .entry-fields{grid-template-columns:1fr 1fr}.field-name,.full{grid-column:1/-1}
       .list-head{display:none}.item-fields{grid-template-columns:1fr 1fr}.item-fields>*{min-width:0}
@@ -72,6 +73,7 @@
     {% endwith %}
 
     <form id="cost-form" method="post" action="{{ url_for('guardar_costos_internos') }}">
+      <input type="hidden" name="desglose_id" value="{{ costos.get('id','') }}" />
       <div class="layout">
         <section class="card">
           <div class="row-head">
@@ -122,6 +124,17 @@
 
         <aside class="card summary">
           <h2>Resumen interno</h2>
+          <div class="work-selector">
+            <div>
+              <label>Cálculo / partida</label>
+              <select id="desglose-selector">
+                {% for desglose in desgloses %}
+                  <option value="{{ desglose.id }}" {% if desglose.id == costos.get('id') %}selected{% endif %}>{{ desglose.descripcion }}{% if desglose.en_cotizacion %} · en cotización{% else %} · guardado{% endif %}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <a class="btn" href="{{ url_for('ver_costos_internos', nuevo=1) }}">＋ Nueva partida</a>
+          </div>
           <div class="summary-row"><span>Costo directo</span><strong id="sum-directo">{{ totales.costo_directo|currency }}</strong></div>
           <div class="summary-row"><span>Gastos adicionales</span><strong id="sum-extras">{{ totales.gastos_extra|currency }}</strong></div>
           <div class="summary-row"><span>Costo total</span><strong id="sum-costo">{{ totales.costo_total|currency }}</strong></div>
@@ -170,6 +183,12 @@
     const money = value => Number(value || 0).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
     const numberOf = input => Math.max(0, Number(input.value || 0) || 0);
     const emptyList = document.getElementById('empty-list');
+    const breakdownSelector = document.getElementById('desglose-selector');
+    if(breakdownSelector){
+      breakdownSelector.addEventListener('change', () => {
+        window.location.href = `{{ url_for('ver_costos_internos') }}?desglose=${encodeURIComponent(breakdownSelector.value)}`;
+      });
+    }
 
     function refreshEmptyState(){
       emptyList.hidden = Boolean(document.querySelector('[data-cost-row]'));

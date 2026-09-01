@@ -139,6 +139,46 @@ class BorradoresTest(unittest.TestCase):
         self.assertIn(b"Minicotizador interno", page.data)
         self.assertIn(b"Usar precio en la cotizaci", page.data)
 
+    def test_varios_calculos_internos_crean_partidas_independientes(self):
+        cotizador.datos_cliente.update({"cotizacion": "9005", "cliente": "Cliente interno"})
+        form = {
+            "categoria": ["material"], "nombre": ["Primer costo"],
+            "cantidad": ["1"], "unidad": ["Pieza"], "costo_unitario": ["100"],
+            "merma": ["0"], "nota": [""], "gastos_extra": "0",
+            "ganancia_modo": "porcentaje", "ganancia_valor": "0", "redondeo": "1",
+            "descripcion_publica": "Primera partida", "accion": "transferir",
+        }
+        self.client.post("/costos-internos/guardar", data=form)
+        primer_id = cotizador.costos_internos["id"]
+
+        self.client.get("/costos-internos?nuevo=1")
+        form.update({"nombre": ["Segundo costo"], "costo_unitario": ["250"],
+                     "descripcion_publica": "Segunda partida",
+                     "desglose_id": cotizador.costos_internos["id"]})
+        self.client.post("/costos-internos/guardar", data=form)
+
+        self.assertEqual(len(cotizador.partidas), 2)
+        self.assertEqual(cotizador.partidas[0]["descripcion"], "Primera partida")
+        self.assertEqual(cotizador.partidas[1]["descripcion"], "Segunda partida")
+        self.assertNotEqual(cotizador.partidas[0]["costos_internos_id"], cotizador.partidas[1]["costos_internos_id"])
+
+        self.client.get(f"/costos-internos?desglose={primer_id}")
+        form.update({"nombre": ["Primer costo actualizado"], "costo_unitario": ["175"],
+                     "descripcion_publica": "Primera partida actualizada", "desglose_id": primer_id})
+        self.client.post("/costos-internos/guardar", data=form)
+        self.assertEqual(len(cotizador.partidas), 2)
+        self.assertEqual(cotizador.partidas[0]["precio"], 175.0)
+        self.assertEqual(cotizador.partidas[1]["precio"], 250.0)
+
+        self.client.post("/borradores/guardar", data={
+            "cliente": "Cliente interno", "cotizacion": "9005",
+        })
+        cotizador.partidas.clear()
+        cotizador._reiniciar_costos_internos()
+        self.client.get("/borradores/9005/continuar")
+        self.assertEqual(len(cotizador.partidas), 2)
+        self.assertEqual(len(cotizador.costos_internos["desgloses"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

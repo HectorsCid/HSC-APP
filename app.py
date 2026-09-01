@@ -20,6 +20,7 @@ from urllib.parse import quote_plus
 from pathlib import Path
 import io
 import math
+import uuid
 
 # Google / OAuth
 from google.oauth2.credentials import Credentials
@@ -597,24 +598,114 @@ def obtener_siguiente_folio():
 partidas = []
 datos_cliente = {}
 costos_internos = {
+    "id": None,
     "items": [],
     "gastos_extra": 0.0,
     "ganancia_modo": "porcentaje",
     "ganancia_valor": 0.0,
     "redondeo": 1.0,
     "descripcion_publica": "Suministro de materiales y servicios",
+    "desgloses": [],
 }
 
 def _reiniciar_costos_internos():
     costos_internos.clear()
     costos_internos.update({
+        "id": None,
         "items": [],
         "gastos_extra": 0.0,
         "ganancia_modo": "porcentaje",
         "ganancia_valor": 0.0,
         "redondeo": 1.0,
         "descripcion_publica": "Suministro de materiales y servicios",
+        "desgloses": [],
     })
+
+
+def _nuevo_desglose_costos(desglose_id=None):
+    return {
+        "id": desglose_id or uuid.uuid4().hex,
+        "items": [],
+        "gastos_extra": 0.0,
+        "ganancia_modo": "porcentaje",
+        "ganancia_valor": 0.0,
+        "redondeo": 1.0,
+        "descripcion_publica": "Suministro de materiales y servicios",
+    }
+
+
+def _campos_desglose(costos):
+    base = _nuevo_desglose_costos(costos.get("id"))
+    for clave in (
+        "items", "gastos_extra", "ganancia_modo", "ganancia_valor",
+        "redondeo", "descripcion_publica",
+    ):
+        if clave in costos:
+            base[clave] = json.loads(json.dumps(costos[clave], ensure_ascii=False))
+    return base
+
+
+def _normalizar_desgloses_costos():
+    """Migra el cálculo único anterior sin romper borradores existentes."""
+    desgloses = costos_internos.get("desgloses")
+    if not isinstance(desgloses, list):
+        desgloses = []
+    desgloses = [d for d in desgloses if isinstance(d, dict)]
+    costos_internos["desgloses"] = desgloses
+
+    actual_id = str(costos_internos.get("id") or "").strip()
+    tiene_datos = bool(costos_internos.get("items")) or any(
+        _numero_seguro(costos_internos.get(clave)) > 0
+        for clave in ("gastos_extra", "ganancia_valor")
+    )
+    linea_legacy = next((p for p in partidas if p.get("origen_costos_internos")), None)
+    if not actual_id and (tiene_datos or linea_legacy):
+        actual_id = uuid.uuid4().hex
+        costos_internos["id"] = actual_id
+        if linea_legacy is not None:
+            linea_legacy["costos_internos_id"] = actual_id
+
+    if actual_id and not any(str(d.get("id")) == actual_id for d in desgloses):
+        desgloses.append(_campos_desglose(costos_internos))
+
+
+def _guardar_desglose_activo():
+    _normalizar_desgloses_costos()
+    desglose_id = str(costos_internos.get("id") or "").strip()
+    if not desglose_id:
+        desglose_id = uuid.uuid4().hex
+        costos_internos["id"] = desglose_id
+    copia = _campos_desglose(costos_internos)
+    for index, existente in enumerate(costos_internos["desgloses"]):
+        if str(existente.get("id")) == desglose_id:
+            costos_internos["desgloses"][index] = copia
+            break
+    else:
+        costos_internos["desgloses"].append(copia)
+    return desglose_id
+
+
+def _activar_desglose(desglose_id):
+    _normalizar_desgloses_costos()
+    desglose = next((
+        d for d in costos_internos["desgloses"]
+        if str(d.get("id")) == str(desglose_id)
+    ), None)
+    if not desglose:
+        return False
+    desgloses = costos_internos["desgloses"]
+    costos_internos.clear()
+    costos_internos.update(_campos_desglose(desglose))
+    costos_internos["desgloses"] = desgloses
+    return True
+
+
+def _activar_nuevo_desglose():
+    _normalizar_desgloses_costos()
+    desgloses = costos_internos["desgloses"]
+    costos_internos.clear()
+    costos_internos.update(_nuevo_desglose_costos())
+    costos_internos["desgloses"] = desgloses
 
 def _numero_seguro(valor, default=0.0):
     try:
@@ -1020,6 +1111,7 @@ def continuar_borrador(draft_id):
     _reiniciar_costos_internos()
     if isinstance(costos_guardados, dict):
         costos_internos.update(costos_guardados)
+    _normalizar_desgloses_costos()
     flash(f"Borrador {draft_id} cargado. Puedes continuar editándolo.")
     return redirect(url_for("inicio"))
 
@@ -1046,6 +1138,14 @@ def abrir_costos_internos():
 
 @app.get('/costos-internos')
 def ver_costos_internos():
+    if request.args.get("nuevo") == "1":
+        _activar_nuevo_desglose()
+    elif request.args.get("desglose"):
+        if not _activar_desglose(request.args.get("desglose")):
+            flash("No se encontró ese cálculo interno.")
+    else:
+        _normalizar_desgloses_costos()
+
     categorias = [
         ("material", "Material"),
         ("mano_obra", "Mano de obra"),
@@ -1060,6 +1160,25 @@ def ver_costos_internos():
         "Mililitro", "Hora", "Jornada", "Día", "Servicio", "Lote",
         "Viaje", "Caja", "Paquete", "Rollo",
     ]
+    desgloses = []
+    for desglose in costos_internos.get("desgloses", []):
+        desglose_id = str(desglose.get("id") or "")
+        en_cotizacion = any(
+            str(p.get("costos_internos_id") or "") == desglose_id
+            for p in partidas
+        )
+        desgloses.append({
+            "id": desglose_id,
+            "descripcion": desglose.get("descripcion_publica") or "Cálculo sin descripción",
+            "en_cotizacion": en_cotizacion,
+        })
+    actual_id = str(costos_internos.get("id") or "")
+    if actual_id and not any(d["id"] == actual_id for d in desgloses):
+        desgloses.append({
+            "id": actual_id,
+            "descripcion": "Nueva partida (sin guardar)",
+            "en_cotizacion": False,
+        })
     return render_template(
         "costos_internos.html",
         costos=costos_internos,
@@ -1067,6 +1186,7 @@ def ver_costos_internos():
         categorias=categorias,
         unidades=unidades,
         folio=datos_cliente.get("cotizacion") or "",
+        desgloses=desgloses,
     )
 
 
@@ -1108,6 +1228,10 @@ def guardar_costos_internos():
             "nota": (notas[index] if index < len(notas) else "").strip(),
         })
 
+    desglose_solicitado = str(request.form.get("desglose_id") or "").strip()
+    if desglose_solicitado and desglose_solicitado != str(costos_internos.get("id") or ""):
+        _activar_desglose(desglose_solicitado)
+
     costos_internos["items"] = items
     costos_internos["gastos_extra"] = max(0.0, _numero_seguro(request.form.get("gastos_extra")))
     modo = request.form.get("ganancia_modo")
@@ -1118,6 +1242,7 @@ def guardar_costos_internos():
     costos_internos["descripcion_publica"] = (
         request.form.get("descripcion_publica") or "Suministro de materiales y servicios"
     ).strip()
+    desglose_id = _guardar_desglose_activo()
 
     accion = request.form.get("accion") or "guardar"
     totales = _totales_costos_internos()
@@ -1127,7 +1252,10 @@ def guardar_costos_internos():
             flash("Agrega costos antes de transferir un precio a la cotización.")
             return redirect(url_for("ver_costos_internos"))
         descripcion = costos_internos["descripcion_publica"]
-        linea = next((p for p in partidas if p.get("origen_costos_internos")), None)
+        linea = next((
+            p for p in partidas
+            if str(p.get("costos_internos_id") or "") == desglose_id
+        ), None)
         nuevos_datos = {
             "descripcion": descripcion,
             "cantidad": 1,
@@ -1135,11 +1263,13 @@ def guardar_costos_internos():
             "total": precio,
             "precio_pendiente": False,
             "origen_costos_internos": True,
+            "costos_internos_id": desglose_id,
         }
         if linea is None:
             partidas.append(nuevos_datos)
         else:
             linea.update(nuevos_datos)
+        _guardar_desglose_activo()
 
     borrador = _construir_borrador_actual()
     drive_ok = _guardar_o_actualizar_borrador(borrador)
