@@ -147,6 +147,7 @@
         <a class="btn" href="/inicio-app">🏠 Inicio</a>
         <a class="btn" href="/cotizaciones">📋 Cotizaciones</a>
         <button
+          id="btn-guardar-borrador"
           class="btn btn-primary"
           type="submit"
           form="form-datos"
@@ -238,7 +239,8 @@
         <input type="text" name="cotizacion" value="{{ datos.cotizacion or '' }}"/>
 
         <label>Nombre del borrador</label>
-        <input
+          <input
+          id="nombre-borrador"
           type="text"
           name="nombre_borrador"
           value="{{ datos.nombre_borrador or '' }}"
@@ -432,6 +434,28 @@
     const tiempo = document.getElementById('tiempo');
     const anticipo = document.getElementById('anticipo');
     const vigencia = document.getElementById('vigencia');
+    const btnGuardarBorrador = document.getElementById('btn-guardar-borrador');
+    const nombreBorrador = document.getElementById('nombre-borrador');
+
+    if (btnGuardarBorrador && nombreBorrador) {
+      btnGuardarBorrador.addEventListener('click', event => {
+        const nombre = window.prompt(
+          'Escribe un nombre para identificar este borrador:',
+          nombreBorrador.value.trim()
+        );
+        if (nombre === null) {
+          event.preventDefault();
+          return;
+        }
+        if (!nombre.trim()) {
+          event.preventDefault();
+          window.alert('Escribe un nombre para guardar el borrador.');
+          nombreBorrador.focus();
+          return;
+        }
+        nombreBorrador.value = nombre.trim();
+      });
+    }
 
     const comparadorClientes = new Intl.Collator('es', {sensitivity: 'base', numeric: true});
 

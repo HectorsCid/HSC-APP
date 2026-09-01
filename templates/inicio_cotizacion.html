@@ -111,7 +111,7 @@
         <table id="tabla">
           <thead>
             <tr>
-              <th style="width:28%">Cliente</th>
+              <th id="clienteHeader" style="width:28%">Cliente</th>
               <th style="width:14%">Fecha</th>
               <th style="width:12%">Folio</th>
               <th style="width:12%">Total</th>
@@ -306,6 +306,7 @@
 
     function setMode(mode){
       MODE = mode;
+      document.getElementById('clienteHeader').textContent = mode === 'borradores' ? 'Borrador / cliente' : 'Cliente';
       document.getElementById('tabFinalizadas').classList.toggle('tab-active', mode === 'finalizadas');
       document.getElementById('tabBorradores').classList.toggle('tab-active', mode === 'borradores');
       q.value = '';

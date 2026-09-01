@@ -70,6 +70,7 @@ class BorradoresTest(unittest.TestCase):
         self.assertEqual(form.status_code, 200)
         self.assertIn(b"Guardar borrador", form.data)
         self.assertIn(b"Nombre del borrador", form.data)
+        self.assertIn(b"Escribe un nombre para identificar este borrador", form.data)
         self.assertIn(b'href="/cotizaciones"', form.data)
 
         listado = self.client.get("/cotizaciones")
