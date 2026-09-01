@@ -78,6 +78,34 @@ class BorradoresTest(unittest.TestCase):
         self.assertIn(b"Borradores", listado.data)
         self.assertIn(b"Continuar editando", listado.data)
 
+    def test_folio_se_asigna_hasta_guardar_borrador(self):
+        original = cotizador.obtener_siguiente_folio
+        llamadas = []
+        cotizador.obtener_siguiente_folio = lambda: llamadas.append(9100) or 9100
+        try:
+            response = self.client.get("/")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(llamadas, [])
+            self.assertFalse(cotizador.datos_cliente.get("cotizacion"))
+
+            self.client.post("/guardar_datos", data={"cliente": "Cliente sin reservar"})
+            self.assertEqual(llamadas, [])
+
+            self.client.get("/limpiar", follow_redirects=True)
+            self.client.get("/nueva-cotizacion", follow_redirects=True)
+            self.assertEqual(llamadas, [])
+
+            self.client.post("/borradores/guardar", data={
+                "cliente": "Cliente sin reservar", "nombre_borrador": "Prueba tardía",
+            })
+            self.assertEqual(llamadas, [9100])
+            self.assertEqual(cotizador.datos_cliente["cotizacion"], "9100")
+
+            self.client.get("/")
+            self.assertEqual(llamadas, [9100])
+        finally:
+            cotizador.obtener_siguiente_folio = original
+
     def test_precio_pendiente_se_guarda_pero_no_genera_pdf(self):
         response = self.client.post("/agregar", data={
             "descripcion": "Refacción por cotizar",

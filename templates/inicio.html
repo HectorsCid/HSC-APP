@@ -236,7 +236,8 @@
         <input type="text" name="vigencia" id="vigencia" value="{{ datos.vigencia or '' }}"/>
 
         <label>No. Cotización</label>
-        <input type="text" name="cotizacion" value="{{ datos.cotizacion or '' }}"/>
+        <input type="text" name="cotizacion" value="{{ datos.cotizacion or '' }}" placeholder="Se asignará al guardar o generar el PDF"/>
+        {% if not datos.cotizacion %}<div class="hint">Todavía no se ha consumido ningún folio.</div>{% endif %}
 
         <label>Nombre del borrador</label>
           <input

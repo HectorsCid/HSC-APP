@@ -83,6 +83,7 @@ BORRADORES_FILENAME = 'borradores_cotizaciones.json'
 _CLIENTES_DATA_LOCK = threading.RLock()
 _COTIZACIONES_DATA_LOCK = threading.RLock()
 _BORRADORES_DATA_LOCK = threading.RLock()
+_FOLIO_ASSIGN_LOCK = threading.Lock()
 
 # --- Google Sheets datos ---
 SHEET_ID = "15xLRRfR_Leidnd34Cpr3ERbpJ7AaMelMxMa-9B0d6kQ"
@@ -594,6 +595,16 @@ def obtener_siguiente_folio():
         # Último salvavidas para no romper el flujo:
         return int(datetime.now().strftime("%y%m%d%H%M%S"))
 
+
+def _asegurar_folio_actual():
+    """Asigna un folio solo al persistir o finalizar una cotización."""
+    with _FOLIO_ASSIGN_LOCK:
+        folio = str(datos_cliente.get("cotizacion") or "").strip()
+        if not folio:
+            folio = str(obtener_siguiente_folio())
+            datos_cliente["cotizacion"] = folio
+        return folio
+
 # =========================== Variables de trabajo ==============================
 partidas = []
 datos_cliente = {}
@@ -779,9 +790,6 @@ def _clave_orden_cliente(nombre):
 # ================================= Rutas =======================================
 @app.route('/')
 def inicio():
-    if not datos_cliente.get('cotizacion'):
-        datos_cliente['cotizacion'] = obtener_siguiente_folio()
-
     subtotal = sum(p['total'] for p in partidas)
     iva = subtotal * 0.16
 
@@ -1071,9 +1079,7 @@ def _eliminar_borrador_por_id(draft_id):
 
 
 def _construir_borrador_actual():
-    if not datos_cliente.get("cotizacion"):
-        datos_cliente["cotizacion"] = obtener_siguiente_folio()
-    folio = str(datos_cliente.get("cotizacion") or "").strip()
+    folio = _asegurar_folio_actual()
     subtotal = sum(float(item.get("total") or 0) for item in partidas)
     iva = subtotal * 0.16
     if datos_cliente.get("usar_retenciones"):
@@ -1162,8 +1168,6 @@ def eliminar_borrador(draft_id):
 @app.post('/costos-internos/abrir')
 def abrir_costos_internos():
     _actualizar_datos_cliente_desde_form()
-    if not datos_cliente.get("cotizacion"):
-        datos_cliente["cotizacion"] = obtener_siguiente_folio()
     return redirect(url_for("ver_costos_internos"))
 
 
@@ -1326,6 +1330,7 @@ def generar_pdf():
             "Complétalas o guarda la cotización como borrador."
         )
         return redirect(url_for("inicio"))
+    _asegurar_folio_actual()
     # Congelar datos a disco
     guardar_datos(datos_cliente)
     guardar_partidas(partidas)
@@ -2333,11 +2338,14 @@ def duplicar_cotizacion(qid):
     datos_cliente.update({
         "cliente": original.get("cliente") or (original.get("receptor") or {}).get("nombre") or "",
         "fecha": date.today().isoformat(),
-        "cotizacion": obtener_siguiente_folio(),
+        "cotizacion": "",
         "comentarios": "",
         "usar_retenciones": False,
     })
-    flash(f"Cotización {qid} duplicada. Se asignó un folio nuevo; revisa los datos antes de generar el PDF.")
+    flash(
+        f"Cotización {qid} duplicada. El folio nuevo se asignará al guardar el borrador "
+        "o generar el PDF."
+    )
     return redirect(url_for("inicio"))
 
 @app.get("/cotizaciones")
