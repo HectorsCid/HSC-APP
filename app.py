@@ -1620,11 +1620,19 @@ def generar_pdf():
 
 @app.route('/editar_cliente', methods=['GET', 'POST'])
 def editar_cliente():
-    if not datos_cliente.get('cliente'):
+    nombre_actual = (
+        request.values.get('cliente_original')
+        or request.args.get('cliente')
+        or datos_cliente.get('cliente')
+        or ""
+    ).strip()
+    if not nombre_actual:
         flash("Primero selecciona un cliente en Inicio para poder editarlo.")
         return redirect(url_for('inicio'))
-
-    nombre_actual = (datos_cliente.get('cliente') or "").strip()
+    if nombre_actual not in clientes_predefinidos:
+        flash("El cliente seleccionado ya no existe.")
+        return redirect(url_for('inicio'))
+    datos_cliente['cliente'] = nombre_actual
     datos = clientes_predefinidos.get(nombre_actual, {
         "atencion": [],
         "direccion": "",
@@ -1650,12 +1658,12 @@ def editar_cliente():
 
         if not nuevo_nombre:
             flash("El nombre del cliente no puede estar vacío.")
-            return redirect(url_for('editar_cliente'))
+            return redirect(url_for('editar_cliente', cliente=nombre_actual))
 
         existe_conflicto = (nuevo_nombre != nombre_actual) and (nuevo_nombre in clientes_predefinidos)
         if existe_conflicto:
             flash(f"Ya existe un cliente llamado '{nuevo_nombre}'. Elige otro nombre.")
-            return redirect(url_for('editar_cliente'))
+            return redirect(url_for('editar_cliente', cliente=nombre_actual))
 
         # Merge con lo existente para no perder campos previos
         merged = dict(datos)
@@ -1697,10 +1705,13 @@ def editar_cliente():
 
 @app.route('/borrar_cliente', methods=['GET', 'POST'])
 def borrar_cliente():
-    if not datos_cliente.get('cliente'):
+    cliente = (
+        request.values.get('cliente')
+        or datos_cliente.get('cliente')
+        or ""
+    ).strip()
+    if not cliente:
         return "Primero selecciona un cliente para borrar.", 400
-
-    cliente = datos_cliente['cliente']
 
     if request.method == 'POST':
         with _CLIENTES_DATA_LOCK:

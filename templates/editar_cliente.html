@@ -39,6 +39,7 @@
     {% set atencion_val = (atn | join(', ') ) if (atn is iterable and atn is not string) else (atn or '') %}
 
     <form class="card grid" method="post" action="{{ url_for('editar_cliente') }}">
+      <input type="hidden" name="cliente_original" value="{{ cliente }}" />
       <div>
         <label for="nombre">Nombre del cliente</label>
         <input id="nombre" name="nombre" type="text" value="{{ cliente }}" required autocapitalize="words" />

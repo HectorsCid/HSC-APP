@@ -201,7 +201,7 @@
         <div class="actions" style="margin:6px 0 10px">
           <a class="btn" href="{{ url_for('nuevo_cliente') }}">➕ Nuevo</a>
           <button class="btn" type="button" id="btnEditarCliente">✏️ Editar</button>
-          <a class="btn btn-danger" href="{{ url_for('borrar_cliente') }}">🗑️ Borrar</a>
+          <a class="btn btn-danger" id="btnBorrarCliente" href="{{ url_for('borrar_cliente') }}">🗑️ Borrar</a>
           <a class="btn" href="{{ url_for('repositorio') }}">📂 Ver cotizaciones guardadas</a>
         </div>
 
@@ -556,7 +556,20 @@
           alert('Primero selecciona un cliente.');
           return;
         }
-        window.location.href = "{{ url_for('editar_cliente') }}";
+        window.location.href = "{{ url_for('editar_cliente') }}?cliente=" + encodeURIComponent(c);
+      });
+    }
+
+    const btnBorrar = document.getElementById('btnBorrarCliente');
+    if (btnBorrar) {
+      btnBorrar.addEventListener('click', event => {
+        event.preventDefault();
+        const c = selectCliente.value;
+        if (!c) {
+          alert('Primero selecciona un cliente.');
+          return;
+        }
+        window.location.href = "{{ url_for('borrar_cliente') }}?cliente=" + encodeURIComponent(c);
       });
     }
   });
