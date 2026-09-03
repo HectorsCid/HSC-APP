@@ -9,8 +9,11 @@ class BorradoresTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.original_draft_path = cotizador._ruta_borradores
+        self.original_quote_path = cotizador._ruta_cotizaciones
         draft_path = Path(self.tmp.name) / cotizador.BORRADORES_FILENAME
+        quote_path = Path(self.tmp.name) / cotizador.COTIZACIONES_FILENAME
         cotizador._ruta_borradores = lambda: draft_path
+        cotizador._ruta_cotizaciones = lambda: quote_path
         cotizador.IS_RENDER = False
         cotizador.AUTO_SYNC_FROM_DRIVE = False
         cotizador.partidas.clear()
@@ -20,6 +23,7 @@ class BorradoresTest(unittest.TestCase):
 
     def tearDown(self):
         cotizador._ruta_borradores = self.original_draft_path
+        cotizador._ruta_cotizaciones = self.original_quote_path
         cotizador.partidas.clear()
         cotizador.datos_cliente.clear()
         cotizador._reiniciar_costos_internos()
@@ -146,6 +150,44 @@ class BorradoresTest(unittest.TestCase):
         self.assertEqual(cotizador.datos_cliente["anticipo"], "50%")
         self.assertEqual(cotizador.datos_cliente["vigencia"], "7 días")
         self.assertIn("48 horas".encode(), preview.data)
+
+    def test_corregir_conserva_folio_y_duplicar_solicita_uno_nuevo(self):
+        cotizador.registrar_cotizacion({
+            "id": "9200",
+            "folio": "9200",
+            "cliente": "Cliente histórico",
+            "conceptos": [{
+                "descripcion": "Texto por corregir",
+                "cantidad": 2,
+                "precio_unitario": 150,
+            }],
+            "datos": {
+                "cliente": "Cliente histórico",
+                "tiempo": "3 días",
+                "anticipo": "40%",
+                "vigencia": "10 días",
+            },
+        })
+
+        response = self.client.get("/cotizaciones/9200/editar")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(cotizador.datos_cliente["cotizacion"], "9200")
+        self.assertEqual(cotizador.datos_cliente["anticipo"], "40%")
+        self.assertEqual(cotizador.partidas[0]["descripcion"], "Texto por corregir")
+
+        response = self.client.get("/cotizaciones/9200/duplicar")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(cotizador.datos_cliente["cotizacion"], "")
+        self.assertEqual(cotizador.datos_cliente["vigencia"], "10 días")
+
+    def test_eliminar_cotizacion_solo_la_quita_del_registro(self):
+        cotizador.registrar_cotizacion({"id": "9300", "folio": "9300", "cliente": "Uno"})
+        cotizador.registrar_cotizacion({"id": "9301", "folio": "9301", "cliente": "Dos"})
+
+        response = self.client.post("/cotizaciones/9300/eliminar")
+        self.assertEqual(response.status_code, 302)
+        items = self.client.get("/api/cotizaciones/list").get_json()
+        self.assertEqual([item["folio"] for item in items], ["9301"])
 
     def test_precio_pendiente_se_guarda_pero_no_genera_pdf(self):
         response = self.client.post("/agregar", data={

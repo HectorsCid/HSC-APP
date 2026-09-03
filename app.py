@@ -320,8 +320,16 @@ def subir_cotizaciones_a_drive(items_list):
             meta = {'name': COTIZACIONES_FILENAME, 'parents': [ID_COT]}
             created = service.files().create(body=meta, media_body=media, fields='id').execute()
             print("📤 cotizaciones.json creado en Drive:", created.get('id'))
+        return True
     except Exception as e:
         print("⚠️ No se pudo subir cotizaciones.json a Drive:", e)
+        return False
+
+
+def _ruta_cotizaciones():
+    base = Path(current_app.root_path) / "data"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / COTIZACIONES_FILENAME
 
 
 def _ruta_borradores():
@@ -512,7 +520,7 @@ def _schedule_bootstrap_sync():
 
 
 _CLIENT_MUTATION_ENDPOINTS = {"nuevo_cliente", "editar_cliente", "borrar_cliente"}
-_QUOTE_MUTATION_ENDPOINTS = {"generar_pdf"}
+_QUOTE_MUTATION_ENDPOINTS = {"generar_pdf", "eliminar_cotizacion"}
 _DRAFT_MUTATION_ENDPOINTS = {
     "guardar_borrador", "eliminar_borrador", "guardar_costos_internos", "generar_pdf"
 }
@@ -1048,9 +1056,7 @@ def registrar_cotizacion(cot):
     /cotizaciones la liste. Upsert por id/folio.
     """
     with _COTIZACIONES_DATA_LOCK:
-        base = Path(current_app.root_path) / "data"
-        base.mkdir(parents=True, exist_ok=True)
-        path = base / "cotizaciones.json"
+        path = _ruta_cotizaciones()
 
         try:
             arr = json.loads(path.read_text("utf-8")) if path.exists() else []
@@ -1078,6 +1084,38 @@ def registrar_cotizacion(cot):
         # Persistencia en Drive (Render) para no perder historial
         if IS_RENDER:
             subir_cotizaciones_a_drive(arr)
+
+
+def _eliminar_cotizacion_por_id(qid):
+    """Quita una cotización del registro; nunca borra su PDF de Drive."""
+    with _COTIZACIONES_DATA_LOCK:
+        path = _ruta_cotizaciones()
+        try:
+            items = json.loads(path.read_text("utf-8")) if path.exists() else []
+            if not isinstance(items, list):
+                items = []
+        except Exception:
+            items = []
+
+        objetivo = str(qid or "").strip()
+        restantes = [
+            item for item in items
+            if str(item.get("id") or item.get("folio") or "").strip() != objetivo
+        ]
+        if len(restantes) == len(items):
+            return False, True
+
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(restantes, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(path)
+
+        if IS_RENDER and not subir_cotizaciones_a_drive(restantes):
+            # Evita mostrar una eliminación que reaparecería al reiniciar Render.
+            restore_tmp = path.with_suffix(".restore.tmp")
+            restore_tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+            restore_tmp.replace(path)
+            return True, False
+        return True, True
 
 
 def _guardar_o_actualizar_borrador(borrador):
@@ -1555,7 +1593,8 @@ def generar_pdf():
             "total": round(float(subtotal + iva), 2),
             "view_url": archivo_url,           # ← AÑADIDO
             "receptor": rec,
-            "conceptos": conceptos
+            "conceptos": conceptos,
+            "datos": datos,
         })
         print(f"🗂️ Cotización registrada para listado: {cot} ({cliente})")
     except Exception as e:
@@ -2231,8 +2270,7 @@ def set_cliente():
 # ---------- NUEVO: listado para inicio_cotizacion ----------
 @app.get("/api/cotizaciones/list")
 def api_cotizaciones_list():
-    base = Path(current_app.root_path) / "data"
-    path = base / "cotizaciones.json"
+    path = _ruta_cotizaciones()
     items = []
     if path.exists():
         try:
@@ -2336,10 +2374,8 @@ def api_cotizacion_detalle(qid):
     }
     return jsonify(out), 200
 
-@app.get("/cotizaciones/<qid>/duplicar")
-def duplicar_cotizacion(qid):
-    """Carga una cotización histórica como una nueva, sin modificar el original."""
-    path = Path(current_app.root_path) / "data" / "cotizaciones.json"
+def _cargar_cotizacion_para_editar(qid, conservar_folio=False):
+    path = _ruta_cotizaciones()
     try:
         historial = json.loads(path.read_text("utf-8")) if path.exists() else []
     except Exception:
@@ -2349,8 +2385,7 @@ def duplicar_cotizacion(qid):
 
     original = next((q for q in historial if str(q.get("id") or q.get("folio") or "") == str(qid)), None)
     if not original:
-        flash("No se encontró la cotización que deseas duplicar.")
-        return redirect(url_for("ui_inicio_cotizacion"))
+        return False
 
     conceptos = original.get("conceptos") or original.get("items") or original.get("partidas") or []
     nuevas_partidas = []
@@ -2371,18 +2406,55 @@ def duplicar_cotizacion(qid):
     partidas.extend(nuevas_partidas)
     datos_cliente.clear()
     _reiniciar_costos_internos()
+    datos_guardados = original.get("datos") if isinstance(original.get("datos"), dict) else {}
+    datos_cliente.update(datos_guardados)
     datos_cliente.update({
-        "cliente": original.get("cliente") or (original.get("receptor") or {}).get("nombre") or "",
-        "fecha": date.today().isoformat(),
-        "cotizacion": "",
-        "comentarios": "",
-        "usar_retenciones": False,
+        "cliente": original.get("cliente") or (original.get("receptor") or {}).get("nombre") or datos_guardados.get("cliente") or "",
+        "fecha": datos_guardados.get("fecha") or date.today().isoformat(),
+        "cotizacion": str(original.get("folio") or original.get("id") or qid) if conservar_folio else "",
+        "nombre_borrador": "",
     })
+    datos_cliente.setdefault("comentarios", "")
+    datos_cliente.setdefault("usar_retenciones", False)
+    return True
+
+
+@app.get("/cotizaciones/<qid>/duplicar")
+def duplicar_cotizacion(qid):
+    """Carga una cotización histórica como una nueva, sin modificar el original."""
+    if not _cargar_cotizacion_para_editar(qid, conservar_folio=False):
+        flash("No se encontró la cotización que deseas duplicar.")
+        return redirect(url_for("ui_inicio_cotizacion"))
     flash(
         f"Cotización {qid} duplicada. El folio nuevo se asignará al guardar el borrador "
         "o generar el PDF."
     )
     return redirect(url_for("inicio"))
+
+
+@app.get("/cotizaciones/<qid>/editar")
+def editar_cotizacion_mismo_folio(qid):
+    """Carga una cotización para corregirla y reemplazarla conservando el folio."""
+    if not _cargar_cotizacion_para_editar(qid, conservar_folio=True):
+        flash("No se encontró la cotización que deseas corregir.")
+        return redirect(url_for("ui_inicio_cotizacion"))
+    flash(
+        f"Editando la cotización {qid}. Al generar el PDF se reemplazará el registro "
+        "y el archivo de este mismo folio."
+    )
+    return redirect(url_for("inicio"))
+
+
+@app.post("/cotizaciones/<qid>/eliminar")
+def eliminar_cotizacion(qid):
+    encontrada, guardada = _eliminar_cotizacion_por_id(qid)
+    if encontrada and guardada:
+        flash(f"Cotización {qid} retirada del listado. Su PDF permanece en Google Drive.")
+    elif encontrada:
+        flash("Google Drive no confirmó el cambio; la cotización no se eliminó del listado.")
+    else:
+        flash("No se encontró la cotización que deseas eliminar.")
+    return redirect(url_for("ui_inicio_cotizacion"))
 
 @app.get("/cotizaciones")
 @app.get("/inicio-cotizacion")

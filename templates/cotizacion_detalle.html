@@ -36,8 +36,12 @@
           <a class="btn" href="{{ q.view_url }}" target="_blank">Ver / Reimprimir PDF</a>
         {% endif %}
         {% if q %}
-          <a class="btn" href="/cotizaciones/{{ q.id }}/duplicar">Duplicar y editar</a>
+          <a class="btn" href="/cotizaciones/{{ q.id }}/editar" onclick="return confirm('¿Corregir esta cotización conservando el mismo folio? Al generar el PDF se reemplazará la versión anterior.');">Corregir mismo folio</a>
+          <a class="btn" href="/cotizaciones/{{ q.id }}/duplicar">Duplicar</a>
           <a class="btn btn-ok" href="/facturas/nueva?quote_id={{ q.id }}">🧾 Mandar a facturar</a>
+          <form method="post" action="/cotizaciones/{{ q.id }}/eliminar" onsubmit="return confirm('¿Quitar esta cotización del listado? El PDF permanecerá en Google Drive.');">
+            <button class="btn" type="submit">Eliminar del listado</button>
+          </form>
         {% endif %}
       </div>
     </div>
