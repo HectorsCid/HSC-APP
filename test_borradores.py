@@ -110,6 +110,43 @@ class BorradoresTest(unittest.TestCase):
         finally:
             cotizador.obtener_siguiente_folio = original
 
+    def test_acciones_conservan_cliente_y_condiciones_sin_guardar_datos(self):
+        response = self.client.post("/agregar", data={
+            "preservar_datos_cotizacion": "1",
+            "cliente": "Cliente directo",
+            "atencion": "Compras",
+            "direccion": "Dirección especial",
+            "fecha": "2026-09-03",
+            "tiempo": "Entrega inmediata",
+            "anticipo": "30%",
+            "vigencia": "15 días",
+            "comentarios": "Condiciones particulares",
+            "descripcion": "Partida directa",
+            "cantidad": "1",
+            "precio": "100",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(cotizador.datos_cliente["cliente"], "Cliente directo")
+        self.assertEqual(cotizador.datos_cliente["tiempo"], "Entrega inmediata")
+        self.assertEqual(cotizador.datos_cliente["anticipo"], "30%")
+        self.assertEqual(cotizador.datos_cliente["vigencia"], "15 días")
+
+        preview = self.client.post("/vista_previa", data={
+            "cliente": "Cliente directo",
+            "atencion": "Compras",
+            "direccion": "Dirección especial",
+            "fecha": "2026-09-03",
+            "tiempo": "48 horas",
+            "anticipo": "50%",
+            "vigencia": "7 días",
+            "comentarios": "Cambio antes de vista previa",
+        })
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(cotizador.datos_cliente["tiempo"], "48 horas")
+        self.assertEqual(cotizador.datos_cliente["anticipo"], "50%")
+        self.assertEqual(cotizador.datos_cliente["vigencia"], "7 días")
+        self.assertIn("48 horas".encode(), preview.data)
+
     def test_precio_pendiente_se_guarda_pero_no_genera_pdf(self):
         response = self.client.post("/agregar", data={
             "descripcion": "Refacción por cotizar",

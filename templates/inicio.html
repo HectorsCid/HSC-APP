@@ -262,18 +262,14 @@
         </div>
         <div class="hint">Si lo activas, el total se calcula con retenciones.</div>
 
-        <div class="actions" style="margin-top:12px">
-          <button class="btn btn-primary" type="submit">💾 Guardar datos</button>
-        </div>
-
         <div style="margin-top:12px" class="subtle">
-          Al guardar, estos datos se usarán para la generación del PDF y el envío a Drive.
+          Estos valores se aplican a esta cotización y se guardan automáticamente al agregar una partida, abrir la vista previa, guardar el borrador o generar el PDF. No modifican la ficha permanente del cliente.
         </div>
       </div>
     </form>
 
     <!-- Agregar partida -->
-    <form class="card" action="{{ url_for('agregar') }}" method="post">
+    <form id="form-partida" class="card" action="{{ url_for('agregar') }}" method="post">
       <h3 class="section-title">Agregar partida</h3>
       <div class="row row-2">
         <div style="grid-column:1/-1">
@@ -292,8 +288,8 @@
       </div>
       <div class="actions" style="margin-top:10px">
         <button class="btn" type="submit">➕ Agregar</button>
-        <a class="btn" href="{{ url_for('vista_previa') }}">👁️ Vista previa</a>
-        <a class="btn btn-ok" href="{{ url_for('generar_pdf') }}">📄 Generar PDF</a>
+        <button class="btn" type="submit" form="form-datos" formaction="{{ url_for('vista_previa') }}" formmethod="post">👁️ Vista previa</button>
+        <button class="btn btn-ok" type="submit" form="form-datos" formaction="{{ url_for('generar_pdf') }}" formmethod="post">📄 Generar PDF</button>
       </div>
     </form>
 
@@ -438,6 +434,28 @@
     const vigencia = document.getElementById('vigencia');
     const btnGuardarBorrador = document.getElementById('btn-guardar-borrador');
     const nombreBorrador = document.getElementById('nombre-borrador');
+    const formDatos = document.getElementById('form-datos');
+    const formPartida = document.getElementById('form-partida');
+
+    if (formDatos && formPartida) {
+      formPartida.addEventListener('submit', () => {
+        formPartida.querySelectorAll('[data-dato-cotizacion]').forEach(input => input.remove());
+        for (const [name, value] of new FormData(formDatos).entries()) {
+          const hidden = document.createElement('input');
+          hidden.type = 'hidden';
+          hidden.name = name;
+          hidden.value = value;
+          hidden.dataset.datoCotizacion = '1';
+          formPartida.appendChild(hidden);
+        }
+        const marker = document.createElement('input');
+        marker.type = 'hidden';
+        marker.name = 'preservar_datos_cotizacion';
+        marker.value = '1';
+        marker.dataset.datoCotizacion = '1';
+        formPartida.appendChild(marker);
+      });
+    }
 
     document.querySelectorAll('form').forEach(form => {
       form.addEventListener('input', () => { cotizacionConCambios = true; });
@@ -516,10 +534,10 @@
         selectAtencion.appendChild(opt);
       });
 
-      direccion.value = d.direccion || '';
-      tiempo.value = d.tiempo || '';
-      anticipo.value = d.anticipo || '';
-      vigencia.value = d.vigencia || '';
+      if (!mantenerSeleccion || !direccion.value.trim()) direccion.value = d.direccion || '';
+      if (!mantenerSeleccion || !tiempo.value.trim()) tiempo.value = d.tiempo || '';
+      if (!mantenerSeleccion || !anticipo.value.trim()) anticipo.value = d.anticipo || '';
+      if (!mantenerSeleccion || !vigencia.value.trim()) vigencia.value = d.vigencia || '';
     }
 
     if (selectCliente.value) {

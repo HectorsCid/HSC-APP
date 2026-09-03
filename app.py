@@ -902,6 +902,8 @@ def _actualizar_datos_cliente_desde_form():
 
 @app.route('/agregar', methods=['POST'])
 def agregar():
+    if request.form.get("preservar_datos_cotizacion") == "1":
+        _actualizar_datos_cliente_desde_form()
     descripcion = (request.form.get('descripcion') or '').strip()
     if not descripcion:
         flash("❌ Escribe la descripción de la partida.")
@@ -1350,9 +1352,11 @@ def guardar_costos_internos():
         flash("El cálculo quedó local, pero Google Drive no respondió. Intenta guardarlo otra vez.")
     return redirect(url_for("ver_costos_internos"))
 
-@app.route('/generar_pdf')
+@app.route('/generar_pdf', methods=['GET', 'POST'])
 def generar_pdf():
     import shutil
+    if request.method == 'POST':
+        _actualizar_datos_cliente_desde_form()
     pendientes = [p for p in partidas if p.get("precio_pendiente")]
     if pendientes:
         flash(
@@ -1682,8 +1686,10 @@ def guardar_partidas(partidas):
 
 # ============================ VISTA PREVIA (HTML en navegador) =============================
 # ============================ VISTA PREVIA (HTML en navegador) =============================
-@app.route('/vista_previa')
+@app.route('/vista_previa', methods=['GET', 'POST'])
 def vista_previa():
+    if request.method == 'POST':
+        _actualizar_datos_cliente_desde_form()
     datos = dict(datos_cliente)
     partidas_actuales = list(partidas)
 
