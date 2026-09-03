@@ -115,7 +115,7 @@
               <th style="width:12%">Folio</th>
               <th style="width:12%">Total</th>
               <th>Resumen</th>
-              <th style="width:350px">Acciones</th>
+              <th style="width:330px">Acciones</th>
             </tr>
           </thead>
           <tbody id="tbody">
@@ -273,13 +273,12 @@
                   <button class="btn btn-danger" type="submit">Eliminar</button>
                 </form>
               ` : `
-                <a class="btn" href="${it.view_url}" target="_blank">Ver / Reimprimir</a>
-                <a class="btn btn-accent" href="/cotizaciones/${encodeURIComponent(it.id)}/editar" onclick="return confirm('¿Corregir esta cotización conservando el mismo folio? Al generar el PDF se reemplazará la versión anterior.');">Corregir mismo folio</a>
-                <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">Duplicar</a>
-                <button class="btn btn-ok" data-qid="${it.id}" data-fact-url="${it.facturar_url}" type="button">🧾 Mandar a facturar</button>
                 <form class="inline" method="post" action="/cotizaciones/${encodeURIComponent(it.id)}/eliminar" onsubmit="return confirm('¿Quitar esta cotización del listado? El PDF permanecerá en Google Drive.');">
                   <button class="btn btn-danger" type="submit">Eliminar</button>
                 </form>
+                <a class="btn" href="${it.view_url}" target="_blank">Ver / Reimprimir</a>
+                <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/editar" onclick="return confirm('¿Corregir esta cotización conservando el mismo folio? Al generar el PDF se reemplazará la versión anterior.');">Corregir mismo folio</a>
+                <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">Duplicar</a>
               `}
             </div>
           </td>

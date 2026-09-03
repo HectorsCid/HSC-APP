@@ -148,7 +148,7 @@
         <a class="btn salida-cotizacion" href="/cotizaciones">📋 Cotizaciones</a>
         <button
           id="btn-guardar-borrador"
-          class="btn btn-primary"
+          class="btn"
           type="submit"
           form="form-datos"
           formaction="{{ url_for('guardar_borrador') }}"
@@ -164,7 +164,7 @@
           formnovalidate
         >🧮 Costos internos</button>
         <a
-          class="btn btn-danger"
+          class="btn"
           href="{{ url_for('limpiar') }}"
           onclick="return confirm('¿Limpiar toda la cotización? Se borrarán el cliente, los datos capturados y todas las partidas.');"
         >🧹 Limpiar formulario</a>

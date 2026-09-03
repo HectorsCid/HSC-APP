@@ -85,6 +85,8 @@ class BorradoresTest(unittest.TestCase):
         self.assertIn(b"Borradores", listado.data)
         self.assertIn(b"Continuar editando", listado.data)
         self.assertNotIn(b"Si el formulario actual no se guard", listado.data)
+        self.assertNotIn(b"Mandar a facturar", listado.data)
+        self.assertIn(b">Corregir mismo folio</a>", listado.data)
 
     def test_folio_se_asigna_hasta_guardar_borrador(self):
         original = cotizador.obtener_siguiente_folio
