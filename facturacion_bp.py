@@ -393,12 +393,20 @@ def api_facturama_status():
         issued_in = _pick(profile, "IssuedIn") or {}
         tax_address = _pick(profile, "TaxAddress") or {}
         expedition_zip = _pick(issued_in, "ZipCode") or _pick(tax_address, "ZipCode")
+        has_rfc = bool(_pick(profile, "Rfc"))
+        has_expedition_zip = bool(expedition_zip)
+        has_csd = bool(_pick(profile, "Csd"))
         return jsonify({
             "ok": True,
             "provider": "facturama",
             "environment": "sandbox" if cfg["sandbox"] else "production",
             "account_connected": True,
-            "issuer_ready": bool(_pick(profile, "Rfc") and expedition_zip and _pick(profile, "Csd")),
+            "issuer_ready": has_rfc and has_expedition_zip and has_csd,
+            "checks": {
+                "fiscal_profile": has_rfc,
+                "expedition_zip": has_expedition_zip,
+                "test_certificate": has_csd,
+            },
         }), 200
     except requests.HTTPError as exc:
         return jsonify({
