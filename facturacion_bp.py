@@ -143,6 +143,11 @@ def _facturama_issuer_locations():
     tax_address = _pick(profile, "TaxAddress") or {}
     expedition = expedition or str(_pick(issued_in, "ZipCode") or _pick(tax_address, "ZipCode") or "").strip()
     tax_zip = tax_zip or str(_pick(tax_address, "ZipCode") or expedition).strip()
+    cfg = _facturama_config()
+    if cfg["sandbox"] and _pick(profile, "Rfc") == "EKU9003173C9":
+        # Código postal publicado por Facturama para su emisor oficial de pruebas.
+        expedition = expedition or "42501"
+        tax_zip = tax_zip or "42501"
     return expedition, tax_zip
 
 
@@ -393,6 +398,8 @@ def api_facturama_status():
         issued_in = _pick(profile, "IssuedIn") or {}
         tax_address = _pick(profile, "TaxAddress") or {}
         expedition_zip = _pick(issued_in, "ZipCode") or _pick(tax_address, "ZipCode")
+        if cfg["sandbox"] and _pick(profile, "Rfc") == "EKU9003173C9":
+            expedition_zip = expedition_zip or "42501"
         has_rfc = bool(_pick(profile, "Rfc"))
         has_expedition_zip = bool(expedition_zip)
         has_csd = bool(_pick(profile, "Csd"))

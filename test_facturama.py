@@ -64,6 +64,15 @@ class FacturamaIntegrationTests(unittest.TestCase):
             cfdi = billing._build_facturama_cfdi(payload)
         self.assertEqual(cfdi["PaymentForm"], "99")
 
+    def test_official_sandbox_issuer_uses_published_zip_fallback(self):
+        old_cache = billing._FM_PROFILE_CACHE
+        billing._FM_PROFILE_CACHE = {"Rfc": "EKU9003173C9", "TaxAddress": {}, "IssuedIn": {}}
+        try:
+            expedition, tax_zip = billing._facturama_issuer_locations()
+        finally:
+            billing._FM_PROFILE_CACHE = old_cache
+        self.assertEqual((expedition, tax_zip), ("42501", "42501"))
+
     def test_stamp_is_idempotent_inside_running_service(self):
         answer = {"Id": "sandbox-id", "Uuid": "sandbox-uuid", "Status": "active", "Total": 232}
         with (
