@@ -144,6 +144,8 @@ def _facturama_issuer_locations():
         branches = _fm_request("GET", "/BranchOffice", timeout=25)
         _FM_BRANCH_CACHE = branches if isinstance(branches, list) else []
     profile = _FM_PROFILE_CACHE if isinstance(_FM_PROFILE_CACHE, dict) else {}
+    if not str(_pick(profile, "FiscalRegime") or "").strip():
+        raise ValueError("Falta guardar el régimen fiscal del emisor en el perfil de Facturama")
     tax_address = _pick(profile, "TaxAddress") or {}
     branches = _FM_BRANCH_CACHE or []
     default_branch = next((branch for branch in branches if _pick(branch, "IsDefault")), None)
@@ -405,6 +407,7 @@ def api_facturama_status():
             bool(_pick(_pick(branch, "Address") or {}, "ZipCode")) for branch in branch_rows
         )
         has_rfc = bool(_pick(profile, "Rfc"))
+        has_fiscal_regime = bool(str(_pick(profile, "FiscalRegime") or "").strip())
         has_expedition_zip = bool(expedition_zip)
         has_csd = bool(_pick(profile, "Csd"))
         return jsonify({
@@ -412,9 +415,10 @@ def api_facturama_status():
             "provider": "facturama",
             "environment": "sandbox" if cfg["sandbox"] else "production",
             "account_connected": True,
-            "issuer_ready": has_rfc and has_expedition_zip and has_csd,
+            "issuer_ready": has_rfc and has_fiscal_regime and has_expedition_zip and has_csd,
             "checks": {
                 "fiscal_profile": has_rfc,
+                "fiscal_regime": has_fiscal_regime,
                 "expedition_zip": has_expedition_zip,
                 "test_certificate": has_csd,
                 "official_test_issuer": official_test_issuer,

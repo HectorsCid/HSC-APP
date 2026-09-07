@@ -67,7 +67,11 @@ class FacturamaIntegrationTests(unittest.TestCase):
     def test_issuer_uses_configured_branch_zip(self):
         old_cache = billing._FM_PROFILE_CACHE
         old_branches = billing._FM_BRANCH_CACHE
-        billing._FM_PROFILE_CACHE = {"Rfc": "EKU9003173C9", "TaxAddress": {}}
+        billing._FM_PROFILE_CACHE = {
+            "Rfc": "EKU9003173C9",
+            "FiscalRegime": "601",
+            "TaxAddress": {},
+        }
         billing._FM_BRANCH_CACHE = [{
             "IsDefault": True,
             "Address": {"ZipCode": "42501"},
