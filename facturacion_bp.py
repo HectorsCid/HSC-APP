@@ -529,9 +529,11 @@ def facturar():
                     }), 502
 
                 inv_id = _pick(invoice, "Id")
-                uuid = _pick(invoice, "Uuid", "Complement", "FolioFiscal")
-                if isinstance(uuid, dict):
-                    uuid = _pick(uuid, "TaxStamp", "Uuid")
+                uuid = _pick(invoice, "Uuid", "FolioFiscal")
+                if not uuid:
+                    complement = _pick(invoice, "Complement") or {}
+                    tax_stamp = _pick(complement, "TaxStamp") or {}
+                    uuid = _pick(tax_stamp, "Uuid")
                 if not inv_id:
                     return jsonify({
                         "ok": False,

@@ -114,6 +114,22 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(request_mock.call_count, 1)
         self.assertTrue(second.get_json()["duplicate_prevented"])
 
+    def test_stamp_extracts_nested_facturama_uuid(self):
+        answer = {
+            "Id": "sandbox-id",
+            "Complement": {"TaxStamp": {"Uuid": "nested-uuid", "CfdiSign": "secret-signature"}},
+            "Status": "active",
+            "Total": 1.16,
+        }
+        with (
+            patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
+            patch.object(billing, "_fm_request", return_value=answer),
+        ):
+            response = self.client.post("/api/facturar", json=self.payload("nested-request"))
+        data = response.get_json()
+        self.assertEqual(data["uuid"], "nested-uuid")
+        self.assertNotIn("secret-signature", str(data))
+
     def test_download_decodes_facturama_base64(self):
         expected = b"%PDF-sandbox"
         encoded = base64.b64encode(expected).decode("ascii")
