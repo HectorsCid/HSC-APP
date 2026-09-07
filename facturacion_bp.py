@@ -25,6 +25,7 @@ FACTURAMA_PRODUCTION_BASE = "https://api.facturama.mx"
 _STAMP_LOCK = Lock()
 _STAMP_RESULTS = {}
 _FM_PROFILE_CACHE = None
+_FM_BRANCH_CACHE = None
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -131,24 +132,25 @@ def _fm_request(method, path, *, json_body=None, params=None, timeout=60):
 
 def _facturama_issuer_locations():
     """Obtiene los códigos postales configurados en el perfil fiscal."""
-    global _FM_PROFILE_CACHE
+    global _FM_PROFILE_CACHE, _FM_BRANCH_CACHE
     expedition = os.getenv("FACTURAMA_EXPEDITION_ZIP", "").strip()
     tax_zip = os.getenv("FACTURAMA_TAX_ZIP", "").strip()
-    if expedition and tax_zip:
+    if expedition:
+        tax_zip = tax_zip or expedition
         return expedition, tax_zip
     if _FM_PROFILE_CACHE is None:
         _FM_PROFILE_CACHE = _fm_request("GET", "/TaxEntity", timeout=25)
+    if _FM_BRANCH_CACHE is None:
+        branches = _fm_request("GET", "/BranchOffice", timeout=25)
+        _FM_BRANCH_CACHE = branches if isinstance(branches, list) else []
     profile = _FM_PROFILE_CACHE if isinstance(_FM_PROFILE_CACHE, dict) else {}
-    issued_in = _pick(profile, "IssuedIn") or {}
     tax_address = _pick(profile, "TaxAddress") or {}
-    expedition = expedition or str(_pick(issued_in, "ZipCode") or _pick(tax_address, "ZipCode") or "").strip()
+    branches = _FM_BRANCH_CACHE or []
+    default_branch = next((branch for branch in branches if _pick(branch, "IsDefault")), None)
+    selected_branch = default_branch or (branches[0] if branches else {})
+    branch_address = _pick(selected_branch, "Address") or {}
+    expedition = str(_pick(branch_address, "ZipCode") or "").strip()
     tax_zip = tax_zip or str(_pick(tax_address, "ZipCode") or expedition).strip()
-    cfg = _facturama_config()
-    profile_rfc = str(_pick(profile, "Rfc") or "").strip().upper()
-    if cfg["sandbox"] and profile_rfc == "EKU9003173C9":
-        # Código postal publicado por Facturama para su emisor oficial de pruebas.
-        expedition = expedition or "42501"
-        tax_zip = tax_zip or "42501"
     return expedition, tax_zip
 
 
@@ -396,12 +398,12 @@ def api_facturama_status():
     try:
         # El perfil fiscal valida autenticación y que el emisor esté preparado.
         profile = _fm_request("GET", "/TaxEntity", timeout=25)
-        issued_in = _pick(profile, "IssuedIn") or {}
-        tax_address = _pick(profile, "TaxAddress") or {}
+        branches = _fm_request("GET", "/BranchOffice", timeout=25)
         official_test_issuer = str(_pick(profile, "Rfc") or "").strip().upper() == "EKU9003173C9"
-        expedition_zip = _pick(issued_in, "ZipCode") or _pick(tax_address, "ZipCode")
-        if cfg["sandbox"] and official_test_issuer:
-            expedition_zip = expedition_zip or "42501"
+        branch_rows = branches if isinstance(branches, list) else []
+        expedition_zip = any(
+            bool(_pick(_pick(branch, "Address") or {}, "ZipCode")) for branch in branch_rows
+        )
         has_rfc = bool(_pick(profile, "Rfc"))
         has_expedition_zip = bool(expedition_zip)
         has_csd = bool(_pick(profile, "Csd"))
