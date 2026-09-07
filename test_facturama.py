@@ -83,6 +83,22 @@ class FacturamaIntegrationTests(unittest.TestCase):
             billing._FM_BRANCH_CACHE = old_branches
         self.assertEqual((expedition, tax_zip), ("42501", "42501"))
 
+    def test_official_sandbox_issuer_rejects_wrong_regime(self):
+        old_profile = billing._FM_PROFILE_CACHE
+        old_branches = billing._FM_BRANCH_CACHE
+        billing._FM_PROFILE_CACHE = {
+            "Rfc": "EKU9003173C9",
+            "FiscalRegime": "605",
+            "TaxAddress": {},
+        }
+        billing._FM_BRANCH_CACHE = [{"Address": {"ZipCode": "42501"}}]
+        try:
+            with self.assertRaisesRegex(ValueError, "requiere régimen fiscal 601"):
+                billing._facturama_issuer_locations()
+        finally:
+            billing._FM_PROFILE_CACHE = old_profile
+            billing._FM_BRANCH_CACHE = old_branches
+
     def test_stamp_is_idempotent_inside_running_service(self):
         answer = {"Id": "sandbox-id", "Uuid": "sandbox-uuid", "Status": "active", "Total": 232}
         with (

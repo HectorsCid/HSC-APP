@@ -144,8 +144,12 @@ def _facturama_issuer_locations():
         branches = _fm_request("GET", "/BranchOffice", timeout=25)
         _FM_BRANCH_CACHE = branches if isinstance(branches, list) else []
     profile = _FM_PROFILE_CACHE if isinstance(_FM_PROFILE_CACHE, dict) else {}
-    if not str(_pick(profile, "FiscalRegime") or "").strip():
+    profile_regime = str(_pick(profile, "FiscalRegime") or "").strip()
+    profile_rfc = str(_pick(profile, "Rfc") or "").strip().upper()
+    if not profile_regime:
         raise ValueError("Falta guardar el régimen fiscal del emisor en el perfil de Facturama")
+    if _facturama_config()["sandbox"] and profile_rfc == "EKU9003173C9" and profile_regime != "601":
+        raise ValueError("El RFC oficial de pruebas EKU9003173C9 requiere régimen fiscal 601")
     tax_address = _pick(profile, "TaxAddress") or {}
     branches = _FM_BRANCH_CACHE or []
     default_branch = next((branch for branch in branches if _pick(branch, "IsDefault")), None)
@@ -412,6 +416,7 @@ def api_facturama_status():
         has_tax_name = bool(str(_pick(profile, "TaxName") or "").strip())
         tax_address = _pick(profile, "TaxAddress") or {}
         has_tax_address_zip = bool(str(_pick(tax_address, "ZipCode") or "").strip())
+        regime_matches_issuer = not official_test_issuer or fiscal_regime_code == "601"
         has_expedition_zip = bool(expedition_zip)
         has_csd = bool(_pick(profile, "Csd"))
         return jsonify({
@@ -419,10 +424,14 @@ def api_facturama_status():
             "provider": "facturama",
             "environment": "sandbox" if cfg["sandbox"] else "production",
             "account_connected": True,
-            "issuer_ready": has_rfc and has_fiscal_regime and has_expedition_zip and has_csd,
+            "issuer_ready": (
+                has_rfc and has_fiscal_regime and regime_matches_issuer
+                and has_expedition_zip and has_csd
+            ),
             "checks": {
                 "fiscal_profile": has_rfc,
                 "fiscal_regime": has_fiscal_regime,
+                "regime_matches_issuer": regime_matches_issuer,
                 "expedition_zip": has_expedition_zip,
                 "test_certificate": has_csd,
                 "official_test_issuer": official_test_issuer,
