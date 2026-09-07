@@ -407,7 +407,11 @@ def api_facturama_status():
             bool(_pick(_pick(branch, "Address") or {}, "ZipCode")) for branch in branch_rows
         )
         has_rfc = bool(_pick(profile, "Rfc"))
-        has_fiscal_regime = bool(str(_pick(profile, "FiscalRegime") or "").strip())
+        fiscal_regime_code = str(_pick(profile, "FiscalRegime") or "").strip()
+        has_fiscal_regime = bool(fiscal_regime_code)
+        has_tax_name = bool(str(_pick(profile, "TaxName") or "").strip())
+        tax_address = _pick(profile, "TaxAddress") or {}
+        has_tax_address_zip = bool(str(_pick(tax_address, "ZipCode") or "").strip())
         has_expedition_zip = bool(expedition_zip)
         has_csd = bool(_pick(profile, "Csd"))
         return jsonify({
@@ -422,7 +426,10 @@ def api_facturama_status():
                 "expedition_zip": has_expedition_zip,
                 "test_certificate": has_csd,
                 "official_test_issuer": official_test_issuer,
+                "tax_name": has_tax_name,
+                "tax_address_zip": has_tax_address_zip,
             },
+            "fiscal_regime_code": fiscal_regime_code,
         }), 200
     except requests.HTTPError as exc:
         return jsonify({
