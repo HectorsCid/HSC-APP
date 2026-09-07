@@ -218,6 +218,7 @@ def _validate_receiver(receptor):
 
 
 def _build_facturama_cfdi(payload):
+    cfg = _facturama_config()
     receptor = payload.get("receptor") or {}
     rfc, name, zip_code, regime = _validate_receiver(receptor)
     profile_expedition, profile_tax_zip = _facturama_issuer_locations()
@@ -267,7 +268,6 @@ def _build_facturama_cfdi(payload):
     if payment_method == "PPD":
         payment_form = "99"
     cfdi = {
-        "Date": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         "Currency": str(payload.get("moneda") or "MXN").upper(),
         "ExpeditionPlace": expedition_zip,
         "TaxZipCode": profile_tax_zip,
@@ -283,6 +283,11 @@ def _build_facturama_cfdi(payload):
         },
         "Items": items,
     }
+    requested_date = str(payload.get("fecha_emision") or "").strip()
+    if requested_date:
+        cfdi["Date"] = requested_date
+    elif not cfg["sandbox"]:
+        cfdi["Date"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     if payload.get("serie"):
         cfdi["Serie"] = str(payload["serie"]).strip()
     if payload.get("folio"):
