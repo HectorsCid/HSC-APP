@@ -2,8 +2,12 @@
 from flask import Blueprint, request, jsonify, Response, current_app
 from datetime import datetime
 from pathlib import Path
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from base64 import b64decode
+from threading import Lock
 import os
 import json
+import re
 import requests
 
 # ----------------------------------------------------------------------
@@ -15,6 +19,12 @@ facturacion_bp = Blueprint("facturacion", __name__, url_prefix="/api")
 # Config
 # ----------------------------------------------------------------------
 FACTURAPI_BASE = "https://www.facturapi.io/v2"
+FACTURAMA_SANDBOX_BASE = "https://apisandbox.facturama.mx"
+FACTURAMA_PRODUCTION_BASE = "https://api.facturama.mx"
+
+_STAMP_LOCK = Lock()
+_STAMP_RESULTS = {}
+_FM_PROFILE_CACHE = None
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -76,6 +86,222 @@ def _fa_get_binary(path, accept):
     r = requests.get(f"{FACTURAPI_BASE}{path}", headers=headers, timeout=60)
     r.raise_for_status()
     return r.content
+
+
+def _facturama_config():
+    """Configuración de Facturama. Sandbox es el valor seguro por defecto."""
+    user = os.getenv("FACTURAMA_USER", "").strip()
+    password = os.getenv("FACTURAMA_PASSWORD", "").strip()
+    sandbox = os.getenv("FACTURAMA_SANDBOX", "true").strip().lower() not in {"0", "false", "no"}
+    return {
+        "user": user,
+        "password": password,
+        "sandbox": sandbox,
+        "base": FACTURAMA_SANDBOX_BASE if sandbox else FACTURAMA_PRODUCTION_BASE,
+        "configured": bool(user and password),
+    }
+
+
+def _provider():
+    """Facturama tiene prioridad; Facturapi queda como respaldo temporal."""
+    return "facturama" if _facturama_config()["configured"] else "facturapi"
+
+
+def _fm_request(method, path, *, json_body=None, params=None, timeout=60):
+    cfg = _facturama_config()
+    if not cfg["configured"]:
+        raise RuntimeError("Faltan FACTURAMA_USER y FACTURAMA_PASSWORD")
+    response = requests.request(
+        method,
+        f"{cfg['base']}{path}",
+        auth=(cfg["user"], cfg["password"]),
+        json=json_body,
+        params=params,
+        timeout=timeout,
+        headers={"Accept": "application/json"},
+    )
+    response.raise_for_status()
+    if not response.content:
+        return {}
+    try:
+        return response.json()
+    except ValueError:
+        return response.text
+
+
+def _facturama_issuer_locations():
+    """Obtiene los códigos postales configurados en el perfil fiscal."""
+    global _FM_PROFILE_CACHE
+    expedition = os.getenv("FACTURAMA_EXPEDITION_ZIP", "").strip()
+    tax_zip = os.getenv("FACTURAMA_TAX_ZIP", "").strip()
+    if expedition and tax_zip:
+        return expedition, tax_zip
+    if _FM_PROFILE_CACHE is None:
+        _FM_PROFILE_CACHE = _fm_request("GET", "/TaxEntity", timeout=25)
+    profile = _FM_PROFILE_CACHE if isinstance(_FM_PROFILE_CACHE, dict) else {}
+    issued_in = _pick(profile, "IssuedIn") or {}
+    tax_address = _pick(profile, "TaxAddress") or {}
+    expedition = expedition or str(_pick(issued_in, "ZipCode") or _pick(tax_address, "ZipCode") or "").strip()
+    tax_zip = tax_zip or str(_pick(tax_address, "ZipCode") or expedition).strip()
+    return expedition, tax_zip
+
+
+def _http_error_detail(exc):
+    response = getattr(exc, "response", None)
+    if response is None:
+        return {"message": str(exc)}
+    try:
+        return response.json()
+    except Exception:
+        return {"message": (response.text or str(exc))[:1200]}
+
+
+def _money(value):
+    try:
+        return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(f"Importe inválido: {value}")
+
+
+def _number(value, default=0):
+    try:
+        return Decimal(str(value if value not in (None, "") else default))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(f"Número inválido: {value}")
+
+
+def _facturama_unit_name(unit_code):
+    return {
+        "E48": "Unidad de servicio",
+        "H87": "Pieza",
+        "MTR": "Metro",
+        "KGM": "Kilogramo",
+        "LTR": "Litro",
+    }.get(unit_code, "Unidad")
+
+
+def _validate_receiver(receptor):
+    allowed_regimes = {
+        "601", "603", "605", "606", "607", "608", "610", "611", "612",
+        "614", "615", "616", "620", "621", "622", "623", "624", "625", "626",
+    }
+    rfc = str(receptor.get("rfc", "")).strip().upper()
+    name = str(receptor.get("nombre", "")).strip()
+    zip_code = str(receptor.get("cp", "")).strip()
+    regime = str(receptor.get("regimen_fiscal", "")).strip()
+    if not re.fullmatch(r"[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}", rfc):
+        raise ValueError("RFC del receptor inválido")
+    if not name:
+        raise ValueError("Falta la razón social del receptor")
+    if not re.fullmatch(r"\d{5}", zip_code):
+        raise ValueError("El código postal del receptor debe tener 5 dígitos")
+    if regime not in allowed_regimes:
+        raise ValueError("Régimen fiscal del receptor fuera del catálogo permitido")
+    return rfc, name, zip_code, regime
+
+
+def _build_facturama_cfdi(payload):
+    receptor = payload.get("receptor") or {}
+    rfc, name, zip_code, regime = _validate_receiver(receptor)
+    profile_expedition, profile_tax_zip = _facturama_issuer_locations()
+    expedition_zip = str(payload.get("expedition_place") or profile_expedition).strip()
+    if not re.fullmatch(r"\d{5}", expedition_zip):
+        raise ValueError("Falta FACTURAMA_EXPEDITION_ZIP con el código postal de expedición")
+
+    items = []
+    for index, raw in enumerate(payload.get("items") or [], start=1):
+        description = str(raw.get("descripcion", "")).strip() or f"Concepto {index}"
+        quantity = _number(raw.get("cantidad"), 1)
+        unit_price = _money(raw.get("precio_unitario", raw.get("valor_unitario", 0)))
+        tax_rate = _number(raw.get("tasa_iva"), 0)
+        if quantity <= 0 or unit_price < 0 or tax_rate < 0:
+            raise ValueError(f"Valores inválidos en el concepto {index}")
+        subtotal = _money(quantity * unit_price)
+        tax_total = _money(subtotal * tax_rate)
+        unit_code = str(raw.get("clave_unidad") or "E48").strip().upper()
+        item = {
+            "ProductCode": str(raw.get("clave_prod_serv") or "85121600").strip(),
+            "IdentificationNumber": str(index),
+            "Description": description,
+            "Unit": _facturama_unit_name(unit_code),
+            "UnitCode": unit_code,
+            "UnitPrice": float(unit_price),
+            "Quantity": float(quantity),
+            "Subtotal": float(subtotal),
+            "Discount": 0.0,
+            "TaxObject": "02" if tax_rate > 0 else "01",
+            "Total": float(_money(subtotal + tax_total)),
+        }
+        if tax_rate > 0:
+            item["Taxes"] = [{
+                "Total": float(tax_total),
+                "Name": "IVA",
+                "Base": float(subtotal),
+                "Rate": float(tax_rate),
+                "IsRetention": False,
+                "IsFederalTax": True,
+            }]
+        items.append(item)
+    if not items:
+        raise ValueError("Agrega al menos un concepto")
+
+    payment_method = str(payload.get("metodo_pago") or "PUE").upper()
+    payment_form = str(payload.get("forma_pago") or "03").zfill(2)
+    if payment_method == "PPD":
+        payment_form = "99"
+    cfdi = {
+        "Date": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "Currency": str(payload.get("moneda") or "MXN").upper(),
+        "ExpeditionPlace": expedition_zip,
+        "TaxZipCode": profile_tax_zip,
+        "CfdiType": "I",
+        "PaymentForm": payment_form,
+        "PaymentMethod": payment_method,
+        "Receiver": {
+            "Rfc": rfc,
+            "Name": name,
+            "CfdiUse": str(receptor.get("uso_cfdi") or "G03").upper(),
+            "FiscalRegime": regime,
+            "TaxZipCode": zip_code,
+        },
+        "Items": items,
+    }
+    if payload.get("serie"):
+        cfdi["Serie"] = str(payload["serie"]).strip()
+    if payload.get("folio"):
+        cfdi["Folio"] = str(payload["folio"]).strip()
+    if payload.get("source_quote_id"):
+        cfdi["OrderNumber"] = str(payload["source_quote_id"]).strip()
+    if payload.get("condiciones"):
+        cfdi["PaymentConditions"] = str(payload["condiciones"]).strip()
+    return cfdi
+
+
+def _pick(data, *keys):
+    if not isinstance(data, dict):
+        return None
+    lowered = {str(k).lower(): v for k, v in data.items()}
+    for key in keys:
+        if key.lower() in lowered:
+            return lowered[key.lower()]
+    return None
+
+
+def _decode_facturama_file(data):
+    candidate = data
+    if isinstance(data, dict):
+        candidate = _pick(data, "Content", "Data", "File", "Base64")
+    if isinstance(candidate, dict):
+        candidate = _pick(candidate, "Content", "Data", "Base64")
+    if not isinstance(candidate, str) or not candidate.strip():
+        raise ValueError("Facturama no devolvió el contenido del archivo")
+    candidate = candidate.strip()
+    if candidate.startswith("data:") and "," in candidate:
+        candidate = candidate.split(",", 1)[1]
+    try:
+        return b64decode(candidate, validate=True)
+    except Exception as exc:
+        raise ValueError("Facturama devolvió un archivo inválido") from exc
 
 # ----------------------------------------------------------------------
 # Armado de datos
@@ -142,7 +368,47 @@ def _customer_inline(receptor):
 # ----------------------------------------------------------------------
 @facturacion_bp.get("/ping")
 def api_ping():
-    return {"ok": True, "svc": "facturacion"}, 200
+    cfg = _facturama_config()
+    return {
+        "ok": True,
+        "svc": "facturacion",
+        "provider": _provider(),
+        "environment": "sandbox" if cfg["sandbox"] else "production",
+    }, 200
+
+
+@facturacion_bp.get("/facturama/status")
+def api_facturama_status():
+    cfg = _facturama_config()
+    if not cfg["configured"]:
+        return jsonify({
+            "ok": False,
+            "provider": "facturama",
+            "environment": "sandbox" if cfg["sandbox"] else "production",
+            "error": "Facturama no está configurado",
+        }), 503
+    try:
+        # El perfil fiscal valida autenticación y que el emisor esté preparado.
+        profile = _fm_request("GET", "/TaxEntity", timeout=25)
+        issued_in = _pick(profile, "IssuedIn") or {}
+        tax_address = _pick(profile, "TaxAddress") or {}
+        expedition_zip = _pick(issued_in, "ZipCode") or _pick(tax_address, "ZipCode")
+        return jsonify({
+            "ok": True,
+            "provider": "facturama",
+            "environment": "sandbox" if cfg["sandbox"] else "production",
+            "account_connected": True,
+            "issuer_ready": bool(_pick(profile, "Rfc") and expedition_zip and _pick(profile, "Csd")),
+        }), 200
+    except requests.HTTPError as exc:
+        return jsonify({
+            "ok": False,
+            "provider": "facturama",
+            "environment": "sandbox" if cfg["sandbox"] else "production",
+            "error": _http_error_detail(exc),
+        }), getattr(exc.response, "status_code", 502) or 502
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": str(exc), "stage": "connection"}), 502
 
 # ----------------------------------------------------------------------
 # Timbrado (flujo principal)
@@ -151,7 +417,89 @@ def api_ping():
 def facturar():
     try:
         payload = request.get_json(force=True) or {}
-        current_app.logger.info("DBG payload.receptor: %s", payload.get("receptor"))
+        provider = _provider()
+
+        if provider == "facturama":
+            cfg = _facturama_config()
+            try:
+                cfdi = _build_facturama_cfdi(payload)
+            except (KeyError, TypeError, ValueError) as exc:
+                return jsonify({"ok": False, "stage": "validation", "error": str(exc)}), 400
+            except requests.HTTPError as exc:
+                return jsonify({
+                    "ok": False,
+                    "provider": "facturama",
+                    "stage": "issuer_profile",
+                    "error": _http_error_detail(exc),
+                }), 400
+            except requests.RequestException as exc:
+                return jsonify({
+                    "ok": False,
+                    "provider": "facturama",
+                    "stage": "connection",
+                    "error": "No se pudo consultar el perfil fiscal de Facturama",
+                    "detail": str(exc),
+                }), 502
+
+            request_id = str(payload.get("request_id") or "").strip()
+            if not request_id:
+                return jsonify({
+                    "ok": False,
+                    "stage": "validation",
+                    "error": "Falta el identificador seguro de la solicitud; recarga la página",
+                }), 400
+
+            # Serializa el timbrado y reutiliza la respuesta de un doble clic/reintento.
+            with _STAMP_LOCK:
+                if request_id in _STAMP_RESULTS:
+                    cached = dict(_STAMP_RESULTS[request_id])
+                    cached["duplicate_prevented"] = True
+                    return jsonify(cached), 200
+                try:
+                    invoice = _fm_request("POST", "/3/cfdis", json_body=cfdi, timeout=75)
+                except requests.HTTPError as exc:
+                    status_code = getattr(exc.response, "status_code", 400) or 400
+                    return jsonify({
+                        "ok": False,
+                        "provider": "facturama",
+                        "environment": "sandbox" if cfg["sandbox"] else "production",
+                        "stage": "stamp",
+                        "error": _http_error_detail(exc),
+                    }), 400 if status_code < 500 else 502
+                except requests.RequestException as exc:
+                    return jsonify({
+                        "ok": False,
+                        "provider": "facturama",
+                        "stage": "connection",
+                        "error": "Facturama no respondió a tiempo. Puedes reintentar sin duplicar.",
+                        "detail": str(exc),
+                    }), 502
+
+                inv_id = _pick(invoice, "Id")
+                uuid = _pick(invoice, "Uuid", "Complement", "FolioFiscal")
+                if isinstance(uuid, dict):
+                    uuid = _pick(uuid, "TaxStamp", "Uuid")
+                if not inv_id:
+                    return jsonify({
+                        "ok": False,
+                        "provider": "facturama",
+                        "stage": "response",
+                        "error": "Facturama respondió sin identificador de CFDI",
+                    }), 502
+                result = {
+                    "ok": True,
+                    "provider": "facturama",
+                    "environment": "sandbox" if cfg["sandbox"] else "production",
+                    "invoice_id": str(inv_id),
+                    "uuid": uuid or "Timbrado de prueba",
+                    "status": _pick(invoice, "Status") or "active",
+                    "total": _pick(invoice, "Total"),
+                    "pdf_url": f"/api/invoices/{inv_id}/pdf",
+                    "xml_url": f"/api/invoices/{inv_id}/xml",
+                    "complementos_disponibles": False,
+                }
+                _STAMP_RESULTS[request_id] = dict(result)
+                return jsonify(result), 200
 
         # 0) API key presente
         if not os.getenv("FACTURAPI_API_KEY", "").strip():
@@ -191,7 +539,6 @@ def facturar():
 
         # 4) Timbrar
         try:
-            current_app.logger.info("DBG data_cfdi: %s", json.dumps(data_cfdi, ensure_ascii=False))
             invoice = _fa_post("/invoices", json=data_cfdi)
             uuid   = invoice.get("uuid")
             total  = invoice.get("total")
@@ -231,6 +578,7 @@ def facturar():
         # 7) Respuesta final
         return jsonify({
             "ok": True,
+            "provider": "facturapi",
             "uuid": uuid,
             "invoice_id": inv_id,
             "status": status,
@@ -267,6 +615,28 @@ def facturar_safe():
 @facturacion_bp.get("/facturas/list")
 def api_list_facturas():
     """Últimas 100 facturas, con bandera paid según índice local de REP."""
+    if _provider() == "facturama":
+        try:
+            raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "all", "page": 0})
+        except requests.HTTPError as exc:
+            return jsonify({"ok": False, "provider": "facturama", "error": _http_error_detail(exc)}), 400
+        rows = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
+        out = []
+        for inv in rows:
+            receiver = _pick(inv, "Receiver", "Customer") or {}
+            out.append({
+                "id": _pick(inv, "Id"),
+                "uuid": _pick(inv, "Uuid"),
+                "date": _pick(inv, "Date"),
+                "total": _pick(inv, "Total"),
+                "status": _pick(inv, "Status"),
+                "payment_method": _pick(inv, "PaymentMethod"),
+                "type": _pick(inv, "CfdiType", "Type") or "I",
+                "customer_name": _pick(receiver, "Name", "LegalName"),
+                "customer_tax_id": _pick(receiver, "Rfc", "TaxId"),
+                "paid": False,
+            })
+        return jsonify({"ok": True, "provider": "facturama", "data": out}), 200
     try:
         rs = _fa_get("/invoices", params={"limit": 100})
     except requests.HTTPError as e:
@@ -297,6 +667,16 @@ def api_list_facturas():
 # ----------------------------------------------------------------------
 @facturacion_bp.get("/invoices/<inv_id>/pdf")
 def api_invoice_pdf(inv_id):
+    if _provider() == "facturama":
+        try:
+            content = _decode_facturama_file(_fm_request("GET", f"/Cfdi/pdf/issued/{inv_id}"))
+        except (requests.HTTPError, ValueError) as exc:
+            detail = _http_error_detail(exc) if isinstance(exc, requests.HTTPError) else {"message": str(exc)}
+            return jsonify({"ok": False, "error": detail}), 400
+        return Response(
+            content, mimetype="application/pdf",
+            headers={"Content-Disposition": f"inline; filename=Factura-{inv_id}.pdf"},
+        )
     try:
         content = _fa_get_binary(f"/invoices/{inv_id}/pdf", "application/pdf")
     except requests.HTTPError as e:
@@ -304,6 +684,25 @@ def api_invoice_pdf(inv_id):
     return Response(
         content, mimetype="application/pdf",
         headers={"Content-Disposition": f"inline; filename=Factura-{inv_id}.pdf"}
+    )
+
+
+@facturacion_bp.get("/invoices/<inv_id>/xml")
+def api_invoice_xml(inv_id):
+    if _provider() == "facturama":
+        try:
+            content = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
+        except (requests.HTTPError, ValueError) as exc:
+            detail = _http_error_detail(exc) if isinstance(exc, requests.HTTPError) else {"message": str(exc)}
+            return jsonify({"ok": False, "error": detail}), 400
+    else:
+        try:
+            content = _fa_get_binary(f"/invoices/{inv_id}/xml", "application/xml")
+        except requests.HTTPError as exc:
+            return getattr(exc.response, "text", str(exc)), 400
+    return Response(
+        content, mimetype="application/xml",
+        headers={"Content-Disposition": f"inline; filename=Factura-{inv_id}.xml"},
     )
 
 @facturacion_bp.post("/invoices/<inv_id>/cancel")
@@ -314,6 +713,21 @@ def api_invoice_cancel(inv_id):
     sub = (b.get("substitution_folio") or "").strip()
     if motive == "01" and sub:
         params["substitution_folio"] = sub
+    if _provider() == "facturama":
+        fm_params = {"type": "issued", "motive": motive}
+        if motive == "01" and sub:
+            fm_params["uuidReplacement"] = sub
+        try:
+            result = _fm_request("DELETE", f"/api/cfdi/{inv_id}", params=fm_params)
+            return jsonify({"ok": True, "provider": "facturama", "result": result}), 200
+        except requests.HTTPError as exc:
+            return jsonify({
+                "ok": False,
+                "provider": "facturama",
+                "stage": "cancel",
+                "status": getattr(exc.response, "status_code", None),
+                "error": _http_error_detail(exc),
+            }), 400
     try:
         inv = _fa_get(f"/invoices/{inv_id}")
         res = _fa_delete(f"/invoices/{inv_id}", params=params)

@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nueva Factura - HSC</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{ --bg:#ffffff; --card:#f9fafb; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --brand:#374151; --ok:#22c55e; --danger:#ef4444; --radius:14px; }
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
+    .wrap{max-width:1100px;margin:0 auto;padding:18px}
+    .top{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .title{font-size:1.25rem;font-weight:800}
+    .pill{font-size:.85rem;color:var(--muted)}
+    .grid{display:grid;gap:16px}
+    @media(min-width:840px){ .grid-2{grid-template-columns:1.2fr .8fr} }
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 6px 20px rgba(17,24,39,.05)}
+    .section-title{font-size:1rem;margin:0 0 10px;font-weight:700}
+    label{display:block;font-size:.9rem;color:var(--muted);margin:8px 0 6px}
+    input,select,textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:16px;background:#fff;outline:none}
+    textarea{min-height:92px;resize:vertical}
+    .row{display:grid;gap:12px}
+    @media(min-width:560px){ .row-2{grid-template-columns:1fr 1fr} }
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);cursor:pointer;font-weight:700;font-size:15px;background:#f9f9f9;color:#0f172a;text-decoration:none}
+    .btn:hover{background:#f3f4f6}
+    .btn-primary{background:var(--brand);color:#fff;border-color:transparent}
+    .btn-ok{background:var(--ok);color:#fff;border-color:transparent}
+    .btn-danger{background:var(--danger);color:#fff;border-color:transparent}
+    .actions{display:flex;flex-wrap:wrap;gap:10px}
+    .flash{display:none;margin:12px 0;padding:10px 12px;border-radius:12px;font-weight:600}
+    .flash.ok{display:block;background:#dcfce7;border:1px solid #bbf7d0;color:#14532d}
+    .flash.err{display:block;background:#fee2e2;border:1px solid #fecaca;color:#7f1d1d}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9rem}
+    .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:10px}
+    table{width:100%;border-collapse:collapse;min-width:860px}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;font-size:14px}
+    th{background:#f8fafc;font-weight:700;color:#334155}
+    td.numeric{text-align:right}
+    .t-actions .btn{padding:8px 10px;font-size:14px}
+    tfoot td{font-weight:800;background:#f8fafc}
+    .invalid{border-color:var(--danger)!important; box-shadow:0 0 0 2px rgba(239,68,68,.15) inset}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <div class="title">Nueva Factura</div>
+        <div class="pill">Facturama · ambiente de pruebas</div>
+      </div>
+      <div class="actions" style="display:flex;gap:8px">
+        <a class="btn" href="/inicio-app">🏠 Inicio</a>
+        <a class="btn" href="/facturacion">📚 Facturas</a>
+      </div>
+    </div>
+
+    <div id="msg" class="flash"></div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3 class="section-title">Receptor</h3>
+
+        <label>Cliente</label>
+        <select id="cliente">
+          <option value="">— Selecciona un cliente —</option>
+          {% if clientes is mapping %}
+            {% for nombre, c in clientes.items()|sort %}
+              {% set label = c.nombre or c.razon or c.razon_social or c.legal_name or nombre %}
+              <option value="{{ nombre }}">{{ label }}</option>
+            {% endfor %}
+          {% elif clientes is sequence %}
+            {% for c in clientes %}
+              {% set nombre = c.nombre or c.razon or c.razon_social or c.legal_name or c.rfc or ('Cliente ' ~ loop.index) %}
+              <option value="{{ nombre }}">{{ nombre }}</option>
+            {% endfor %}
+          {% endif %}
+        </select>
+
+        <label>RFC</label>
+        <input id="rfc" placeholder="Ej. ABCD010101XXX" required />
+
+        <label>Razón social</label>
+        <input id="razon" required />
+
+        <label>Código postal</label>
+        <input id="cp" required />
+
+        <label>Régimen fiscal</label>
+        <select id="regimen" required>
+          <option value="">— Selecciona —</option>
+          <option value="601">601 - PM General</option>
+          <option value="612">612 - PF Actividades Empresariales</option>
+          <option value="621">621 - Incorporación Fiscal</option>
+          <option value="626">626 - RESICO</option>
+        </select>
+
+        <label>Uso de CFDI</label>
+        <select id="uso" required>
+          <option value="G03">G03 - Gastos en general</option>
+          <option value="G01">G01 - Adquisición de mercancías</option>
+          <option value="P01">P01 - Por definir</option>
+        </select>
+      </div>
+
+      <div class="card">
+        <h3 class="section-title">Condiciones</h3>
+        <label>Forma de pago</label>
+        <select id="forma" required>
+          <option value="03">03 - Transferencia</option>
+          <option value="01">01 - Efectivo</option>
+          <option value="28">28 - Tarjeta de débito</option>
+          <option value="99">99 - Por definir</option>
+        </select>
+
+        <label>Método de pago</label>
+        <select id="metodo" required>
+          <option value="PUE">PUE - Una exhibición</option>
+          <option value="PPD">PPD - Parcialidades</option>
+        </select>
+
+        <label>Serie (opcional)</label>
+        <input id="serie" placeholder="HSC" />
+
+        <label>Condiciones (opcional)</label>
+        <input id="cond" placeholder="Crédito 15 días" />
+
+        <div class="actions" style="margin-top:12px">
+          <button id="btnTimbrar" class="btn btn-primary" type="button">🧾 Timbrar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <h3 class="section-title">Conceptos</h3>
+
+      <div class="row row-2">
+        <div>
+          <label>Plantilla rápida</label>
+          <select id="preset">
+            <option value="">— Ninguna —</option>
+            <option value='{"descripcion":"Servicio de mantenimiento","clave_prod_serv":"85121600","clave_unidad":"E48","precio_unitario":100,"cantidad":1,"tasa_iva":0.16}'>Servicio de mantenimiento</option>
+            <option value='{"descripcion":"Refacción genérica","clave_prod_serv":"25174900","clave_unidad":"H87","precio_unitario":1,"cantidad":1,"tasa_iva":0.16}'>Refacción genérica</option>
+          </select>
+        </div>
+        <div class="actions" style="align-items:end">
+          <button id="btnAgregar" class="btn" type="button">➕ Agregar concepto</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="tabla">
+          <thead>
+            <tr>
+              <th style="width:32px">#</th>
+              <th>Descripción</th>
+              <th style="width:110px">Cantidad</th>
+              <th style="width:150px">Precio</th>
+              <th style="width:130px">Clave P/S</th>
+              <th style="width:90px">Unidad</th>
+              <th style="width:90px">IVA</th>
+              <th style="width:160px">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+          <tfoot>
+            <tr><td colspan="3"></td><td class="numeric" id="subtotalCell">$0.00</td><td colspan="4">SUBTOTAL</td></tr>
+            <tr><td colspan="3"></td><td class="numeric" id="ivaCell">$0.00</td><td colspan="4">IVA</td></tr>
+            <tr><td colspan="3"></td><td class="numeric" id="totalCell"><strong>$0.00</strong></td><td colspan="4"><strong>TOTAL</strong></td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <h3 class="section-title">Respuesta</h3>
+      <pre id="out" class="mono" style="white-space:pre-wrap"></pre>
+      <div id="accionesPost" class="actions" style="display:none;margin-top:10px">
+        <a id="lnkPDF" class="btn" target="_blank">📄 Ver PDF</a>
+        <a id="lnkXML" class="btn" target="_blank">🧩 Ver XML</a>
+        <button id="btnPago" class="btn btn-ok" type="button">💳 Crear complemento</button>
+      </div>
+      <div id="accionesREP" class="actions" style="display:none;margin-top:10px">
+        <a id="lnkREPPDF" class="btn" target="_blank">📄 Ver REP PDF</a>
+        <a id="lnkREPXML" class="btn" target="_blank">🧩 Ver REP XML</a>
+      </div>
+    </div>
+  </div>
+
+  <script type="application/json" id="clientes-data">
+    {{ clientes | tojson | safe }}
+  </script>
+
+  <script>
+    const pageQuoteId = new URLSearchParams(location.search).get('quote_id') || '';
+    const stampRequestId = pageQuoteId
+      ? `quote:${pageQuoteId}:${Date.now()}`
+      : (crypto.randomUUID ? crypto.randomUUID() : `manual:${Date.now()}:${Math.random()}`);
+    let pageQuoteFolio = '';
+    // --------- Clientes: lookup por NOMBRE -----------
+    (function initClientes(){
+      const tag = document.getElementById('clientes-data');
+      let RAW = {};
+      try { RAW = JSON.parse(tag?.textContent || '{}'); } catch { RAW = {}; }
+
+      const byName = (() => {
+        if (Array.isArray(RAW)) {
+          const m = {};
+          for (const c of RAW) {
+            const key = String(c?.nombre || c?.razon_social || c?.razon || c?.legal_name || c?.rfc || '').trim();
+            if (key) m[key] = c;
+          }
+          return m;
+        }
+        return RAW && typeof RAW === 'object' ? RAW : {};
+      })();
+
+      const sel = document.getElementById('cliente');
+      if (sel && sel.options.length <= 1) {
+        const nombres = Object.keys(byName).sort((a,b)=>a.localeCompare(b,'es'));
+        for (const nombre of nombres) {
+          const opt = document.createElement('option');
+          opt.value = nombre;
+          opt.textContent = nombre;
+          sel.appendChild(opt);
+        }
+      }
+
+      function setVal(id, val){
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.tagName === 'SELECT') {
+          const v = String(val ?? '').trim();
+          if (v && [...el.options].some(o => o.value === v)) el.value = v;
+          else if (!v) el.value = '';
+        } else {
+          el.value = val ?? '';
+        }
+      }
+
+      function fillFromName(nombre){
+        const c = byName[nombre] || {};
+        setVal('rfc',     (c.rfc || '').toUpperCase());
+        setVal('razon',   c.razon_social || c.razon || c.nombre || c.legal_name || '');
+        setVal('cp',      c.cp || c.codigo_postal || c.zip || '');
+        setVal('regimen', String(c.regimen_fiscal || c.tax_system || '').trim());
+        setVal('uso',     c.uso_cfdi || 'G03');
+      }
+
+      sel?.addEventListener('change', ()=>{ if (sel.value) fillFromName(sel.value); });
+      if (sel && sel.value) fillFromName(sel.value);
+    })();
+
+    const msg = (ok, t) => {
+      const el = document.getElementById('msg');
+      el.className = 'flash ' + (ok ? 'ok' : 'err');
+      el.textContent = t;
+    };
+
+    // Autoajuste forma según método
+    const forma  = document.getElementById('forma');
+    const metodo = document.getElementById('metodo');
+    function syncForma(){
+      if (metodo.value === 'PPD') { forma.value='99'; forma.disabled=true; }
+      else { if(forma.value==='99') forma.value='03'; forma.disabled=false; }
+    }
+    metodo.addEventListener('change', syncForma);
+    syncForma();
+
+    // ------- Conceptos -------
+    const tbody = document.getElementById('tbody');
+    const presetSel = document.getElementById('preset');
+    const currency = n => n.toLocaleString('es-MX',{style:'currency',currency:'MXN'});
+
+    function filaHTML(i, d){
+      return `
+        <tr data-index="${i}">
+          <td>${i+1}</td>
+          <td><input class="c-desc" value="${d.descripcion||''}" /></td>
+          <td><input class="c-cant" type="number" step="0.01" min="0" value="${d.cantidad??1}"/></td>
+          <td><input class="c-precio" type="number" step="0.01" min="0" value="${d.precio_unitario??0}"/></td>
+          <td><input class="c-cps" value="${d.clave_prod_serv||'85121600'}"/></td>
+          <td><input class="c-cu" value="${d.clave_unidad||'E48'}"/></td>
+          <td><input class="c-iva" type="number" step="0.01" min="0" max="0.16" value="${d.tasa_iva??0.16}"/></td>
+          <td class="t-actions">
+            <div class="actions" style="gap:8px">
+              <button type="button" class="btn btn-danger btnDel">🗑️ Borrar</button>
+            </div>
+          </td>
+        </tr>`;
+    }
+
+    const estado = { items: [] };
+
+    function render(){
+      tbody.innerHTML = estado.items.map((it, i)=>filaHTML(i, it)).join('');
+      tbody.querySelectorAll('.btnDel').forEach((b, idx)=>{
+        b.onclick = () => { estado.items.splice(idx,1); render(); calc(); };
+      });
+      tbody.querySelectorAll('input').forEach(inp=>{
+        inp.addEventListener('input', ()=>{ calc(); });
+      });
+      calc();
+    }
+
+    function addItem(fromPreset){
+      const base = fromPreset || {
+        descripcion:'Concepto',
+        cantidad:1, precio_unitario:0,
+        clave_prod_serv:'85121600', clave_unidad:'E48', tasa_iva:0.16
+      };
+      estado.items.push({...base});
+      render();
+    }
+
+    document.getElementById('btnAgregar').onclick = ()=>{
+      let preset = null;
+      if(presetSel.value){
+        try{ preset = JSON.parse(presetSel.value); }catch(_){}
+      }
+      addItem(preset);
+    };
+
+    function calc(){
+      let subtotal = 0, iva = 0;
+      [...tbody.querySelectorAll('tr')].forEach((tr, i)=>{
+        const g = sel => tr.querySelector(sel);
+        const cantidad = parseFloat(g('.c-cant').value || 0);
+        const pu       = parseFloat(g('.c-precio').value || 0);
+        const tasa     = parseFloat(g('.c-iva').value || 0);
+        estado.items[i].descripcion = g('.c-desc').value || '';
+        estado.items[i].clave_prod_serv = g('.c-cps').value || '';
+        estado.items[i].clave_unidad = g('.c-cu').value || '';
+        estado.items[i].cantidad = cantidad;
+        estado.items[i].precio_unitario = pu;
+        estado.items[i].tasa_iva = tasa;
+        const impBase = cantidad * pu;
+        subtotal += impBase;
+        iva += impBase * tasa;
+      });
+      document.getElementById('subtotalCell').textContent = currency(subtotal);
+      document.getElementById('ivaCell').textContent = currency(iva);
+      document.getElementById('totalCell').textContent = currency(subtotal+iva);
+    }
+
+    addItem(null); // fila inicial
+
+    // -------- VALIDACIONES P0 ----------
+    const RFC_RE = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/;
+    const CP_RE  = /^\d{5}$/;
+
+    function mark(el, ok){
+      if(!el) return;
+      if(ok) el.classList.remove('invalid');
+      else el.classList.add('invalid');
+    }
+
+    function valReceptor(){
+      const rfc = document.getElementById('rfc');
+      const cp  = document.getElementById('cp');
+      const reg = document.getElementById('regimen');
+      const uso = document.getElementById('uso');
+
+      const rfcVal = (rfc.value||'').trim().toUpperCase();
+      rfc.value = rfcVal;
+
+      const okRFC = RFC_RE.test(rfcVal);
+      const okCP  = CP_RE.test((cp.value||'').trim());
+      const okReg = !!(reg.value||'').trim();
+      const okUso = !!(uso.value||'').trim();
+
+      mark(rfc, okRFC); mark(cp, okCP); mark(reg, okReg); mark(uso, okUso);
+
+      if(!okRFC){ msg(false,'RFC inválido. Formato SAT requerido.'); return false; }
+      if(!okCP){  msg(false,'Código postal debe ser 5 dígitos.'); return false; }
+      if(!okReg){ msg(false,'Selecciona Régimen fiscal.'); return false; }
+      if(!okUso){ msg(false,'Selecciona Uso de CFDI.'); return false; }
+      return true;
+    }
+
+    function valConceptos(){
+      const rows = [...tbody.querySelectorAll('tr')];
+      if(rows.length === 0){ msg(false,'Agrega al menos un concepto.'); return false; }
+      let ok = true;
+      for(const tr of rows){
+        const cant = parseFloat(tr.querySelector('.c-cant')?.value || 0);
+        const pu   = parseFloat(tr.querySelector('.c-precio')?.value || 0);
+        const iva  = parseFloat(tr.querySelector('.c-iva')?.value || 0);
+        const iCant = tr.querySelector('.c-cant');
+        const iPrecio = tr.querySelector('.c-precio');
+        const iIva = tr.querySelector('.c-iva');
+
+        const okCant = isFinite(cant) && cant > 0;
+        const okPrecio = isFinite(pu) && pu >= 0;
+        const okIva = isFinite(iva) && iva >= 0 && iva <= 0.16 + 1e-9;
+
+        mark(iCant, okCant); mark(iPrecio, okPrecio); mark(iIva, okIva);
+
+        if(!(okCant && okPrecio && okIva)) ok = false;
+      }
+      if(!ok) msg(false,'Revisa cantidad (>0), precio (≥0) e IVA (0 a 0.16).');
+      return ok;
+    }
+
+    document.getElementById('rfc')?.addEventListener('blur', e=>{
+      e.target.value = (e.target.value||'').toUpperCase().trim();
+    });
+
+    // ---------- Prefilling por quote_id ----------
+    (async function prefillFromQuote(){
+      const qid = pageQuoteId;
+      if(!qid) return;
+
+      try{
+        const r = await fetch('/api/cotizaciones/' + encodeURIComponent(qid), {headers:{'Accept':'application/json'}});
+        if(!r.ok) { msg(false,'No se pudo cargar la cotización.'); return; }
+        const data = await r.json();
+        if(!data.ok){ msg(false, data.error?.message || 'Cotización no disponible'); return; }
+        pageQuoteFolio = String(data.folio || '').trim();
+
+        // Receptor
+        const rec = data.receptor || {};
+        document.getElementById('razon').value = rec.nombre || '';
+        document.getElementById('rfc').value   = (rec.rfc || '').toUpperCase();
+        document.getElementById('cp').value    = rec.cp || '';
+        if (rec.regimen_fiscal) document.getElementById('regimen').value = String(rec.regimen_fiscal);
+        if (rec.uso_cfdi)       document.getElementById('uso').value     = rec.uso_cfdi;
+
+        // Items
+        const arr = Array.isArray(data.items) ? data.items : [];
+        if(arr.length){
+          estado.items = [];
+          for(const it of arr){
+            estado.items.push({
+              descripcion: it.descripcion || 'Concepto',
+              cantidad: Number(it.cantidad||1),
+              precio_unitario: Number(it.precio_unitario||0),
+              clave_prod_serv: it.clave_prod_serv || '85121600',
+              clave_unidad: it.clave_unidad || 'E48',
+              tasa_iva: Number(it.tasa_iva||0)
+            });
+          }
+          render();
+          calc();
+          msg(true, `Cotización ${data.folio || data.id} cargada.`);
+          setTimeout(()=>{ document.getElementById('msg').className='flash'; }, 1200);
+        }
+      }catch(e){
+        msg(false, 'Error al cargar cotización: ' + e.message);
+      }
+    })();
+
+    // -------- Timbrar ----------
+    let lastResult = null;
+    document.getElementById('btnTimbrar').onclick = async () => {
+      if(!valReceptor()) return;
+      if(!valConceptos()) return;
+
+      const stampButton = document.getElementById('btnTimbrar');
+      if(stampButton.disabled) return;
+      stampButton.disabled = true;
+      stampButton.textContent = '⏳ Timbrando…';
+      msg(true, 'Timbrando…');
+      document.getElementById('accionesPost').style.display = 'none';
+      document.getElementById('accionesREP').style.display  = 'none';
+
+      const rows = estado.items.map(it => {
+        const pu = Number(it.precio_unitario||0);
+        return {
+          descripcion: it.descripcion || 'Concepto',
+          clave_prod_serv: it.clave_prod_serv || '85121600',
+          clave_unidad: it.clave_unidad || 'E48',
+          precio_unitario: pu,
+          valor_unitario: pu,
+          cantidad: Number(it.cantidad||1),
+          tasa_iva: Number(it.tasa_iva||0)
+        };
+      });
+
+      const payload = {
+        receptor: {
+          rfc: (document.getElementById('rfc').value||'').trim().toUpperCase(),
+          nombre: document.getElementById('razon').value||'',
+          cp: (document.getElementById('cp').value||'').trim(),
+          regimen_fiscal: parseInt((document.getElementById('regimen').value||'0'),10),
+          uso_cfdi: document.getElementById('uso').value||'G03'
+        },
+        forma_pago: document.getElementById('forma').value||'03',
+        metodo_pago: document.getElementById('metodo').value||'PUE',
+        serie: document.getElementById('serie').value||'HSC',
+        condiciones: document.getElementById('cond').value||'',
+        source_quote_id: pageQuoteId,
+        folio: pageQuoteFolio,
+        request_id: stampRequestId,
+        items: rows
+      };
+
+      try{
+        const r = await fetch('/api/facturar', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json','Accept':'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        let data;
+        const raw = await r.text();
+        try { data = JSON.parse(raw); } catch { data = { ok:false, error:{ message: raw.slice(0,400) } }; }
+
+        lastResult = data;
+        document.getElementById('out').textContent = JSON.stringify(data, null, 2);
+
+        if(r.ok && data.ok){
+          msg(true, `${data.environment === 'sandbox' ? 'Prueba timbrada' : 'Timbrada'}: ${data.uuid}`);
+          const pdf = data.pdf_url || ('/' + (data.pdf_path||'').replace(/\\/g,'/'));
+          const xml = data.xml_url || ('/' + (data.xml_path||'').replace(/\\/g,'/'));
+          if (pdf && pdf !== '/') document.getElementById('lnkPDF').href = pdf;
+          if (xml && xml !== '/') document.getElementById('lnkXML').href = xml;
+          document.getElementById('btnPago').style.display = data.complementos_disponibles ? '' : 'none';
+          document.getElementById('accionesPost').style.display = 'flex';
+          stampButton.textContent = '✅ Timbrada';
+        } else {
+          msg(false, `Error: ${data.error ? JSON.stringify(data.error) : 'ver detalles'}`);
+          stampButton.disabled = false;
+          stampButton.textContent = '🧾 Timbrar';
+        }
+      }catch(e){
+        msg(false, e.message);
+        stampButton.disabled = false;
+        stampButton.textContent = '🧾 Timbrar';
+      }
+    };
+
+    // Complemento de pago (placeholder)
+    document.getElementById('btnPago').onclick = async () => {
+      if(!lastResult || !lastResult.invoice_id){ msg(false, 'Falta invoice_id en la respuesta del timbrado.'); return; }
+      msg(true, 'Creando complemento…');
+      try{
+        const r = await fetch('/api/facturar_safe', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ invoice_id: lastResult.invoice_id, payment_form: '03' })
+        });
+        const data = await r.json();
+        document.getElementById('out').textContent = JSON.stringify(data, null, 2);
+        if(r.ok && data.ok){
+          msg(true, `REP: ${data.uuid}`);
+          const repPdf = '/' + (data.pdf_path||'').replace(/\\/g,'/');
+          const repXml = '/' + (data.xml_path||'').replace(/\\/g,'/');
+          if (data.pdf_path) document.getElementById('lnkREPPDF').href = repPdf;
+          if (data.xml_path) document.getElementById('lnkREPXML').href = repXml;
+          document.getElementById('accionesREP').style.display = 'flex';
+        } else { msg(false, `Error REP: ${data.error ? JSON.stringify(data.error) : 'ver detalles'}`); }
+      }catch(e){ msg(false, e.message); }
+    };
+  </script>
+  <script>
+(function(){
+  const sel = document.getElementById('preset');
+  if(!sel) return;
+
+  // base que ya tenías + categorías sugeridas
+  const DEFAULTS = [
+    { descripcion:"Servicio de mantenimiento", clave_prod_serv:"85121600", clave_unidad:"E48", precio_unitario:100, cantidad:1, tasa_iva:0.16 },
+    { descripcion:"Refacción genérica",        clave_prod_serv:"25174900", clave_unidad:"H87", precio_unitario:1,   cantidad:1, tasa_iva:0.16 },
+    // Sugeridas (ajusta claves si lo deseas)
+    { descripcion:"Mantenimiento de refrigeración", clave_prod_serv:"85121600", clave_unidad:"E48", precio_unitario:0, cantidad:1, tasa_iva:0.16 },
+    { descripcion:"Obra civil",                     clave_prod_serv:"72100000", clave_unidad:"E48", precio_unitario:0, cantidad:1, tasa_iva:0.16 },
+    { descripcion:"Trabajos de pailería",           clave_prod_serv:"72151500", clave_unidad:"E48", precio_unitario:0, cantidad:1, tasa_iva:0.16 },
+    { descripcion:"Trabajos de pintura",            clave_prod_serv:"31211500", clave_unidad:"E48", precio_unitario:0, cantidad:1, tasa_iva:0.16 },
+  ];
+
+  const LSKEY = 'hsc_presets_v1';
+
+  function loadUser(){
+    try{
+      const raw = localStorage.getItem(LSKEY);
+      const arr = JSON.parse(raw||'[]');
+      return Array.isArray(arr) ? arr : [];
+    }catch{ return []; }
+  }
+  function saveUser(arr){
+    localStorage.setItem(LSKEY, JSON.stringify(arr||[]));
+  }
+
+  function populate(){
+    const user = loadUser();
+    const all = [...DEFAULTS, ...user];
+    sel.innerHTML = '<option value="">— Ninguna —</option>' + all.map(p => {
+      const v = JSON.stringify(p);
+      return `<option value='${v.replace(/'/g,"&apos;")}'>${p.descripcion}</option>`;
+    }).join('');
+  }
+
+  // UI mínima para gestionar plantillas
+  const btn = document.createElement('button');
+  btn.type='button'; btn.className='btn'; btn.textContent='⚙️ Plantillas';
+  sel.parentElement?.parentElement?.querySelector('.actions')?.prepend(btn);
+
+  // modal simple
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <style>
+      .pz-back{position:fixed;inset:0;background:rgba(17,24,39,.45);display:none;align-items:center;justify-content:center;z-index:9999}
+      .pz-back.show{display:flex}
+      .pz-card{width:min(640px,92vw);background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+      .pz-h{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #e5e7eb;font-weight:800}
+      .pz-b{padding:12px 14px;display:grid;gap:10px}
+      .pz-row{display:grid;gap:6px}
+      .pz-actions{display:flex;gap:8px;justify-content:flex-end;padding:12px 14px;border-top:1px solid #e5e7eb}
+      .pz-btn{padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;cursor:pointer}
+      .pz-btn.primary{background:#374151;color:#fff;border-color:transparent}
+      .pz-list{border:1px solid #e5e7eb;border-radius:10px;max-height:240px;overflow:auto}
+      .pz-list table{width:100%;border-collapse:collapse}
+      .pz-list th,.pz-list td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left;font-size:14px}
+      .pz-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+      .pz-grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+      .pz-input{width:100%;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px}
+    </style>
+    <div class="pz-back" id="pzBack">
+      <div class="pz-card">
+        <div class="pz-h">Plantillas de conceptos <button id="pzClose" class="pz-btn">×</button></div>
+        <div class="pz-b">
+          <div class="pz-list"><table><thead><tr><th>Descripción</th><th>Clave P/S</th><th>Unidad</th><th>Precio</th><th></th></tr></thead><tbody id="pzBody"></tbody></table></div>
+          <div class="pz-row">
+            <div class="pz-grid">
+              <input id="pzDesc" class="pz-input" placeholder="Descripción" />
+              <input id="pzCPS"  class="pz-input" placeholder="Clave P/S" />
+              <input id="pzUni"  class="pz-input" placeholder="Unidad SAT" value="E48" />
+            </div>
+            <div class="pz-grid2">
+              <input id="pzPrecio" class="pz-input" type="number" step="0.01" placeholder="Precio unitario" />
+              <input id="pzIVA"    class="pz-input" type="number" step="0.01" placeholder="IVA (0–0.16)" value="0.16" />
+            </div>
+          </div>
+        </div>
+        <div class="pz-actions">
+          <button id="pzAdd" class="pz-btn primary">Agregar</button>
+          <button id="pzSave" class="pz-btn">Guardar</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+  const back = document.getElementById('pzBack');
+  const close = document.getElementById('pzClose');
+  const body = document.getElementById('pzBody');
+
+  function open(){ back.classList.add('show'); renderList(); }
+  function shut(){ back.classList.remove('show'); }
+
+  function renderList(){
+    const all = [...DEFAULTS, ...loadUser()];
+    body.innerHTML = all.map((p,i)=>`
+      <tr>
+        <td>${esc(p.descripcion)}</td>
+        <td>${esc(p.clave_prod_serv)}</td>
+        <td>${esc(p.clave_unidad)}</td>
+        <td>${Number(p.precio_unitario||0).toFixed(2)}</td>
+        <td>${i>=DEFAULTS.length ? `<button class="pz-btn" data-del="${i-DEFAULTS.length}">Eliminar</button>` : ''}</td>
+      </tr>`).join('');
+    body.querySelectorAll('button[data-del]').forEach(b=>{
+      b.onclick=()=>{
+        const idx = Number(b.getAttribute('data-del'));
+        const u = loadUser();
+        u.splice(idx,1);
+        saveUser(u);
+        populate();
+        renderList();
+      };
+    });
+  }
+
+  function esc(s){ return String(s||'').replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+
+  document.getElementById('pzAdd').onclick = ()=>{
+    const d = document.getElementById('pzDesc').value.trim();
+    const cps= document.getElementById('pzCPS').value.trim() || '85121600';
+    const uni= document.getElementById('pzUni').value.trim() || 'E48';
+    const pre= Number(document.getElementById('pzPrecio').value||0);
+    const iva= Number(document.getElementById('pzIVA').value||0);
+    if(!d){ alert('Descripción requerida'); return; }
+    const u = loadUser();
+    u.push({ descripcion:d, clave_prod_serv:cps, clave_unidad:uni, precio_unitario:pre, cantidad:1, tasa_iva:iva });
+    saveUser(u);
+    document.getElementById('pzDesc').value='';
+    document.getElementById('pzPrecio').value='';
+    populate();
+    renderList();
+  };
+
+  document.getElementById('pzSave').onclick = ()=>{ shut(); };
+  btn.onclick = open; close.onclick = shut;
+
+  populate();
+})();
+</script>
+
+</body>
+</html>
+
+
+
+
+
+
+
