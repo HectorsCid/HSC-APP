@@ -71,6 +71,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
             "Rfc": "EKU9003173C9",
             "FiscalRegime": "601",
             "TaxAddress": {},
+            "Csd": {"Certificate": "test.cer", "PrivateKey": "test.key"},
         }
         billing._FM_BRANCH_CACHE = [{
             "IsDefault": True,

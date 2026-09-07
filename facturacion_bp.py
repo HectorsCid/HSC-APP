@@ -150,6 +150,9 @@ def _facturama_issuer_locations():
         raise ValueError("Falta guardar el régimen fiscal del emisor en el perfil de Facturama")
     if _facturama_config()["sandbox"] and profile_rfc == "EKU9003173C9" and profile_regime != "601":
         raise ValueError("El RFC oficial de pruebas EKU9003173C9 requiere régimen fiscal 601")
+    csd = _pick(profile, "Csd") or {}
+    if not (_pick(csd, "Certificate") and _pick(csd, "PrivateKey")):
+        raise ValueError("Falta cargar el certificado .cer y la llave .key de pruebas en Facturama")
     tax_address = _pick(profile, "TaxAddress") or {}
     branches = _FM_BRANCH_CACHE or []
     default_branch = next((branch for branch in branches if _pick(branch, "IsDefault")), None)
@@ -418,7 +421,10 @@ def api_facturama_status():
         has_tax_address_zip = bool(str(_pick(tax_address, "ZipCode") or "").strip())
         regime_matches_issuer = not official_test_issuer or fiscal_regime_code == "601"
         has_expedition_zip = bool(expedition_zip)
-        has_csd = bool(_pick(profile, "Csd"))
+        csd = _pick(profile, "Csd") or {}
+        has_certificate = bool(str(_pick(csd, "Certificate") or "").strip())
+        has_private_key = bool(str(_pick(csd, "PrivateKey") or "").strip())
+        has_csd = has_certificate and has_private_key
         return jsonify({
             "ok": True,
             "provider": "facturama",
@@ -434,6 +440,8 @@ def api_facturama_status():
                 "regime_matches_issuer": regime_matches_issuer,
                 "expedition_zip": has_expedition_zip,
                 "test_certificate": has_csd,
+                "certificate_file": has_certificate,
+                "private_key_file": has_private_key,
                 "official_test_issuer": official_test_issuer,
                 "tax_name": has_tax_name,
                 "tax_address_zip": has_tax_address_zip,
