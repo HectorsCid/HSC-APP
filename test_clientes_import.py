@@ -71,6 +71,23 @@ class CustomerImportTests(unittest.TestCase):
         finally:
             app_module.clientes_predefinidos = original
 
+    def test_current_customer_fiscal_record_overrides_old_quote_receiver(self):
+        quote = {
+            "cliente": "Bticino",
+            "receptor": {"nombre": "Bticino", "rfc": "", "cp": ""},
+        }
+        current = {
+            "razon_social": "BTICINO DE MEXICO SA DE CV",
+            "rfc": "BME8604039G0",
+            "cp": "76120",
+            "regimen_fiscal": "601",
+            "uso_cfdi": "G03",
+        }
+        receiver = app_module._combinar_receptor_cotizacion(quote, current)
+        self.assertEqual(receiver["nombre"], "BTICINO DE MEXICO SA DE CV")
+        self.assertEqual(receiver["rfc"], "BME8604039G0")
+        self.assertEqual(receiver["cp"], "76120")
+
 
 if __name__ == "__main__":
     unittest.main()

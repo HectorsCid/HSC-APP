@@ -2468,13 +2468,16 @@ def _get_clientes_from_config():
 def ui_factura_nueva():
     base = Path(current_app.root_path)
 
-    # 1) intenta leer archivo local
-    clientes = {}
+    # La memoria sincronizada con clientes.json de Drive es la fuente vigente.
+    # Los archivos alternos quedan únicamente como respaldo de arranque.
+    global clientes_predefinidos
+    with _CLIENTES_DATA_LOCK:
+        clientes = dict(clientes_predefinidos or {})
     for p in (
+        base / "clientes.json",
         base / "data" / "clientes.json",
         base / "static" / "data" / "clientes.json",
-        Path.cwd() / "data" / "clientes.json",
-    ):
+    ) if not clientes else ():
         try:
             if p.exists() and p.stat().st_size > 2:
                 txt = p.read_text("utf-8")
@@ -2486,15 +2489,7 @@ def ui_factura_nueva():
         except Exception as e:
             print(">> error leyendo", p, e)
 
-    # 2) fallback: usar la variable global
-    if not clientes:
-        global clientes_predefinidos
-        if clientes_predefinidos:
-            clientes = clientes_predefinidos
-            print(">> ui_factura_nueva: usando clientes_predefinidos global",
-                  f"items={len(clientes)}")
-
-    # 3) seguridad de tipo
+    # Seguridad de tipo
     if not isinstance(clientes, (dict, list)):
         clientes = {}
 
@@ -2643,6 +2638,33 @@ def api_cotizaciones_list():
             pass
     return jsonify(items), 200
 
+
+def _combinar_receptor_cotizacion(cotizacion, cliente_actual):
+    """La ficha fiscal vigente prevalece sobre una cotización histórica."""
+    rec_raw = cotizacion.get("receptor") or {}
+    current = cliente_actual if isinstance(cliente_actual, dict) else {}
+    return {
+        "rfc": str(current.get("rfc") or rec_raw.get("rfc") or cotizacion.get("rfc") or "").upper(),
+        "nombre": (
+            current.get("razon_social") or current.get("razon") or current.get("legal_name")
+            or rec_raw.get("razon_social") or rec_raw.get("nombre")
+            or cotizacion.get("cliente") or ""
+        ),
+        "cp": (
+            current.get("cp") or current.get("codigo_postal") or current.get("zip")
+            or rec_raw.get("cp") or rec_raw.get("codigo_postal") or rec_raw.get("zip") or ""
+        ),
+        "regimen_fiscal": (
+            current.get("regimen_fiscal") or current.get("regimen")
+            or rec_raw.get("regimen_fiscal") or rec_raw.get("regimen") or ""
+        ),
+        "uso_cfdi": current.get("uso_cfdi") or rec_raw.get("uso_cfdi") or "",
+        "email": (
+            current.get("correo_facturacion") or current.get("email")
+            or rec_raw.get("correo_facturacion") or rec_raw.get("email") or ""
+        ),
+    }
+
 @app.get("/api/cotizaciones/<qid>")
 def api_cotizacion_detalle(qid):
     """
@@ -2680,14 +2702,10 @@ def api_cotizacion_detalle(qid):
     if not match:
         return jsonify(ok=False, error={"message": "Cotización no encontrada"}), 404
 
-    rec_raw = match.get("receptor") or {}
-    receptor = {
-        "rfc": (rec_raw.get("rfc") or match.get("rfc") or "").upper(),
-        "nombre": rec_raw.get("nombre") or rec_raw.get("razon_social") or match.get("cliente") or "",
-        "cp": rec_raw.get("cp") or rec_raw.get("codigo_postal") or rec_raw.get("zip") or "",
-        "regimen_fiscal": rec_raw.get("regimen_fiscal") or rec_raw.get("regimen") or "",
-        "uso_cfdi": rec_raw.get("uso_cfdi") or ""
-    }
+    client_name = str(match.get("cliente") or "").strip()
+    with _CLIENTES_DATA_LOCK:
+        current_client = dict(clientes_predefinidos.get(client_name, {}) or {})
+    receptor = _combinar_receptor_cotizacion(match, current_client)
 
     detalle = match.get("conceptos") or match.get("items") or match.get("detalles") or match.get("partidas") or []
     items_norm = []

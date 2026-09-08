@@ -68,8 +68,7 @@
           <option value="">— Selecciona un cliente —</option>
           {% if clientes is mapping %}
             {% for nombre, c in clientes.items()|sort %}
-              {% set label = c.nombre or c.razon or c.razon_social or c.legal_name or nombre %}
-              <option value="{{ nombre }}">{{ label }}</option>
+              <option value="{{ nombre }}">{{ nombre }}</option>
             {% endfor %}
           {% elif clientes is sequence %}
             {% for c in clientes %}
