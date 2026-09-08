@@ -61,6 +61,7 @@
     .theme-track{width:38px;height:21px;padding:2px;border-radius:999px;background:#94a3b8;display:flex}.theme-knob{width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:.2s}
     html[data-theme="dark"] .theme-track{background:#22c55e}html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
     @media(max-width:839px){.wrap{padding:11px}.top{align-items:flex-start;flex-direction:column}.top .actions{width:100%}.top .actions>*{flex:1}.card{padding:11px}}
+    .template-backdrop{position:fixed;inset:0;z-index:9999;display:none;place-items:center;padding:18px;background:rgba(2,6,23,.62)}.template-backdrop.show{display:grid}.template-dialog{width:min(460px,100%);padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.template-dialog h2{margin:0 0 5px;font-size:1.15rem}.template-dialog p{margin:0 0 14px;color:var(--muted);font-size:.82rem}.template-dialog .actions{margin-top:14px;justify-content:flex-end}
   </style>
 </head>
 <body>
@@ -162,6 +163,7 @@
 
         <div class="actions" style="margin-top:12px">
           <button id="btnTimbrar" class="btn btn-primary" type="button">🧾 Timbrar</button>
+          <button id="btnSaveTemplate" class="btn" type="button">📋 Guardar plantilla</button>
         </div>
       </div>
     </div>
@@ -226,8 +228,19 @@
     {{ clientes | tojson | safe }}
   </script>
 
+  <div class="template-backdrop" id="templateModal" role="dialog" aria-modal="true">
+    <div class="template-dialog">
+      <h2>Guardar plantilla</h2>
+      <p>Conservará receptor, conceptos, impuestos y condiciones. No se timbrará nada.</p>
+      <label for="templateName">Nombre para identificarla</label>
+      <input id="templateName" maxlength="80" placeholder="Ej. Mantenimiento mensual Bticino">
+      <div class="actions"><button class="btn" id="cancelTemplate" type="button">Cancelar</button><button class="btn btn-primary" id="confirmTemplate" type="button">Guardar</button></div>
+    </div>
+  </div>
+
   <script>
     const pageQuoteId = new URLSearchParams(location.search).get('quote_id') || '';
+    const pageTemplateId = new URLSearchParams(location.search).get('template_id') || '';
     const stampRequestId = pageQuoteId
       ? `quote:${pageQuoteId}:${Date.now()}`
       : (crypto.randomUUID ? crypto.randomUUID() : `manual:${Date.now()}:${Math.random()}`);
@@ -417,16 +430,19 @@
     const catalogOptions = document.getElementById('catalogoOpciones');
     const catalogMap = new Map();
     const currency = n => n.toLocaleString('es-MX',{style:'currency',currency:'MXN'});
+    const fieldValue = value => String(value ?? '')
+      .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+      .replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
     function filaHTML(i, d){
       return `
         <tr data-index="${i}">
           <td>${i+1}</td>
-          <td><input class="c-desc" value="${d.descripcion||''}" /></td>
+          <td><input class="c-desc" value="${fieldValue(d.descripcion)}" /></td>
           <td><input class="c-cant" type="number" step="0.01" min="0" value="${d.cantidad??1}"/></td>
           <td><input class="c-precio" type="number" step="0.01" min="0" value="${d.precio_unitario??0}"/></td>
-          <td><input class="c-cps" value="${d.clave_prod_serv||'85121600'}"/></td>
-          <td><input class="c-cu" value="${d.clave_unidad||'E48'}"/></td>
+          <td><input class="c-cps" value="${fieldValue(d.clave_prod_serv||'85121600')}"/></td>
+          <td><input class="c-cu" value="${fieldValue(d.clave_unidad||'E48')}"/></td>
           <td><input class="c-iva" type="number" step="0.01" min="0" max="0.16" value="${d.tasa_iva??0.16}"/></td>
           <td class="t-actions">
             <div class="actions" style="gap:8px">
@@ -531,6 +547,83 @@
     document.getElementById('retencionIva').addEventListener('change', calc);
 
     addItem(null); // fila inicial
+
+    // ------- Plantillas completas de factura -------
+    const templateModal = document.getElementById('templateModal');
+    const templateName = document.getElementById('templateName');
+    const saveTemplateButton = document.getElementById('btnSaveTemplate');
+    saveTemplateButton.onclick=()=>{templateName.value='';templateModal.classList.add('show');setTimeout(()=>templateName.focus(),0)};
+    document.getElementById('cancelTemplate').onclick=()=>templateModal.classList.remove('show');
+    templateModal.addEventListener('click',event=>{if(event.target===templateModal)templateModal.classList.remove('show')});
+
+    function currentTemplatePayload(){
+      calc();
+      return {
+        name:templateName.value.trim(),
+        client_name:document.getElementById('cliente').value,
+        receiver:{
+          tax_id:document.getElementById('rfc').value.trim().toUpperCase(),
+          name:document.getElementById('razon').value.trim(),
+          zip:document.getElementById('cp').value.trim(),
+          tax_system:document.getElementById('regimen').value,
+          cfdi_use:document.getElementById('uso').value,
+          email:document.getElementById('email').value.trim()
+        },
+        conditions:{
+          payment_form:document.getElementById('forma').value,
+          payment_method:document.getElementById('metodo').value,
+          serie:document.getElementById('serie').value.trim(),
+          purchase_order:document.getElementById('ordenCompra').value.trim(),
+          notes:document.getElementById('cond').value.trim()
+        },
+        retentions:{isr:Number(document.getElementById('retencionIsr').value||0),iva:Number(document.getElementById('retencionIva').value||0)},
+        items:estado.items.map(item=>({
+          description:item.descripcion||'',quantity:Number(item.cantidad||1),unit_price:Number(item.precio_unitario||0),
+          product_key:item.clave_prod_serv||'85121600',unit_key:item.clave_unidad||'E48',tax_rate:Number(item.tasa_iva||0),discount:Number(item.descuento||0)
+        }))
+      };
+    }
+
+    document.getElementById('confirmTemplate').onclick=async event=>{
+      const button=event.currentTarget;
+      if(templateName.value.trim().length<2){msg(false,'Escribe un nombre para identificar la plantilla.');templateName.focus();return;}
+      button.disabled=true;button.textContent='Guardando…';
+      try{
+        const response=await fetch('/api/invoice-templates',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(currentTemplatePayload())});
+        const result=await response.json();
+        if(!response.ok||!result.ok)throw new Error(result.error||'No se pudo guardar la plantilla.');
+        templateModal.classList.remove('show');
+        msg(!result.warning,result.warning||'Plantilla guardada correctamente.');
+      }catch(error){msg(false,error.message)}finally{button.disabled=false;button.textContent='Guardar'}
+    };
+
+    (async function prefillFromTemplate(){
+      if(!pageTemplateId) return;
+      try{
+        const response=await fetch('/api/invoice-templates');
+        const result=await response.json();
+        const template=(result.data||[]).find(row=>String(row.id)===pageTemplateId);
+        if(!response.ok||!template)throw new Error('La plantilla ya no está disponible.');
+        const receiver=template.receiver||{}, conditions=template.conditions||{};
+        const clientSelect=document.getElementById('cliente');
+        if(template.client_name&&[...clientSelect.options].some(option=>option.value===template.client_name))clientSelect.value=template.client_name;
+        document.getElementById('rfc').value=receiver.tax_id||'';
+        document.getElementById('razon').value=receiver.name||'';
+        document.getElementById('cp').value=receiver.zip||'';
+        document.getElementById('email').value=receiver.email||'';
+        document.getElementById('metodo').value=conditions.payment_method||'PUE';
+        await loadFiscalCatalogs(receiver.tax_id||'',{regimen:String(receiver.tax_system||''),uso:receiver.cfdi_use||'G03',forma:conditions.payment_form||'03',metodo:conditions.payment_method||'PUE'});
+        document.getElementById('serie').value=conditions.serie||'';
+        document.getElementById('ordenCompra').value=conditions.purchase_order||'';
+        document.getElementById('cond').value=conditions.notes||'';
+        document.getElementById('retencionIsr').value=String(template.retentions?.isr||0);
+        const ivaRetention=Number(template.retentions?.iva||0);
+        document.getElementById('retencionIva').value=ivaRetention>0.10666&&ivaRetention<0.10668?'0.106667':String(ivaRetention);
+        estado.items=(template.items||[]).map(item=>({descripcion:item.description,cantidad:Number(item.quantity||1),precio_unitario:Number(item.unit_price||0),clave_prod_serv:item.product_key||'85121600',clave_unidad:item.unit_key||'E48',tasa_iva:Number(item.tax_rate||0),descuento:Number(item.discount||0)}));
+        if(!estado.items.length)addItem(null);else render();
+        syncForma();updateFiscalStatus();calc();msg(true,`Plantilla “${template.name}” cargada. Revisa antes de timbrar.`);
+      }catch(error){msg(false,error.message)}
+    })();
 
     // -------- VALIDACIONES P0 ----------
     const RFC_RE = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/;

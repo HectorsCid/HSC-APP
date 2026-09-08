@@ -266,6 +266,51 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(invoice["type"], "I")
         self.assertEqual(invoice["payment_method"], "PPD")
 
+    def test_received_list_uses_issuer_as_supplier(self):
+        rows = [{
+            "Id": "received-1", "Uuid": self.VALID_UUID, "CfdiType": "I",
+            "Date": "2026-09-08T10:00:00", "Subtotal": 100, "Total": 116,
+            "Issuer": {"Name": "PROVEEDOR INDUSTRIAL", "Rfc": "AAA010101AAA"},
+            "Receiver": {"Name": "HSC", "Rfc": "EKU9003173C9"},
+        }]
+        with patch.object(billing, "_fm_request", return_value=rows) as api:
+            response = self.client.get("/api/facturas/received?month=2026-09")
+        self.assertEqual(response.status_code, 200)
+        received = response.get_json()["data"][0]
+        self.assertEqual(received["supplier_name"], "PROVEEDOR INDUSTRIAL")
+        self.assertEqual(received["supplier_tax_id"], "AAA010101AAA")
+        self.assertEqual(received["subtotal"], 100)
+        self.assertEqual(api.call_args.kwargs["params"]["type"], "received")
+        self.assertEqual(api.call_args.kwargs["params"]["dateStart"], "01/09/2026")
+        self.assertEqual(api.call_args.kwargs["params"]["dateEnd"], "30/09/2026")
+
+    def test_received_pdf_uses_received_download_type(self):
+        expected = b"%PDF-received"
+        encoded = base64.b64encode(expected).decode("ascii")
+        with patch.object(billing, "_fm_request", return_value={"Content": encoded}) as api:
+            response = self.client.get("/api/invoices/received-1/received/pdf")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, expected)
+        self.assertIn("/received/", api.call_args.args[1])
+
+    def test_invoice_template_can_be_saved_without_stamping(self):
+        payload = {
+            "name": "Mantenimiento mensual",
+            "client_name": "Bticino",
+            "receiver": {"tax_id": "AAA010101AAA", "name": "CLIENTE"},
+            "items": [{"description": "Servicio", "quantity": 1, "unit_price": 100}],
+        }
+        with (
+            patch.object(billing, "_read_invoice_templates", return_value=[]),
+            patch.object(billing, "_write_invoice_templates", return_value=True) as save,
+            patch.object(billing, "_fm_request") as stamp,
+        ):
+            response = self.client.post("/api/invoice-templates", json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["template"]["name"], "Mantenimiento mensual")
+        save.assert_called_once()
+        stamp.assert_not_called()
+
     def test_cannot_cancel_a_payment_when_a_later_partiality_exists(self):
         index = {self.VALID_UUID: {"payments": [
             {"rep_id": "rep-1", "partiality_number": 1, "status": "active", "amount": 40},

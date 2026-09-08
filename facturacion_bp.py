@@ -1,10 +1,11 @@
 # facturacion_bp.py — versión completa
 from flask import Blueprint, request, jsonify, Response, current_app
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from base64 import b64decode
 from threading import Lock
+from uuid import uuid4
 import os
 import json
 import re
@@ -13,7 +14,10 @@ import mimetypes
 import requests
 from werkzeug.utils import secure_filename
 
-from cfdi_drive import backup_cfdi, backup_payments_index, load_payments_index
+from cfdi_drive import (
+    backup_cfdi, backup_json_file, backup_payments_index,
+    load_json_file, load_payments_index,
+)
 from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config, trusted_device_token
 
 # ----------------------------------------------------------------------
@@ -100,6 +104,9 @@ _CFDI_USES = [
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 INDEX = DATA_DIR / "pagos_index.json"
+INVOICE_TEMPLATES = DATA_DIR / "plantillas_factura.json"
+INVOICE_TEMPLATES_DRIVE_FILE = "HSC-plantillas-factura.json"
+_TEMPLATE_LOCK = Lock()
 
 # ----------------------------------------------------------------------
 # Índice local de REP
@@ -130,6 +137,35 @@ def _write_index(d):
             current_app.logger.warning("No se pudo respaldar el índice de pagos en Drive: %s", exc)
         except RuntimeError:
             pass
+
+
+def _read_invoice_templates(refresh=False):
+    with _TEMPLATE_LOCK:
+        if not refresh and INVOICE_TEMPLATES.exists():
+            try:
+                value = json.loads(INVOICE_TEMPLATES.read_text("utf-8"))
+                if isinstance(value, list):
+                    return value
+            except Exception:
+                pass
+        try:
+            value = load_json_file(INVOICE_TEMPLATES_DRIVE_FILE, default=[])
+            value = value if isinstance(value, list) else []
+            INVOICE_TEMPLATES.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+            return value
+        except Exception:
+            return []
+
+
+def _write_invoice_templates(items):
+    with _TEMPLATE_LOCK:
+        INVOICE_TEMPLATES.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            backup_json_file(INVOICE_TEMPLATES_DRIVE_FILE, items)
+            return True
+        except Exception as exc:
+            current_app.logger.warning("No se pudieron respaldar las plantillas en Drive: %s", exc)
+            return False
 
 def _payment_entries(record):
     """Devuelve pagos activos y conserva compatibilidad con el índice anterior."""
@@ -280,6 +316,22 @@ def _facturama_invoice_row(inv):
         "customer_email": _pick(receiver, "Email") or _pick(inv, "Email", "ReceiverEmail"),
         "paid": False,
     }
+
+
+def _facturama_received_row(inv):
+    """Normaliza CFDI recibido mostrando al proveedor, no al receptor HSC."""
+    row = _facturama_invoice_row(inv)
+    issuer = _pick(inv, "Issuer", "Emisor") or {}
+    row.update({
+        "supplier_name": _pick(issuer, "Name", "LegalName", "TaxName")
+            or _pick(inv, "IssuerName", "TaxName") or "Proveedor sin nombre",
+        "supplier_tax_id": _pick(issuer, "Rfc", "TaxId")
+            or _pick(inv, "IssuerRfc", "Rfc") or "",
+        "subtotal": _pick(inv, "Subtotal") or 0,
+        "discount": _pick(inv, "Discount") or 0,
+        "currency": _pick(inv, "Currency") or "MXN",
+    })
+    return row
 
 
 def _fm_request(method, path, *, json_body=None, params=None, timeout=60):
@@ -1104,6 +1156,95 @@ def api_list_facturas():
         })
     return jsonify({"ok": True, "data": out}), 200
 
+
+@facturacion_bp.get("/facturas/received")
+def api_list_received_invoices():
+    """CFDI recibidos por HSC disponibles en la cuenta Web de Facturama."""
+    if _provider() != "facturama":
+        return jsonify({"ok": False, "error": "Las facturas recibidas requieren la conexión con Facturama."}), 503
+    try:
+        params = {"type": "received", "status": "all"}
+        selected_month = str(request.args.get("month") or "").strip()
+        if re.fullmatch(r"\d{4}-\d{2}", selected_month):
+            month_start = datetime.strptime(selected_month + "-01", "%Y-%m-%d")
+            next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+            month_end = next_month - timedelta(days=1)
+            params.update({
+                "dateStart": month_start.strftime("%d/%m/%Y"),
+                "dateEnd": month_end.strftime("%d/%m/%Y"),
+            })
+        rows = []
+        for page in range(20):
+            page_params = {**params, "page": page}
+            raw = _fm_request("GET", "/api/cfdi", params=page_params, timeout=45)
+            batch = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
+            rows.extend(batch)
+            if len(batch) < 100:
+                break
+        data = []
+        for invoice in rows:
+            normalized = _facturama_received_row(invoice)
+            if normalized["id"] and _valid_cfdi_uuid(normalized["uuid"]):
+                data.append(normalized)
+        return jsonify({"ok": True, "provider": "facturama", "data": data}), 200
+    except requests.HTTPError as exc:
+        return jsonify({"ok": False, "error": _http_error_detail(exc)}), 400
+
+
+@facturacion_bp.get("/invoice-templates")
+def api_invoice_templates():
+    return jsonify({
+        "ok": True,
+        "data": _read_invoice_templates(refresh=request.args.get("actualizar") == "1"),
+    }), 200
+
+
+@facturacion_bp.post("/invoice-templates")
+def api_save_invoice_template():
+    body = request.get_json(silent=True) or {}
+    name = re.sub(r"\s+", " ", str(body.get("name") or "")).strip()
+    if len(name) < 2 or len(name) > 80:
+        return jsonify({"ok": False, "error": "Escribe un nombre de plantilla de 2 a 80 caracteres."}), 400
+    items = body.get("items") if isinstance(body.get("items"), list) else []
+    if not items:
+        return jsonify({"ok": False, "error": "Agrega al menos un concepto a la plantilla."}), 400
+    if len(items) > 60:
+        return jsonify({"ok": False, "error": "Una plantilla admite hasta 60 conceptos."}), 400
+    template_id = str(body.get("id") or uuid4())
+    now = datetime.now().isoformat(timespec="seconds")
+    template = {
+        "id": template_id,
+        "name": name,
+        "client_name": str(body.get("client_name") or "").strip(),
+        "receiver": body.get("receiver") if isinstance(body.get("receiver"), dict) else {},
+        "conditions": body.get("conditions") if isinstance(body.get("conditions"), dict) else {},
+        "retentions": body.get("retentions") if isinstance(body.get("retentions"), dict) else {},
+        "items": items,
+        "updated_at": now,
+    }
+    templates = _read_invoice_templates()
+    previous = next((row for row in templates if str(row.get("id")) == template_id), None)
+    template["created_at"] = (previous or {}).get("created_at") or now
+    templates = [template if str(row.get("id")) == template_id else row for row in templates]
+    if previous is None:
+        templates.append(template)
+    templates.sort(key=lambda row: str(row.get("updated_at") or ""), reverse=True)
+    drive_ok = _write_invoice_templates(templates)
+    return jsonify({
+        "ok": True, "template": template, "drive_backup": drive_ok,
+        "warning": "La plantilla se guardó, pero Drive no confirmó el respaldo." if not drive_ok else "",
+    }), 200
+
+
+@facturacion_bp.delete("/invoice-templates/<template_id>")
+def api_delete_invoice_template(template_id):
+    templates = _read_invoice_templates()
+    kept = [row for row in templates if str(row.get("id")) != str(template_id)]
+    if len(kept) == len(templates):
+        return jsonify({"ok": False, "error": "La plantilla ya no existe."}), 404
+    drive_ok = _write_invoice_templates(kept)
+    return jsonify({"ok": True, "drive_backup": drive_ok}), 200
+
 # ----------------------------------------------------------------------
 # PDF / XML / Cancelación
 # ----------------------------------------------------------------------
@@ -1146,6 +1287,25 @@ def api_invoice_xml(inv_id):
         content, mimetype="application/xml",
         headers={"Content-Disposition": f"inline; filename=Factura-{inv_id}.xml"},
     )
+
+
+@facturacion_bp.get("/invoices/<inv_id>/received/<file_format>")
+def api_received_invoice_file(inv_id, file_format):
+    if file_format not in {"pdf", "xml"}:
+        return jsonify({"ok": False, "error": "Formato no permitido."}), 404
+    if _provider() != "facturama":
+        return jsonify({"ok": False, "error": "La descarga de recibidas requiere Facturama."}), 503
+    try:
+        content = _decode_facturama_file(
+            _fm_request("GET", f"/Cfdi/{file_format}/received/{inv_id}")
+        )
+        mimetype = "application/pdf" if file_format == "pdf" else "application/xml"
+        return Response(content, mimetype=mimetype, headers={
+            "Content-Disposition": f"inline; filename=Recibida-{inv_id}.{file_format}",
+        })
+    except (requests.HTTPError, ValueError) as exc:
+        detail = _http_error_detail(exc) if isinstance(exc, requests.HTTPError) else {"message": str(exc)}
+        return jsonify({"ok": False, "error": detail}), 400
 
 
 @facturacion_bp.post("/invoices/<inv_id>/email")

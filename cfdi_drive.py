@@ -62,6 +62,29 @@ def _upsert_file(service, parent_id, filename, content, mimetype):
     ).execute()
 
 
+def load_json_file(filename, parent_id=FACTURAS_ROOT_FOLDER_ID, default=None):
+    """Lee un archivo JSON pequeño respaldado en Drive."""
+    service = get_drive_service_user(timeout=35)
+    item = next((row for row in _list_children(service, parent_id)
+                 if row.get("name") == filename), None)
+    if not item:
+        return default
+    buffer = io.BytesIO()
+    downloader = MediaIoBaseDownload(buffer, service.files().get_media(fileId=item["id"]))
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    return json.loads(buffer.getvalue().decode("utf-8"))
+
+
+def backup_json_file(filename, value, parent_id=FACTURAS_ROOT_FOLDER_ID):
+    """Crea o actualiza un archivo JSON pequeño en Drive."""
+    service = get_drive_service_user(timeout=35)
+    payload = json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8")
+    result = _upsert_file(service, parent_id, filename, payload, "application/json")
+    return {"ok": True, "file_id": result.get("id"), "file_url": result.get("webViewLink")}
+
+
 def backup_cfdi(cliente, folio_interno, uuid, pdf_bytes, xml_bytes, document_type="Factura"):
     """Guarda ambos archivos en 05.Facturas/Cliente/Folio interno."""
     if not pdf_bytes or not xml_bytes:
@@ -93,25 +116,10 @@ def backup_cfdi(cliente, folio_interno, uuid, pdf_bytes, xml_bytes, document_typ
 
 def load_payments_index():
     """Recupera el control de parcialidades desde la misma carpeta de Facturas."""
-    service = get_drive_service_user(timeout=35)
-    item = next((row for row in _list_children(service, FACTURAS_ROOT_FOLDER_ID)
-                 if row.get("name") == PAYMENTS_INDEX_FILE), None)
-    if not item:
-        return {}
-    buffer = io.BytesIO()
-    downloader = MediaIoBaseDownload(buffer, service.files().get_media(fileId=item["id"]))
-    done = False
-    while not done:
-        _, done = downloader.next_chunk()
-    value = json.loads(buffer.getvalue().decode("utf-8"))
+    value = load_json_file(PAYMENTS_INDEX_FILE, default={})
     return value if isinstance(value, dict) else {}
 
 
 def backup_payments_index(index):
     """Guarda el control de saldos fuera de Render para sobrevivir despliegues."""
-    service = get_drive_service_user(timeout=35)
-    payload = json.dumps(index if isinstance(index, dict) else {}, ensure_ascii=False, indent=2).encode("utf-8")
-    result = _upsert_file(
-        service, FACTURAS_ROOT_FOLDER_ID, PAYMENTS_INDEX_FILE, payload, "application/json"
-    )
-    return {"ok": True, "file_id": result.get("id"), "file_url": result.get("webViewLink")}
+    return backup_json_file(PAYMENTS_INDEX_FILE, index if isinstance(index, dict) else {})

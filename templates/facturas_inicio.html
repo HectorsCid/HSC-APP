@@ -139,6 +139,12 @@
   .cm-kv,.cm-hint{color:var(--muted)}
   .cm-btn:hover{background:var(--soft)}
   tbody td[colspan]{grid-column:1/-1!important;padding:36px 10px!important;text-align:center}
+  .panel-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 5px 10px}.panel-head h2{margin:0;font-size:1rem}.panel-head .pill{font-size:.76rem}
+  .summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:8px}.summary-box{padding:8px 10px;border:1px solid var(--line);border-radius:11px;background:var(--soft)}.summary-box span{display:block;color:var(--muted);font-size:.67rem;font-weight:800;text-transform:uppercase}.summary-box strong{display:block;margin-top:2px;font-size:.96rem;font-variant-numeric:tabular-nums}
+  .mini-list{max-height:min(calc(100vh - 222px),438px);overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+  .mini-row{display:grid;grid-template-columns:minmax(170px,1.25fr) 105px 130px minmax(180px,1fr) auto;gap:10px;align-items:center;min-height:67px;padding:8px 10px;border-bottom:1px solid var(--line)}.mini-row:last-child{border-bottom:0}.mini-row:hover{background:var(--soft)}
+  .mini-main{min-width:0}.mini-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem;font-weight:780}.mini-sub{margin-top:3px;color:var(--muted);font-size:.68rem}.mini-amount{font-size:.86rem;font-weight:780;font-variant-numeric:tabular-nums}.mini-uuid{min-width:0;font-family:ui-monospace,Consolas,monospace;color:var(--muted);font-size:.65rem;overflow-wrap:anywhere}.mini-actions{display:flex;justify-content:flex-end;gap:5px}.mini-actions .btn{min-height:28px;padding:4px 7px;font-size:.68rem}
+  .empty-state{padding:42px 12px;text-align:center;color:var(--muted)}
   @media(max-width:1120px){
     .layout{grid-template-columns:180px minmax(0,1fr)}
     .wrap{padding-left:13px;padding-right:13px}
@@ -167,6 +173,7 @@
     tbody td:nth-child(8){grid-column:1;grid-row:3;align-self:center;padding:0}
     tbody td:nth-child(9){grid-column:1/-1;grid-row:4}
     tbody td:nth-child(10){grid-column:1/-1;grid-row:5;justify-content:start}
+    .summary-grid{grid-template-columns:1fr}.mini-list{max-height:none}.mini-row{grid-template-columns:1fr auto}.mini-row>*{grid-column:1}.mini-row .mini-amount{grid-column:2;grid-row:1}.mini-row .mini-actions{grid-column:1/-1;justify-content:start}
   }
 </style>
 </head>
@@ -232,8 +239,19 @@
       </div>
     </div>
 
-    <div class="card" id="panelRecibidas" style="display:none">Pendiente.</div>
-    <div class="card" id="panelPlantillas" style="display:none">Pendiente.</div>
+    <div class="card" id="panelRecibidas" style="display:none">
+      <div class="panel-head"><div><h2>Facturas recibidas</h2><div class="pill">Gastos facturados a HSC en el mes seleccionado</div></div><button class="btn" id="reloadReceived">↻ Actualizar</button></div>
+      <div class="summary-grid">
+        <div class="summary-box"><span>Documentos vigentes</span><strong id="receivedCount">0</strong></div>
+        <div class="summary-box"><span>Subtotal facturado</span><strong id="receivedSubtotal">$0.00</strong></div>
+        <div class="summary-box"><span>Total facturado</span><strong id="receivedTotal">$0.00</strong></div>
+      </div>
+      <div class="mini-list" id="receivedList"><div class="empty-state">Abre esta pestaña para consultar Facturama.</div></div>
+    </div>
+    <div class="card" id="panelPlantillas" style="display:none">
+      <div class="panel-head"><div><h2>Plantillas de factura</h2><div class="pill">Reutiliza cliente, conceptos, impuestos y condiciones sin timbrar automáticamente</div></div><a class="btn btn-primary" href="/facturas/nueva">＋ Preparar plantilla</a></div>
+      <div class="mini-list" id="templateList"><div class="empty-state">Cargando plantillas…</div></div>
+    </div>
   </main>
 </div>
 
@@ -311,6 +329,7 @@
 const $ = s=>document.querySelector(s);
 const tbody = $('#tbl tbody');
 const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Plantillas:'#panelPlantillas'};
+let activePanel = 'Emitidas';
 const clickLocks = new Set(); // antirrebote por fila
 const pageMsg = document.getElementById('pageMsg');
 function errorText(value){
@@ -361,6 +380,8 @@ if(arrivalParams.get('complemento') === '1'){
     tab.classList.add('active');
     Object.values(panels).forEach(sel=>document.querySelector(sel).style.display='none');
     document.querySelector(panels[n]).style.display='block';
+    activePanel = n;
+    refreshActive();
   };
 });
 
@@ -375,14 +396,20 @@ if(arrivalParams.get('complemento') === '1'){
     o.value=v; o.textContent=d.toLocaleDateString('es-MX',{year:'numeric',month:'long'});
     sel.appendChild(o);
   }
-  sel.onchange=load;
+  sel.onchange=refreshActive;
 })();
 
-$('#q').addEventListener('input', load);
+$('#q').addEventListener('input', refreshActive);
+
+function refreshActive(){
+  if(activePanel === 'Recibidas') return loadReceived();
+  if(activePanel === 'Plantillas') return loadTemplates();
+  return load();
+}
 
 function tipoBadge(t){
   if(t==='I') return '<span class="badge">Ingreso</span>';
-  if(t==='P') return '<span class="badge purple">Pago</span>';
+  if(t==='P') return '<span class="badge">Pago</span>';
   return `<span class="badge">${t||''}</span>`;
 }
 
@@ -499,6 +526,75 @@ async function load(){
 }
 
 load();
+
+function moneyMx(value){
+  return Number(value||0).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
+}
+
+async function loadReceived(){
+  const list = document.getElementById('receivedList');
+  list.innerHTML = '<div class="empty-state">Consultando facturas recibidas…</div>';
+  try{
+    const month = $('#mes').value;
+    const response = await fetch(`/api/facturas/received?month=${encodeURIComponent(month)}`);
+    const result = await response.json();
+    if(!response.ok || !result.ok) throw new Error(errorText(result.error));
+    const query = ($('#q').value||'').trim().toLowerCase();
+    let rows = (result.data||[]).filter(row=>(row.date||'').startsWith(month));
+    if(query) rows = rows.filter(row=>[
+      row.supplier_name,row.supplier_tax_id,row.uuid,row.folio
+    ].some(value=>String(value||'').toLowerCase().includes(query)));
+    const active = rows.filter(row=>!String(row.status||'').toLowerCase().includes('cancel'));
+    document.getElementById('receivedCount').textContent = active.length;
+    document.getElementById('receivedSubtotal').textContent = moneyMx(active.reduce((sum,row)=>sum+Number(row.subtotal||0),0));
+    document.getElementById('receivedTotal').textContent = moneyMx(active.reduce((sum,row)=>sum+Number(row.total||0),0));
+    if(!rows.length){list.innerHTML='<div class="empty-state">No hay facturas recibidas para este mes o búsqueda.</div>';return;}
+    list.innerHTML = rows.map(row=>`
+      <div class="mini-row">
+        <div class="mini-main"><div class="mini-title" title="${escAttr(row.supplier_name)}">${escAttr(row.supplier_name)}</div><div class="mini-sub">${escAttr(row.supplier_tax_id)} · ${escAttr(row.folio ? `Folio ${row.folio}` : 'Sin folio interno')}</div></div>
+        <div><div class="mini-title">${escAttr((row.date||'').slice(0,10))}</div><div class="mini-sub">${escAttr(row.currency||'MXN')}</div></div>
+        <div class="mini-amount">${moneyMx(row.total)}</div>
+        <div class="mini-uuid" title="${escAttr(row.uuid)}">${escAttr(row.uuid)}</div>
+        <div class="mini-actions"><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/received/pdf">PDF</a><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/received/xml">XML</a></div>
+      </div>`).join('');
+  }catch(error){
+    list.innerHTML=`<div class="empty-state">${escAttr(error.message)}</div>`;
+  }
+}
+
+async function loadTemplates(){
+  const list = document.getElementById('templateList');
+  list.innerHTML = '<div class="empty-state">Cargando plantillas…</div>';
+  try{
+    const response = await fetch('/api/invoice-templates');
+    const result = await response.json();
+    if(!response.ok || !result.ok) throw new Error(errorText(result.error));
+    const query = ($('#q').value||'').trim().toLowerCase();
+    let rows = result.data || [];
+    if(query) rows=rows.filter(row=>[row.name,row.client_name,row.receiver?.name,row.receiver?.tax_id].some(value=>String(value||'').toLowerCase().includes(query)));
+    if(!rows.length){list.innerHTML='<div class="empty-state">Todavía no hay plantillas. Puedes crear una sin timbrar.</div>';return;}
+    list.innerHTML=rows.map(row=>{
+      const total=(row.items||[]).reduce((sum,item)=>{const base=Math.max(0,Number(item.quantity||1)*Number(item.unit_price||0)-Number(item.discount||0));return sum+base+(base*Number(item.tax_rate||0));},0);
+      return `<div class="mini-row">
+        <div class="mini-main"><div class="mini-title">${escAttr(row.name)}</div><div class="mini-sub">${escAttr(row.client_name||row.receiver?.name||'Sin cliente fijo')}</div></div>
+        <div><div class="mini-title">${(row.items||[]).length} concepto(s)</div><div class="mini-sub">Actualizada ${(row.updated_at||'').slice(0,10)}</div></div>
+        <div class="mini-amount">${moneyMx(total)}</div>
+        <div class="mini-uuid">${escAttr((row.items||[]).map(item=>item.description).filter(Boolean).slice(0,2).join(' · '))}</div>
+        <div class="mini-actions"><a class="btn btn-primary" href="/facturas/nueva?template_id=${encodeURIComponent(row.id)}">Usar</a><button class="btn btn-danger" data-delete-template="${escAttr(row.id)}">Eliminar</button></div>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('[data-delete-template]').forEach(button=>button.onclick=async()=>{
+      if(!confirm('¿Eliminar esta plantilla? No afecta las facturas ya emitidas.')) return;
+      button.disabled=true;
+      const response=await fetch(`/api/invoice-templates/${encodeURIComponent(button.dataset.deleteTemplate)}`,{method:'DELETE'});
+      const result=await response.json();
+      if(!response.ok||!result.ok){button.disabled=false;pageMsg.className='flash err';pageMsg.textContent=errorText(result.error);return;}
+      loadTemplates();
+    });
+  }catch(error){list.innerHTML=`<div class="empty-state">${escAttr(error.message)}</div>`;}
+}
+
+document.getElementById('reloadReceived').onclick=loadReceived;
 
 /* ===== Envío de PDF y XML por CarrierZone ===== */
 const em = $('#em');
