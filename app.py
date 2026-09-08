@@ -22,6 +22,8 @@ from pathlib import Path
 import io
 import math
 import uuid
+import csv
+from difflib import SequenceMatcher
 
 # Google / OAuth
 from google.oauth2.credentials import Credentials
@@ -512,6 +514,127 @@ def guardar_clientes(clientes):
             print("No se pudo guardar clientes.json local:", e)
 
         subir_clientes_a_drive(snapshot)
+
+
+def _normalizar_nombre_importacion(value):
+    """Clave comparable sin acentos, puntuación ni diferencias de mayúsculas."""
+    text = unicodedata.normalize("NFKD", str(value or "").strip().upper())
+    text = text.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^A-Z0-9]", "", text)
+
+
+def _nombre_base_importacion(value):
+    """Retira terminaciones societarias para comparar el nombre comercial."""
+    text = unicodedata.normalize("NFKD", str(value or "").strip().upper())
+    text = text.encode("ascii", "ignore").decode("ascii")
+    tokens = re.findall(r"[A-Z0-9]+", text)
+    ignored = {"DE", "DEL", "LA", "EL", "LOS", "LAS", "MEXICO", "MEXICANA",
+               "SA", "S", "CV", "RL", "SAPI", "SC", "AC"}
+    return "".join(token for token in tokens if token not in ignored)
+
+
+def _leer_clientes_konta(upload):
+    """Lee la exportación de Konta en XLSX o CSV y devuelve nombre legal/RFC."""
+    filename = str(getattr(upload, "filename", "") or "").strip()
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".xlsx", ".csv"}:
+        raise ValueError("Sube el archivo de Konta en formato Excel (.xlsx) o CSV (.csv).")
+
+    rows = []
+    if suffix == ".xlsx":
+        try:
+            from openpyxl import load_workbook
+        except ImportError as exc:
+            raise RuntimeError("El servidor todavía no tiene habilitada la lectura de Excel.") from exc
+        workbook = load_workbook(upload.stream, read_only=True, data_only=True)
+        sheet = workbook.active
+        values = sheet.iter_rows(values_only=True)
+        headers = [str(v or "").strip() for v in next(values, [])]
+        source_rows = values
+    else:
+        raw = upload.stream.read()
+        text = raw.decode("utf-8-sig", errors="replace")
+        sample = text[:4096]
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.reader(io.StringIO(text), dialect)
+        headers = [str(v or "").strip() for v in next(reader, [])]
+        source_rows = reader
+
+    normalized_headers = [_normalizar_nombre_importacion(v) for v in headers]
+    name_aliases = {"NOMBRELEGAL", "RAZONSOCIAL", "NOMBRE", "CLIENTE"}
+    rfc_aliases = {"RFC", "TAXID"}
+    try:
+        name_index = next(i for i, value in enumerate(normalized_headers) if value in name_aliases)
+        rfc_index = next(i for i, value in enumerate(normalized_headers) if value in rfc_aliases)
+    except StopIteration as exc:
+        raise ValueError("No encontré las columnas Nombre legal y RFC en el archivo.") from exc
+
+    for row in source_rows:
+        values = list(row)
+        name = str(values[name_index] or "").strip() if name_index < len(values) else ""
+        rfc = str(values[rfc_index] or "").strip().upper() if rfc_index < len(values) else ""
+        if name and rfc:
+            rows.append({"nombre_legal": name, "rfc": rfc})
+        if len(rows) > 5000:
+            raise ValueError("El archivo supera el límite de 5,000 clientes.")
+
+    if not rows:
+        raise ValueError("El archivo no contiene clientes con nombre legal y RFC.")
+
+    # Konta puede exportar varias fichas con el mismo RFC. Conservamos una sola
+    # y preferimos el nombre legal más completo.
+    by_rfc = {}
+    for row in rows:
+        current = by_rfc.get(row["rfc"])
+        appearances = int((current or {}).get("apariciones", 0)) + 1
+        if current is None or len(row["nombre_legal"]) > len(current["nombre_legal"]):
+            by_rfc[row["rfc"]] = {**row, "apariciones": appearances}
+        else:
+            current["apariciones"] = appearances
+    return sorted(by_rfc.values(), key=lambda row: row["nombre_legal"])
+
+
+def _plan_importacion_clientes(rows, existentes):
+    """Sugiere un destino; la pantalla de revisión conserva la decisión final."""
+    names = list(existentes.keys())
+    by_rfc = {
+        str(data.get("rfc") or "").strip().upper(): name
+        for name, data in existentes.items()
+        if isinstance(data, dict) and str(data.get("rfc") or "").strip()
+    }
+    by_name = {_normalizar_nombre_importacion(name): name for name in names}
+    planned = []
+    for row in rows:
+        legal_name = row["nombre_legal"]
+        rfc = row["rfc"]
+        target = by_rfc.get(rfc) or by_name.get(_normalizar_nombre_importacion(legal_name))
+        match_type = "rfc" if by_rfc.get(rfc) else ("nombre" if target else "nuevo")
+        confidence = 1.0 if target else 0.0
+
+        if not target and names:
+            source_key = _normalizar_nombre_importacion(legal_name)
+            source_base = _nombre_base_importacion(legal_name)
+            ranked = sorted(
+                ((max(
+                    SequenceMatcher(None, source_key, _normalizar_nombre_importacion(name)).ratio(),
+                    SequenceMatcher(None, source_base, _nombre_base_importacion(name)).ratio(),
+                ), name)
+                 for name in names),
+                reverse=True,
+            )
+            best_score, best_name = ranked[0]
+            second_score = ranked[1][0] if len(ranked) > 1 else 0
+            if best_score >= 0.88 and best_score - second_score >= 0.08:
+                target = best_name
+                match_type = "sugerido"
+                confidence = best_score
+
+        planned.append({**row, "destino": target or "__new__", "tipo": match_type,
+                        "confianza": round(confidence * 100)})
+    return planned
 
 clientes_predefinidos = cargar_clientes()
 
@@ -2794,6 +2917,114 @@ def ui_clientes():
                 data = {}
 
     return render_template("clientes_inicio.html", clientes=data)
+
+
+@app.route("/clientes/importar", methods=["GET", "POST"])
+def importar_clientes():
+    with _CLIENTES_DATA_LOCK:
+        existentes = dict(clientes_predefinidos or {})
+
+    if request.method == "GET":
+        return render_template("importar_clientes.html", clientes=existentes, preview=[])
+
+    action = (request.form.get("action") or "preview").strip()
+    if action == "preview":
+        upload = request.files.get("archivo")
+        if not upload or not upload.filename:
+            flash("Selecciona el archivo Excel exportado desde Konta.")
+            return redirect(url_for("importar_clientes"))
+        if request.content_length and request.content_length > 6 * 1024 * 1024:
+            flash("El archivo es demasiado grande. El límite es 5 MB.")
+            return redirect(url_for("importar_clientes"))
+        try:
+            rows = _leer_clientes_konta(upload)
+            preview = _plan_importacion_clientes(rows, existentes)
+        except (ValueError, RuntimeError) as exc:
+            flash(str(exc))
+            return redirect(url_for("importar_clientes"))
+        except Exception as exc:
+            app.logger.warning("No se pudo leer la exportación de clientes: %s", exc)
+            flash("No pude leer ese archivo. Vuelve a exportarlo desde Konta en formato Excel.")
+            return redirect(url_for("importar_clientes"))
+        return render_template("importar_clientes.html", clientes=existentes, preview=preview)
+
+    try:
+        rows = json.loads(request.form.get("rows_json") or "[]")
+    except json.JSONDecodeError:
+        rows = []
+    if not isinstance(rows, list) or not rows or len(rows) > 5000:
+        flash("La vista previa venció o no contiene clientes válidos.")
+        return redirect(url_for("importar_clientes"))
+
+    created = updated = skipped = 0
+    with _CLIENTES_DATA_LOCK:
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                skipped += 1
+                continue
+            legal_name = str(row.get("nombre_legal") or "").strip()
+            rfc = str(row.get("rfc") or "").strip().upper()
+            target = (request.form.get(f"destino_{index}") or "__skip__").strip()
+            if not legal_name or not rfc or target == "__skip__":
+                skipped += 1
+                continue
+            if target == "__new__":
+                target = legal_name
+                if target in clientes_predefinidos:
+                    suffix = 2
+                    while f"{legal_name} ({suffix})" in clientes_predefinidos:
+                        suffix += 1
+                    target = f"{legal_name} ({suffix})"
+                clientes_predefinidos[target] = {
+                    "atencion": [], "direccion": "", "tiempo": "",
+                    "anticipo": "", "vigencia": "",
+                    "retencion_isr_tasa": "0", "retencion_iva_tasa": "0",
+                }
+                created += 1
+            elif target not in clientes_predefinidos:
+                skipped += 1
+                continue
+            else:
+                updated += 1
+
+            client = clientes_predefinidos[target]
+            client["rfc"] = rfc
+            if not str(client.get("razon_social") or "").strip():
+                client["razon_social"] = legal_name
+
+        if created or updated:
+            guardar_clientes(clientes_predefinidos)
+
+    flash(f"Importación terminada: {created} nuevos, {updated} actualizados y {skipped} omitidos.")
+    return redirect(url_for("ui_clientes"))
+
+
+@app.post("/api/clientes/fiscales")
+def guardar_datos_fiscales_cliente():
+    payload = request.get_json(silent=True) or {}
+    nombre = str(payload.get("cliente") or "").strip()
+    if not nombre:
+        return jsonify({"ok": False, "error": "Selecciona un cliente para guardar sus datos."}), 400
+
+    with _CLIENTES_DATA_LOCK:
+        if nombre not in clientes_predefinidos:
+            return jsonify({"ok": False, "error": "El cliente ya no existe."}), 404
+        client = clientes_predefinidos[nombre]
+        values = {
+            "rfc": str(payload.get("rfc") or "").strip().upper(),
+            "razon_social": str(payload.get("razon_social") or "").strip().upper(),
+            "cp": str(payload.get("cp") or "").strip(),
+            "regimen_fiscal": str(payload.get("regimen_fiscal") or "").strip(),
+            "uso_cfdi": str(payload.get("uso_cfdi") or "").strip(),
+            "correo_facturacion": str(payload.get("correo_facturacion") or "").strip(),
+            "retencion_isr_tasa": str(payload.get("retencion_isr_tasa") or "0").strip(),
+            "retencion_iva_tasa": str(payload.get("retencion_iva_tasa") or "0").strip(),
+        }
+        for key, value in values.items():
+            if value or key in {"retencion_isr_tasa", "retencion_iva_tasa"}:
+                client[key] = value
+        guardar_clientes(clientes_predefinidos)
+    return jsonify({"ok": True, "cliente": nombre})
 
 
 

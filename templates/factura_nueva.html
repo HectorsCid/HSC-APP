@@ -39,6 +39,8 @@
     .t-actions .btn{padding:8px 10px;font-size:14px}
     tfoot td{font-weight:800;background:#f8fafc}
     .invalid{border-color:var(--danger)!important; box-shadow:0 0 0 2px rgba(239,68,68,.15) inset}
+    .fiscal-status{margin-top:9px;padding:9px 11px;border-radius:10px;border:1px solid #fed7aa;background:#fff7ed;color:#92400e;font-size:.84rem;font-weight:650}
+    .fiscal-status.complete{border-color:#86efac;background:#f0fdf4;color:#166534}
   </style>
 </head>
 <body>
@@ -101,9 +103,9 @@
           <option value="G01">G01 - Adquisición de mercancías</option>
           <option value="S01">S01 - Sin efectos fiscales</option>
         </select>
-
         <label>Correo de facturación</label>
         <input id="email" type="email" placeholder="facturacion@cliente.com" />
+        <div id="fiscalStatus" class="fiscal-status" role="status" hidden></div>
       </div>
 
       <div class="card">
@@ -301,6 +303,7 @@
         setVal('retencionIsr', c.retencion_isr_tasa || '0');
         setVal('retencionIva', c.retencion_iva_tasa || '0');
         await loadFiscalCatalogs(rfc, {regimen, uso});
+        updateFiscalStatus();
       }
 
       sel?.addEventListener('change', async ()=>{
@@ -321,6 +324,54 @@
       el.className = 'flash ' + (ok ? 'ok' : 'err');
       el.textContent = t;
     };
+
+    function updateFiscalStatus(){
+      const status = document.getElementById('fiscalStatus');
+      const cliente = document.getElementById('cliente')?.value || '';
+      if(!status || !cliente){ if(status) status.hidden = true; return; }
+      const fields = [
+        ['rfc','RFC'], ['razon','razón social'], ['cp','código postal'],
+        ['regimen','régimen fiscal'], ['uso','uso de CFDI']
+      ];
+      const missing = fields.filter(([id])=>!String(document.getElementById(id)?.value || '').trim()).map(([,label])=>label);
+      const missingEmail = !String(document.getElementById('email')?.value || '').trim();
+      status.hidden = false;
+      status.classList.toggle('complete', missing.length === 0);
+      status.textContent = missing.length
+        ? `Falta para timbrar: ${missing.join(', ')}. Se guardará después de timbrar correctamente.`
+        : (missingEmail
+          ? 'Datos fiscales completos. El correo es opcional y solo se necesita para enviarla.'
+          : 'Datos fiscales completos. Cualquier ajuste se guardará después de timbrar correctamente.');
+    }
+
+    async function persistClientFiscalData(){
+      const cliente = document.getElementById('cliente')?.value || '';
+      if(!cliente) return {ok:true, skipped:true};
+      try{
+        const response = await fetch('/api/clientes/fiscales', {
+          method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
+          body:JSON.stringify({
+            cliente,
+            rfc:document.getElementById('rfc').value,
+            razon_social:document.getElementById('razon').value,
+            cp:document.getElementById('cp').value,
+            regimen_fiscal:document.getElementById('regimen').value,
+            uso_cfdi:document.getElementById('uso').value,
+            correo_facturacion:document.getElementById('email').value,
+            retencion_isr_tasa:document.getElementById('retencionIsr').value,
+            retencion_iva_tasa:document.getElementById('retencionIva').value
+          })
+        });
+        const data = await response.json();
+        return response.ok ? data : {ok:false, error:data.error || 'No se pudieron guardar los datos del cliente.'};
+      }catch(error){ return {ok:false, error:error.message}; }
+    }
+
+    ['rfc','razon','cp','regimen','uso','email'].forEach(id=>{
+      const field = document.getElementById(id);
+      field?.addEventListener('input', updateFiscalStatus);
+      field?.addEventListener('change', updateFiscalStatus);
+    });
 
     // Autoajuste forma según método
     const forma  = document.getElementById('forma');
@@ -537,6 +588,10 @@
         if(!data.ok){ msg(false, data.error?.message || 'Cotización no disponible'); return; }
         pageQuoteFolio = String(data.folio || '').trim();
         pageClientName = String(data.cliente || '').trim();
+        const clientSelect = document.getElementById('cliente');
+        if(clientSelect && [...clientSelect.options].some(option=>option.value === pageClientName)){
+          clientSelect.value = pageClientName;
+        }
         document.getElementById('retencionIsr').value = String(data.retenciones?.isr || 0);
         const quoteIvaRetention = Number(data.retenciones?.iva || 0);
         document.getElementById('retencionIva').value = quoteIvaRetention > 0.10666 && quoteIvaRetention < 0.10668
@@ -552,6 +607,7 @@
           regimen: String(rec.regimen_fiscal || ''),
           uso: rec.uso_cfdi || 'G03'
         });
+        updateFiscalStatus();
 
         // Items
         const arr = Array.isArray(data.items) ? data.items : [];
@@ -669,7 +725,9 @@
         document.getElementById('out').textContent = JSON.stringify(data, null, 2);
 
         if(r.ok && data.ok){
-          msg(!data.warning, data.warning || `${data.environment === 'sandbox' ? 'Prueba timbrada' : 'Timbrada'}: ${data.uuid}`);
+          const clientSave = await persistClientFiscalData();
+          const saveWarning = clientSave.ok ? '' : ` La factura se creó, pero no se guardó la ficha del cliente: ${clientSave.error}`;
+          msg(!data.warning && clientSave.ok, (data.warning || `${data.environment === 'sandbox' ? 'Prueba timbrada' : 'Timbrada'}: ${data.uuid}`) + saveWarning);
           const pdf = data.pdf_url || ('/' + (data.pdf_path||'').replace(/\\/g,'/'));
           const xml = data.xml_url || ('/' + (data.xml_path||'').replace(/\\/g,'/'));
           if (pdf && pdf !== '/') document.getElementById('lnkPDF').href = pdf;

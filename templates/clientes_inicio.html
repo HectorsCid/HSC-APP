@@ -89,6 +89,7 @@
         <a class="btn" href="/inicio-app">🏠 Inicio</a>
         <a class="btn" href="/facturacion">🧾 Facturas</a>
         <a class="btn" href="/cotizaciones">📋 Cotizaciones</a>
+        <a class="btn" href="/clientes/importar">⬆️ Importar Konta</a>
         <a class="btn btn-primary" href="/nuevo_cliente">➕ Nuevo cliente</a>
         <button class="theme-toggle" type="button" id="theme-toggle" role="switch" aria-label="Cambiar modo de color">
           <span class="theme-track" aria-hidden="true"><span class="theme-knob"></span></span>
@@ -101,6 +102,8 @@
     <script type="application/json" id="clientes-data">
       {{ clientes | tojson | safe }}
     </script>
+
+    {% with messages = get_flashed_messages() %}{% if messages %}{% for message in messages %}<div style="padding:10px 12px;margin-bottom:10px;border:1px solid #86efac;border-radius:11px;background:#f0fdf4;color:#166534;font-weight:700">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}
 
     <div class="card">
       <div class="row">
