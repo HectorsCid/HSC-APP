@@ -89,8 +89,8 @@ class BorradoresTest(unittest.TestCase):
         self.assertIn(b">Corregir</a>", listado.data)
         self.assertIn(b">Facturar</a>", listado.data)
         acciones = listado.data.decode("utf-8")
-        self.assertLess(acciones.index(">Eliminar</button>"), acciones.index(">Reimprimir</a>"))
-        self.assertLess(acciones.index(">Reimprimir</a>"), acciones.index(">Corregir</a>"))
+        self.assertLess(acciones.index(">Eliminar</button>"), acciones.index(">PDF</a>"))
+        self.assertLess(acciones.index(">PDF</a>"), acciones.index(">Corregir</a>"))
         self.assertLess(acciones.index(">Corregir</a>"), acciones.index(">Duplicar</a>"))
         self.assertLess(acciones.index(">Duplicar</a>"), acciones.index(">Facturar</a>"))
 

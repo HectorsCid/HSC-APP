@@ -54,8 +54,8 @@
     th{background:var(--table-head);font-weight:700;color:var(--ink);position:sticky;top:0;z-index:2}
     td.numeric{text-align:right;white-space:nowrap}
     .summary-cell{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:260px}
-    .table-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;width:100%;max-width:310px}
-    .table-actions .btn{width:100%;padding:6px 7px;border-radius:9px;font-size:10.5px;line-height:1.1;min-height:30px}
+    .table-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;width:100%;max-width:286px}
+    .table-actions .btn{width:100%;min-width:0;padding:6px 4px;border-radius:9px;font-size:10px;line-height:1.1;min-height:30px;gap:3px;overflow:hidden;text-overflow:ellipsis}
     .table-actions form{display:block;width:100%;margin:0}
     .muted{color:var(--muted)}
     .flash{display:none;margin:12px 0;padding:10px 12px;border-radius:12px;font-weight:600}
@@ -321,7 +321,7 @@
           <td>
             <div class="table-actions">
               ${it.borrador ? `
-                <a class="btn btn-accent" href="/borradores/${encodeURIComponent(it.id)}/continuar">Continuar editando</a>
+                <a class="btn btn-accent" title="Continuar editando" href="/borradores/${encodeURIComponent(it.id)}/continuar">Continuar</a>
                 <form class="inline" method="post" action="/borradores/${encodeURIComponent(it.id)}/eliminar" onsubmit="return confirm('¿Eliminar este borrador? Esta acción no se puede deshacer.');">
                   <button class="btn btn-danger" type="submit">Eliminar</button>
                 </form>
@@ -329,7 +329,7 @@
                 <form class="inline" method="post" action="/cotizaciones/${encodeURIComponent(it.id)}/eliminar" onsubmit="return confirm('¿Quitar esta cotización del listado? El PDF permanecerá en Google Drive.');">
                   <button class="btn btn-danger" type="submit">Eliminar</button>
                 </form>
-                <a class="btn" href="${it.view_url}" target="_blank">Reimprimir</a>
+                <a class="btn" title="Ver o reimprimir PDF" href="${it.view_url}" target="_blank">PDF</a>
                 <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/editar" onclick="return confirm('¿Corregir esta cotización conservando el mismo folio? Al generar el PDF se reemplazará la versión anterior.');">Corregir</a>
                 <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">Duplicar</a>
                 <a class="btn btn-ok" href="${it.facturar_url}">Facturar</a>
