@@ -101,6 +101,20 @@ def _complete_customer(invoice):
     return normalized
 
 
+def _invoice_payment_state(invoice):
+    normalized = _complete_customer(invoice)
+    record = billing._read_index().get(normalized["uuid"])
+    summary = billing._payment_summary(record, normalized["total"])
+    normalized.update({
+        "payment_count": summary["payment_count"],
+        "paid_amount": summary["paid_amount"],
+        "remaining_balance": summary["remaining_balance"],
+        "next_partiality_number": summary["payment_count"] + 1,
+        "paid": summary["paid"],
+    })
+    return normalized, summary
+
+
 def _scaled_taxes(invoice, amount, previous_balance):
     """Resume los impuestos originales y los prorratea para el pago recibido."""
     grouped = {}
@@ -144,7 +158,9 @@ def _scaled_taxes(invoice, amount, previous_balance):
     if not grouped:
         return ("02" if has_tax_object else "01"), []
 
-    ratio = min(Decimal("1"), amount / previous_balance) if previous_balance else Decimal("1")
+    invoice_total = _money(_pick(invoice, "Total"))
+    denominator = invoice_total or previous_balance
+    ratio = min(Decimal("1"), amount / denominator) if denominator else Decimal("1")
     taxes = []
     for (name, rate, retention), (base, total) in grouped.items():
         taxes.append({
@@ -256,7 +272,8 @@ def resolve_uuid():
 def info(invoice_id):
     try:
         if billing._provider() == "facturama":
-            return jsonify(_complete_customer(_facturama_detail(invoice_id))), 200
+            normalized, _ = _invoice_payment_state(_facturama_detail(invoice_id))
+            return jsonify(normalized), 200
         inv = billing._fa_get(f"/invoices/{invoice_id}")
         customer = inv.get("customer") or {}
         return jsonify({
@@ -283,14 +300,16 @@ def crear_pago():
 
     try:
         invoice = _facturama_detail(invoice_id)
-        cfdi, normalized, unpaid = _build_facturama_payment(invoice, body)
         index = billing._read_index()
-        existing = index.get(normalized["uuid"])
-        if existing and existing.get("status") == "active":
-            return jsonify({
-                "ok": False, "error": "Esta factura ya tiene un complemento registrado",
-                "existing": existing,
-            }), 409
+        normalized = _complete_customer(invoice)
+        summary = billing._payment_summary(index.get(normalized["uuid"]), normalized["total"])
+        if summary["paid"] or summary["remaining_balance"] <= 0:
+            return jsonify({"ok": False, "stage": "validation", "field": "amount",
+                            "error": "Esta factura ya está totalmente pagada."}), 409
+        # El servidor manda: el navegador no puede alterar saldo ni parcialidad.
+        body["previous_balance"] = summary["remaining_balance"]
+        body["partiality_number"] = summary["payment_count"] + 1
+        cfdi, normalized, unpaid = _build_facturama_payment(invoice, body)
         result = billing._fm_request("POST", "/3/cfdis", json_body=cfdi, timeout=75)
         rep_id = str(_pick(result, "Id") or "")
         rep_uuid = _facturama_uuid(result)
@@ -299,19 +318,28 @@ def crear_pago():
                 "ok": False, "stage": "stamp_payment",
                 "error": "Facturama no confirmó un folio fiscal válido para el complemento",
             }), 502
-        index[normalized["uuid"]] = {
+        payment_entry = {
             "rep_id": rep_id, "rep_uuid": rep_uuid, "status": "active",
             "amount": float(_money(body.get("amount"))), "remaining_balance": float(unpaid),
+            "partiality_number": body["partiality_number"],
+            "date": str(body.get("date") or datetime.now().isoformat(timespec="seconds")),
+        }
+        prior = billing._payment_entries(index.get(normalized["uuid"]))
+        index[normalized["uuid"]] = {
+            "status": "active", "payments": [*prior, payment_entry],
+            "paid_amount": round(summary["paid_amount"] + payment_entry["amount"], 2),
+            "remaining_balance": float(unpaid),
         }
         billing._write_index(index)
         folio_folder = normalized["folio"] or normalized["uuid"]
         drive_backup = billing._backup_facturama_cfdi(
             rep_id, rep_uuid, normalized["customer"].get("folder_name") or normalized["customer"]["legal_name"],
-            folio_folder, "Complemento-Pago",
+            folio_folder, f"Complemento-Pago-P{body['partiality_number']}",
         )
         response = {
             "ok": True, "provider": "facturama", "id": rep_id, "uuid": rep_uuid,
             "remaining_balance": float(unpaid),
+            "partiality_number": body["partiality_number"],
             "pdf_url": f"/api/invoices/{rep_id}/pdf",
             "xml_url": f"/api/invoices/{rep_id}/xml",
             "drive_backup": drive_backup,
@@ -322,7 +350,10 @@ def crear_pago():
             )
         return jsonify(response), 200
     except ValueError as exc:
-        return jsonify({"ok": False, "stage": "validation", "error": str(exc)}), 400
+        message = str(exc)
+        lowered = message.lower()
+        field = "amount" if any(word in lowered for word in ("importe", "pago", "saldo")) else ""
+        return jsonify({"ok": False, "stage": "validation", "field": field, "error": message}), 400
     except requests.HTTPError as exc:
         return jsonify({
             "ok": False, "provider": "facturama", "stage": "facturama",

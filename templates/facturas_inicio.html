@@ -312,6 +312,14 @@ const tbody = $('#tbl tbody');
 const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Plantillas:'#panelPlantillas'};
 const clickLocks = new Set(); // antirrebote por fila
 const pageMsg = document.getElementById('pageMsg');
+function errorText(value){
+  if(!value) return 'No se pudo completar la operación. Intenta nuevamente.';
+  if(typeof value === 'string') return value;
+  if(value.message || value.Message) return value.message || value.Message;
+  if(value.error) return errorText(value.error);
+  if(value.ModelState) return Object.values(value.ModelState).flat().join(' ');
+  return 'El servicio rechazó la operación. Revisa los datos e intenta nuevamente.';
+}
 const themeToggle = document.getElementById('theme-toggle');
 const themeLabel = document.getElementById('theme-label');
 function syncThemeToggle(){
@@ -334,6 +342,15 @@ if(arrivalParams.get('timbrada') === '1'){
     : 'Factura timbrada correctamente y respaldada en Drive.';
   history.replaceState({}, '', '/facturacion');
   setTimeout(()=>{ pageMsg.className = 'flash'; }, 5000);
+}
+if(arrivalParams.get('complemento') === '1'){
+  const partiality = arrivalParams.get('parcialidad');
+  pageMsg.className = 'flash ok';
+  pageMsg.textContent = arrivalParams.get('drive') === 'fail'
+    ? `Complemento${partiality ? ` (parcialidad ${partiality})` : ''} timbrado. Drive no confirmó el respaldo.`
+    : `Complemento${partiality ? ` (parcialidad ${partiality})` : ''} timbrado y respaldado correctamente.`;
+  history.replaceState({}, '', '/facturacion');
+  setTimeout(()=>{ pageMsg.className = 'flash'; }, 6000);
 }
 
 ['Emitidas','Recibidas','Plantillas'].forEach(n=>{
@@ -377,7 +394,7 @@ async function load(){
   try{
     const r = await fetch('/api/facturas/list');
     const d = await r.json();
-    if(!r.ok) throw new Error(d.error||'Error');
+    if(!r.ok) throw new Error(errorText(d.error));
     const m = $('#mes').value;
     const q = ($('#q').value||'').toLowerCase();
 
@@ -399,9 +416,10 @@ async function load(){
       const tr = document.createElement('tr');
       if(x.type === 'P') tr.classList.add('is-payment');
       const pagoStatus =
-        x.type==='P' ? '<span class="badge purple">REP</span>' :
+        x.type==='P' ? '<span class="badge">Complemento</span>' :
         (x.paid ? '<span class="badge green">Pagado</span>' :
-          (x.payment_method==='PUE' ? '<span class="badge green">Completo</span>' : '<span class="badge red">Sin pagos</span>'));
+          (x.payment_method==='PUE' ? '<span class="badge green">Completo</span>' :
+            (x.payment_count ? `<span class="badge gray" title="Pagado: $${Number(x.paid_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}; resta: $${Number(x.remaining_balance||0).toLocaleString('es-MX',{minimumFractionDigits:2})}">Parcial ${x.payment_count}</span>` : '<span class="badge red">Sin pagos</span>')));
 
       tr.innerHTML = `
         <td title="${escAttr(x.customer_name)}">${x.customer_name||''}</td>
@@ -716,7 +734,7 @@ cmConfirm.addEventListener('click', async ()=>{
     });
     const d = await r.json();
     if(!r.ok || !d.ok){
-      throw new Error(d.body || d.error || 'Error al cancelar');
+      throw new Error(errorText(d.body || d.error || 'No se pudo cancelar la factura.'));
     }
     closeCancelModal();
     alert('CFDI cancelado.');

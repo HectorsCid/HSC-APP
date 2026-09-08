@@ -82,6 +82,18 @@ class CfdiDriveTests(unittest.TestCase):
         self.assertEqual(drive.api.created, 4)  # dos carpetas + PDF + XML
         self.assertEqual(drive.api.updated, 2)
 
+    def test_payment_index_is_upserted_in_facturas_root(self):
+        drive = _Drive()
+        with patch.object(cfdi_drive, "get_drive_service_user", return_value=drive):
+            first = cfdi_drive.backup_payments_index({"invoice": {"remaining_balance": 50}})
+            second = cfdi_drive.backup_payments_index({"invoice": {"remaining_balance": 10}})
+        row = next(item for item in drive.api.rows if item["name"] == cfdi_drive.PAYMENTS_INDEX_FILE)
+        self.assertEqual(row["parent"], cfdi_drive.FACTURAS_ROOT_FOLDER_ID)
+        self.assertTrue(first["ok"])
+        self.assertTrue(second["ok"])
+        self.assertEqual(drive.api.created, 1)
+        self.assertEqual(drive.api.updated, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

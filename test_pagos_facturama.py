@@ -107,8 +107,74 @@ class FacturamaPaymentTests(unittest.TestCase):
         write_index.assert_called_once()
         backup.assert_called_once_with(
             "rep-id", self.REP_UUID, "UNIVERSIDAD ROBOTICA ESPAÑOLA",
-            "10", "Complemento-Pago",
+            "10", "Complemento-Pago-P1",
         )
+
+    def test_info_reports_next_partiality_and_remaining_balance(self):
+        index = {self.INVOICE_UUID: {"payments": [{
+            "rep_id": "rep-one", "status": "active", "amount": 40,
+            "remaining_balance": 76, "partiality_number": 1,
+        }]}}
+        with (
+            patch.object(payments, "_facturama_detail", return_value=self.invoice()),
+            patch.object(billing, "_read_index", return_value=index),
+        ):
+            response = self.client.get("/api/pagos/info/invoice-id")
+        data = response.get_json()
+        self.assertEqual(data["payment_count"], 1)
+        self.assertEqual(data["paid_amount"], 40)
+        self.assertEqual(data["remaining_balance"], 76)
+        self.assertEqual(data["next_partiality_number"], 2)
+
+    def test_create_second_partiality_uses_server_balance(self):
+        index = {self.INVOICE_UUID: {"payments": [{
+            "rep_id": "rep-one", "status": "active", "amount": 40,
+            "remaining_balance": 76, "partiality_number": 1,
+        }]}}
+        posted = {}
+
+        def fake_request(method, path, **kwargs):
+            if method == "GET":
+                return self.invoice()
+            posted.update(kwargs["json_body"])
+            return {"Id": "rep-two", "Complement": {"TaxStamp": {"Uuid": self.REP_UUID}}}
+
+        with (
+            patch.object(billing, "_fm_request", side_effect=fake_request),
+            patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
+            patch.object(billing, "_read_index", return_value=index),
+            patch.object(billing, "_write_index") as write_index,
+            patch.object(billing, "_backup_facturama_cfdi", return_value={"ok": True}),
+        ):
+            response = self.client.post("/api/pagos/crear", json={
+                "invoice_id": "invoice-id", "amount": 30,
+                "previous_balance": 999, "partiality_number": 99,
+            })
+        self.assertEqual(response.status_code, 200)
+        related = posted["Complemento"]["Payments"][0]["RelatedDocuments"][0]
+        self.assertEqual(related["PreviousBalanceAmount"], 76.0)
+        self.assertEqual(related["PartialityNumber"], 2)
+        self.assertEqual(related["ImpSaldoInsoluto"], 46.0)
+        self.assertEqual(related["Taxes"][0]["Base"], 25.86)
+        self.assertEqual(related["Taxes"][0]["Total"], 4.14)
+        saved = write_index.call_args.args[0][self.INVOICE_UUID]
+        self.assertEqual(len(saved["payments"]), 2)
+
+    def test_rejects_payment_above_remaining_balance(self):
+        index = {self.INVOICE_UUID: {"payments": [{
+            "rep_id": "rep-one", "status": "active", "amount": 100,
+            "remaining_balance": 16,
+        }]}}
+        with (
+            patch.object(billing, "_fm_request", return_value=self.invoice()),
+            patch.object(billing, "_read_index", return_value=index),
+            patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
+        ):
+            response = self.client.post("/api/pagos/crear", json={
+                "invoice_id": "invoice-id", "amount": 20,
+            })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("saldo anterior", response.get_json()["error"])
 
 
 if __name__ == "__main__":

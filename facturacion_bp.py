@@ -13,7 +13,7 @@ import mimetypes
 import requests
 from werkzeug.utils import secure_filename
 
-from cfdi_drive import backup_cfdi
+from cfdi_drive import backup_cfdi, backup_payments_index, load_payments_index
 from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config, trusted_device_token
 
 # ----------------------------------------------------------------------
@@ -107,20 +107,72 @@ INDEX = DATA_DIR / "pagos_index.json"
 def _read_index():
     if INDEX.exists():
         try:
-            return json.loads(INDEX.read_text("utf-8"))
+            local = json.loads(INDEX.read_text("utf-8"))
+            if isinstance(local, dict) and local:
+                return local
         except Exception:
-            return {}
+            pass
+    try:
+        remote = load_payments_index()
+        if remote:
+            INDEX.write_text(json.dumps(remote, ensure_ascii=False, indent=2), encoding="utf-8")
+            return remote
+    except Exception:
+        pass
     return {}
 
 def _write_index(d):
     INDEX.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        backup_payments_index(d)
+    except Exception as exc:
+        try:
+            current_app.logger.warning("No se pudo respaldar el índice de pagos en Drive: %s", exc)
+        except RuntimeError:
+            pass
+
+def _payment_entries(record):
+    """Devuelve pagos activos y conserva compatibilidad con el índice anterior."""
+    if not isinstance(record, dict):
+        return []
+    if isinstance(record.get("payments"), list):
+        return [p for p in record["payments"] if isinstance(p, dict) and p.get("status", "active") == "active"]
+    if record.get("rep_id") and record.get("status", "active") == "active":
+        return [record]
+    return []
+
+def _payment_summary(record, invoice_total=0):
+    payments = _payment_entries(record)
+    paid = sum((float(p.get("amount") or 0) for p in payments), 0.0)
+    total = float(invoice_total or 0)
+    remaining = max(0.0, round(total - paid, 2))
+    if payments and payments[-1].get("remaining_balance") is not None:
+        remaining = max(0.0, round(float(payments[-1].get("remaining_balance") or 0), 2))
+    return {
+        "payments": payments,
+        "payment_count": len(payments),
+        "paid_amount": round(paid, 2),
+        "remaining_balance": remaining,
+        "paid": bool(payments) and remaining <= 0,
+    }
 
 def _remove_rep_by_id(rep_id: str):
     """Elimina del índice el REP cuyo id coincide, para re-habilitar complemento."""
     idx = _read_index()
     changed = False
     for k, v in list(idx.items()):
-        if v.get("rep_id") == rep_id:
+        if not isinstance(v, dict):
+            continue
+        if isinstance(v.get("payments"), list):
+            kept = [p for p in v["payments"] if str(p.get("rep_id")) != str(rep_id)]
+            if len(kept) != len(v["payments"]):
+                changed = True
+                if kept:
+                    v["payments"] = kept
+                    v["remaining_balance"] = kept[-1].get("remaining_balance", v.get("remaining_balance"))
+                else:
+                    idx.pop(k)
+        elif str(v.get("rep_id")) == str(rep_id):
             idx.pop(k)
             changed = True
     if changed:
@@ -996,12 +1048,13 @@ def api_list_facturas():
         paid_idx = _read_index()
         for inv in rows:
             normalized = _facturama_invoice_row(inv)
-            payment = paid_idx.get(normalized["uuid"]) or {}
-            normalized["paid"] = (
-                normalized["type"] == "I"
-                and payment.get("status") == "active"
-                and float(payment.get("remaining_balance") or 0) <= 0
-            )
+            summary = _payment_summary(paid_idx.get(normalized["uuid"]), normalized["total"])
+            normalized.update({
+                "paid": normalized["type"] == "I" and summary["paid"],
+                "payment_count": summary["payment_count"] if normalized["type"] == "I" else 0,
+                "paid_amount": summary["paid_amount"] if normalized["type"] == "I" else 0,
+                "remaining_balance": summary["remaining_balance"] if normalized["type"] == "I" else 0,
+            })
             # Los intentos rechazados pueden tener Id, pero no folio fiscal.
             if normalized["id"] and _valid_cfdi_uuid(normalized["uuid"]):
                 out.append(normalized)
@@ -1016,7 +1069,8 @@ def api_list_facturas():
     for inv in rs.get("data", []):
         cust = inv.get("customer") or {}
         uuid = inv.get("uuid")
-        paid = bool(paid_idx.get(uuid)) if inv.get("type") == "I" else False
+        summary = _payment_summary(paid_idx.get(uuid), inv.get("total"))
+        paid = summary["paid"] if inv.get("type") == "I" else False
         out.append({
             "id": inv.get("id"),
             "uuid": uuid,
@@ -1028,6 +1082,9 @@ def api_list_facturas():
             "customer_name": cust.get("legal_name"),
             "customer_tax_id": cust.get("tax_id"),
             "paid": paid,
+            "payment_count": summary["payment_count"] if inv.get("type") == "I" else 0,
+            "paid_amount": summary["paid_amount"] if inv.get("type") == "I" else 0,
+            "remaining_balance": summary["remaining_balance"] if inv.get("type") == "I" else 0,
         })
     return jsonify({"ok": True, "data": out}), 200
 

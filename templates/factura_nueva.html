@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <title>Nueva Factura - HSC</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    (()=>{const saved=localStorage.getItem('hsc-theme');document.documentElement.dataset.theme=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')})();
+  </script>
   <style>
     :root{ --bg:#ffffff; --card:#f9fafb; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --brand:#374151; --ok:#22c55e; --danger:#ef4444; --radius:14px; }
     *{box-sizing:border-box}
@@ -41,6 +44,23 @@
     .invalid{border-color:var(--danger)!important; box-shadow:0 0 0 2px rgba(239,68,68,.15) inset}
     .fiscal-status{margin-top:9px;padding:9px 11px;border-radius:10px;border:1px solid #fed7aa;background:#fff7ed;color:#92400e;font-size:.84rem;font-weight:650}
     .fiscal-status.complete{border-color:#86efac;background:#f0fdf4;color:#166534}
+    :root{--bg:#f4f7fb;--card:#fff;--field:#fff;--ink:#17233b;--muted:#64748b;--line:#dce3ed;--brand:#2563eb;--soft:#f8fafc;--ok:#16a34a;--danger:#ef4444;--shadow:0 12px 32px rgba(30,41,59,.08)}
+    html[data-theme="dark"]{--bg:#0b1120;--card:#151f33;--field:#121b2e;--ink:#f8fafc;--muted:#9fb0c9;--line:#30405a;--brand:#3b82f6;--soft:#1c2940;--ok:#22c55e;--shadow:0 16px 38px rgba(0,0,0,.24)}
+    html,body{background:var(--bg);color:var(--ink)}
+    .wrap{max-width:1280px;padding:14px 18px}
+    .top{margin-bottom:10px}.title{font-size:1.5rem;font-weight:900;letter-spacing:-.025em}
+    .grid{gap:12px}@media(min-width:840px){.grid-2{grid-template-columns:1.15fr .85fr}}
+    .card{background:var(--card);border-color:var(--line);padding:13px;box-shadow:var(--shadow)}
+    label{font-size:.78rem;font-weight:750;margin:6px 0 4px}
+    input,select,textarea{padding:9px 10px;font-size:14px;background:var(--field);color:var(--ink);border-color:var(--line)}
+    input:focus,select:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 18%,transparent)}
+    .btn{padding:8px 10px;font-size:13px;background:var(--field);color:var(--ink);border-color:var(--line)}
+    .btn-primary{background:var(--brand);color:#fff}.btn-ok{background:var(--ok);color:#fff}.btn-danger{background:var(--danger);color:#fff}
+    .table-wrap{background:var(--field);border-color:var(--line);max-height:360px}th,tfoot td{background:var(--soft);color:var(--ink)}th,td{padding:7px 8px;font-size:12px}
+    .theme-toggle{display:inline-flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--line);border-radius:999px;background:var(--field);color:var(--ink);font-weight:750;cursor:pointer}
+    .theme-track{width:38px;height:21px;padding:2px;border-radius:999px;background:#94a3b8;display:flex}.theme-knob{width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:.2s}
+    html[data-theme="dark"] .theme-track{background:#22c55e}html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
+    @media(max-width:839px){.wrap{padding:11px}.top{align-items:flex-start;flex-direction:column}.top .actions{width:100%}.top .actions>*{flex:1}.card{padding:11px}}
   </style>
 </head>
 <body>
@@ -51,6 +71,7 @@
         <div class="pill">Facturama · ambiente de pruebas</div>
       </div>
       <div class="actions" style="display:flex;gap:8px">
+        <button class="theme-toggle" type="button" id="theme-toggle" role="switch"><span class="theme-track"><span class="theme-knob"></span></span><span id="theme-label">Modo</span></button>
         <a class="btn" href="/inicio-app">🏠 Inicio</a>
         <a class="btn" href="/facturacion">📚 Facturas</a>
         <a class="btn" href="/articulos-servicios">📦 Artículos</a>
@@ -144,7 +165,7 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top:18px">
+    <div class="card" style="margin-top:12px">
       <h3 class="section-title">Conceptos</h3>
 
       <div class="row row-2">
@@ -185,7 +206,7 @@
       </div>
     </div>
 
-    <div class="card" style="margin-top:18px">
+    <div class="card" id="responseCard" style="margin-top:12px;display:none">
       <h3 class="section-title">Respuesta</h3>
       <pre id="out" class="mono" style="white-space:pre-wrap"></pre>
       <div id="accionesPost" class="actions" style="display:none;margin-top:10px">
@@ -212,6 +233,9 @@
     let pageQuoteFolio = '';
     let pageClientName = '';
     let fiscalCatalogRequest = 0;
+    const themeToggle = document.getElementById('theme-toggle');
+    const syncTheme = ()=>{const dark=document.documentElement.dataset.theme==='dark';themeToggle.setAttribute('aria-checked',String(dark));document.getElementById('theme-label').textContent=dark?'Oscuro':'Claro'};
+    themeToggle.onclick=()=>{const next=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=next;localStorage.setItem('hsc-theme',next);syncTheme()};syncTheme();
 
     function replaceCatalog(selectId, rows, preferred, fallbackValue=''){
       const select = document.getElementById(selectId);
@@ -642,7 +666,11 @@
       const err = data && data.error;
       if(typeof err === 'string') return err;
       if(err && typeof err === 'object'){
-        return err.Message || err.message || err.error || 'Facturama rechazó la solicitud.';
+        if(err.Message || err.message) return err.Message || err.message;
+        if(typeof err.error === 'string') return err.error;
+        if(err.ModelState) return Object.values(err.ModelState).flat().join(' ');
+        const detail = Object.values(err).find(value=>typeof value === 'string');
+        if(detail) return detail;
       }
       return 'No se pudo timbrar. Revisa los datos e intenta nuevamente.';
     }
@@ -655,10 +683,14 @@
       };
       Object.values(map).forEach(el=>mark(el, true));
       const errors = data && data.field_errors;
-      if(!errors || typeof errors !== 'object') return;
+      if(!errors || typeof errors !== 'object') return '';
       Object.keys(errors).forEach(key=>mark(map[key], false));
       const first = Object.keys(errors)[0];
-      if(first && map[first]) map[first].focus();
+      if(first && map[first]){
+        map[first].focus();
+        return `Revisa ${map[first].previousElementSibling?.textContent?.trim().toLowerCase() || 'el dato marcado'}: ${errors[first]}`;
+      }
+      return '';
     }
     document.getElementById('btnTimbrar').onclick = async () => {
       if(!valReceptor()) return;
@@ -728,6 +760,7 @@
         document.getElementById('out').textContent = JSON.stringify(data, null, 2);
 
         if(r.ok && data.ok){
+          document.getElementById('responseCard').style.display='block';
           const clientSave = await persistClientFiscalData();
           const saveWarning = clientSave.ok ? '' : ` La factura se creó, pero no se guardó la ficha del cliente: ${clientSave.error}`;
           msg(!data.warning && clientSave.ok, (data.warning || `${data.environment === 'sandbox' ? 'Prueba timbrada' : 'Timbrada'}: ${data.uuid}`) + saveWarning);
@@ -741,8 +774,8 @@
           const driveState = data.drive_backup?.ok ? 'ok' : 'fail';
           setTimeout(()=>{ window.location.assign(`/facturacion?timbrada=1&drive=${driveState}`); }, data.warning ? 1800 : 900);
         } else {
-          showServerFieldErrors(data);
-          msg(false, readableError(data));
+          const fieldMessage = showServerFieldErrors(data);
+          msg(false, fieldMessage || readableError(data));
           stampButton.disabled = false;
           stampButton.textContent = '🧾 Timbrar';
         }

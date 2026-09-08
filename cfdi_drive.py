@@ -1,15 +1,17 @@
 """Respaldo idempotente de facturas y complementos en Google Drive."""
 import io
+import json
 import re
 import unicodedata
 
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 from auth_google import get_drive_service_user
 
 
 FACTURAS_ROOT_FOLDER_ID = "1uIl0PsJMWXapKKwEXJyW0ZpNlwt9ZPPh"
 FOLDER_MIME = "application/vnd.google-apps.folder"
+PAYMENTS_INDEX_FILE = "HSC-pagos-index.json"
 
 
 def safe_drive_name(value, fallback):
@@ -87,3 +89,29 @@ def backup_cfdi(cliente, folio_interno, uuid, pdf_bytes, xml_bytes, document_typ
         "xml_id": xml.get("id"),
         "xml_url": xml.get("webViewLink"),
     }
+
+
+def load_payments_index():
+    """Recupera el control de parcialidades desde la misma carpeta de Facturas."""
+    service = get_drive_service_user(timeout=35)
+    item = next((row for row in _list_children(service, FACTURAS_ROOT_FOLDER_ID)
+                 if row.get("name") == PAYMENTS_INDEX_FILE), None)
+    if not item:
+        return {}
+    buffer = io.BytesIO()
+    downloader = MediaIoBaseDownload(buffer, service.files().get_media(fileId=item["id"]))
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    value = json.loads(buffer.getvalue().decode("utf-8"))
+    return value if isinstance(value, dict) else {}
+
+
+def backup_payments_index(index):
+    """Guarda el control de saldos fuera de Render para sobrevivir despliegues."""
+    service = get_drive_service_user(timeout=35)
+    payload = json.dumps(index if isinstance(index, dict) else {}, ensure_ascii=False, indent=2).encode("utf-8")
+    result = _upsert_file(
+        service, FACTURAS_ROOT_FOLDER_ID, PAYMENTS_INDEX_FILE, payload, "application/json"
+    )
+    return {"ok": True, "file_id": result.get("id"), "file_url": result.get("webViewLink")}
