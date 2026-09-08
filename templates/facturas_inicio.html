@@ -115,7 +115,7 @@
   tbody td:nth-child(5){display:none}
   tbody td:nth-child(6),tbody td:nth-child(7),tbody td:nth-child(8){grid-column:3;grid-row:1;width:max-content}
   tbody td:nth-child(6){align-self:start;padding-top:5px}
-  tbody td:nth-child(7){align-self:center}
+  tbody td:nth-child(7){align-self:start;justify-self:end;padding-top:5px}
   tbody td:nth-child(8){align-self:end;padding-bottom:5px}
   tbody td:nth-child(9){grid-column:4;grid-row:1;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.7rem;color:var(--muted);max-width:none}
   tbody td:nth-child(9)::before{content:'Folio fiscal';display:block;margin-bottom:5px;font-family:Segoe UI,Roboto,system-ui,sans-serif;font-size:.65rem;font-weight:850;color:var(--ink);text-transform:uppercase;letter-spacing:.04em}
@@ -379,7 +379,7 @@ async function load(){
           (x.payment_method==='PUE' ? '<span class="badge green">Completo</span>' : '<span class="badge">Sin pagos</span>'));
 
       tr.innerHTML = `
-        <td>${x.customer_name||''}</td>
+        <td title="${escAttr(x.customer_name)}">${x.customer_name||''}</td>
         <td>${x.customer_tax_id||''}</td>
         <td>${(x.date||'').slice(0,10)}</td>
         <td>$${Number(x.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
