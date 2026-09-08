@@ -12,7 +12,7 @@ import smtplib
 import requests
 
 from cfdi_drive import backup_cfdi
-from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config
+from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config, trusted_device_token
 
 # ----------------------------------------------------------------------
 # Blueprint
@@ -1079,7 +1079,9 @@ def api_invoice_email(inv_id):
     comments = str(body.get("message") or "Adjuntamos su factura en formatos PDF y XML.\n\nHSC Refrigeración")
     if not smtp_config()["configured"]:
         return jsonify({"ok": False, "error": "Falta configurar el correo de salida de HSC en Render."}), 503
-    if not authorized_to_send(body.get("send_key")):
+    trusted_cookie = request.cookies.get("hsc_mail_trusted", "")
+    supplied_key = body.get("send_key")
+    if not authorized_to_send(supplied_key, trusted_cookie):
         return jsonify({"ok": False, "error": "La clave de envío no es correcta."}), 403
     try:
         if _provider() == "facturama":
@@ -1096,7 +1098,12 @@ def api_invoice_email(inv_id):
             xml_bytes=xml,
             folio=folio,
         )
-        return jsonify({"ok": True, "message": f"Factura enviada a {recipient}.", "result": result}), 200
+        response = jsonify({"ok": True, "message": f"Factura enviada a {recipient}.", "result": result})
+        response.set_cookie(
+            "hsc_mail_trusted", trusted_device_token(), max_age=315360000,
+            secure=True, httponly=True, samesite="Strict", path="/api",
+        )
+        return response, 200
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except smtplib.SMTPAuthenticationError:
@@ -1108,6 +1115,15 @@ def api_invoice_email(inv_id):
     except Exception:
         current_app.logger.exception("Error inesperado al preparar el CFDI para correo")
         return jsonify({"ok": False, "error": "No se pudieron preparar los archivos para enviarlos. Intenta nuevamente."}), 500
+
+
+@facturacion_bp.get("/email/status")
+def api_email_status():
+    return jsonify({
+        "ok": True,
+        "configured": smtp_config()["configured"],
+        "trusted": authorized_to_send("", request.cookies.get("hsc_mail_trusted", "")),
+    }), 200
 
 @facturacion_bp.post("/invoices/<inv_id>/cancel")
 def api_invoice_cancel(inv_id):

@@ -39,6 +39,12 @@ class SmtpMailerTests(unittest.TestCase):
                     pdf_bytes=b"pdf", xml_bytes=b"xml", folio="1",
                 )
 
+    def test_trusted_device_token_is_accepted_without_raw_key(self):
+        with patch.dict(os.environ, {"SMTP_SEND_KEY": "a-long-private-send-key"}, clear=False):
+            token = smtp_mailer.trusted_device_token()
+            self.assertTrue(smtp_mailer.authorized_to_send("", token))
+            self.assertFalse(smtp_mailer.authorized_to_send("", "wrong"))
+
 
 class InvoiceEmailEndpointTests(unittest.TestCase):
     def setUp(self):
@@ -60,6 +66,7 @@ class InvoiceEmailEndpointTests(unittest.TestCase):
         with (
             patch.object(billing, "smtp_config", return_value={"configured": True}),
             patch.object(billing, "authorized_to_send", return_value=True),
+            patch.object(billing, "trusted_device_token", return_value="trusted-cookie"),
             patch.object(billing, "_provider", return_value="facturama"),
             patch.object(billing, "_fm_request", side_effect=[{"Content": "JVBERg=="}, {"Content": "PHhtbC8+"}]),
             patch.object(billing, "send_cfdi_email", return_value={"recipient": "x@example.com"}) as send,
@@ -71,6 +78,16 @@ class InvoiceEmailEndpointTests(unittest.TestCase):
         self.assertTrue(response.get_json()["ok"])
         self.assertEqual(send.call_args.kwargs["pdf_bytes"], b"%PDF")
         self.assertEqual(send.call_args.kwargs["xml_bytes"], b"<xml/>")
+        self.assertIn("hsc_mail_trusted=trusted-cookie", response.headers.get("Set-Cookie", ""))
+
+    def test_status_reports_trusted_browser_without_exposing_key(self):
+        with (
+            patch.object(billing, "smtp_config", return_value={"configured": True}),
+            patch.object(billing, "authorized_to_send", return_value=True),
+        ):
+            response = self.client.get("/api/email/status")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"ok": True, "configured": True, "trusted": True})
 
 
 if __name__ == "__main__":

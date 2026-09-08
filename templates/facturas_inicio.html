@@ -168,7 +168,7 @@
       <div><label for="emEmail">Correo del cliente</label><input id="emEmail" class="cm-input" type="email" placeholder="cliente@empresa.com" /></div>
       <div><label for="emSubject">Asunto</label><input id="emSubject" class="cm-input" type="text" /></div>
       <div><label for="emMessage">Mensaje</label><textarea id="emMessage" class="cm-input" rows="5"></textarea></div>
-      <div><label for="emKey">Clave de envío</label><input id="emKey" class="cm-input" type="password" autocomplete="off" placeholder="Clave privada configurada en Render" /></div>
+      <div id="emKeyWrap"><label for="emKey">Clave de envío (solo la primera vez)</label><input id="emKey" class="cm-input" type="password" autocomplete="off" placeholder="Clave privada configurada en Render" /></div>
       <div id="emErr" class="cm-hint" style="color:var(--danger)"></div>
     </div>
     <div class="cm-actions">
@@ -345,20 +345,29 @@ const emEmail = $('#emEmail');
 const emSubject = $('#emSubject');
 const emMessage = $('#emMessage');
 const emKey = $('#emKey');
+const emKeyWrap = $('#emKeyWrap');
 const emErr = $('#emErr');
 const emConfirm = $('#emConfirm');
 let emailCtx = null;
 
-function openEmailModal(ctx){
+async function openEmailModal(ctx){
   emailCtx = ctx;
   emEmail.value = ctx.email || '';
   emSubject.value = `Factura ${ctx.folio || ''} — HSC Refrigeración`;
   emMessage.value = `Buen día${ctx.cliente ? ' ' + ctx.cliente : ''},\n\nAdjuntamos su factura en formatos PDF y XML.\n\nSaludos,\nHSC Refrigeración`;
-  emKey.value = sessionStorage.getItem('hscMailKey') || '';
+  emKey.value = '';
+  emKeyWrap.classList.add('hidden');
   emErr.textContent = '';
   emConfirm.disabled = false;
   emConfirm.textContent = '✉ Enviar PDF y XML';
   em.classList.add('show');
+  try{
+    const statusResponse = await fetch('/api/email/status', {headers:{'Accept':'application/json'}});
+    const status = await statusResponse.json();
+    if(!status.trusted) emKeyWrap.classList.remove('hidden');
+  }catch(_){
+    emKeyWrap.classList.remove('hidden');
+  }
   setTimeout(()=>emEmail.focus(), 0);
 }
 
@@ -377,7 +386,7 @@ emConfirm.addEventListener('click', async ()=>{
     emEmail.focus();
     return;
   }
-  if(!emKey.value){
+  if(!emKeyWrap.classList.contains('hidden') && !emKey.value){
     emErr.textContent = 'Escribe la clave privada de envío.';
     emKey.focus();
     return;
@@ -395,7 +404,6 @@ emConfirm.addEventListener('click', async ()=>{
     });
     const data = await response.json();
     if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo enviar el correo.');
-    sessionStorage.setItem('hscMailKey', emKey.value);
     emKey.value = '';
     em.classList.remove('show');
     emailCtx = null;
@@ -404,6 +412,7 @@ emConfirm.addEventListener('click', async ()=>{
     setTimeout(()=>{ pageMsg.className='flash'; }, 6000);
   }catch(error){
     emErr.textContent = error.message || String(error);
+    if(String(error.message || '').toLowerCase().includes('clave')) emKeyWrap.classList.remove('hidden');
     emConfirm.disabled = false;
     emConfirm.textContent = '✉ Reintentar';
   }

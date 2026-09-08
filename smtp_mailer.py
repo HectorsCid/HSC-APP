@@ -3,6 +3,7 @@ import re
 import smtplib
 import ssl
 import hmac
+import hashlib
 from email.message import EmailMessage
 from email.utils import formataddr, parseaddr
 
@@ -32,10 +33,21 @@ def smtp_config():
     }
 
 
-def authorized_to_send(candidate):
+def trusted_device_token():
+    expected = smtp_config()["send_key"]
+    if len(expected) < 12:
+        return ""
+    return hmac.new(expected.encode("utf-8"), b"hsc-mail-device-v1", hashlib.sha256).hexdigest()
+
+
+def authorized_to_send(candidate="", trusted_token=""):
     expected = smtp_config()["send_key"]
     supplied = str(candidate or "")
-    return len(expected) >= 12 and hmac.compare_digest(supplied, expected)
+    token = trusted_device_token()
+    return len(expected) >= 12 and (
+        hmac.compare_digest(supplied, expected)
+        or bool(token and hmac.compare_digest(str(trusted_token or ""), token))
+    )
 
 
 def valid_email(value):
