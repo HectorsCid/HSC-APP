@@ -94,6 +94,12 @@ class BorradoresTest(unittest.TestCase):
         self.assertLess(acciones.index(">Corregir</a>"), acciones.index(">Duplicar</a>"))
         self.assertLess(acciones.index(">Duplicar</a>"), acciones.index(">Facturar</a>"))
 
+        factura = self.client.get("/facturas/nueva")
+        self.assertEqual(factura.status_code, 200)
+        self.assertIn(b"/api/catalogos/fiscales", factura.data)
+        self.assertIn(b'value="S01"', factura.data)
+        self.assertNotIn(b'value="P01"', factura.data)
+
     def test_folio_se_asigna_hasta_guardar_borrador(self):
         original = cotizador.obtener_siguiente_folio
         llamadas = []

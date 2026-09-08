@@ -13,6 +13,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
 
     def setUp(self):
         billing._STAMP_RESULTS.clear()
+        billing._FISCAL_CATALOG_CACHE.clear()
         self.app = Flask(__name__)
         self.app.register_blueprint(billing.facturacion_bp)
         self.client = self.app.test_client()
@@ -67,6 +68,26 @@ class FacturamaIntegrationTests(unittest.TestCase):
         with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
             cfdi = billing._build_facturama_cfdi(payload)
         self.assertEqual(cfdi["PaymentForm"], "99")
+
+    def test_obsolete_cfdi_use_is_rejected(self):
+        payload = self.payload()
+        payload["receptor"]["uso_cfdi"] = "P01"
+        with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
+            with self.assertRaisesRegex(ValueError, "catálogo vigente"):
+                billing._build_facturama_cfdi(payload)
+
+    def test_fiscal_catalogs_have_offline_fallback_and_filter_by_rfc_type(self):
+        with patch.object(billing, "_fm_request", side_effect=billing.requests.ConnectionError("offline")):
+            response = self.client.get("/api/catalogos/fiscales?rfc=URE180429TM6")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data["source"], "respaldo_local")
+        self.assertIn("601", {row["value"] for row in data["regimes"]})
+        self.assertNotIn("612", {row["value"] for row in data["regimes"]})
+        self.assertIn("S01", {row["value"] for row in data["cfdi_uses"]})
+        self.assertNotIn("P01", {row["value"] for row in data["cfdi_uses"]})
+        self.assertNotIn("D01", {row["value"] for row in data["cfdi_uses"]})
+        self.assertEqual(len(data["payment_forms"]), 22)
 
     def test_issuer_uses_configured_branch_zip(self):
         old_cache = billing._FM_PROFILE_CACHE

@@ -26,9 +26,70 @@ _STAMP_LOCK = Lock()
 _STAMP_RESULTS = {}
 _FM_PROFILE_CACHE = None
 _FM_BRANCH_CACHE = None
+_FISCAL_CATALOG_CACHE = {}
 _CFDI_UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
+
+_FISCAL_REGIMES = [
+    ("601", "General de Ley Personas Morales", False, True),
+    ("603", "Personas Morales con Fines no Lucrativos", False, True),
+    ("605", "Sueldos y Salarios e Ingresos Asimilados a Salarios", True, False),
+    ("606", "Arrendamiento", True, False),
+    ("607", "Régimen de Enajenación o Adquisición de Bienes", True, False),
+    ("608", "Demás ingresos", True, False),
+    ("610", "Residentes en el Extranjero sin Establecimiento Permanente en México", True, True),
+    ("611", "Ingresos por Dividendos (socios y accionistas)", True, False),
+    ("612", "Personas Físicas con Actividades Empresariales y Profesionales", True, False),
+    ("614", "Ingresos por intereses", True, False),
+    ("615", "Régimen de los ingresos por obtención de premios", True, False),
+    ("616", "Sin obligaciones fiscales", True, True),
+    ("620", "Sociedades Cooperativas de Producción que optan por diferir sus ingresos", False, True),
+    ("621", "Incorporación Fiscal", True, False),
+    ("622", "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras", True, True),
+    ("623", "Opcional para Grupos de Sociedades", False, True),
+    ("624", "Coordinados", False, True),
+    ("625", "Actividades Empresariales con ingresos a través de Plataformas Tecnológicas", True, False),
+    ("626", "Régimen Simplificado de Confianza", True, True),
+]
+_PAYMENT_FORMS = [
+    ("01", "Efectivo"), ("02", "Cheque nominativo"),
+    ("03", "Transferencia electrónica de fondos"), ("04", "Tarjeta de crédito"),
+    ("05", "Monedero electrónico"), ("06", "Dinero electrónico"),
+    ("08", "Vales de despensa"), ("12", "Dación en pago"),
+    ("13", "Pago por subrogación"), ("14", "Pago por consignación"),
+    ("15", "Condonación"), ("17", "Compensación"), ("23", "Novación"),
+    ("24", "Confusión"), ("25", "Remisión de deuda"),
+    ("26", "Prescripción o caducidad"), ("27", "A satisfacción del acreedor"),
+    ("28", "Tarjeta de débito"), ("29", "Tarjeta de servicios"),
+    ("30", "Aplicación de anticipos"), ("31", "Intermediario pagos"),
+    ("99", "Por definir"),
+]
+_PAYMENT_METHODS = [("PUE", "Pago en una sola exhibición"), ("PPD", "Pago en parcialidades o diferido")]
+_CFDI_USES = [
+    ("G01", "Adquisición de mercancías", True, True),
+    ("G02", "Devoluciones, descuentos o bonificaciones", True, True),
+    ("G03", "Gastos en general", True, True),
+    ("I01", "Construcciones", True, True),
+    ("I02", "Mobiliario y equipo de oficina por inversiones", True, True),
+    ("I03", "Equipo de transporte", True, True),
+    ("I04", "Equipo de cómputo y accesorios", True, True),
+    ("I05", "Dados, troqueles, moldes, matrices y herramental", True, True),
+    ("I06", "Comunicaciones telefónicas", True, True),
+    ("I07", "Comunicaciones satelitales", True, True),
+    ("I08", "Otra maquinaria y equipo", True, True),
+    ("D01", "Honorarios médicos, dentales y gastos hospitalarios", True, False),
+    ("D02", "Gastos médicos por incapacidad o discapacidad", True, False),
+    ("D03", "Gastos funerales", True, False),
+    ("D04", "Donativos", True, False),
+    ("D05", "Intereses reales pagados por créditos hipotecarios", True, False),
+    ("D06", "Aportaciones voluntarias al SAR", True, False),
+    ("D07", "Primas por seguros de gastos médicos", True, False),
+    ("D08", "Gastos de transportación escolar obligatoria", True, False),
+    ("D09", "Depósitos en cuentas para el ahorro y pensiones", True, False),
+    ("D10", "Pagos por servicios educativos (colegiaturas)", True, False),
+    ("S01", "Sin efectos fiscales", True, True),
+]
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -321,6 +382,12 @@ def _build_facturama_cfdi(payload):
     payment_form = str(payload.get("forma_pago") or "03").zfill(2)
     if payment_method == "PPD":
         payment_form = "99"
+    cfdi_use = str(receptor.get("uso_cfdi") or "G03").upper()
+    allowed_uses = {row[0] for row in _CFDI_USES}
+    if cfdi_use not in allowed_uses:
+        raise ValueError("Uso de CFDI fuera del catálogo vigente para facturas")
+    if cfdi_use.startswith("D") and len(rfc) != 13:
+        raise ValueError("Los usos de CFDI para deducciones personales solo aplican a personas físicas")
     cfdi = {
         "Currency": str(payload.get("moneda") or "MXN").upper(),
         "ExpeditionPlace": expedition_zip,
@@ -331,7 +398,7 @@ def _build_facturama_cfdi(payload):
         "Receiver": {
             "Rfc": rfc,
             "Name": name,
-            "CfdiUse": str(receptor.get("uso_cfdi") or "G03").upper(),
+            "CfdiUse": cfdi_use,
             "FiscalRegime": regime,
             "TaxZipCode": zip_code,
         },
@@ -361,6 +428,81 @@ def _pick(data, *keys):
         if key.lower() in lowered:
             return lowered[key.lower()]
     return None
+
+
+def _catalog_entries(raw, allowed_values):
+    rows = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
+    result = []
+    seen = set()
+    for row in rows:
+        value = str(_pick(row, "Value", "Code", "Id") or "").strip().upper()
+        name = str(_pick(row, "Name", "Description") or "").strip()
+        if value in allowed_values and value not in seen:
+            result.append({"value": value, "name": name or value})
+            seen.add(value)
+    return result
+
+
+def _fallback_fiscal_catalogs(rfc=""):
+    rfc = str(rfc or "").strip().upper()
+    is_natural = len(rfc) == 13
+    is_moral = len(rfc) == 12
+
+    def eligible(natural, moral):
+        return not (is_natural or is_moral) or (is_natural and natural) or (is_moral and moral)
+
+    return {
+        "regimes": [
+            {"value": value, "name": name}
+            for value, name, natural, moral in _FISCAL_REGIMES
+            if eligible(natural, moral)
+        ],
+        "cfdi_uses": [
+            {"value": value, "name": name}
+            for value, name, natural, moral in _CFDI_USES
+            if eligible(natural, moral)
+        ],
+        "payment_forms": [{"value": value, "name": name} for value, name in _PAYMENT_FORMS],
+        "payment_methods": [{"value": value, "name": name} for value, name in _PAYMENT_METHODS],
+    }
+
+
+def _facturama_fiscal_catalogs(rfc=""):
+    rfc = str(rfc or "").strip().upper()
+    cache_key = (_facturama_config()["sandbox"], rfc)
+    if cache_key in _FISCAL_CATALOG_CACHE:
+        return _FISCAL_CATALOG_CACHE[cache_key]
+
+    fallback = _fallback_fiscal_catalogs(rfc)
+    requests_to_make = {
+        "regimes": ("/Catalogs/FiscalRegimens", {"rfc": rfc} if rfc else None, {row[0] for row in _FISCAL_REGIMES}),
+        "cfdi_uses": ("/Catalogs/CfdiUses", {"keyword": rfc} if rfc else None, {row[0] for row in _CFDI_USES}),
+        "payment_forms": ("/Catalogs/PaymentForms", None, {row[0] for row in _PAYMENT_FORMS}),
+        "payment_methods": ("/Catalogs/PaymentMethods", None, {row[0] for row in _PAYMENT_METHODS}),
+    }
+    catalogs = {}
+    remote_count = 0
+    for key, (path, params, allowed) in requests_to_make.items():
+        try:
+            entries = _catalog_entries(_fm_request("GET", path, params=params, timeout=25), allowed)
+        except requests.RequestException:
+            entries = []
+        catalogs[key] = entries or fallback[key]
+        if entries:
+            remote_count += 1
+    catalogs["source"] = "facturama" if remote_count == len(requests_to_make) else "respaldo_local"
+    _FISCAL_CATALOG_CACHE[cache_key] = catalogs
+    return catalogs
+
+
+@facturacion_bp.get("/catalogos/fiscales")
+def api_fiscal_catalogs():
+    rfc = str(request.args.get("rfc") or "").strip().upper()
+    if rfc and not re.fullmatch(r"[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}", rfc):
+        return jsonify({"ok": False, "error": "RFC inválido para filtrar los catálogos"}), 400
+    if _provider() != "facturama":
+        return jsonify({"ok": True, "source": "respaldo_local", **_fallback_fiscal_catalogs(rfc)}), 200
+    return jsonify({"ok": True, **_facturama_fiscal_catalogs(rfc)}), 200
 
 
 def _decode_facturama_file(data):

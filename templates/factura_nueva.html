@@ -98,7 +98,7 @@
         <select id="uso" required>
           <option value="G03">G03 - Gastos en general</option>
           <option value="G01">G01 - Adquisición de mercancías</option>
-          <option value="P01">P01 - Por definir</option>
+          <option value="S01">S01 - Sin efectos fiscales</option>
         </select>
       </div>
 
@@ -196,6 +196,47 @@
       ? `quote:${pageQuoteId}:${Date.now()}`
       : (crypto.randomUUID ? crypto.randomUUID() : `manual:${Date.now()}:${Math.random()}`);
     let pageQuoteFolio = '';
+    let fiscalCatalogRequest = 0;
+
+    function replaceCatalog(selectId, rows, preferred, fallbackValue=''){
+      const select = document.getElementById(selectId);
+      if(!select || !Array.isArray(rows) || !rows.length) return;
+      const wanted = String(preferred || select.value || fallbackValue || '');
+      select.innerHTML = '';
+      if(selectId === 'regimen'){
+        const empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = '— Selecciona —';
+        select.appendChild(empty);
+      }
+      for(const row of rows){
+        const option = document.createElement('option');
+        option.value = String(row.value || '');
+        option.textContent = `${option.value} - ${row.name || option.value}`;
+        select.appendChild(option);
+      }
+      if([...select.options].some(option=>option.value === wanted)) select.value = wanted;
+      else if(fallbackValue && [...select.options].some(option=>option.value === fallbackValue)) select.value = fallbackValue;
+    }
+
+    async function loadFiscalCatalogs(rfc='', preferred={}){
+      const normalizedRfc = String(rfc || '').trim().toUpperCase();
+      const requestNumber = ++fiscalCatalogRequest;
+      try{
+        const suffix = normalizedRfc ? `?rfc=${encodeURIComponent(normalizedRfc)}` : '';
+        const response = await fetch('/api/catalogos/fiscales' + suffix, {headers:{'Accept':'application/json'}});
+        const data = await response.json();
+        if(!response.ok || !data.ok || requestNumber !== fiscalCatalogRequest) return false;
+        replaceCatalog('regimen', data.regimes, preferred.regimen, '');
+        replaceCatalog('uso', data.cfdi_uses, preferred.uso, 'G03');
+        replaceCatalog('forma', data.payment_forms, preferred.forma, '03');
+        replaceCatalog('metodo', data.payment_methods, preferred.metodo, 'PUE');
+        syncForma();
+        return true;
+      }catch(_){
+        return false;
+      }
+    }
     // --------- Clientes: lookup por NOMBRE -----------
     (function initClientes(){
       const tag = document.getElementById('clientes-data');
@@ -237,13 +278,15 @@
         }
       }
 
-      function fillFromName(nombre){
+      async function fillFromName(nombre){
         const c = byName[nombre] || {};
-        setVal('rfc',     (c.rfc || '').toUpperCase());
+        const rfc = (c.rfc || '').toUpperCase();
+        const regimen = String(c.regimen_fiscal || c.tax_system || '').trim();
+        const uso = c.uso_cfdi || 'G03';
+        setVal('rfc', rfc);
         setVal('razon',   c.razon_social || c.razon || c.nombre || c.legal_name || '');
         setVal('cp',      c.cp || c.codigo_postal || c.zip || '');
-        setVal('regimen', String(c.regimen_fiscal || c.tax_system || '').trim());
-        setVal('uso',     c.uso_cfdi || 'G03');
+        await loadFiscalCatalogs(rfc, {regimen, uso});
       }
 
       sel?.addEventListener('change', ()=>{ if (sel.value) fillFromName(sel.value); });
@@ -265,6 +308,7 @@
     }
     metodo.addEventListener('change', syncForma);
     syncForma();
+    loadFiscalCatalogs();
 
     // ------- Conceptos -------
     const tbody = document.getElementById('tbody');
@@ -407,6 +451,12 @@
 
     document.getElementById('rfc')?.addEventListener('blur', e=>{
       e.target.value = (e.target.value||'').toUpperCase().trim();
+      if(RFC_RE.test(e.target.value)){
+        loadFiscalCatalogs(e.target.value, {
+          regimen: document.getElementById('regimen').value,
+          uso: document.getElementById('uso').value
+        });
+      }
     });
 
     // ---------- Prefilling por quote_id ----------
@@ -426,8 +476,10 @@
         document.getElementById('razon').value = rec.nombre || '';
         document.getElementById('rfc').value   = (rec.rfc || '').toUpperCase();
         document.getElementById('cp').value    = rec.cp || '';
-        if (rec.regimen_fiscal) document.getElementById('regimen').value = String(rec.regimen_fiscal);
-        if (rec.uso_cfdi)       document.getElementById('uso').value     = rec.uso_cfdi;
+        await loadFiscalCatalogs(rec.rfc || '', {
+          regimen: String(rec.regimen_fiscal || ''),
+          uso: rec.uso_cfdi || 'G03'
+        });
 
         // Items
         const arr = Array.isArray(data.items) ? data.items : [];
