@@ -59,6 +59,7 @@
   .hidden{display:none}
   .flash{display:none;margin-bottom:14px;padding:11px 14px;border-radius:12px;font-weight:700}
   .flash.ok{display:block;background:#dcfce7;border:1px solid #86efac;color:#14532d}
+  .flash.err{display:block;background:#fee2e2;border:1px solid #fca5a5;color:#7f1d1d}
 </style>
 </head>
 <body>
@@ -155,6 +156,28 @@
   </div>
 </div>
 
+<!-- ===== Envío protegido por correo ===== -->
+<div id="em" class="cm-backdrop" aria-modal="true" role="dialog">
+  <div class="cm-card" role="document">
+    <div class="cm-head">
+      <div class="cm-title">Enviar factura por correo</div>
+      <button class="cm-close" id="emClose" aria-label="Cerrar">×</button>
+    </div>
+    <div class="cm-body">
+      <div class="cm-kv">Se adjuntarán el PDF y el XML.</div>
+      <div><label for="emEmail">Correo del cliente</label><input id="emEmail" class="cm-input" type="email" placeholder="cliente@empresa.com" /></div>
+      <div><label for="emSubject">Asunto</label><input id="emSubject" class="cm-input" type="text" /></div>
+      <div><label for="emMessage">Mensaje</label><textarea id="emMessage" class="cm-input" rows="5"></textarea></div>
+      <div><label for="emKey">Clave de envío</label><input id="emKey" class="cm-input" type="password" autocomplete="off" placeholder="Clave privada configurada en Render" /></div>
+      <div id="emErr" class="cm-hint" style="color:var(--danger)"></div>
+    </div>
+    <div class="cm-actions">
+      <button class="cm-btn cm-btn-ghost" id="emCancel">Cancelar</button>
+      <button class="cm-btn cm-btn-primary" id="emConfirm">✉ Enviar PDF y XML</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const $ = s=>document.querySelector(s);
 const tbody = $('#tbl tbody');
@@ -203,6 +226,10 @@ function tipoBadge(t){
   return `<span class="badge">${t||''}</span>`;
 }
 
+function escAttr(value){
+  return String(value || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 async function load(){
   tbody.innerHTML = '<tr><td colspan="10">Cargando…</td></tr>';
   try{
@@ -243,6 +270,11 @@ async function load(){
           <a class="btn" href="/api/invoices/${x.id}/pdf" target="_blank">👁 Ver</a>
           <a class="btn" href="/api/invoices/${x.id}/pdf" target="_blank">PDF</a>
           <a class="btn" href="/api/invoices/${x.id}/xml" target="_blank">XML</a>
+          <button class="btn"
+                  data-email-send="${escAttr(x.id)}"
+                  data-email="${escAttr(x.customer_email)}"
+                  data-folio="${escAttr(x.folio || x.uuid)}"
+                  data-cliente="${escAttr(x.customer_name)}">✉ Enviar</button>
           ${
             (x.type==='I' && x.payment_method==='PPD' && !x.paid)
               ? `<button class="btn" data-goto="/pagos/nuevo?invoice_id=${encodeURIComponent(x.id)}&uuid=${encodeURIComponent(x.uuid||'')}" data-key="rep-${x.id}">💳 Complemento</button>`
@@ -291,12 +323,91 @@ async function load(){
       };
     });
 
+    tbody.querySelectorAll('button[data-email-send]').forEach(btn=>{
+      btn.onclick = e=>openEmailModal({
+        id: e.currentTarget.dataset.emailSend,
+        email: e.currentTarget.dataset.email || '',
+        folio: e.currentTarget.dataset.folio || '',
+        cliente: e.currentTarget.dataset.cliente || ''
+      });
+    });
+
   }catch(e){
     tbody.innerHTML = `<tr><td colspan="10">${e.message}</td></tr>`;
   }
 }
 
 load();
+
+/* ===== Envío de PDF y XML por CarrierZone ===== */
+const em = $('#em');
+const emEmail = $('#emEmail');
+const emSubject = $('#emSubject');
+const emMessage = $('#emMessage');
+const emKey = $('#emKey');
+const emErr = $('#emErr');
+const emConfirm = $('#emConfirm');
+let emailCtx = null;
+
+function openEmailModal(ctx){
+  emailCtx = ctx;
+  emEmail.value = ctx.email || '';
+  emSubject.value = `Factura ${ctx.folio || ''} — HSC Refrigeración`;
+  emMessage.value = `Buen día${ctx.cliente ? ' ' + ctx.cliente : ''},\n\nAdjuntamos su factura en formatos PDF y XML.\n\nSaludos,\nHSC Refrigeración`;
+  emKey.value = sessionStorage.getItem('hscMailKey') || '';
+  emErr.textContent = '';
+  emConfirm.disabled = false;
+  emConfirm.textContent = '✉ Enviar PDF y XML';
+  em.classList.add('show');
+  setTimeout(()=>emEmail.focus(), 0);
+}
+
+function closeEmailModal(){
+  if(emConfirm.disabled) return;
+  em.classList.remove('show');
+  emailCtx = null;
+}
+
+$('#emClose').addEventListener('click', closeEmailModal);
+$('#emCancel').addEventListener('click', closeEmailModal);
+emConfirm.addEventListener('click', async ()=>{
+  if(!emailCtx || emConfirm.disabled) return;
+  if(!emEmail.value.trim() || !emEmail.checkValidity()){
+    emErr.textContent = 'Escribe un correo electrónico válido.';
+    emEmail.focus();
+    return;
+  }
+  if(!emKey.value){
+    emErr.textContent = 'Escribe la clave privada de envío.';
+    emKey.focus();
+    return;
+  }
+  emErr.textContent = '';
+  emConfirm.disabled = true;
+  emConfirm.textContent = 'Enviando…';
+  try{
+    const response = await fetch(`/api/invoices/${encodeURIComponent(emailCtx.id)}/email`, {
+      method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body:JSON.stringify({
+        email:emEmail.value.trim(), subject:emSubject.value.trim(), message:emMessage.value,
+        folio:emailCtx.folio, send_key:emKey.value
+      })
+    });
+    const data = await response.json();
+    if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo enviar el correo.');
+    sessionStorage.setItem('hscMailKey', emKey.value);
+    emKey.value = '';
+    em.classList.remove('show');
+    emailCtx = null;
+    pageMsg.className = 'flash ok';
+    pageMsg.textContent = data.message || 'Factura enviada correctamente.';
+    setTimeout(()=>{ pageMsg.className='flash'; }, 6000);
+  }catch(error){
+    emErr.textContent = error.message || String(error);
+    emConfirm.disabled = false;
+    emConfirm.textContent = '✉ Reintentar';
+  }
+});
 
 /* ===== Lógica del modal de cancelación ===== */
 const cm = $('#cm');

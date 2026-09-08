@@ -92,6 +92,11 @@
           <input id="razon_social" name="razon_social" type="text" value="{{ datos.razon_social or datos.razon or '' }}" placeholder="Nombre o razón social" />
         </div>
 
+        <div>
+          <label for="correo_facturacion">Correo de facturación</label>
+          <input id="correo_facturacion" name="correo_facturacion" type="email" value="{{ datos.correo_facturacion or datos.email or '' }}" placeholder="facturacion@cliente.com" />
+        </div>
+
         <div class="grid grid-2">
           <div>
             <label for="regimen_fiscal">Régimen fiscal</label>

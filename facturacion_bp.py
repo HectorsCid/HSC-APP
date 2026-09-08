@@ -8,9 +8,11 @@ from threading import Lock
 import os
 import json
 import re
+import smtplib
 import requests
 
 from cfdi_drive import backup_cfdi
+from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config
 
 # ----------------------------------------------------------------------
 # Blueprint
@@ -197,6 +199,7 @@ def _facturama_invoice_row(inv):
     return {
         "id": _pick(inv, "Id"),
         "uuid": str(uuid or "").strip(),
+        "folio": str(_pick(inv, "Folio") or "").strip(),
         "date": _pick(inv, "Date"),
         "total": _pick(inv, "Total"),
         "status": status,
@@ -204,6 +207,7 @@ def _facturama_invoice_row(inv):
         "type": cfdi_type or "I",
         "customer_name": _pick(receiver, "Name", "LegalName", "TaxName") or _pick(inv, "TaxName"),
         "customer_tax_id": _pick(receiver, "Rfc", "TaxId") or _pick(inv, "Rfc"),
+        "customer_email": _pick(receiver, "Email") or _pick(inv, "Email", "ReceiverEmail"),
         "paid": False,
     }
 
@@ -1064,6 +1068,46 @@ def api_invoice_xml(inv_id):
         content, mimetype="application/xml",
         headers={"Content-Disposition": f"inline; filename=Factura-{inv_id}.xml"},
     )
+
+
+@facturacion_bp.post("/invoices/<inv_id>/email")
+def api_invoice_email(inv_id):
+    body = request.get_json(silent=True) or {}
+    recipient = str(body.get("email") or "").strip()
+    folio = str(body.get("folio") or body.get("uuid") or inv_id).strip()
+    subject = str(body.get("subject") or f"Factura {folio} — HSC Refrigeración")
+    comments = str(body.get("message") or "Adjuntamos su factura en formatos PDF y XML.\n\nHSC Refrigeración")
+    if not smtp_config()["configured"]:
+        return jsonify({"ok": False, "error": "Falta configurar el correo de salida de HSC en Render."}), 503
+    if not authorized_to_send(body.get("send_key")):
+        return jsonify({"ok": False, "error": "La clave de envío no es correcta."}), 403
+    try:
+        if _provider() == "facturama":
+            pdf = _decode_facturama_file(_fm_request("GET", f"/Cfdi/pdf/issued/{inv_id}"))
+            xml = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
+        else:
+            pdf = _fa_get_binary(f"/invoices/{inv_id}/pdf", "application/pdf")
+            xml = _fa_get_binary(f"/invoices/{inv_id}/xml", "application/xml")
+        result = send_cfdi_email(
+            recipient=recipient,
+            subject=subject,
+            body=comments,
+            pdf_bytes=pdf,
+            xml_bytes=xml,
+            folio=folio,
+        )
+        return jsonify({"ok": True, "message": f"Factura enviada a {recipient}.", "result": result}), 200
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except smtplib.SMTPAuthenticationError:
+        current_app.logger.exception("CarrierZone rechazó la autenticación SMTP")
+        return jsonify({"ok": False, "error": "CarrierZone rechazó el usuario o la contraseña del correo."}), 502
+    except (smtplib.SMTPException, OSError, requests.HTTPError) as exc:
+        current_app.logger.exception("No se pudo enviar el CFDI por correo")
+        return jsonify({"ok": False, "error": "No se pudo enviar el correo. La factura permanece disponible para reintentar."}), 502
+    except Exception:
+        current_app.logger.exception("Error inesperado al preparar el CFDI para correo")
+        return jsonify({"ok": False, "error": "No se pudieron preparar los archivos para enviarlos. Intenta nuevamente."}), 500
 
 @facturacion_bp.post("/invoices/<inv_id>/cancel")
 def api_invoice_cancel(inv_id):

@@ -1097,6 +1097,7 @@ def nuevo_cliente():
         cp             = (request.form.get('cp') or '').strip()
         regimen_fiscal = (request.form.get('regimen_fiscal') or '').strip()  # ej. 601, 612, 621, 626
         uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # ej. G03, G01, P01
+        correo_facturacion = (request.form.get('correo_facturacion') or '').strip()
         retencion_isr_tasa = (request.form.get('retencion_isr_tasa') or '0').strip()
         retencion_iva_tasa = (request.form.get('retencion_iva_tasa') or '0').strip()
 
@@ -1121,6 +1122,7 @@ def nuevo_cliente():
             if cp:             clientes_predefinidos[nombre]["cp"] = cp
             if regimen_fiscal: clientes_predefinidos[nombre]["regimen_fiscal"] = regimen_fiscal
             if uso_cfdi:       clientes_predefinidos[nombre]["uso_cfdi"] = uso_cfdi
+            if correo_facturacion: clientes_predefinidos[nombre]["correo_facturacion"] = correo_facturacion
 
             guardar_clientes(clientes_predefinidos)
         return redirect(url_for('inicio'))
@@ -1763,6 +1765,7 @@ def editar_cliente():
         cp             = (request.form.get('cp') or '').strip()
         regimen_fiscal = (request.form.get('regimen_fiscal') or '').strip()  # 601, 612, 621, 626
         uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # G03, G01, P01
+        correo_facturacion = (request.form.get('correo_facturacion') or '').strip()
         retencion_isr_tasa = (request.form.get('retencion_isr_tasa') or '0').strip()
         retencion_iva_tasa = (request.form.get('retencion_iva_tasa') or '0').strip()
 
@@ -1795,6 +1798,7 @@ def editar_cliente():
         set_or_pop(merged, "cp", cp)
         set_or_pop(merged, "regimen_fiscal", regimen_fiscal)
         set_or_pop(merged, "uso_cfdi", uso_cfdi)
+        set_or_pop(merged, "correo_facturacion", correo_facturacion)
         merged["retencion_isr_tasa"] = retencion_isr_tasa
         merged["retencion_iva_tasa"] = retencion_iva_tasa
 

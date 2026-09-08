@@ -101,6 +101,9 @@
           <option value="G01">G01 - Adquisición de mercancías</option>
           <option value="S01">S01 - Sin efectos fiscales</option>
         </select>
+
+        <label>Correo de facturación</label>
+        <input id="email" type="email" placeholder="facturacion@cliente.com" />
       </div>
 
       <div class="card">
@@ -294,6 +297,7 @@
         setVal('rfc', rfc);
         setVal('razon',   c.razon_social || c.razon || c.nombre || c.legal_name || '');
         setVal('cp',      c.cp || c.codigo_postal || c.zip || '');
+        setVal('email',   c.correo_facturacion || c.email || '');
         setVal('retencionIsr', c.retencion_isr_tasa || '0');
         setVal('retencionIva', c.retencion_iva_tasa || '0');
         await loadFiscalCatalogs(rfc, {regimen, uso});
@@ -543,6 +547,7 @@
         document.getElementById('razon').value = rec.nombre || '';
         document.getElementById('rfc').value   = (rec.rfc || '').toUpperCase();
         document.getElementById('cp').value    = rec.cp || '';
+        document.getElementById('email').value = rec.email || rec.correo_facturacion || '';
         await loadFiscalCatalogs(rec.rfc || '', {
           regimen: String(rec.regimen_fiscal || ''),
           uso: rec.uso_cfdi || 'G03'
@@ -630,7 +635,8 @@
           nombre: document.getElementById('razon').value||'',
           cp: (document.getElementById('cp').value||'').trim(),
           regimen_fiscal: parseInt((document.getElementById('regimen').value||'0'),10),
-          uso_cfdi: document.getElementById('uso').value||'G03'
+          uso_cfdi: document.getElementById('uso').value||'G03',
+          email: (document.getElementById('email').value||'').trim()
         },
         forma_pago: document.getElementById('forma').value||'03',
         metodo_pago: document.getElementById('metodo').value||'PUE',
