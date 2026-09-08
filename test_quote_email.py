@@ -18,7 +18,12 @@ class QuoteEmailTests(unittest.TestCase):
         self.original_quote_path = cotizador._ruta_cotizaciones
         cotizador._ruta_cotizaciones = lambda: self.quote_path
         self.original_clients = cotizador.clientes_predefinidos
-        cotizador.clientes_predefinidos = {"Bticino": {"correo_facturacion": "compras@example.com"}}
+        cotizador.clientes_predefinidos = {"Bticino": {
+            "rfc": "BTI010101AAA",
+            "razon_social": "BTICINO DE MEXICO SA DE CV",
+            "correo_compras": "compras@example.com",
+            "correo_cuentas_pagar": "pagos@example.com",
+        }}
         self.client = cotizador.app.test_client()
 
     def tearDown(self):
@@ -34,7 +39,24 @@ class QuoteEmailTests(unittest.TestCase):
             response = self.client.get("/api/cotizaciones/1587/email")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["email"], "compras@example.com")
+        self.assertEqual(response.get_json()["correos"], {
+            "compras": "compras@example.com", "cuentas_pagar": "pagos@example.com",
+        })
         self.assertTrue(response.get_json()["trusted"])
+
+    def test_selected_invoice_contacts_can_match_by_rfc(self):
+        with patch.object(cotizador, "authorized_to_send", return_value=True):
+            response = self.client.post("/api/clientes/contactos-seleccionado", json={
+                "nombre": "Nombre fiscal distinto", "rfc": "BTI010101AAA",
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["correos"]["compras"], "compras@example.com")
+        self.assertEqual(response.get_json()["correos"]["cuentas_pagar"], "pagos@example.com")
+
+    def test_selected_contacts_require_trusted_browser(self):
+        with patch.object(cotizador, "authorized_to_send", return_value=False):
+            response = self.client.post("/api/clientes/contactos-seleccionado", json={"rfc": "BTI010101AAA"})
+        self.assertEqual(response.status_code, 403)
 
     def test_send_includes_quote_and_optional_attachment(self):
         with (

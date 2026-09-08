@@ -1223,7 +1223,8 @@ def nuevo_cliente():
         cp             = (request.form.get('cp') or '').strip()
         regimen_fiscal = (request.form.get('regimen_fiscal') or '').strip()  # ej. 601, 612, 621, 626
         uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # ej. G03, G01, P01
-        correo_facturacion = (request.form.get('correo_facturacion') or '').strip()
+        correo_compras = (request.form.get('correo_compras') or '').strip()
+        correo_cuentas_pagar = (request.form.get('correo_cuentas_pagar') or request.form.get('correo_facturacion') or '').strip()
         retencion_isr_tasa = (request.form.get('retencion_isr_tasa') or '0').strip()
         retencion_iva_tasa = (request.form.get('retencion_iva_tasa') or '0').strip()
 
@@ -1248,7 +1249,10 @@ def nuevo_cliente():
             if cp:             clientes_predefinidos[nombre]["cp"] = cp
             if regimen_fiscal: clientes_predefinidos[nombre]["regimen_fiscal"] = regimen_fiscal
             if uso_cfdi:       clientes_predefinidos[nombre]["uso_cfdi"] = uso_cfdi
-            if correo_facturacion: clientes_predefinidos[nombre]["correo_facturacion"] = correo_facturacion
+            if correo_compras: clientes_predefinidos[nombre]["correo_compras"] = correo_compras
+            if correo_cuentas_pagar:
+                clientes_predefinidos[nombre]["correo_cuentas_pagar"] = correo_cuentas_pagar
+                clientes_predefinidos[nombre]["correo_facturacion"] = correo_cuentas_pagar
 
             guardar_clientes(clientes_predefinidos)
         return redirect(url_for('inicio'))
@@ -1891,7 +1895,8 @@ def editar_cliente():
         cp             = (request.form.get('cp') or '').strip()
         regimen_fiscal = (request.form.get('regimen_fiscal') or '').strip()  # 601, 612, 621, 626
         uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # G03, G01, P01
-        correo_facturacion = (request.form.get('correo_facturacion') or '').strip()
+        correo_compras = (request.form.get('correo_compras') or '').strip()
+        correo_cuentas_pagar = (request.form.get('correo_cuentas_pagar') or request.form.get('correo_facturacion') or '').strip()
         retencion_isr_tasa = (request.form.get('retencion_isr_tasa') or '0').strip()
         retencion_iva_tasa = (request.form.get('retencion_iva_tasa') or '0').strip()
 
@@ -1924,7 +1929,9 @@ def editar_cliente():
         set_or_pop(merged, "cp", cp)
         set_or_pop(merged, "regimen_fiscal", regimen_fiscal)
         set_or_pop(merged, "uso_cfdi", uso_cfdi)
-        set_or_pop(merged, "correo_facturacion", correo_facturacion)
+        set_or_pop(merged, "correo_compras", correo_compras)
+        set_or_pop(merged, "correo_cuentas_pagar", correo_cuentas_pagar)
+        set_or_pop(merged, "correo_facturacion", correo_cuentas_pagar)
         merged["retencion_isr_tasa"] = retencion_isr_tasa
         merged["retencion_iva_tasa"] = retencion_iva_tasa
 
@@ -2624,6 +2631,40 @@ def set_cliente():
     datos_cliente["cliente"] = nombre  # ya usas esta variable en editar_cliente
     return ("", 204)
 
+
+def _contactos_cliente_seleccionado(nombre="", rfc=""):
+    nombre_key = str(nombre or "").strip().casefold()
+    rfc_key = str(rfc or "").strip().upper()
+    with _CLIENTES_DATA_LOCK:
+        catalogo = dict(clientes_predefinidos or {})
+    for alias, datos in catalogo.items():
+        if not isinstance(datos, dict):
+            continue
+        nombres = {
+            str(alias or "").strip().casefold(),
+            str(datos.get("razon_social") or "").strip().casefold(),
+            str(datos.get("razon") or "").strip().casefold(),
+        }
+        coincide = (rfc_key and str(datos.get("rfc") or "").strip().upper() == rfc_key) or (
+            nombre_key and nombre_key in nombres
+        )
+        if coincide:
+            legacy = str(datos.get("correo_facturacion") or datos.get("email") or "").strip()
+            return {
+                "compras": str(datos.get("correo_compras") or "").strip(),
+                "cuentas_pagar": str(datos.get("correo_cuentas_pagar") or legacy).strip(),
+            }
+    return {"compras": "", "cuentas_pagar": ""}
+
+
+@app.post("/api/clientes/contactos-seleccionado")
+def api_contactos_cliente_seleccionado():
+    if not authorized_to_send("", request.cookies.get("hsc_mail_trusted", "")):
+        return jsonify(ok=False, error="Este navegador todavía no está autorizado para consultar los contactos."), 403
+    payload = request.get_json(silent=True) or {}
+    correos = _contactos_cliente_seleccionado(payload.get("nombre"), payload.get("rfc"))
+    return jsonify(ok=True, correos=correos), 200
+
 # ---------- NUEVO: listado para inicio_cotizacion ----------
 @app.get("/api/cotizaciones/list")
 def api_cotizaciones_list():
@@ -2693,15 +2734,19 @@ def _pdf_cotizacion_bytes(cotizacion):
     raise FileNotFoundError("No se encontró el PDF de esta cotización en el respaldo local ni en Google Drive.")
 
 
-def _correo_cotizacion(cotizacion):
+def _correos_cotizacion(cotizacion):
     nombre = str(cotizacion.get("cliente") or "").strip()
     with _CLIENTES_DATA_LOCK:
         cliente = dict(clientes_predefinidos.get(nombre, {}) or {})
     receptor = cotizacion.get("receptor") or {}
-    return str(
+    legacy = str(
         cliente.get("correo_facturacion") or cliente.get("email")
         or receptor.get("correo_facturacion") or receptor.get("email") or ""
     ).strip()
+    return {
+        "compras": str(cliente.get("correo_compras") or legacy).strip(),
+        "cuentas_pagar": str(cliente.get("correo_cuentas_pagar") or legacy).strip(),
+    }
 
 
 @app.route("/api/cotizaciones/<qid>/email", methods=["GET", "POST"])
@@ -2713,13 +2758,15 @@ def api_enviar_cotizacion(qid):
     cfg = smtp_config()
     trusted = authorized_to_send("", request.cookies.get("hsc_mail_trusted", ""))
     if request.method == "GET":
+        correos = _correos_cotizacion(cotizacion)
         return jsonify(
             ok=True,
             configured=bool(cfg.get("configured")),
             trusted=trusted,
             cliente=str(cotizacion.get("cliente") or ""),
             folio=str(cotizacion.get("folio") or cotizacion.get("id") or ""),
-            email=_correo_cotizacion(cotizacion),
+            email=correos["compras"] or correos["cuentas_pagar"],
+            correos=correos,
         )
 
     if not cfg.get("configured"):
@@ -2815,7 +2862,7 @@ def _combinar_receptor_cotizacion(cotizacion, cliente_actual):
         ),
         "uso_cfdi": current.get("uso_cfdi") or rec_raw.get("uso_cfdi") or "",
         "email": (
-            current.get("correo_facturacion") or current.get("email")
+            current.get("correo_cuentas_pagar") or current.get("correo_facturacion") or current.get("email")
             or rec_raw.get("correo_facturacion") or rec_raw.get("email") or ""
         ),
     }
@@ -3183,13 +3230,15 @@ def guardar_datos_fiscales_cliente():
         if nombre not in clientes_predefinidos:
             return jsonify({"ok": False, "error": "El cliente ya no existe."}), 404
         client = clientes_predefinidos[nombre]
+        correo_facturacion = str(payload.get("correo_facturacion") or "").strip()
         values = {
             "rfc": str(payload.get("rfc") or "").strip().upper(),
             "razon_social": str(payload.get("razon_social") or "").strip().upper(),
             "cp": str(payload.get("cp") or "").strip(),
             "regimen_fiscal": str(payload.get("regimen_fiscal") or "").strip(),
             "uso_cfdi": str(payload.get("uso_cfdi") or "").strip(),
-            "correo_facturacion": str(payload.get("correo_facturacion") or "").strip(),
+            "correo_facturacion": correo_facturacion,
+            "correo_cuentas_pagar": correo_facturacion,
             "retencion_isr_tasa": str(payload.get("retencion_isr_tasa") or "0").strip(),
             "retencion_iva_tasa": str(payload.get("retencion_iva_tasa") or "0").strip(),
         }

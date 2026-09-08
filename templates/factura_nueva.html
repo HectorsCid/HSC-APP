@@ -301,7 +301,7 @@
         setVal('rfc', rfc);
         setVal('razon',   c.razon_social || c.razon || c.nombre || c.legal_name || '');
         setVal('cp',      c.cp || c.codigo_postal || c.zip || '');
-        setVal('email',   c.correo_facturacion || c.email || '');
+        setVal('email',   c.correo_cuentas_pagar || c.correo_facturacion || c.email || '');
         setVal('retencionIsr', c.retencion_isr_tasa || '0');
         setVal('retencionIva', c.retencion_iva_tasa || '0');
         await loadFiscalCatalogs(rfc, {regimen, uso});

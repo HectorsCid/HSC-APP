@@ -76,6 +76,7 @@
     .mail-body{display:grid;gap:12px;padding:16px}.mail-body label{display:block;margin-bottom:5px;font-weight:700;font-size:13px}
     .mail-input{width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font:inherit}
     .mail-hint{font-size:12px;color:var(--muted);margin-top:4px}.mail-error{color:var(--danger);font-weight:650}
+    .recipient-presets{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.recipient-presets .btn{padding:6px 8px;font-size:11px}
     @media(max-width:700px){
       .top{align-items:flex-start;flex-wrap:wrap}
       .top>.actions{width:100%}
@@ -150,6 +151,11 @@
           <label for="quoteMailTo">Destinatarios</label>
           <input id="quoteMailTo" class="mail-input" type="text" placeholder="cliente@empresa.com; compras@empresa.com" />
           <div class="mail-hint">Separa varios correos con coma, punto y coma o un renglón nuevo.</div>
+          <div class="recipient-presets">
+            <button class="btn" type="button" data-quote-recipient="compras">Compras</button>
+            <button class="btn" type="button" data-quote-recipient="cuentas_pagar">Cuentas por pagar</button>
+            <button class="btn" type="button" data-quote-recipient="ambos">Ambos</button>
+          </div>
         </div>
         <div><label for="quoteMailSubject">Asunto</label><input id="quoteMailSubject" class="mail-input" type="text" /></div>
         <div><label for="quoteMailMessage">Mensaje</label><textarea id="quoteMailMessage" class="mail-input" rows="6"></textarea></div>
@@ -374,6 +380,13 @@
         if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo preparar el envío.');
         quoteMailContext = data;
         quoteMailTo.value = data.email || '';
+        document.querySelectorAll('[data-quote-recipient]').forEach(button=>{
+          const mode = button.getAttribute('data-quote-recipient');
+          const hasValue = mode === 'ambos'
+            ? Boolean(data.correos?.compras || data.correos?.cuentas_pagar)
+            : Boolean(data.correos?.[mode]);
+          button.disabled = !hasValue;
+        });
         quoteMailSubject.value = `Cotización HSC ${data.folio || ''}`;
         quoteMailMessage.value = `Buen día, estimado cliente. Envío la cotización solicitada.\n\nDe antemano muchas gracias.\n\nQuedo a sus órdenes.\n\nIng. Héctor Silva Cid\n\nCel: 5527605496`;
         if(!data.trusted) quoteMailKeyWrap.style.display = '';
@@ -392,6 +405,16 @@
 
     document.getElementById('quoteMailClose').addEventListener('click', closeQuoteMail);
     document.getElementById('quoteMailCancel').addEventListener('click', closeQuoteMail);
+    document.querySelectorAll('[data-quote-recipient]').forEach(button=>{
+      button.addEventListener('click', ()=>{
+        const correos = quoteMailContext?.correos || {};
+        const mode = button.getAttribute('data-quote-recipient');
+        const selected = mode === 'ambos'
+          ? [correos.compras, correos.cuentas_pagar].filter(Boolean)
+          : [correos[mode]].filter(Boolean);
+        quoteMailTo.value = [...new Set(selected)].join('; ');
+      });
+    });
     quoteMail.addEventListener('click', event=>{ if(event.target === quoteMail) closeQuoteMail(); });
     quoteMailSend.addEventListener('click', async ()=>{
       if(!quoteMailContext || quoteMailSend.disabled) return;

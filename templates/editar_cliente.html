@@ -92,9 +92,15 @@
           <input id="razon_social" name="razon_social" type="text" value="{{ datos.razon_social or datos.razon or '' }}" placeholder="Nombre o razón social" />
         </div>
 
-        <div>
-          <label for="correo_facturacion">Correo de facturación</label>
-          <input id="correo_facturacion" name="correo_facturacion" type="email" value="{{ datos.correo_facturacion or datos.email or '' }}" placeholder="facturacion@cliente.com" />
+        <div class="grid grid-2">
+          <div>
+            <label for="correo_compras">Correo de compras</label>
+            <input id="correo_compras" name="correo_compras" type="email" value="{{ datos.correo_compras or '' }}" placeholder="compras@cliente.com" />
+          </div>
+          <div>
+            <label for="correo_cuentas_pagar">Correo de cuentas por pagar</label>
+            <input id="correo_cuentas_pagar" name="correo_cuentas_pagar" type="email" value="{{ datos.correo_cuentas_pagar or datos.correo_facturacion or datos.email or '' }}" placeholder="pagos@cliente.com" />
+          </div>
         </div>
 
         <div class="grid grid-2">
