@@ -13,6 +13,7 @@ from datetime import date, datetime
 import json
 import os
 import platform
+import re
 import threading
 import time
 import unicodedata
@@ -77,12 +78,14 @@ ID_COT = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'   # Carpeta "01. Cotizaciones" en D
 CLIENTES_FILENAME = 'clientes.json'           # Archivo para persistir clientes en Drive
 COTIZACIONES_FILENAME = 'cotizaciones.json'    # Archivo para persistir historial en Drive
 BORRADORES_FILENAME = 'borradores_cotizaciones.json'
+ARTICULOS_FILENAME = 'articulos_servicios.json'
 
 # Protegen las escrituras tipo read/modify/write. En Render hay dos hilos web y
 # una sincronización de arranque en segundo plano; ninguno debe pisar al otro.
 _CLIENTES_DATA_LOCK = threading.RLock()
 _COTIZACIONES_DATA_LOCK = threading.RLock()
 _BORRADORES_DATA_LOCK = threading.RLock()
+_ARTICULOS_DATA_LOCK = threading.RLock()
 _FOLIO_ASSIGN_LOCK = threading.Lock()
 
 # --- Google Sheets datos ---
@@ -399,6 +402,90 @@ def subir_borradores_a_drive(items):
     except Exception as e:
         print("⚠️ No se pudieron respaldar los borradores en Drive:", e)
         return False
+
+
+# ================= Catálogo de artículos y servicios =================
+def _ruta_articulos():
+    base = Path(current_app.root_path) / "data"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / ARTICULOS_FILENAME
+
+
+def _leer_articulos_locales():
+    path = _ruta_articulos()
+    try:
+        data = json.loads(path.read_text("utf-8")) if path.exists() else []
+        return data if isinstance(data, list) else []
+    except Exception as exc:
+        print("⚠️ No se pudo leer el catálogo local:", exc)
+        return []
+
+
+def _escribir_articulos_locales(items):
+    path = _ruta_articulos()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _servicios_drive_catalogo():
+    """Prefiere OAuth de usuario porque una cuenta de servicio no tiene cuota propia."""
+    servicios = []
+    try:
+        servicios.append(get_drive_service_user())
+    except Exception:
+        pass
+    try:
+        servicio_sa = _drive_service_cfg()
+        if servicio_sa not in servicios:
+            servicios.append(servicio_sa)
+    except Exception:
+        pass
+    return servicios
+
+
+def descargar_articulos_de_drive():
+    for service in _servicios_drive_catalogo():
+        try:
+            fid = _drive_buscar_archivo(service, ARTICULOS_FILENAME, ID_COT)
+            if not fid:
+                continue
+            request_drive = service.files().get_media(fileId=fid)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request_drive)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            data = json.loads(fh.getvalue().decode("utf-8") or "[]")
+            if not isinstance(data, list):
+                raise ValueError("El catálogo debe ser una lista")
+            _escribir_articulos_locales(data)
+            return data
+        except Exception as exc:
+            print("⚠️ No se pudo leer artículos con una credencial de Drive:", exc)
+    return None
+
+
+def subir_articulos_a_drive(items):
+    payload = json.dumps(items, ensure_ascii=False, indent=2).encode("utf-8")
+    ultimo_error = None
+    for service in _servicios_drive_catalogo():
+        try:
+            fid = _drive_buscar_archivo(service, ARTICULOS_FILENAME, ID_COT)
+            media = MediaIoBaseUpload(io.BytesIO(payload), mimetype="application/json", resumable=False)
+            if fid:
+                service.files().update(fileId=fid, media_body=media, fields="id").execute()
+            else:
+                service.files().create(
+                    body={"name": ARTICULOS_FILENAME, "parents": [ID_COT]},
+                    media_body=media,
+                    fields="id",
+                ).execute()
+            return True
+        except Exception as exc:
+            ultimo_error = exc
+    print("⚠️ No se pudo respaldar el catálogo de artículos en Drive:", ultimo_error)
+    return False
 
 
 # ======================= Funciones para clientes (con persistencia en Drive) ======================
@@ -1567,7 +1654,8 @@ def generar_pdf():
                 "precio_unitario": float(p.get("precio", 0) or 0),
                 "tasa_iva": 0.16,
                 "clave_prod_serv": "85121600",
-                "clave_unidad": "E48"
+                "clave_unidad": "E48",
+                "descuento": float(p.get("descuento", 0) or 0)
             })
 
         rec = {}
@@ -1590,7 +1678,7 @@ def generar_pdf():
             "folio": str(cot),
             "cliente": cliente,
             "fecha": datetime.now().isoformat(timespec="seconds"),
-            "total": round(float(subtotal + iva), 2),
+            "total": round(float(total), 2),
             "view_url": archivo_url,           # ← AÑADIDO
             "receptor": rec,
             "conceptos": conceptos,
@@ -2263,6 +2351,116 @@ def ui_factura_nueva():
     return render_template("factura_nueva.html", clientes=clientes)
 
 
+def _normalizar_articulo(raw, codigo_forzado=""):
+    codigo = str(codigo_forzado or raw.get("codigo") or "").strip().upper()
+    nombre = str(raw.get("nombre") or "").strip()
+    descripcion = str(raw.get("descripcion") or nombre).strip()
+    categoria = str(raw.get("categoria") or "General").strip()
+    clave_sat = str(raw.get("clave_sat") or "").strip()
+    unidad_sat = str(raw.get("unidad_sat") or "E48").strip().upper()
+    try:
+        precio = round(float(raw.get("precio") or 0), 2)
+        iva = float(raw.get("iva") if raw.get("iva") not in (None, "") else 0.16)
+    except (TypeError, ValueError):
+        raise ValueError("Precio o IVA inválido")
+    if not codigo or len(codigo) > 50:
+        raise ValueError("El código interno es obligatorio y admite hasta 50 caracteres")
+    if len(nombre) < 2 or len(nombre) > 80:
+        raise ValueError("El nombre debe tener entre 2 y 80 caracteres")
+    if not re.fullmatch(r"\d{8}", clave_sat):
+        raise ValueError("La clave SAT debe tener 8 dígitos")
+    if not re.fullmatch(r"[A-Z0-9]{2,5}", unidad_sat):
+        raise ValueError("La unidad SAT no tiene un formato válido")
+    if precio < 0 or iva not in (0, 0.08, 0.16):
+        raise ValueError("Usa un precio positivo e IVA de 0%, 8% o 16%")
+    activo_raw = raw.get("activo", True)
+    activo = activo_raw if isinstance(activo_raw, bool) else str(activo_raw).lower() not in ("0", "false", "no")
+    return {
+        "codigo": codigo,
+        "nombre": nombre,
+        "descripcion": descripcion,
+        "categoria": categoria,
+        "clave_sat": clave_sat,
+        "unidad_sat": unidad_sat,
+        "precio": precio,
+        "iva": iva,
+        "activo": activo,
+        "actualizado": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+@app.get("/articulos-servicios")
+def ui_articulos_servicios():
+    return render_template("articulos_servicios.html")
+
+
+@app.get("/api/articulos")
+def api_articulos_list():
+    with _ARTICULOS_DATA_LOCK:
+        items = _leer_articulos_locales()
+        if not items or request.args.get("actualizar") == "1":
+            remotos = descargar_articulos_de_drive()
+            if remotos is not None:
+                items = remotos
+    incluir_inactivos = request.args.get("todos") == "1"
+    texto = (request.args.get("q") or "").strip().casefold()
+    if not incluir_inactivos:
+        items = [item for item in items if item.get("activo", True)]
+    if texto:
+        items = [item for item in items if texto in " ".join(str(item.get(k, "")) for k in (
+            "codigo", "nombre", "descripcion", "categoria", "clave_sat"
+        )).casefold()]
+    items.sort(key=lambda item: (not item.get("activo", True), item.get("categoria", ""), item.get("nombre", "")))
+    return jsonify({"ok": True, "items": items}), 200
+
+
+@app.post("/api/articulos")
+def api_articulos_guardar():
+    try:
+        articulo = _normalizar_articulo(request.get_json(silent=True) or {})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    with _ARTICULOS_DATA_LOCK:
+        items = _leer_articulos_locales()
+        if not items:
+            items = descargar_articulos_de_drive() or []
+        if any(str(item.get("codigo", "")).upper() == articulo["codigo"] for item in items):
+            return jsonify({"ok": False, "error": "Ese código interno ya existe"}), 409
+        items.append(articulo)
+        _escribir_articulos_locales(items)
+        respaldo = subir_articulos_a_drive(items)
+    if IS_RENDER and not respaldo:
+        with _ARTICULOS_DATA_LOCK:
+            _escribir_articulos_locales(items[:-1])
+        return jsonify({"ok": False, "error": "Drive no confirmó el respaldo. No se guardó el artículo para evitar una copia temporal engañosa"}), 503
+    return jsonify({"ok": True, "item": articulo}), 201
+
+
+@app.put("/api/articulos/<path:codigo>")
+def api_articulos_actualizar(codigo):
+    try:
+        articulo = _normalizar_articulo(request.get_json(silent=True) or {}, codigo_forzado=codigo)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    with _ARTICULOS_DATA_LOCK:
+        items = _leer_articulos_locales()
+        if not items:
+            items = descargar_articulos_de_drive() or []
+        indice = next((i for i, item in enumerate(items) if str(item.get("codigo", "")).upper() == articulo["codigo"]), None)
+        if indice is None:
+            return jsonify({"ok": False, "error": "Artículo no encontrado"}), 404
+        anterior = items[indice]
+        items[indice] = articulo
+        _escribir_articulos_locales(items)
+        respaldo = subir_articulos_a_drive(items)
+    if IS_RENDER and not respaldo:
+        with _ARTICULOS_DATA_LOCK:
+            items[indice] = anterior
+            _escribir_articulos_locales(items)
+        return jsonify({"ok": False, "error": "No se confirmó el respaldo en Drive"}), 503
+    return jsonify({"ok": True, "item": articulo}), 200
+
+
 @app.get("/pagos/nuevo")
 def ui_pago_complemento():
     return render_template("pago_complemento.html")
@@ -2363,15 +2561,19 @@ def api_cotizacion_detalle(qid):
             "precio_unitario": precio,
             "clave_prod_serv": c.get("clave_prod_serv") or c.get("clave") or c.get("cps") or "85121600",
             "clave_unidad": c.get("clave_unidad") or c.get("unidad") or "E48",
-            "tasa_iva": tasa
+            "tasa_iva": tasa,
+            "descuento": float(c.get("descuento") or c.get("discount") or 0),
         })
 
     total = match.get("total") or match.get("importe_total")
     if total is None:
         total = 0.0
         for c in items_norm:
-            base_imp = c["cantidad"] * c["precio_unitario"]
+            base_imp = max(0, c["cantidad"] * c["precio_unitario"] - c["descuento"])
             total += base_imp + base_imp * c["tasa_iva"]
+
+    datos_cotizacion = match.get("datos") if isinstance(match.get("datos"), dict) else {}
+    usar_retenciones = bool(datos_cotizacion.get("usar_retenciones"))
 
     out = {
         "ok": True,
@@ -2381,7 +2583,12 @@ def api_cotizacion_detalle(qid):
         "folio": match.get("folio") or match.get("numero") or "",
         "total": total,
         "receptor": receptor,
-        "items": items_norm
+        "items": items_norm,
+        "retenciones": {
+            "aplicar": usar_retenciones,
+            "isr": 0.0125 if usar_retenciones else 0,
+            "iva": (2 / 3) * 0.16 if usar_retenciones else 0,
+        },
     }
     return jsonify(out), 200
 

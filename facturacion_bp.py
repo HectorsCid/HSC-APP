@@ -342,6 +342,12 @@ def _build_facturama_cfdi(payload):
         raise ValueError("Falta FACTURAMA_EXPEDITION_ZIP con el código postal de expedición")
 
     items = []
+    retention_cfg = payload.get("retenciones") or {}
+    apply_retentions = bool(retention_cfg.get("aplicar"))
+    isr_rate = _number(retention_cfg.get("isr"), Decimal("0.0125")) if apply_retentions else Decimal("0")
+    iva_ret_rate = _number(retention_cfg.get("iva"), Decimal("0.1066666667")) if apply_retentions else Decimal("0")
+    if isr_rate < 0 or iva_ret_rate < 0:
+        raise ValueError("Las tasas de retención no pueden ser negativas")
     for index, raw in enumerate(payload.get("items") or [], start=1):
         description = str(raw.get("descripcion", "")).strip() or f"Concepto {index}"
         quantity = _number(raw.get("cantidad"), 1)
@@ -350,30 +356,52 @@ def _build_facturama_cfdi(payload):
         if quantity <= 0 or unit_price < 0 or tax_rate < 0:
             raise ValueError(f"Valores inválidos en el concepto {index}")
         subtotal = _money(quantity * unit_price)
-        tax_total = _money(subtotal * tax_rate)
+        discount = _money(raw.get("descuento", 0))
+        if discount < 0 or discount > subtotal:
+            raise ValueError(f"Descuento inválido en el concepto {index}")
+        tax_base = _money(subtotal - discount)
+        tax_total = _money(tax_base * tax_rate)
+        isr_total = _money(tax_base * isr_rate)
+        # La cotización retiene dos terceras partes del IVA efectivamente
+        # trasladado; así también funciona correctamente con tasas de 8% o 0%.
+        item_iva_ret_rate = (tax_rate * Decimal("2") / Decimal("3")) if apply_retentions else Decimal("0")
+        iva_ret_total = _money(tax_base * item_iva_ret_rate)
         unit_code = str(raw.get("clave_unidad") or "E48").strip().upper()
         item = {
             "ProductCode": str(raw.get("clave_prod_serv") or "85121600").strip(),
-            "IdentificationNumber": str(index),
+            "IdentificationNumber": str(raw.get("codigo") or index)[:50],
             "Description": description,
             "Unit": _facturama_unit_name(unit_code),
             "UnitCode": unit_code,
             "UnitPrice": float(unit_price),
             "Quantity": float(quantity),
             "Subtotal": float(subtotal),
-            "Discount": 0.0,
-            "TaxObject": "02" if tax_rate > 0 else "01",
-            "Total": float(_money(subtotal + tax_total)),
+            "Discount": float(discount),
+            "TaxObject": "02" if tax_rate > 0 or apply_retentions else "01",
+            "Total": float(_money(tax_base + tax_total - isr_total - iva_ret_total)),
         }
+        taxes = []
         if tax_rate > 0:
-            item["Taxes"] = [{
+            taxes.append({
                 "Total": float(tax_total),
                 "Name": "IVA",
-                "Base": float(subtotal),
+                "Base": float(tax_base),
                 "Rate": float(tax_rate),
                 "IsRetention": False,
                 "IsFederalTax": True,
-            }]
+            })
+        if apply_retentions and iva_ret_total > 0:
+            taxes.append({
+                "Total": float(iva_ret_total), "Name": "IVA RET", "Base": float(tax_base),
+                "Rate": float(item_iva_ret_rate), "IsRetention": True, "IsFederalTax": True,
+            })
+        if apply_retentions and isr_total > 0:
+            taxes.append({
+                "Total": float(isr_total), "Name": "ISR", "Base": float(tax_base),
+                "Rate": float(isr_rate), "IsRetention": True, "IsFederalTax": True,
+            })
+        if taxes:
+            item["Taxes"] = taxes
         items.append(item)
     if not items:
         raise ValueError("Agrega al menos un concepto")

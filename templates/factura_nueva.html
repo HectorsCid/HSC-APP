@@ -51,6 +51,7 @@
       <div class="actions" style="display:flex;gap:8px">
         <a class="btn" href="/inicio-app">🏠 Inicio</a>
         <a class="btn" href="/facturacion">📚 Facturas</a>
+        <a class="btn" href="/articulos-servicios">📦 Artículos</a>
       </div>
     </div>
 
@@ -124,6 +125,11 @@
         <label>Condiciones (opcional)</label>
         <input id="cond" placeholder="Crédito 15 días" />
 
+        <label style="display:flex;align-items:center;gap:9px;color:var(--ink);margin-top:14px">
+          <input id="retenciones" type="checkbox" style="width:auto" />
+          Aplicar retenciones de la cotización (ISR 1.25% e IVA retenido)
+        </label>
+
         <div class="actions" style="margin-top:12px">
           <button id="btnTimbrar" class="btn btn-primary" type="button">🧾 Timbrar</button>
         </div>
@@ -135,15 +141,13 @@
 
       <div class="row row-2">
         <div>
-          <label>Plantilla rápida</label>
-          <select id="preset">
-            <option value="">— Ninguna —</option>
-            <option value='{"descripcion":"Servicio de mantenimiento","clave_prod_serv":"85121600","clave_unidad":"E48","precio_unitario":100,"cantidad":1,"tasa_iva":0.16}'>Servicio de mantenimiento</option>
-            <option value='{"descripcion":"Refacción genérica","clave_prod_serv":"25174900","clave_unidad":"H87","precio_unitario":1,"cantidad":1,"tasa_iva":0.16}'>Refacción genérica</option>
-          </select>
+          <label>Buscar artículo o servicio</label>
+          <input id="catalogo" list="catalogoOpciones" placeholder="Escribe código, nombre o categoría..." autocomplete="off" />
+          <datalist id="catalogoOpciones"></datalist>
         </div>
         <div class="actions" style="align-items:end">
-          <button id="btnAgregar" class="btn" type="button">➕ Agregar concepto</button>
+          <button id="btnAgregar" class="btn" type="button">➕ Agregar a factura</button>
+          <a class="btn" href="/articulos-servicios">⚙️ Administrar</a>
         </div>
       </div>
 
@@ -165,6 +169,8 @@
           <tfoot>
             <tr><td colspan="3"></td><td class="numeric" id="subtotalCell">$0.00</td><td colspan="4">SUBTOTAL</td></tr>
             <tr><td colspan="3"></td><td class="numeric" id="ivaCell">$0.00</td><td colspan="4">IVA</td></tr>
+            <tr id="isrRow" hidden><td colspan="3"></td><td class="numeric" id="isrCell">-$0.00</td><td colspan="4">RETENCIÓN ISR 1.25%</td></tr>
+            <tr id="ivaRetRow" hidden><td colspan="3"></td><td class="numeric" id="ivaRetCell">-$0.00</td><td colspan="4">RETENCIÓN IVA</td></tr>
             <tr><td colspan="3"></td><td class="numeric" id="totalCell"><strong>$0.00</strong></td><td colspan="4"><strong>TOTAL</strong></td></tr>
           </tfoot>
         </table>
@@ -312,7 +318,9 @@
 
     // ------- Conceptos -------
     const tbody = document.getElementById('tbody');
-    const presetSel = document.getElementById('preset');
+    const catalogInput = document.getElementById('catalogo');
+    const catalogOptions = document.getElementById('catalogoOpciones');
+    const catalogMap = new Map();
     const currency = n => n.toLocaleString('es-MX',{style:'currency',currency:'MXN'});
 
     function filaHTML(i, d){
@@ -356,12 +364,39 @@
       render();
     }
 
+    async function loadArticleCatalog(){
+      try{
+        const response = await fetch('/api/articulos', {headers:{'Accept':'application/json'}});
+        const data = await response.json();
+        if(!response.ok || !data.ok) return;
+        catalogMap.clear();
+        catalogOptions.innerHTML = '';
+        for(const article of (data.items || [])){
+          const label = `${article.codigo} · ${article.nombre} · ${article.categoria || 'General'}`;
+          catalogMap.set(label, article);
+          catalogMap.set(String(article.codigo).toLowerCase(), article);
+          const option = document.createElement('option');
+          option.value = label;
+          option.label = `${Number(article.precio||0).toLocaleString('es-MX',{style:'currency',currency:'MXN'})} · SAT ${article.clave_sat}`;
+          catalogOptions.appendChild(option);
+        }
+      }catch(_){}
+    }
+    loadArticleCatalog();
+
     document.getElementById('btnAgregar').onclick = ()=>{
-      let preset = null;
-      if(presetSel.value){
-        try{ preset = JSON.parse(presetSel.value); }catch(_){}
-      }
-      addItem(preset);
+      const typed = (catalogInput.value || '').trim();
+      const article = catalogMap.get(typed) || catalogMap.get(typed.toLowerCase());
+      addItem(article ? {
+        codigo: article.codigo,
+        descripcion: article.descripcion || article.nombre,
+        cantidad: 1,
+        precio_unitario: Number(article.precio || 0),
+        clave_prod_serv: article.clave_sat,
+        clave_unidad: article.unidad_sat,
+        tasa_iva: Number(article.iva || 0)
+      } : null);
+      catalogInput.value = '';
     };
 
     function calc(){
@@ -377,14 +412,23 @@
         estado.items[i].cantidad = cantidad;
         estado.items[i].precio_unitario = pu;
         estado.items[i].tasa_iva = tasa;
-        const impBase = cantidad * pu;
+        const impBase = Math.max(0, cantidad * pu - Number(estado.items[i].descuento || 0));
         subtotal += impBase;
         iva += impBase * tasa;
       });
       document.getElementById('subtotalCell').textContent = currency(subtotal);
       document.getElementById('ivaCell').textContent = currency(iva);
-      document.getElementById('totalCell').textContent = currency(subtotal+iva);
+      const applies = document.getElementById('retenciones').checked;
+      const isrRet = applies ? subtotal * 0.0125 : 0;
+      const ivaRet = applies ? iva * (2/3) : 0;
+      document.getElementById('isrRow').hidden = !applies;
+      document.getElementById('ivaRetRow').hidden = !applies;
+      document.getElementById('isrCell').textContent = '-' + currency(isrRet);
+      document.getElementById('ivaRetCell').textContent = '-' + currency(ivaRet);
+      document.getElementById('totalCell').textContent = currency(subtotal+iva-isrRet-ivaRet);
     }
+
+    document.getElementById('retenciones').addEventListener('change', calc);
 
     addItem(null); // fila inicial
 
@@ -470,6 +514,7 @@
         const data = await r.json();
         if(!data.ok){ msg(false, data.error?.message || 'Cotización no disponible'); return; }
         pageQuoteFolio = String(data.folio || '').trim();
+        document.getElementById('retenciones').checked = Boolean(data.retenciones?.aplicar);
 
         // Receptor
         const rec = data.receptor || {};
@@ -492,7 +537,8 @@
               precio_unitario: Number(it.precio_unitario||0),
               clave_prod_serv: it.clave_prod_serv || '85121600',
               clave_unidad: it.clave_unidad || 'E48',
-              tasa_iva: Number(it.tasa_iva||0)
+              tasa_iva: Number(it.tasa_iva||0),
+              descuento: Number(it.descuento||0)
             });
           }
           render();
@@ -544,13 +590,15 @@
       const rows = estado.items.map(it => {
         const pu = Number(it.precio_unitario||0);
         return {
+          codigo: it.codigo || '',
           descripcion: it.descripcion || 'Concepto',
           clave_prod_serv: it.clave_prod_serv || '85121600',
           clave_unidad: it.clave_unidad || 'E48',
           precio_unitario: pu,
           valor_unitario: pu,
           cantidad: Number(it.cantidad||1),
-          tasa_iva: Number(it.tasa_iva||0)
+          tasa_iva: Number(it.tasa_iva||0),
+          descuento: Number(it.descuento||0)
         };
       });
 
@@ -569,6 +617,11 @@
         source_quote_id: pageQuoteId,
         folio: pageQuoteFolio,
         request_id: stampRequestId,
+        retenciones: {
+          aplicar: document.getElementById('retenciones').checked,
+          isr: 0.0125,
+          iva: 0.1066666667
+        },
         items: rows
       };
 

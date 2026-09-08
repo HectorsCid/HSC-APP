@@ -69,6 +69,32 @@ class FacturamaIntegrationTests(unittest.TestCase):
             cfdi = billing._build_facturama_cfdi(payload)
         self.assertEqual(cfdi["PaymentForm"], "99")
 
+    def test_quote_retentions_are_sent_as_federal_withholdings(self):
+        payload = self.payload()
+        payload["retenciones"] = {
+            "aplicar": True,
+            "isr": 0.0125,
+            "iva": 0.1066666667,
+        }
+        with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
+            cfdi = billing._build_facturama_cfdi(payload)
+        item = cfdi["Items"][0]
+        taxes = {tax["Name"]: tax for tax in item["Taxes"]}
+        self.assertEqual(taxes["ISR"]["Total"], 2.5)
+        self.assertEqual(taxes["IVA RET"]["Total"], 21.33)
+        self.assertTrue(taxes["ISR"]["IsRetention"])
+        self.assertTrue(taxes["IVA RET"]["IsRetention"])
+        self.assertEqual(item["Total"], 208.17)
+
+    def test_item_discount_reduces_tax_base(self):
+        payload = self.payload()
+        payload["items"][0]["descuento"] = 20
+        with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
+            item = billing._build_facturama_cfdi(payload)["Items"][0]
+        self.assertEqual(item["Discount"], 20.0)
+        self.assertEqual(item["Taxes"][0]["Base"], 180.0)
+        self.assertEqual(item["Total"], 208.8)
+
     def test_obsolete_cfdi_use_is_rejected(self):
         payload = self.payload()
         payload["receptor"]["uso_cfdi"] = "P01"
