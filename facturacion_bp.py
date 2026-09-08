@@ -548,32 +548,36 @@ def facturar():
                     "detail": str(exc),
                 }), 502
 
-            try:
-                _, field_errors = _facturama_receiver_validation(payload.get("receptor") or {})
-            except requests.HTTPError as exc:
-                return jsonify({
-                    "ok": False,
-                    "provider": "facturama",
-                    "stage": "receiver_validation",
-                    "error": "No se pudieron validar los datos fiscales del receptor en Facturama.",
-                    "detail": _http_error_detail(exc),
-                }), 502
-            except requests.RequestException as exc:
-                return jsonify({
-                    "ok": False,
-                    "provider": "facturama",
-                    "stage": "receiver_validation",
-                    "error": "Facturama no respondió durante la validación del receptor. Intenta nuevamente.",
-                    "detail": str(exc),
-                }), 502
-            if field_errors:
-                return jsonify({
-                    "ok": False,
-                    "provider": "facturama",
-                    "stage": "receiver_validation",
-                    "error": next(iter(field_errors.values())),
-                    "field_errors": field_errors,
-                }), 400
+            # El padrón sandbox no representa el padrón real del SAT y puede
+            # rechazar RFC reales. En pruebas se conserva la validación local;
+            # en producción se exige además la coincidencia fiscal remota.
+            if not cfg["sandbox"]:
+                try:
+                    _, field_errors = _facturama_receiver_validation(payload.get("receptor") or {})
+                except requests.HTTPError as exc:
+                    return jsonify({
+                        "ok": False,
+                        "provider": "facturama",
+                        "stage": "receiver_validation",
+                        "error": "No se pudieron validar los datos fiscales del receptor en Facturama.",
+                        "detail": _http_error_detail(exc),
+                    }), 502
+                except requests.RequestException as exc:
+                    return jsonify({
+                        "ok": False,
+                        "provider": "facturama",
+                        "stage": "receiver_validation",
+                        "error": "Facturama no respondió durante la validación del receptor. Intenta nuevamente.",
+                        "detail": str(exc),
+                    }), 502
+                if field_errors:
+                    return jsonify({
+                        "ok": False,
+                        "provider": "facturama",
+                        "stage": "receiver_validation",
+                        "error": next(iter(field_errors.values())),
+                        "field_errors": field_errors,
+                    }), 400
 
             request_id = str(payload.get("request_id") or "").strip()
             if not request_id:
@@ -638,6 +642,7 @@ def facturar():
                     "uuid": str(uuid).strip(),
                     "status": _pick(invoice, "Status") or "active",
                     "total": _pick(invoice, "Total"),
+                    "receiver_validation": "local_sandbox" if cfg["sandbox"] else "sat_confirmed",
                     "pdf_url": f"/api/invoices/{inv_id}/pdf",
                     "xml_url": f"/api/invoices/{inv_id}/xml",
                     "complementos_disponibles": False,
