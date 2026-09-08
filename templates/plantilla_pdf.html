@@ -97,6 +97,8 @@
   {# ---- Defaults/guards for retenciones ---- #}
   {% set _datos = datos if datos is defined else {} %}
   {% set usar_retenciones = (_datos.get('usar_retenciones') if _datos is mapping else false) %}
+  {% set tasa_isr = tasa_isr if tasa_isr is defined else (0.0125 if usar_retenciones else 0) %}
+  {% set tasa_iva_ret = tasa_iva_ret if tasa_iva_ret is defined else (0.106667 if usar_retenciones else 0) %}
   {% set subtotal = subtotal if subtotal is defined else 0 %}
   {% set iva = iva if iva is defined else 0 %}
   {% set isr_retenido = isr_retenido if isr_retenido is defined else 0 %}
@@ -192,10 +194,8 @@
       <table>
         <tr><td>Subtotal</td><td style="text-align:right">${{ "{:,.2f}".format(subtotal) }}</td></tr>
         <tr><td>IVA trasladado 16%</td><td style="text-align:right">${{ "{:,.2f}".format(iva) }}</td></tr>
-        {% if usar_retenciones %}
-        <tr><td>ISR retenido 1.25%</td><td style="text-align:right">-${{ "{:,.2f}".format(isr_retenido) }}</td></tr>
-        <tr><td>IVA retenido 10.6667%</td><td style="text-align:right">-${{ "{:,.2f}".format(iva_retenido) }}</td></tr>
-        {% endif %}
+        {% if tasa_isr %}<tr><td>ISR retenido {{ "%.4g"|format(tasa_isr * 100) }}%</td><td style="text-align:right">-${{ "{:,.2f}".format(isr_retenido) }}</td></tr>{% endif %}
+        {% if tasa_iva_ret %}<tr><td>IVA retenido {{ "%.4g"|format(tasa_iva_ret * 100) }}%</td><td style="text-align:right">-${{ "{:,.2f}".format(iva_retenido) }}</td></tr>{% endif %}
         <tr class="strong"><td>Total</td><td style="text-align:right">${{ "{:,.2f}".format(total) }}</td></tr>
       </table>
     </div>

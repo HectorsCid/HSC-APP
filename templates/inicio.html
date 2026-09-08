@@ -250,17 +250,21 @@
         />
         <div class="hint">Es una referencia interna para encontrarlo fácilmente; no aparece en el PDF.</div>
 
-        <label style="margin-top:10px">Retenciones</label>
-        <div class="switch" style="margin-top:6px">
-          <input
-            type="checkbox"
-            name="usar_retenciones"
-            id="usar_retenciones"
-            {% if datos.usar_retenciones %}checked{% endif %}
-          />
-          <span>Aplicar ISR 1.25% e IVA 2/3</span>
+        <label style="margin-top:10px">Retenciones para esta cotización</label>
+        <div class="row row-2">
+          <div><label>ISR</label><select name="retencion_isr_tasa" id="retencion_isr_tasa">
+            <option value="0" {% if not tasa_isr %}selected{% endif %}>Sin ISR retenido</option>
+            <option value="0.0125" {% if tasa_isr == 0.0125 %}selected{% endif %}>ISR 1.25%</option>
+            <option value="0.1" {% if tasa_isr == 0.10 %}selected{% endif %}>ISR 10%</option>
+          </select></div>
+          <div><label>IVA retenido</label><select name="retencion_iva_tasa" id="retencion_iva_tasa">
+            <option value="0" {% if not tasa_iva_ret %}selected{% endif %}>Sin IVA retenido</option>
+            <option value="0.03" {% if tasa_iva_ret == 0.03 %}selected{% endif %}>3%</option><option value="0.04" {% if tasa_iva_ret == 0.04 %}selected{% endif %}>4%</option>
+            <option value="0.053333" {% if tasa_iva_ret == 0.053333 %}selected{% endif %}>5.3333%</option><option value="0.06" {% if tasa_iva_ret == 0.06 %}selected{% endif %}>6%</option>
+            <option value="0.106667" {% if tasa_iva_ret > 0.10666 and tasa_iva_ret < 0.10668 %}selected{% endif %}>10.6667%</option><option value="0.16" {% if tasa_iva_ret == 0.16 %}selected{% endif %}>16%</option>
+          </select></div>
         </div>
-        <div class="hint">Si lo activas, el total se calcula con retenciones.</div>
+        <div class="hint">Se cargan desde el cliente, pero puedes cambiarlas sólo para esta cotización.</div>
 
         <div style="margin-top:12px" class="subtle">
           Estos valores se aplican a esta cotización y se guardan automáticamente al agregar una partida, abrir la vista previa, guardar el borrador o generar el PDF. No modifican la ficha permanente del cliente.
@@ -350,30 +354,18 @@
 
           <tr>
             <td colspan="3"></td>
-            <td style="text-align:right">ISR retenido 1.25%</td>
+            <td style="text-align:right">ISR retenido {{ "%.4g"|format(tasa_isr * 100) }}%</td>
             <td style="text-align:right">
-              {% if datos.usar_retenciones %}-{{ (isr_retenido or 0)|currency }}{% else %}—{% endif %}
+              {% if tasa_isr %}-{{ (isr_retenido or 0)|currency }}{% else %}—{% endif %}
             </td>
-            <td>
-              <!-- checkbox al lado (se guarda en el form de datos) -->
-              <label class="switch" style="justify-content:flex-end">
-                <input
-                  type="checkbox"
-                  name="usar_retenciones"
-                  form="form-datos"
-                  {% if datos.usar_retenciones %}checked{% endif %}
-                  onchange="document.getElementById('form-datos').submit();"
-                />
-                <span>Retenciones</span>
-              </label>
-            </td>
+            <td></td>
           </tr>
 
           <tr>
             <td colspan="3"></td>
-            <td style="text-align:right">IVA retenido 10.6667%</td>
+            <td style="text-align:right">IVA retenido {{ "%.4g"|format(tasa_iva_ret * 100) }}%</td>
             <td style="text-align:right">
-              {% if datos.usar_retenciones %}-{{ (iva_retenido or 0)|currency }}{% else %}—{% endif %}
+              {% if tasa_iva_ret %}-{{ (iva_retenido or 0)|currency }}{% else %}—{% endif %}
             </td>
             <td></td>
           </tr>
@@ -432,6 +424,8 @@
     const tiempo = document.getElementById('tiempo');
     const anticipo = document.getElementById('anticipo');
     const vigencia = document.getElementById('vigencia');
+    const retencionIsr = document.getElementById('retencion_isr_tasa');
+    const retencionIva = document.getElementById('retencion_iva_tasa');
     const btnGuardarBorrador = document.getElementById('btn-guardar-borrador');
     const nombreBorrador = document.getElementById('nombre-borrador');
     const formDatos = document.getElementById('form-datos');
@@ -538,6 +532,10 @@
       if (!mantenerSeleccion || !tiempo.value.trim()) tiempo.value = d.tiempo || '';
       if (!mantenerSeleccion || !anticipo.value.trim()) anticipo.value = d.anticipo || '';
       if (!mantenerSeleccion || !vigencia.value.trim()) vigencia.value = d.vigencia || '';
+      if (!mantenerSeleccion) {
+        retencionIsr.value = String(d.retencion_isr_tasa || '0');
+        retencionIva.value = String(d.retencion_iva_tasa || '0');
+      }
     }
 
     if (selectCliente.value) {

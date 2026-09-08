@@ -910,19 +910,33 @@ def _cotizacion_tiene_cambios_sin_guardar():
         or (borrador.get("costos_internos") or {}) != costos_internos
     )
 
+
+def _tasas_retencion(datos):
+    """Normaliza preferencias nuevas y conserva cotizaciones antiguas."""
+    datos = datos if isinstance(datos, dict) else {}
+    legacy = bool(datos.get("usar_retenciones"))
+    tiene_nuevas = "retencion_isr_tasa" in datos or "retencion_iva_tasa" in datos
+    try:
+        isr = float(datos.get("retencion_isr_tasa") or 0)
+        iva_ret = float(datos.get("retencion_iva_tasa") or 0)
+    except (TypeError, ValueError):
+        isr, iva_ret = 0.0, 0.0
+    if legacy and not tiene_nuevas:
+        return 0.0125, 0.1066666667
+    tasas_isr = {0.0, 0.0125, 0.10}
+    tasas_iva = {0.0, 0.03, 0.04, 0.053333, 0.06, 0.106667, 0.16}
+    return (isr if isr in tasas_isr else 0.0, iva_ret if iva_ret in tasas_iva else 0.0)
+
 # ================================= Rutas =======================================
 @app.route('/')
 def inicio():
     subtotal = sum(p['total'] for p in partidas)
     iva = subtotal * 0.16
 
-    usar_retenciones = bool(datos_cliente.get("usar_retenciones"))
-    if usar_retenciones:
-        isr_retenido = subtotal * 0.0125
-        iva_retenido = iva * (2/3)
-    else:
-        isr_retenido = 0
-        iva_retenido = 0
+    tasa_isr, tasa_iva_ret = _tasas_retencion(datos_cliente)
+    usar_retenciones = bool(tasa_isr or tasa_iva_ret)
+    isr_retenido = subtotal * tasa_isr
+    iva_retenido = subtotal * tasa_iva_ret
 
     total = subtotal + iva - isr_retenido - iva_retenido
     cambios_sin_guardar = _cotizacion_tiene_cambios_sin_guardar()
@@ -938,6 +952,8 @@ def inicio():
         iva=iva,
         isr_retenido=isr_retenido,
         iva_retenido=iva_retenido,
+        tasa_isr=tasa_isr,
+        tasa_iva_ret=tasa_iva_ret,
         total=total,
         cambios_sin_guardar=cambios_sin_guardar,
         today=date.today().isoformat()
@@ -993,7 +1009,10 @@ def _actualizar_datos_cliente_desde_form():
     datos_cliente['cotizacion'] = request.form.get('cotizacion', '')
     datos_cliente['nombre_borrador'] = (request.form.get('nombre_borrador') or '').strip()
     datos_cliente['comentarios'] = request.form.get('comentarios', '')
-    datos_cliente["usar_retenciones"] = ("usar_retenciones" in request.form)
+    datos_cliente["retencion_isr_tasa"] = request.form.get("retencion_isr_tasa", "0")
+    datos_cliente["retencion_iva_tasa"] = request.form.get("retencion_iva_tasa", "0")
+    tasa_isr, tasa_iva_ret = _tasas_retencion(datos_cliente)
+    datos_cliente["usar_retenciones"] = bool(tasa_isr or tasa_iva_ret)
 
 @app.route('/agregar', methods=['POST'])
 def agregar():
@@ -1078,6 +1097,8 @@ def nuevo_cliente():
         cp             = (request.form.get('cp') or '').strip()
         regimen_fiscal = (request.form.get('regimen_fiscal') or '').strip()  # ej. 601, 612, 621, 626
         uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # ej. G03, G01, P01
+        retencion_isr_tasa = (request.form.get('retencion_isr_tasa') or '0').strip()
+        retencion_iva_tasa = (request.form.get('retencion_iva_tasa') or '0').strip()
 
         if not nombre:
             flash("El nombre del cliente no puede estar vacío.")
@@ -1089,7 +1110,9 @@ def nuevo_cliente():
                 "direccion": direccion,
                 "tiempo": tiempo,
                 "anticipo": anticipo,
-                "vigencia": vigencia
+                "vigencia": vigencia,
+                "retencion_isr_tasa": retencion_isr_tasa,
+                "retencion_iva_tasa": retencion_iva_tasa,
             }
 
             # Solo guarda si vienen
@@ -1239,10 +1262,8 @@ def _construir_borrador_actual():
     folio = _asegurar_folio_actual()
     subtotal = sum(float(item.get("total") or 0) for item in partidas)
     iva = subtotal * 0.16
-    if datos_cliente.get("usar_retenciones"):
-        total_borrador = subtotal + iva - (subtotal * 0.0125) - (iva * (2 / 3))
-    else:
-        total_borrador = subtotal + iva
+    tasa_isr, tasa_iva_ret = _tasas_retencion(datos_cliente)
+    total_borrador = subtotal + iva - (subtotal * tasa_isr) - (subtotal * tasa_iva_ret)
     return {
         "id": folio,
         "folio": folio,
@@ -1501,13 +1522,10 @@ def generar_pdf():
     subtotal = sum((p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0) for p in partidas_actuales)
     iva = subtotal * 0.16
 
-    usar_retenciones = bool(datos.get("usar_retenciones"))
-    if usar_retenciones:
-        isr_retenido = subtotal * 0.0125
-        iva_retenido = iva * (2/3)
-    else:
-        isr_retenido = 0.0
-        iva_retenido = 0.0
+    tasa_isr, tasa_iva_ret = _tasas_retencion(datos)
+    usar_retenciones = bool(tasa_isr or tasa_iva_ret)
+    isr_retenido = subtotal * tasa_isr
+    iva_retenido = subtotal * tasa_iva_ret
 
     total = subtotal + iva - isr_retenido - iva_retenido
     total_final = total
@@ -1531,6 +1549,8 @@ def generar_pdf():
         total=total,
         isr_retenido=isr_retenido,
         iva_retenido=iva_retenido,
+        tasa_isr=tasa_isr,
+        tasa_iva_ret=tasa_iva_ret,
         total_final=total_final,
         img_path=img_path
     )
@@ -1743,6 +1763,8 @@ def editar_cliente():
         cp             = (request.form.get('cp') or '').strip()
         regimen_fiscal = (request.form.get('regimen_fiscal') or '').strip()  # 601, 612, 621, 626
         uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # G03, G01, P01
+        retencion_isr_tasa = (request.form.get('retencion_isr_tasa') or '0').strip()
+        retencion_iva_tasa = (request.form.get('retencion_iva_tasa') or '0').strip()
 
         if not nuevo_nombre:
             flash("El nombre del cliente no puede estar vacío.")
@@ -1773,6 +1795,8 @@ def editar_cliente():
         set_or_pop(merged, "cp", cp)
         set_or_pop(merged, "regimen_fiscal", regimen_fiscal)
         set_or_pop(merged, "uso_cfdi", uso_cfdi)
+        merged["retencion_isr_tasa"] = retencion_isr_tasa
+        merged["retencion_iva_tasa"] = retencion_iva_tasa
 
         # Guarda y renombra si cambió el nombre
         with _CLIENTES_DATA_LOCK:
@@ -1834,13 +1858,10 @@ def vista_previa():
     subtotal = sum((p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0) for p in partidas_actuales)
     iva = subtotal * 0.16
 
-    usar_retenciones = bool(datos.get("usar_retenciones"))
-    if usar_retenciones:
-        isr_retenido = subtotal * 0.0125
-        iva_retenido = iva * (2/3)
-    else:
-        isr_retenido = 0.0
-        iva_retenido = 0.0
+    tasa_isr, tasa_iva_ret = _tasas_retencion(datos)
+    usar_retenciones = bool(tasa_isr or tasa_iva_ret)
+    isr_retenido = subtotal * tasa_isr
+    iva_retenido = subtotal * tasa_iva_ret
 
     total = subtotal + iva - isr_retenido - iva_retenido
 
@@ -1855,6 +1876,8 @@ def vista_previa():
         total=total,
         isr_retenido=isr_retenido,
         iva_retenido=iva_retenido,
+        tasa_isr=tasa_isr,
+        tasa_iva_ret=tasa_iva_ret,
         img_path=img_path,
         preview=True
     )
@@ -2573,7 +2596,8 @@ def api_cotizacion_detalle(qid):
             total += base_imp + base_imp * c["tasa_iva"]
 
     datos_cotizacion = match.get("datos") if isinstance(match.get("datos"), dict) else {}
-    usar_retenciones = bool(datos_cotizacion.get("usar_retenciones"))
+    tasa_isr, tasa_iva_ret = _tasas_retencion(datos_cotizacion)
+    usar_retenciones = bool(tasa_isr or tasa_iva_ret)
 
     out = {
         "ok": True,
@@ -2586,8 +2610,8 @@ def api_cotizacion_detalle(qid):
         "items": items_norm,
         "retenciones": {
             "aplicar": usar_retenciones,
-            "isr": 0.0125 if usar_retenciones else 0,
-            "iva": (2 / 3) * 0.16 if usar_retenciones else 0,
+            "isr": tasa_isr,
+            "iva": tasa_iva_ret,
         },
     }
     return jsonify(out), 200

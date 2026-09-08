@@ -346,8 +346,13 @@ def _build_facturama_cfdi(payload):
     apply_retentions = bool(retention_cfg.get("aplicar"))
     isr_rate = _number(retention_cfg.get("isr"), Decimal("0.0125")) if apply_retentions else Decimal("0")
     iva_ret_rate = _number(retention_cfg.get("iva"), Decimal("0.1066666667")) if apply_retentions else Decimal("0")
-    if isr_rate < 0 or iva_ret_rate < 0:
-        raise ValueError("Las tasas de retención no pueden ser negativas")
+    allowed_isr = {Decimal("0"), Decimal("0.0125"), Decimal("0.10")}
+    allowed_iva_ret = {
+        Decimal("0"), Decimal("0.03"), Decimal("0.04"), Decimal("0.053333"),
+        Decimal("0.06"), Decimal("0.106667"), Decimal("0.1066666667"), Decimal("0.16"),
+    }
+    if isr_rate not in allowed_isr or iva_ret_rate not in allowed_iva_ret:
+        raise ValueError("Selecciona tasas de retención permitidas")
     for index, raw in enumerate(payload.get("items") or [], start=1):
         description = str(raw.get("descripcion", "")).strip() or f"Concepto {index}"
         quantity = _number(raw.get("cantidad"), 1)
@@ -362,9 +367,7 @@ def _build_facturama_cfdi(payload):
         tax_base = _money(subtotal - discount)
         tax_total = _money(tax_base * tax_rate)
         isr_total = _money(tax_base * isr_rate)
-        # La cotización retiene dos terceras partes del IVA efectivamente
-        # trasladado; así también funciona correctamente con tasas de 8% o 0%.
-        item_iva_ret_rate = (tax_rate * Decimal("2") / Decimal("3")) if apply_retentions else Decimal("0")
+        item_iva_ret_rate = iva_ret_rate
         iva_ret_total = _money(tax_base * item_iva_ret_rate)
         unit_code = str(raw.get("clave_unidad") or "E48").strip().upper()
         item = {

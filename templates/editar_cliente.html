@@ -115,6 +115,32 @@
         </div>
 
         <div class="hint">Si no vas a facturar, puedes dejar estos campos vacíos.</div>
+
+        <div class="grid grid-2" style="margin-top:12px">
+          <div>
+            <label for="retencion_isr_tasa">Retención ISR habitual</label>
+            <select id="retencion_isr_tasa" name="retencion_isr_tasa">
+              {% set risr = datos.retencion_isr_tasa|string %}
+              <option value="0" {% if risr in ('', '0', 'None') %}selected{% endif %}>Sin retención de ISR</option>
+              <option value="0.0125" {% if risr == '0.0125' %}selected{% endif %}>ISR 1.25%</option>
+              <option value="0.1" {% if risr in ('0.10','0.1') %}selected{% endif %}>ISR 10%</option>
+            </select>
+          </div>
+          <div>
+            <label for="retencion_iva_tasa">Retención IVA habitual</label>
+            <select id="retencion_iva_tasa" name="retencion_iva_tasa">
+              {% set riva = datos.retencion_iva_tasa|string %}
+              <option value="0" {% if riva in ('', '0', 'None') %}selected{% endif %}>Sin retención de IVA</option>
+              <option value="0.03" {% if riva == '0.03' %}selected{% endif %}>IVA RET 3%</option>
+              <option value="0.04" {% if riva == '0.04' %}selected{% endif %}>IVA RET 4%</option>
+              <option value="0.053333" {% if riva == '0.053333' %}selected{% endif %}>IVA RET 5.3333%</option>
+              <option value="0.06" {% if riva == '0.06' %}selected{% endif %}>IVA RET 6%</option>
+              <option value="0.106667" {% if riva in ('0.106667','0.1066666667') %}selected{% endif %}>IVA RET 10.6667%</option>
+              <option value="0.16" {% if riva == '0.16' %}selected{% endif %}>IVA RET 16%</option>
+            </select>
+          </div>
+        </div>
+        <div class="hint">Se cargarán automáticamente al cotizar o facturar; podrás cambiarlas en cada operación.</div>
       </fieldset>
       <!-- FIN NUEVO -->
 

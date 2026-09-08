@@ -95,6 +95,26 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(item["Taxes"][0]["Base"], 180.0)
         self.assertEqual(item["Total"], 208.8)
 
+    def test_can_apply_only_isr_retention(self):
+        payload = self.payload()
+        payload["retenciones"] = {"aplicar": True, "isr": 0.0125, "iva": 0}
+        with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
+            item = billing._build_facturama_cfdi(payload)["Items"][0]
+        tax_names = [tax["Name"] for tax in item["Taxes"]]
+        self.assertIn("ISR", tax_names)
+        self.assertNotIn("IVA RET", tax_names)
+        self.assertEqual(item["Total"], 229.5)
+
+    def test_can_apply_only_iva_retention(self):
+        payload = self.payload()
+        payload["retenciones"] = {"aplicar": True, "isr": 0, "iva": 0.04}
+        with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
+            item = billing._build_facturama_cfdi(payload)["Items"][0]
+        tax_names = [tax["Name"] for tax in item["Taxes"]]
+        self.assertNotIn("ISR", tax_names)
+        self.assertIn("IVA RET", tax_names)
+        self.assertEqual(item["Total"], 224.0)
+
     def test_obsolete_cfdi_use_is_rejected(self):
         payload = self.payload()
         payload["receptor"]["uso_cfdi"] = "P01"

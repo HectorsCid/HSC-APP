@@ -125,10 +125,11 @@
         <label>Condiciones (opcional)</label>
         <input id="cond" placeholder="Crédito 15 días" />
 
-        <label style="display:flex;align-items:center;gap:9px;color:var(--ink);margin-top:14px">
-          <input id="retenciones" type="checkbox" style="width:auto" />
-          Aplicar retenciones de la cotización (ISR 1.25% e IVA retenido)
-        </label>
+        <div class="row row-2" style="margin-top:10px">
+          <div><label>Retención ISR</label><select id="retencionIsr"><option value="0">Sin retención</option><option value="0.0125">ISR 1.25%</option><option value="0.1">ISR 10%</option></select></div>
+          <div><label>Retención IVA</label><select id="retencionIva"><option value="0">Sin retención</option><option value="0.03">3%</option><option value="0.04">4%</option><option value="0.053333">5.3333%</option><option value="0.06">6%</option><option value="0.106667">10.6667%</option><option value="0.16">16%</option></select></div>
+        </div>
+        <div class="pill" style="margin-top:6px">Se cargan desde el cliente o la cotización, y puedes ajustarlas antes de timbrar.</div>
 
         <div class="actions" style="margin-top:12px">
           <button id="btnTimbrar" class="btn btn-primary" type="button">🧾 Timbrar</button>
@@ -169,8 +170,8 @@
           <tfoot>
             <tr><td colspan="3"></td><td class="numeric" id="subtotalCell">$0.00</td><td colspan="4">SUBTOTAL</td></tr>
             <tr><td colspan="3"></td><td class="numeric" id="ivaCell">$0.00</td><td colspan="4">IVA</td></tr>
-            <tr id="isrRow" hidden><td colspan="3"></td><td class="numeric" id="isrCell">-$0.00</td><td colspan="4">RETENCIÓN ISR 1.25%</td></tr>
-            <tr id="ivaRetRow" hidden><td colspan="3"></td><td class="numeric" id="ivaRetCell">-$0.00</td><td colspan="4">RETENCIÓN IVA</td></tr>
+            <tr id="isrRow" hidden><td colspan="3"></td><td class="numeric" id="isrCell">-$0.00</td><td colspan="4" id="isrLabel">RETENCIÓN ISR</td></tr>
+            <tr id="ivaRetRow" hidden><td colspan="3"></td><td class="numeric" id="ivaRetCell">-$0.00</td><td colspan="4" id="ivaRetLabel">RETENCIÓN IVA</td></tr>
             <tr><td colspan="3"></td><td class="numeric" id="totalCell"><strong>$0.00</strong></td><td colspan="4"><strong>TOTAL</strong></td></tr>
           </tfoot>
         </table>
@@ -292,10 +293,17 @@
         setVal('rfc', rfc);
         setVal('razon',   c.razon_social || c.razon || c.nombre || c.legal_name || '');
         setVal('cp',      c.cp || c.codigo_postal || c.zip || '');
+        setVal('retencionIsr', c.retencion_isr_tasa || '0');
+        setVal('retencionIva', c.retencion_iva_tasa || '0');
         await loadFiscalCatalogs(rfc, {regimen, uso});
       }
 
-      sel?.addEventListener('change', ()=>{ if (sel.value) fillFromName(sel.value); });
+      sel?.addEventListener('change', async ()=>{
+        if (sel.value) {
+          await fillFromName(sel.value);
+          calc();
+        }
+      });
       if (sel && sel.value) fillFromName(sel.value);
     })();
 
@@ -418,17 +426,22 @@
       });
       document.getElementById('subtotalCell').textContent = currency(subtotal);
       document.getElementById('ivaCell').textContent = currency(iva);
-      const applies = document.getElementById('retenciones').checked;
-      const isrRet = applies ? subtotal * 0.0125 : 0;
-      const ivaRet = applies ? iva * (2/3) : 0;
+      const isrRate = Number(document.getElementById('retencionIsr').value || 0);
+      const ivaRetRate = Number(document.getElementById('retencionIva').value || 0);
+      const applies = isrRate > 0 || ivaRetRate > 0;
+      const isrRet = subtotal * isrRate;
+      const ivaRet = subtotal * ivaRetRate;
       document.getElementById('isrRow').hidden = !applies;
       document.getElementById('ivaRetRow').hidden = !applies;
       document.getElementById('isrCell').textContent = '-' + currency(isrRet);
       document.getElementById('ivaRetCell').textContent = '-' + currency(ivaRet);
+      document.getElementById('isrLabel').textContent = `RETENCIÓN ISR ${Number(isrRate*100).toFixed(isrRate === 0.0125 ? 2 : 0)}%`;
+      document.getElementById('ivaRetLabel').textContent = `RETENCIÓN IVA ${Number(ivaRetRate*100).toFixed(ivaRetRate === 0.053333 || ivaRetRate === 0.106667 ? 4 : 0)}%`;
       document.getElementById('totalCell').textContent = currency(subtotal+iva-isrRet-ivaRet);
     }
 
-    document.getElementById('retenciones').addEventListener('change', calc);
+    document.getElementById('retencionIsr').addEventListener('change', calc);
+    document.getElementById('retencionIva').addEventListener('change', calc);
 
     addItem(null); // fila inicial
 
@@ -514,7 +527,10 @@
         const data = await r.json();
         if(!data.ok){ msg(false, data.error?.message || 'Cotización no disponible'); return; }
         pageQuoteFolio = String(data.folio || '').trim();
-        document.getElementById('retenciones').checked = Boolean(data.retenciones?.aplicar);
+        document.getElementById('retencionIsr').value = String(data.retenciones?.isr || 0);
+        const quoteIvaRetention = Number(data.retenciones?.iva || 0);
+        document.getElementById('retencionIva').value = quoteIvaRetention > 0.10666 && quoteIvaRetention < 0.10668
+          ? '0.106667' : String(quoteIvaRetention);
 
         // Receptor
         const rec = data.receptor || {};
@@ -618,9 +634,9 @@
         folio: pageQuoteFolio,
         request_id: stampRequestId,
         retenciones: {
-          aplicar: document.getElementById('retenciones').checked,
-          isr: 0.0125,
-          iva: 0.1066666667
+          aplicar: Number(document.getElementById('retencionIsr').value || 0) > 0 || Number(document.getElementById('retencionIva').value || 0) > 0,
+          isr: Number(document.getElementById('retencionIsr').value || 0),
+          iva: Number(document.getElementById('retencionIva').value || 0)
         },
         items: rows
       };

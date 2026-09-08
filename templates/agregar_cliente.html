@@ -117,6 +117,27 @@
         </div>
 
         <div class="hint">Si no vas a facturar, puedes dejar estos campos vacíos.</div>
+
+        <div class="grid grid-2" style="margin-top:12px">
+          <div>
+            <label for="retencion_isr_tasa">Retención ISR habitual</label>
+            <select id="retencion_isr_tasa" name="retencion_isr_tasa">
+              <option value="0">Sin retención de ISR</option>
+              <option value="0.0125">ISR 1.25%</option>
+              <option value="0.1">ISR 10%</option>
+            </select>
+          </div>
+          <div>
+            <label for="retencion_iva_tasa">Retención IVA habitual</label>
+            <select id="retencion_iva_tasa" name="retencion_iva_tasa">
+              <option value="0">Sin retención de IVA</option>
+              <option value="0.03">IVA RET 3%</option><option value="0.04">IVA RET 4%</option>
+              <option value="0.053333">IVA RET 5.3333%</option><option value="0.06">IVA RET 6%</option>
+              <option value="0.106667">IVA RET 10.6667%</option><option value="0.16">IVA RET 16%</option>
+            </select>
+          </div>
+        </div>
+        <div class="hint">Se cargarán automáticamente al cotizar o facturar; podrás cambiarlas en cada operación.</div>
       </fieldset>
       <!-- FIN NUEVO -->
 
