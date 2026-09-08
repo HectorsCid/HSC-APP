@@ -119,7 +119,7 @@
         </select>
 
         <label>Serie (opcional)</label>
-        <input id="serie" placeholder="HSC" />
+        <input id="serie" placeholder="Dejar vacía para usar la serie de Facturama" />
 
         <label>Condiciones (opcional)</label>
         <input id="cond" placeholder="Crédito 15 días" />
@@ -486,7 +486,7 @@
         },
         forma_pago: document.getElementById('forma').value||'03',
         metodo_pago: document.getElementById('metodo').value||'PUE',
-        serie: document.getElementById('serie').value||'HSC',
+        serie: (document.getElementById('serie').value||'').trim(),
         condiciones: document.getElementById('cond').value||'',
         source_quote_id: pageQuoteId,
         folio: pageQuoteFolio,

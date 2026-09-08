@@ -57,6 +57,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(cfdi["Items"][0]["Total"], 232.0)
         self.assertEqual(cfdi["Items"][0]["TaxObject"], "02")
         self.assertNotIn("Date", cfdi)
+        self.assertNotIn("Serie", cfdi)
 
     def test_ppd_forces_payment_form_99(self):
         payload = self.payload()
