@@ -274,7 +274,11 @@
     </div>
     <div class="cm-body">
       <div class="cm-kv">Se adjuntarán el PDF y el XML.</div>
-      <div><label for="emEmail">Correo del cliente</label><input id="emEmail" class="cm-input" type="email" placeholder="cliente@empresa.com" /></div>
+      <div>
+        <label for="emEmail">Destinatarios</label>
+        <input id="emEmail" class="cm-input" type="text" placeholder="cliente@empresa.com; compras@empresa.com" />
+        <div class="cm-hint">Puedes separar varios correos con coma, punto y coma o un renglón nuevo.</div>
+      </div>
       <div><label for="emSubject">Asunto</label><input id="emSubject" class="cm-input" type="text" /></div>
       <div><label for="emMessage">Mensaje</label><textarea id="emMessage" class="cm-input" rows="5"></textarea></div>
       <div id="emKeyWrap"><label for="emKey">Clave de envío (solo la primera vez)</label><input id="emKey" class="cm-input" type="password" autocomplete="off" placeholder="Clave privada configurada en Render" /></div>
@@ -474,8 +478,8 @@ let emailCtx = null;
 async function openEmailModal(ctx){
   emailCtx = ctx;
   emEmail.value = ctx.email || '';
-  emSubject.value = `Factura ${ctx.folio || ''} — HSC Refrigeración`;
-  emMessage.value = `Buen día, estimado cliente:\n\nLe hacemos llegar su factura adjunta en formatos PDF y XML.\n\nQuedamos atentos a cualquier comentario.\n\nSaludos cordiales,\nHSC Refrigeración`;
+  emSubject.value = `Factura HSC ${ctx.folio || ''}`;
+  emMessage.value = `Buen día, estimado cliente. Envío la factura solicitada.\n\nDe antemano muchas gracias.\n\nQuedo a sus órdenes.\n\nIng. Héctor Silva Cid\n\nCel: 5527605496`;
   emKey.value = '';
   emKeyWrap.classList.add('hidden');
   emErr.textContent = '';
@@ -502,8 +506,12 @@ $('#emClose').addEventListener('click', closeEmailModal);
 $('#emCancel').addEventListener('click', closeEmailModal);
 emConfirm.addEventListener('click', async ()=>{
   if(!emailCtx || emConfirm.disabled) return;
-  if(!emEmail.value.trim() || !emEmail.checkValidity()){
-    emErr.textContent = 'Escribe un correo electrónico válido.';
+  const recipients = emEmail.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
+  const invalidRecipient = recipients.find(v=>!/^\S+@\S+\.\S+$/.test(v));
+  if(!recipients.length || invalidRecipient){
+    emErr.textContent = invalidRecipient
+      ? `Revisa este correo electrónico: ${invalidRecipient}`
+      : 'Escribe al menos un correo electrónico.';
     emEmail.focus();
     return;
   }

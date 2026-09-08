@@ -69,6 +69,27 @@ class FacturamaIntegrationTests(unittest.TestCase):
             cfdi = billing._build_facturama_cfdi(payload)
         self.assertEqual(cfdi["PaymentForm"], "99")
 
+    def test_purchase_order_is_sent_to_facturama(self):
+        payload = self.payload()
+        payload["numero_orden_compra"] = "OC-BTICINO-45872"
+        with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
+            cfdi = billing._build_facturama_cfdi(payload)
+        self.assertEqual(cfdi["OrderNumber"], "OC-BTICINO-45872")
+
+    def test_quote_id_is_not_used_as_purchase_order(self):
+        payload = self.payload()
+        payload["source_quote_id"] = "cotizacion-interna-1579"
+        with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
+            cfdi = billing._build_facturama_cfdi(payload)
+        self.assertNotIn("OrderNumber", cfdi)
+
+    def test_purchase_order_rejects_more_than_100_characters(self):
+        payload = self.payload()
+        payload["numero_orden_compra"] = "X" * 101
+        with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
+            with self.assertRaisesRegex(ValueError, "100 caracteres"):
+                billing._build_facturama_cfdi(payload)
+
     def test_quote_retentions_are_sent_as_federal_withholdings(self):
         payload = self.payload()
         payload["retenciones"] = {

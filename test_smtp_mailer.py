@@ -39,6 +39,28 @@ class SmtpMailerTests(unittest.TestCase):
                     pdf_bytes=b"pdf", xml_bytes=b"xml", folio="1",
                 )
 
+    def test_sends_to_multiple_recipients_without_duplicates(self):
+        smtp = MagicMock()
+        smtp.__enter__.return_value = smtp
+        env = {
+            "SMTP_USER": "hectorsc@hscrefrigeracion.com",
+            "SMTP_PASSWORD": "secret",
+            "SMTP_FROM": "hectorsc@hscrefrigeracion.com",
+        }
+        with patch.dict(os.environ, env, clear=False), patch.object(smtp_mailer.smtplib, "SMTP_SSL", return_value=smtp):
+            result = smtp_mailer.send_quote_email(
+                recipient="uno@example.com; dos@example.com, uno@example.com",
+                subject="Cotización HSC No. 10",
+                body="Mensaje",
+                pdf_bytes=b"%PDF",
+                folio="10",
+                extra_attachments=[{"data": b"orden", "filename": "orden.pdf", "content_type": "application/pdf"}],
+            )
+        message = smtp.send_message.call_args.args[0]
+        self.assertEqual(message["To"], "uno@example.com, dos@example.com")
+        self.assertEqual(result["recipients"], ["uno@example.com", "dos@example.com"])
+        self.assertEqual({part.get_filename() for part in message.iter_attachments()}, {"Cotizacion-10.pdf", "orden.pdf"})
+
     def test_trusted_device_token_is_accepted_without_raw_key(self):
         with patch.dict(os.environ, {"SMTP_SEND_KEY": "a-long-private-send-key"}, clear=False):
             token = smtp_mailer.trusted_device_token()

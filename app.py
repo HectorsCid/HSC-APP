@@ -23,6 +23,8 @@ import io
 import math
 import uuid
 import csv
+import mimetypes
+import smtplib
 from difflib import SequenceMatcher
 
 # Google / OAuth
@@ -43,7 +45,8 @@ from pdf_runtime import PdfRendererBusy, render_pdf_file
 from google.auth.exceptions import RefreshError
 
 # Otros
-from werkzeug.utils import safe_join
+from werkzeug.utils import safe_join, secure_filename
+from smtp_mailer import authorized_to_send, send_quote_email, smtp_config, trusted_device_token
 from reportes_bp import reportes_bp, start_auto_report_monitor
 
 from facturacion_bp import facturacion_bp
@@ -2637,6 +2640,153 @@ def api_cotizaciones_list():
         except Exception:
             pass
     return jsonify(items), 200
+
+
+def _buscar_cotizacion_registrada(qid):
+    objetivo = str(qid or "").strip()
+    path = _ruta_cotizaciones()
+    try:
+        data = json.loads(path.read_text("utf-8")) if path.exists() else []
+    except Exception:
+        data = []
+    if isinstance(data, dict):
+        data = data.get("items") or data.get("data") or []
+    for item in data if isinstance(data, list) else []:
+        valores = (item.get("id"), item.get("folio"), item.get("numero"), item.get("uuid"))
+        if objetivo in {str(valor or "").strip() for valor in valores}:
+            return item
+    return None
+
+
+def _drive_file_id(url):
+    value = str(url or "")
+    for pattern in (r"/d/([A-Za-z0-9_-]+)", r"[?&]id=([A-Za-z0-9_-]+)"):
+        match = re.search(pattern, value)
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _pdf_cotizacion_bytes(cotizacion):
+    cliente = str(cotizacion.get("cliente") or "SIN_CLIENTE").strip()
+    folio = str(cotizacion.get("folio") or cotizacion.get("id") or "S-F").strip()
+    cliente_seguro = cliente.replace("/", "-").replace("\\", "-")
+    nombre = f"{cliente} - {folio}.pdf"
+    for candidate in (
+        Path(current_app.root_path) / "cotizaciones" / cliente_seguro / nombre,
+        Path(current_app.root_path) / "static" / "cotizaciones" / cliente_seguro / nombre,
+    ):
+        if candidate.is_file():
+            return candidate.read_bytes()
+
+    file_id = _drive_file_id(cotizacion.get("view_url") or cotizacion.get("pdf_url"))
+    if file_id:
+        service = get_drive_service_user()
+        request_drive = service.files().get_media(fileId=file_id)
+        stream = io.BytesIO()
+        downloader = MediaIoBaseDownload(stream, request_drive)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        if stream.getbuffer().nbytes:
+            return stream.getvalue()
+    raise FileNotFoundError("No se encontró el PDF de esta cotización en el respaldo local ni en Google Drive.")
+
+
+def _correo_cotizacion(cotizacion):
+    nombre = str(cotizacion.get("cliente") or "").strip()
+    with _CLIENTES_DATA_LOCK:
+        cliente = dict(clientes_predefinidos.get(nombre, {}) or {})
+    receptor = cotizacion.get("receptor") or {}
+    return str(
+        cliente.get("correo_facturacion") or cliente.get("email")
+        or receptor.get("correo_facturacion") or receptor.get("email") or ""
+    ).strip()
+
+
+@app.route("/api/cotizaciones/<qid>/email", methods=["GET", "POST"])
+def api_enviar_cotizacion(qid):
+    cotizacion = _buscar_cotizacion_registrada(qid)
+    if not cotizacion:
+        return jsonify(ok=False, error="No se encontró la cotización."), 404
+
+    cfg = smtp_config()
+    trusted = authorized_to_send("", request.cookies.get("hsc_mail_trusted", ""))
+    if request.method == "GET":
+        return jsonify(
+            ok=True,
+            configured=bool(cfg.get("configured")),
+            trusted=trusted,
+            cliente=str(cotizacion.get("cliente") or ""),
+            folio=str(cotizacion.get("folio") or cotizacion.get("id") or ""),
+            email=_correo_cotizacion(cotizacion),
+        )
+
+    if not cfg.get("configured"):
+        return jsonify(ok=False, error="Falta configurar el correo de salida de HSC en Render."), 503
+    send_key = request.form.get("send_key", "")
+    if not authorized_to_send(send_key, request.cookies.get("hsc_mail_trusted", "")):
+        return jsonify(ok=False, error="La clave de envío no es correcta."), 403
+
+    extras = []
+    allowed = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".xls", ".xlsx", ".csv"}
+    files = [upload for upload in request.files.getlist("attachments") if upload and upload.filename]
+    if len(files) > 8:
+        return jsonify(ok=False, error="Puedes adjuntar como máximo 8 archivos adicionales."), 400
+    total_size = 0
+    for upload in files:
+        filename = secure_filename(upload.filename)
+        suffix = Path(filename).suffix.lower()
+        if not filename or suffix not in allowed:
+            return jsonify(ok=False, error=f"El archivo {upload.filename} no tiene un formato permitido."), 400
+        content = upload.read()
+        total_size += len(content)
+        if total_size > 15 * 1024 * 1024:
+            return jsonify(ok=False, error="Los archivos adicionales superan el límite total de 15 MB."), 400
+        extras.append({
+            "data": content,
+            "filename": filename,
+            "content_type": upload.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream",
+        })
+
+    try:
+        folio = str(cotizacion.get("folio") or cotizacion.get("id") or "").strip()
+        default_message = (
+            "Buen día, estimado cliente. Envío la cotización solicitada.\n\n"
+            "De antemano muchas gracias.\n\n"
+            "Quedo a sus órdenes.\n\n"
+            "Ing. Héctor Silva Cid\n\n"
+            "Cel: 5527605496"
+        )
+        result = send_quote_email(
+            recipient=request.form.get("email", ""),
+            subject=request.form.get("subject") or f"Cotización HSC {folio}",
+            body=request.form.get("message") or default_message,
+            pdf_bytes=_pdf_cotizacion_bytes(cotizacion),
+            folio=folio,
+            extra_attachments=extras,
+        )
+        response = jsonify({
+            "ok": True,
+            "message": f"Cotización enviada a {result.get('recipient')}.",
+            "result": result,
+        })
+        token = trusted_device_token()
+        if token:
+            response.set_cookie(
+                "hsc_mail_trusted", token, max_age=315360000, secure=True,
+                httponly=True, samesite="Strict", path="/api",
+            )
+        return response, 200
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    except FileNotFoundError as exc:
+        return jsonify(ok=False, error=str(exc)), 404
+    except smtplib.SMTPAuthenticationError:
+        return jsonify(ok=False, error="CarrierZone rechazó el usuario o la contraseña del correo."), 502
+    except Exception:
+        current_app.logger.exception("No se pudo enviar la cotización %s", qid)
+        return jsonify(ok=False, error="No se pudo enviar el correo. La cotización permanece disponible para reintentar."), 502
 
 
 def _combinar_receptor_cotizacion(cotizacion, cliente_actual):

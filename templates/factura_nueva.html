@@ -126,6 +126,9 @@
         <label>Serie (opcional)</label>
         <input id="serie" placeholder="Dejar vacía para usar la serie de Facturama" />
 
+        <label>Número de orden de compra (opcional)</label>
+        <input id="ordenCompra" maxlength="100" placeholder="Ej. OC-45872" autocomplete="off" />
+
         <label>Condiciones (opcional)</label>
         <input id="cond" placeholder="Crédito 15 días" />
 
@@ -696,6 +699,7 @@
         forma_pago: document.getElementById('forma').value||'03',
         metodo_pago: document.getElementById('metodo').value||'PUE',
         serie: (document.getElementById('serie').value||'').trim(),
+        numero_orden_compra: (document.getElementById('ordenCompra').value||'').trim(),
         condiciones: document.getElementById('cond').value||'',
         source_quote_id: pageQuoteId,
         cliente_carpeta: document.getElementById('cliente').value || pageClientName || document.getElementById('razon').value,

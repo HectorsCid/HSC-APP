@@ -456,8 +456,11 @@ def _build_facturama_cfdi(payload):
         cfdi["Serie"] = str(payload["serie"]).strip()
     if payload.get("folio"):
         cfdi["Folio"] = str(payload["folio"]).strip()
-    if payload.get("source_quote_id"):
-        cfdi["OrderNumber"] = str(payload["source_quote_id"]).strip()
+    order_number = str(payload.get("numero_orden_compra") or "").strip()
+    if len(order_number) > 100:
+        raise ValueError("El número de orden de compra admite hasta 100 caracteres")
+    if order_number:
+        cfdi["OrderNumber"] = order_number
     if payload.get("condiciones"):
         cfdi["PaymentConditions"] = str(payload["condiciones"]).strip()
     return cfdi
@@ -1075,8 +1078,14 @@ def api_invoice_email(inv_id):
     body = request.get_json(silent=True) or {}
     recipient = str(body.get("email") or "").strip()
     folio = str(body.get("folio") or body.get("uuid") or inv_id).strip()
-    subject = str(body.get("subject") or f"Factura {folio} — HSC Refrigeración")
-    comments = str(body.get("message") or "Adjuntamos su factura en formatos PDF y XML.\n\nHSC Refrigeración")
+    subject = str(body.get("subject") or f"Factura HSC {folio}")
+    comments = str(body.get("message") or (
+        "Buen día, estimado cliente. Envío la factura solicitada.\n\n"
+        "De antemano muchas gracias.\n\n"
+        "Quedo a sus órdenes.\n\n"
+        "Ing. Héctor Silva Cid\n\n"
+        "Cel: 5527605496"
+    ))
     if not smtp_config()["configured"]:
         return jsonify({"ok": False, "error": "Falta configurar el correo de salida de HSC en Render."}), 503
     trusted_cookie = request.cookies.get("hsc_mail_trusted", "")
@@ -1098,7 +1107,11 @@ def api_invoice_email(inv_id):
             xml_bytes=xml,
             folio=folio,
         )
-        response = jsonify({"ok": True, "message": f"Factura enviada a {recipient}.", "result": result})
+        response = jsonify({
+            "ok": True,
+            "message": f"Factura enviada a {result.get('recipient') or recipient}.",
+            "result": result,
+        })
         response.set_cookie(
             "hsc_mail_trusted", trusted_device_token(), max_age=315360000,
             secure=True, httponly=True, samesite="Strict", path="/api",
