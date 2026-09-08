@@ -46,7 +46,7 @@ from google.auth.exceptions import RefreshError
 
 # Otros
 from werkzeug.utils import safe_join, secure_filename
-from smtp_mailer import authorized_to_send, send_quote_email, smtp_config, trusted_device_token
+from smtp_mailer import authorized_to_send, parse_recipients, send_quote_email, smtp_config, trusted_device_token
 from reportes_bp import reportes_bp, start_auto_report_monitor
 
 from facturacion_bp import facturacion_bp
@@ -2650,11 +2650,19 @@ def _contactos_cliente_seleccionado(nombre="", rfc=""):
         )
         if coincide:
             legacy = str(datos.get("correo_facturacion") or datos.get("email") or "").strip()
+            historial = datos.get("correos_historial") or []
+            historial = [item if isinstance(item, dict) else {"email": str(item)} for item in historial]
+            historial = sorted(
+                [item for item in historial if str(item.get("email") or "").strip()],
+                key=lambda item: (int(item.get("usos") or 0), str(item.get("ultimo_uso") or "")),
+                reverse=True,
+            )[:20]
             return {
                 "compras": str(datos.get("correo_compras") or "").strip(),
                 "cuentas_pagar": str(datos.get("correo_cuentas_pagar") or legacy).strip(),
+                "historial": historial,
             }
-    return {"compras": "", "cuentas_pagar": ""}
+    return {"compras": "", "cuentas_pagar": "", "historial": []}
 
 
 @app.post("/api/clientes/contactos-seleccionado")
@@ -2664,6 +2672,64 @@ def api_contactos_cliente_seleccionado():
     payload = request.get_json(silent=True) or {}
     correos = _contactos_cliente_seleccionado(payload.get("nombre"), payload.get("rfc"))
     return jsonify(ok=True, correos=correos), 200
+
+
+@app.post("/api/clientes/correos-historial")
+def api_historial_correos_cliente():
+    if not authorized_to_send("", request.cookies.get("hsc_mail_trusted", "")):
+        return jsonify(ok=False, error="Este navegador todavía no está autorizado."), 403
+    payload = request.get_json(silent=True) or {}
+    nombre_key = str(payload.get("nombre") or "").strip().casefold()
+    rfc_key = str(payload.get("rfc") or "").strip().upper()
+    action = str(payload.get("action") or "record").strip().lower()
+    try:
+        emails = parse_recipients(payload.get("emails"))
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+
+    with _CLIENTES_DATA_LOCK:
+        selected = None
+        for alias, datos in clientes_predefinidos.items():
+            if not isinstance(datos, dict):
+                continue
+            nombres = {
+                str(alias or "").strip().casefold(),
+                str(datos.get("razon_social") or "").strip().casefold(),
+                str(datos.get("razon") or "").strip().casefold(),
+            }
+            if (rfc_key and str(datos.get("rfc") or "").strip().upper() == rfc_key) or (nombre_key and nombre_key in nombres):
+                selected = datos
+                break
+        if selected is None:
+            return jsonify(ok=False, error="No se encontró el cliente para guardar su historial."), 404
+
+        records = selected.get("correos_historial") or []
+        by_email = {}
+        for item in records:
+            item = item if isinstance(item, dict) else {"email": str(item), "usos": 1}
+            email = str(item.get("email") or "").strip()
+            if email:
+                by_email[email.casefold()] = {
+                    "email": email,
+                    "usos": max(1, int(item.get("usos") or 1)),
+                    "ultimo_uso": str(item.get("ultimo_uso") or ""),
+                }
+        if action == "delete":
+            for email in emails:
+                by_email.pop(email.casefold(), None)
+        else:
+            now = datetime.now().isoformat(timespec="seconds")
+            for email in emails:
+                record = by_email.get(email.casefold(), {"email": email, "usos": 0, "ultimo_uso": ""})
+                record["usos"] += 1
+                record["ultimo_uso"] = now
+                by_email[email.casefold()] = record
+        selected["correos_historial"] = sorted(
+            by_email.values(), key=lambda item: (item["usos"], item["ultimo_uso"]), reverse=True
+        )[:20]
+        guardar_clientes(clientes_predefinidos)
+        historial = list(selected["correos_historial"])
+    return jsonify(ok=True, historial=historial), 200
 
 # ---------- NUEVO: listado para inicio_cotizacion ----------
 @app.get("/api/cotizaciones/list")
@@ -2736,17 +2802,14 @@ def _pdf_cotizacion_bytes(cotizacion):
 
 def _correos_cotizacion(cotizacion):
     nombre = str(cotizacion.get("cliente") or "").strip()
-    with _CLIENTES_DATA_LOCK:
-        cliente = dict(clientes_predefinidos.get(nombre, {}) or {})
     receptor = cotizacion.get("receptor") or {}
-    legacy = str(
-        cliente.get("correo_facturacion") or cliente.get("email")
-        or receptor.get("correo_facturacion") or receptor.get("email") or ""
-    ).strip()
-    return {
-        "compras": str(cliente.get("correo_compras") or legacy).strip(),
-        "cuentas_pagar": str(cliente.get("correo_cuentas_pagar") or legacy).strip(),
-    }
+    correos = _contactos_cliente_seleccionado(nombre, receptor.get("rfc"))
+    fallback = str(receptor.get("correo_facturacion") or receptor.get("email") or "").strip()
+    if not correos["compras"]:
+        correos["compras"] = fallback or correos["cuentas_pagar"]
+    if not correos["cuentas_pagar"]:
+        correos["cuentas_pagar"] = fallback
+    return correos
 
 
 @app.route("/api/cotizaciones/<qid>/email", methods=["GET", "POST"])
@@ -2764,6 +2827,7 @@ def api_enviar_cotizacion(qid):
             configured=bool(cfg.get("configured")),
             trusted=trusted,
             cliente=str(cotizacion.get("cliente") or ""),
+            rfc=str((cotizacion.get("receptor") or {}).get("rfc") or ""),
             folio=str(cotizacion.get("folio") or cotizacion.get("id") or ""),
             email=correos["compras"] or correos["cuentas_pagar"],
             correos=correos,

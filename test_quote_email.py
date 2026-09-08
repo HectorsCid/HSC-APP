@@ -40,7 +40,7 @@ class QuoteEmailTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["email"], "compras@example.com")
         self.assertEqual(response.get_json()["correos"], {
-            "compras": "compras@example.com", "cuentas_pagar": "pagos@example.com",
+            "compras": "compras@example.com", "cuentas_pagar": "pagos@example.com", "historial": [],
         })
         self.assertTrue(response.get_json()["trusted"])
 
@@ -57,6 +57,29 @@ class QuoteEmailTests(unittest.TestCase):
         with patch.object(cotizador, "authorized_to_send", return_value=False):
             response = self.client.post("/api/clientes/contactos-seleccionado", json={"rfc": "BTI010101AAA"})
         self.assertEqual(response.status_code, 403)
+
+    def test_email_history_learns_only_after_authorized_request_and_can_delete(self):
+        with (
+            patch.object(cotizador, "authorized_to_send", return_value=True),
+            patch.object(cotizador, "guardar_clientes") as save,
+        ):
+            learned = self.client.post("/api/clientes/correos-historial", json={
+                "action": "record",
+                "nombre": "BTICINO DE MEXICO SA DE CV",
+                "rfc": "BTI010101AAA",
+                "emails": "nuevo@example.com; compras@example.com",
+            })
+            removed = self.client.post("/api/clientes/correos-historial", json={
+                "action": "delete",
+                "rfc": "BTI010101AAA",
+                "emails": "nuevo@example.com",
+            })
+        self.assertEqual(learned.status_code, 200)
+        self.assertEqual({item["email"] for item in learned.get_json()["historial"]}, {
+            "nuevo@example.com", "compras@example.com",
+        })
+        self.assertEqual([item["email"] for item in removed.get_json()["historial"]], ["compras@example.com"])
+        self.assertEqual(save.call_count, 2)
 
     def test_send_includes_quote_and_optional_attachment(self):
         with (

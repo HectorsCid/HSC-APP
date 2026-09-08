@@ -63,6 +63,9 @@
   .cm-input, .cm-select{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px}
   .cm-hint{font-size:.85rem;color:#6b7280}
   .cm-recipient-presets{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.cm-recipient-presets .cm-btn{padding:6px 9px;font-size:12px}
+  .email-history{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.email-history:empty{display:none}
+  .email-history-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:5px 7px;background:var(--surface);color:var(--ink);font-size:11px;cursor:pointer}
+  .email-history-remove{color:var(--muted);padding:0 2px;font-weight:900}
   .hidden{display:none}
   .flash{display:none;margin-bottom:14px;padding:11px 14px;border-radius:12px;font-weight:700}
   .flash.ok{display:block;background:#dcfce7;border:1px solid #86efac;color:#14532d}
@@ -284,6 +287,7 @@
           <button class="cm-btn cm-btn-ghost" type="button" data-invoice-recipient="cuentas_pagar">Cuentas por pagar</button>
           <button class="cm-btn cm-btn-ghost" type="button" data-invoice-recipient="ambos">Ambos</button>
         </div>
+        <div id="emHistory" class="email-history" aria-label="Correos usados recientemente"></div>
       </div>
       <div><label for="emSubject">Asunto</label><input id="emSubject" class="cm-input" type="text" /></div>
       <div><label for="emMessage">Mensaje</label><textarea id="emMessage" class="cm-input" rows="5"></textarea></div>
@@ -487,7 +491,40 @@ const emKey = $('#emKey');
 const emKeyWrap = $('#emKeyWrap');
 const emErr = $('#emErr');
 const emConfirm = $('#emConfirm');
+const emHistory = $('#emHistory');
 let emailCtx = null;
+
+function addInvoiceRecipient(email){
+  const current = emEmail.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
+  emEmail.value = [...new Set([...current, email])].join('; ');
+}
+
+function renderInvoiceHistory(history){
+  emHistory.innerHTML = '';
+  (history || []).forEach(item=>{
+    const email = String(item.email || '').trim();
+    if(!email) return;
+    const chip = document.createElement('button');
+    chip.type = 'button'; chip.className = 'email-history-chip';
+    chip.append(document.createTextNode(email));
+    const remove = document.createElement('span');
+    remove.className = 'email-history-remove'; remove.textContent = '×'; remove.title = 'Quitar sugerencia';
+    remove.onclick = async event=>{
+      event.stopPropagation();
+      try{
+        const response = await fetch('/api/clientes/correos-historial', {
+          method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
+          body:JSON.stringify({action:'delete', emails:email, nombre:emailCtx?.cliente || '', rfc:emailCtx?.rfc || ''})
+        });
+        const data = await response.json();
+        if(response.ok && data.ok) renderInvoiceHistory(data.historial);
+      }catch(_){ /* La sugerencia puede quitarse después. */ }
+    };
+    chip.append(remove);
+    chip.onclick = ()=>addInvoiceRecipient(email);
+    emHistory.append(chip);
+  });
+}
 
 async function openEmailModal(ctx){
   emailCtx = ctx;
@@ -500,6 +537,7 @@ async function openEmailModal(ctx){
   emErr.textContent = '';
   emConfirm.disabled = false;
   emConfirm.textContent = '✉ Enviar PDF y XML';
+  renderInvoiceHistory([]);
   em.classList.add('show');
   document.querySelectorAll('[data-invoice-recipient]').forEach(button=>button.disabled=true);
   try{
@@ -516,6 +554,7 @@ async function openEmailModal(ctx){
         if(contactsResponse.ok && contacts.ok){
           emailCtx.correos = contacts.correos || {};
           emEmail.value = emailCtx.correos.cuentas_pagar || ctx.email || '';
+          renderInvoiceHistory(emailCtx.correos.historial || []);
           document.querySelectorAll('[data-invoice-recipient]').forEach(button=>{
             const mode = button.getAttribute('data-invoice-recipient');
             button.disabled = mode === 'ambos'
@@ -581,9 +620,15 @@ emConfirm.addEventListener('click', async ()=>{
     });
     const data = await response.json();
     if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo enviar el correo.');
+    const sentContext = emailCtx;
+    const sentEmails = emEmail.value.trim();
     emKey.value = '';
     em.classList.remove('show');
     emailCtx = null;
+    fetch('/api/clientes/correos-historial', {
+      method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body:JSON.stringify({action:'record', emails:sentEmails, nombre:sentContext?.cliente || '', rfc:sentContext?.rfc || ''})
+    }).catch(()=>{});
     pageMsg.className = 'flash ok';
     pageMsg.textContent = data.message || 'Factura enviada correctamente.';
     setTimeout(()=>{ pageMsg.className='flash'; }, 6000);

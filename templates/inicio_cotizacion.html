@@ -77,6 +77,9 @@
     .mail-input{width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font:inherit}
     .mail-hint{font-size:12px;color:var(--muted);margin-top:4px}.mail-error{color:var(--danger);font-weight:650}
     .recipient-presets{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.recipient-presets .btn{padding:6px 8px;font-size:11px}
+    .mail-history{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.mail-history:empty{display:none}
+    .history-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:5px 7px;background:var(--button);color:var(--ink);font-size:11px;cursor:pointer}
+    .history-remove{border:0;background:transparent;color:var(--muted);padding:0 2px;cursor:pointer;font-weight:900}
     @media(max-width:700px){
       .top{align-items:flex-start;flex-wrap:wrap}
       .top>.actions{width:100%}
@@ -156,6 +159,7 @@
             <button class="btn" type="button" data-quote-recipient="cuentas_pagar">Cuentas por pagar</button>
             <button class="btn" type="button" data-quote-recipient="ambos">Ambos</button>
           </div>
+          <div id="quoteMailHistory" class="mail-history" aria-label="Correos usados recientemente"></div>
         </div>
         <div><label for="quoteMailSubject">Asunto</label><input id="quoteMailSubject" class="mail-input" type="text" /></div>
         <div><label for="quoteMailMessage">Mensaje</label><textarea id="quoteMailMessage" class="mail-input" rows="6"></textarea></div>
@@ -364,6 +368,42 @@
     const quoteMailKeyWrap = document.getElementById('quoteMailKeyWrap');
     const quoteMailError = document.getElementById('quoteMailError');
     const quoteMailSend = document.getElementById('quoteMailSend');
+    const quoteMailHistory = document.getElementById('quoteMailHistory');
+
+    function addQuoteRecipient(email){
+      const current = quoteMailTo.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
+      quoteMailTo.value = [...new Set([...current, email])].join('; ');
+    }
+
+    function renderQuoteHistory(history){
+      quoteMailHistory.innerHTML = '';
+      (history || []).forEach(item=>{
+        const email = String(item.email || '').trim();
+        if(!email) return;
+        const chip = document.createElement('button');
+        chip.type = 'button'; chip.className = 'history-chip';
+        chip.append(document.createTextNode(email));
+        const remove = document.createElement('span');
+        remove.className = 'history-remove'; remove.textContent = '×'; remove.title = 'Quitar sugerencia';
+        remove.onclick = async event=>{
+          event.stopPropagation();
+          try{
+            const response = await fetch('/api/clientes/correos-historial', {
+              method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
+              body:JSON.stringify({
+                action:'delete', emails:email,
+                nombre:quoteMailContext?.cliente || '', rfc:quoteMailContext?.rfc || ''
+              })
+            });
+            const data = await response.json();
+            if(response.ok && data.ok) renderQuoteHistory(data.historial);
+          }catch(_){ /* La sugerencia puede quitarse después. */ }
+        };
+        chip.append(remove);
+        chip.onclick = ()=>addQuoteRecipient(email);
+        quoteMailHistory.append(chip);
+      });
+    }
 
     async function openQuoteMail(id){
       quoteMailContext = {id};
@@ -373,6 +413,7 @@
       quoteMailKeyWrap.style.display = 'none';
       quoteMailSend.disabled = false;
       quoteMailSend.textContent = '✉ Enviar cotización';
+      renderQuoteHistory([]);
       quoteMail.classList.add('show');
       try{
         const response = await fetch(`/api/cotizaciones/${encodeURIComponent(id)}/email`, {headers:{'Accept':'application/json'}});
@@ -380,6 +421,7 @@
         if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo preparar el envío.');
         quoteMailContext = data;
         quoteMailTo.value = data.email || '';
+        renderQuoteHistory(data.correos?.historial || []);
         document.querySelectorAll('[data-quote-recipient]').forEach(button=>{
           const mode = button.getAttribute('data-quote-recipient');
           const hasValue = mode === 'ambos'
@@ -445,8 +487,14 @@
         });
         const data = await response.json();
         if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo enviar el correo.');
+        const sentContext = quoteMailContext;
+        const sentEmails = quoteMailTo.value.trim();
         quoteMail.classList.remove('show');
         quoteMailContext = null;
+        fetch('/api/clientes/correos-historial', {
+          method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
+          body:JSON.stringify({action:'record', emails:sentEmails, nombre:sentContext?.cliente || '', rfc:sentContext?.rfc || ''})
+        }).catch(()=>{});
         msg(true, data.message || 'Cotización enviada correctamente.');
         setTimeout(()=>{ document.getElementById('msg').className='flash'; }, 6000);
       }catch(error){
