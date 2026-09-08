@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Complemento de Pago - HSC</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{--bg:#fff;--card:#f9fafb;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--brand:#374151;--ok:#22c55e;--danger:#ef4444}
+  *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Roboto,system-ui,-apple-system,sans-serif}
+  .wrap{max-width:920px;margin:0 auto;padding:18px}
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .title{font-size:1.25rem;font-weight:800}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 6px 20px rgba(17,24,39,.05);margin-bottom:14px}
+  label{display:block;font-size:.9rem;color:var(--muted);margin:8px 0 6px}
+  input,select{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:16px;background:#fff;outline:none}
+  .row{display:grid;gap:12px} @media(min-width:720px){.row-2{grid-template-columns:1fr 1fr}}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);cursor:pointer;font-weight:700;font-size:15px;background:#f9f9f9;color:#0f172a;text-decoration:none}
+  .btn[disabled]{opacity:.6;cursor:not-allowed}
+  .btn:hover{background:#f3f4f6} .btn-primary{background:var(--brand);color:#fff;border-color:transparent}
+  .btn-ok{background:var(--ok);color:#fff;border-color:transparent}
+  .actions{display:flex;flex-wrap:wrap;gap:10px}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9rem;white-space:pre-wrap}
+  .flash{display:none;margin:12px 0;padding:10px 12px;border-radius:12px;font-weight:600}
+  .ok{display:block;background:#dcfce7;border:1px solid #bbf7d0;color:#14532d}
+  .err{display:block;background:#fee2e2;border:1px solid #fecaca;color:#7f1d1d}
+  .pill{font-size:.85rem;color:var(--muted)}
+  .spin{width:16px;height:16px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <div class="title">Complemento de pago</div>
+      <div class="pill">Genera REP para facturas PPD</div>
+    </div>
+    <div class="actions">
+      <a class="btn" href="/facturacion">← Listado</a>
+    </div>
+  </div>
+
+  <div id="msg" class="flash"></div>
+
+  <div class="card">
+    <div class="row row-2">
+      <div>
+        <label>UUID o Invoice ID</label>
+        <input id="ref" placeholder="Pega el UUID (xxxx-...) o el ID (68dd...)" />
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="btnBuscar" class="btn">🔎 Buscar factura</button>
+      </div>
+    </div>
+    <div id="invBox" style="display:none;margin-top:12px">
+      <div class="row row-2">
+        <div><label>Receptor</label><input id="invReceptor" disabled /></div>
+        <div><label>RFC</label><input id="invRFC" disabled /></div>
+      </div>
+      <div class="row row-2">
+        <div><label>Método</label><input id="invMetodo" disabled /></div>
+        <div><label>Total</label><input id="invTotal" disabled /></div>
+      </div>
+      <div class="row row-2">
+        <div><label>UUID</label><input id="invUUID" disabled /></div>
+        <div><label>Invoice ID</label><input id="invID" disabled /></div>
+      </div>
+      <div class="row row-2">
+        <div><label>Régimen fiscal</label><input id="invRegimen" placeholder="Ej. 601" /></div>
+        <div><label>Código postal fiscal</label><input id="invCP" placeholder="5 dígitos" /></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row row-2">
+      <div>
+        <label>Importe a pagar</label>
+        <input id="amount" type="number" step="0.01" min="0" placeholder="Ej. 1000.00" />
+      </div>
+      <div>
+        <label>Forma de pago</label>
+        <select id="payment_form">
+          <option value="03">03 - Transferencia</option>
+          <option value="01">01 - Efectivo</option>
+          <option value="28">28 - Tarjeta de débito</option>
+        </select>
+      </div>
+    </div>
+    <div class="row row-2">
+      <div>
+        <label>Saldo anterior</label>
+        <input id="previous_balance" type="number" step="0.01" min="0.01" />
+      </div>
+      <div>
+        <label>Número de parcialidad</label>
+        <input id="partiality_number" type="number" step="1" min="1" value="1" />
+      </div>
+    </div>
+    <div class="row row-2">
+      <div>
+        <label>Fecha de pago (opcional)</label>
+        <input id="pay_date" type="datetime-local" />
+      </div>
+      <div>
+        <label>Referencia (opcional)</label>
+        <input id="reference" placeholder="No. operación, nota, etc." />
+      </div>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button id="btnCrear" class="btn btn-ok" type="button" disabled>💳 Crear complemento</button>
+      <a id="lnkVerPDF" class="btn" style="display:none" target="_blank">📄 Ver REP PDF</a>
+      <a id="lnkVerXML" class="btn" style="display:none" target="_blank">🧩 Ver REP XML</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 class="section-title">Respuesta</h3>
+    <pre id="out" class="mono"></pre>
+  </div>
+</div>
+
+<script>
+const msg = (ok,t) => { const el=document.getElementById('msg'); el.className='flash '+(ok?'ok':'err'); el.textContent=t; };
+const $ = id => document.getElementById(id);
+let cachedInvoice = null;
+let lock = false; // antirrebote
+
+$('btnBuscar').onclick = async () => {
+  if(lock) return;
+  msg(true,'Buscando…'); $('invBox').style.display='none'; $('btnCrear').disabled = true;
+  $('out').textContent = ''; $('lnkVerPDF').style.display='none'; $('lnkVerXML').style.display='none';
+  const ref = $('ref').value.trim();
+  if(!ref){ msg(false,'Ingresa UUID o invoice_id'); return; }
+
+  try{
+    lock = true;
+    let invoice_id = ref;
+    if(ref.includes('-')){ // UUID
+      const rs = await fetch(`/api/pagos/resolve?uuid=${encodeURIComponent(ref)}`);
+      const d = await rs.json();
+      if(!rs.ok) throw new Error(d.error || 'UUID no encontrado');
+      invoice_id = d.id;
+    }
+    const ri = await fetch(`/api/pagos/info/${invoice_id}`);
+    const inv = await ri.json();
+    if(!ri.ok) throw new Error(inv.error || 'Factura no encontrada');
+
+    cachedInvoice = inv;
+    $('invReceptor').value = inv.customer?.legal_name || '';
+    $('invRFC').value = inv.customer?.tax_id || '';
+    $('invMetodo').value = inv.payment_method || '';
+    $('invTotal').value = inv.total?.toFixed ? inv.total.toFixed(2) : inv.total;
+    $('invUUID').value = inv.uuid || '';
+    $('invID').value = inv.id || '';
+    $('invRegimen').value = inv.customer?.tax_system || '';
+    $('invCP').value = inv.customer?.zip || '';
+    $('invBox').style.display='block';
+    msg(true,'Factura encontrada');
+
+    $('amount').value = inv.total || '';
+    $('previous_balance').value = inv.total || '';
+    $('btnCrear').disabled = (inv.payment_method !== 'PPD');
+    if(inv.payment_method !== 'PPD') msg(false,'La factura no es PPD. No procede REP.');
+  }catch(e){
+    msg(false,e.message);
+  }finally{
+    lock = false;
+  }
+};
+
+$('btnCrear').onclick = async () => {
+  if(lock) return;
+  if(!cachedInvoice){ msg(false,'Primero busca la factura'); return; }
+  const body = {
+    invoice_id: cachedInvoice.id,
+    payment_form: $('payment_form').value,
+    amount: parseFloat($('amount').value||0),
+    previous_balance: parseFloat($('previous_balance').value||0),
+    partiality_number: parseInt($('partiality_number').value||1, 10),
+    tax_system: $('invRegimen').value.trim(),
+    tax_zip: $('invCP').value.trim()
+  };
+  const dt = $('pay_date').value.trim(); if(dt) body.date = dt;
+  const rf = $('reference').value.trim(); if(rf) body.reference = rf;
+
+  // antirrebote UI
+  const btn = $('btnCrear');
+  const oldHtml = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Timbrando…';
+  msg(true,'Creando complemento…'); $('lnkVerPDF').style.display='none'; $('lnkVerXML').style.display='none';
+
+  try{
+    lock = true;
+    const r = await fetch('/api/pagos/crear', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const data = await r.json();
+    $('out').textContent = JSON.stringify(data,null,2);
+    if(r.ok && data.ok){
+      msg(true, `REP creado: ${data.uuid}`);
+      const repPdf = data.pdf_url || ('/' + (data.pdf_path||'').replace(/\\/g,'/'));
+      const repXml = data.xml_url || ('/' + (data.xml_path||'').replace(/\\/g,'/'));
+      if (data.pdf_url || data.pdf_path) { $('lnkVerPDF').href = repPdf; $('lnkVerPDF').style.display='inline-flex'; }
+      if (data.xml_url || data.xml_path) { $('lnkVerXML').href = repXml; $('lnkVerXML').style.display='inline-flex'; }
+    }else{
+      msg(false, `Error: ${data.error ? JSON.stringify(data.error) : 'ver detalles'}`);
+      btn.disabled = false; // solo reactivar si falló
+    }
+  }catch(e){
+    msg(false,e.message);
+    btn.disabled = false;
+  }finally{
+    btn.innerHTML = oldHtml;
+    lock = false;
+  }
+};
+
+// precarga por querystring
+(function preload(){
+  const qs = new URLSearchParams(location.search);
+  const id = qs.get('invoice_id'); const u = qs.get('uuid');
+  if(id || u){ $('ref').value = id || u; $('btnBuscar').click(); }
+})();
+</script>
+</body>
+</html>
+

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Clientes · HSC</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{--bg:#fff;--card:#f9fafb;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--brand:#374151}
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Roboto,system-ui,-apple-system,sans-serif}
+    .wrap{max-width:1100px;margin:0 auto;padding:18px}
+    .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .title{font-weight:800;font-size:1.2rem}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;color:#111827;text-decoration:none;cursor:pointer}
+    .btn:hover{background:#f3f4f6}
+    .btn-primary{background:var(--brand);color:#fff;border-color:transparent}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+    .row{display:flex;gap:10px;align-items:center}
+    .grow{flex:1}
+    input[type="search"]{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+    .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#fff;margin-top:10px}
+    table{width:100%;border-collapse:collapse;min-width:820px}
+    th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;font-size:14px}
+    th{background:#f8fafc;font-weight:700;color:#334155}
+    .muted{color:#6b7280}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div class="title">Clientes</div>
+      <div class="row">
+        <a class="btn" href="/inicio-app">← Inicio</a>
+        <a class="btn btn-primary" href="/nuevo_cliente">➕ Nuevo cliente</a>
+      </div>
+    </div>
+
+    <!-- Datos embebidos -->
+    <script type="application/json" id="clientes-data">
+      {{ clientes | tojson | safe }}
+    </script>
+
+    <div class="card">
+      <div class="row">
+        <input id="q" type="search" class="grow" placeholder="Buscar por nombre o RFC…" />
+        <button id="btnReload" class="btn" type="button">🔄</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>RFC</th>
+              <th>Razón social</th>
+              <th>CP</th>
+              <th style="width:260px">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="5" class="muted">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  (function(){
+    const $ = s=>document.querySelector(s);
+    const tbody = $('#tbody');
+    const q = $('#q');
+
+    function readEmbed(){
+      const el = document.getElementById('clientes-data');
+      if(!el) return {};
+      try{ return JSON.parse(el.textContent); }catch{ return {}; }
+    }
+
+    function toArray(data){
+      if(Array.isArray(data)) return data;
+      if(data && typeof data==='object'){
+        return Object.entries(data).map(([id,v])=>({id, ...(v||{})}));
+      }
+      return [];
+    }
+
+    function normalize(x){
+      return {
+        id: x.id || x.nombre || x.razon_social || '',
+        nombre: x.nombre || x.razon_social || x.id || '',
+        rfc: (x.rfc||'').toUpperCase(),
+        razon: x.razon_social || x.legal_name || '',
+        cp: x.cp || x.codigo_postal || ''
+      };
+    }
+
+    function render(list){
+      if(!list.length){
+        tbody.innerHTML = `<tr><td colspan="5" class="muted">Sin clientes.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = list.map(c=>`
+        <tr>
+          <td>${esc(c.nombre)}</td>
+          <td>${esc(c.rfc)}</td>
+          <td>${esc(c.razon)}</td>
+          <td>${esc(c.cp)}</td>
+          <td>
+            <div class="actions">
+              <button class="btn" data-editar="${escAttr(c.nombre)}">✏️ Editar</button>
+              <button class="btn" data-open="/" data-cliente="${escAttr(c.nombre)}">🧾 Cotizar</button>
+              <button class="btn" data-open="/facturas/nueva" data-cliente="${escAttr(c.nombre)}">🧾 Facturar</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      tbody.querySelectorAll('button[data-editar]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          const nom = btn.getAttribute('data-editar');
+          try{
+            const r = await fetch('/set_cliente', {
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({cliente: nom})
+            });
+            if(!r.ok){ alert('No se pudo seleccionar el cliente.'); return; }
+            location.href = '/editar_cliente';
+          }catch{ alert('Error de red.'); }
+        };
+      });
+
+      tbody.querySelectorAll('button[data-open]').forEach(btn=>{
+        btn.onclick = async ()=>{
+          const nom = btn.getAttribute('data-cliente');
+          const target = btn.getAttribute('data-open');
+          try{
+            const r = await fetch('/set_cliente', {
+              method:'POST',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({cliente: nom})
+            });
+            if(!r.ok){ alert('No se pudo seleccionar el cliente.'); return; }
+            location.href = target.startsWith('/facturas/nueva')
+              ? `${target}?cliente=${encodeURIComponent(nom)}`
+              : target;
+          }catch{ alert('Error de red.'); }
+        };
+      });
+    }
+
+    function esc(s){ return String(s||'').replace(/[&<>"]/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
+    function escAttr(s){ return String(s||'').replace(/"/g,'&quot;'); }
+
+    let DATA = toArray(readEmbed()).map(normalize);
+    render(DATA);
+
+    q.addEventListener('input', ()=>{
+      const term = q.value.trim().toLowerCase();
+      if(!term){ render(DATA); return; }
+      render(DATA.filter(c =>
+        [c.nombre,c.rfc,c.razon].some(v=>String(v||'').toLowerCase().includes(term))
+      ));
+    });
+
+    document.getElementById('btnReload').onclick = ()=>{
+      // recarga rápida desde el embed actual
+      DATA = toArray(readEmbed()).map(normalize);
+      render(DATA);
+    };
+  })();
+  </script>
+</body>
+</html>

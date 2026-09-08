@@ -186,14 +186,20 @@ def _facturama_invoice_row(inv):
         uuid = _pick(_pick(complement, "TaxStamp") or {}, "Uuid")
     active = _pick(inv, "IsActive")
     status = _pick(inv, "Status") or ("active" if active is not False else "canceled")
+    cfdi_type = str(_pick(inv, "CfdiType", "Type") or "I").strip().lower()
+    cfdi_type = {
+        "ingreso": "I", "pago": "P", "egreso": "E",
+        "traslado": "T", "nomina": "N", "nómina": "N",
+    }.get(cfdi_type, cfdi_type.upper()[:1])
+    payment_method = str(_pick(inv, "PaymentMethod") or "").strip().upper()[:3]
     return {
         "id": _pick(inv, "Id"),
         "uuid": str(uuid or "").strip(),
         "date": _pick(inv, "Date"),
         "total": _pick(inv, "Total"),
         "status": status,
-        "payment_method": _pick(inv, "PaymentMethod"),
-        "type": _pick(inv, "CfdiType", "Type") or "I",
+        "payment_method": payment_method,
+        "type": cfdi_type or "I",
         "customer_name": _pick(receiver, "Name", "LegalName", "TaxName") or _pick(inv, "TaxName"),
         "customer_tax_id": _pick(receiver, "Rfc", "TaxId") or _pick(inv, "Rfc"),
         "paid": False,
@@ -944,8 +950,15 @@ def api_list_facturas():
             return jsonify({"ok": False, "provider": "facturama", "error": _http_error_detail(exc)}), 400
         rows = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
         out = []
+        paid_idx = _read_index()
         for inv in rows:
             normalized = _facturama_invoice_row(inv)
+            payment = paid_idx.get(normalized["uuid"]) or {}
+            normalized["paid"] = (
+                normalized["type"] == "I"
+                and payment.get("status") == "active"
+                and float(payment.get("remaining_balance") or 0) <= 0
+            )
             # Los intentos rechazados pueden tener Id, pero no folio fiscal.
             if normalized["id"] and _valid_cfdi_uuid(normalized["uuid"]):
                 out.append(normalized)

@@ -49,7 +49,7 @@ app.register_blueprint(facturacion_bp)
 print(">>> Blueprint facturacion registrado")
 print(app.url_map)
 
-from pagos_bp import pagos_bp
+from pagos_facturama_bp import pagos_bp
 app.register_blueprint(pagos_bp)
 
 # imports facturas
@@ -2766,6 +2766,15 @@ def ui_clientes():
         data = clientes_predefinidos or {}
     except NameError:
         data = {}
+
+    # En Render la página puede abrir antes de que termine la sincronización
+    # inicial. Si todavía no hay datos, obtenerlos aquí evita una lista vacía.
+    if not data and (IS_RENDER or AUTO_SYNC_FROM_DRIVE):
+        try:
+            _sync_clientes_from_drive_into_memory()
+            data = clientes_predefinidos or {}
+        except Exception as exc:
+            app.logger.warning("No se pudieron actualizar clientes al abrir el panel: %s", exc)
 
     # Fallback al archivo local si no hay nada en memoria
     if not data:

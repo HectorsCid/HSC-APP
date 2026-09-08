@@ -304,6 +304,10 @@
           calc();
         }
       });
+      const requestedClient = new URLSearchParams(location.search).get('cliente') || '';
+      if(sel && requestedClient && [...sel.options].some(o => o.value === requestedClient)){
+        sel.value = requestedClient;
+      }
       if (sel && sel.value) fillFromName(sel.value);
     })();
 

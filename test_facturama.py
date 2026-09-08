@@ -231,6 +231,18 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(data[0]["customer_name"], "CLIENTE SAT")
         self.assertEqual(data[0]["customer_tax_id"], "URE180429TM6")
 
+    def test_invoice_list_normalizes_facturama_labels_for_actions(self):
+        rows = [{
+            "Id": "ppd-1", "Uuid": self.VALID_UUID, "CfdiType": "ingreso",
+            "PaymentMethod": "PPD - Pago en parcialidades o diferido",
+            "TaxName": "CLIENTE SAT", "Rfc": "URE180429TM6", "Total": 116,
+        }]
+        with patch.object(billing, "_fm_request", return_value=rows):
+            response = self.client.get("/api/facturas/list")
+        invoice = response.get_json()["data"][0]
+        self.assertEqual(invoice["type"], "I")
+        self.assertEqual(invoice["payment_method"], "PPD")
+
     def test_receiver_validation_reports_each_mismatched_sat_field(self):
         validation = {
             "ExistRfc": True,
