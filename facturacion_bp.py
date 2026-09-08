@@ -248,6 +248,29 @@ def _validate_receiver(receptor):
     return rfc, name, zip_code, regime
 
 
+def _facturama_receiver_validation(receptor):
+    """Valida contra Facturama/SAT los cuatro datos obligatorios del receptor."""
+    rfc, name, zip_code, regime = _validate_receiver(receptor)
+    result = _fm_request("POST", "/customers/validate", json_body={
+        "Rfc": rfc,
+        "Name": name,
+        "ZipCode": zip_code,
+        "FiscalRegime": regime,
+    }, timeout=30)
+    checks = (
+        ("ExistRfc", "rfc", "El RFC no fue localizado o no está habilitado para recibir CFDI."),
+        ("MatchName", "nombre", "La razón social no coincide con la registrada ante el SAT."),
+        ("MatchZipCode", "cp", "El código postal no coincide con el domicilio fiscal registrado ante el SAT."),
+        ("MatchFiscalRegime", "regimen_fiscal", "El régimen fiscal no coincide con el registrado ante el SAT."),
+    )
+    field_errors = {
+        field: message
+        for key, field, message in checks
+        if _pick(result, key) is not True
+    }
+    return result, field_errors
+
+
 def _build_facturama_cfdi(payload):
     cfg = _facturama_config()
     receptor = payload.get("receptor") or {}
@@ -524,6 +547,33 @@ def facturar():
                     "error": "No se pudo consultar el perfil fiscal de Facturama",
                     "detail": str(exc),
                 }), 502
+
+            try:
+                _, field_errors = _facturama_receiver_validation(payload.get("receptor") or {})
+            except requests.HTTPError as exc:
+                return jsonify({
+                    "ok": False,
+                    "provider": "facturama",
+                    "stage": "receiver_validation",
+                    "error": "No se pudieron validar los datos fiscales del receptor en Facturama.",
+                    "detail": _http_error_detail(exc),
+                }), 502
+            except requests.RequestException as exc:
+                return jsonify({
+                    "ok": False,
+                    "provider": "facturama",
+                    "stage": "receiver_validation",
+                    "error": "Facturama no respondió durante la validación del receptor. Intenta nuevamente.",
+                    "detail": str(exc),
+                }), 502
+            if field_errors:
+                return jsonify({
+                    "ok": False,
+                    "provider": "facturama",
+                    "stage": "receiver_validation",
+                    "error": next(iter(field_errors.values())),
+                    "field_errors": field_errors,
+                }), 400
 
             request_id = str(payload.get("request_id") or "").strip()
             if not request_id:

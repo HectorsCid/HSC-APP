@@ -356,21 +356,25 @@
 
     function valReceptor(){
       const rfc = document.getElementById('rfc');
+      const razon = document.getElementById('razon');
       const cp  = document.getElementById('cp');
       const reg = document.getElementById('regimen');
       const uso = document.getElementById('uso');
 
       const rfcVal = (rfc.value||'').trim().toUpperCase();
       rfc.value = rfcVal;
+      razon.value = (razon.value||'').trim().replace(/\s+/g, ' ').toUpperCase();
 
       const okRFC = RFC_RE.test(rfcVal);
+      const okRazon = !!razon.value;
       const okCP  = CP_RE.test((cp.value||'').trim());
       const okReg = !!(reg.value||'').trim();
       const okUso = !!(uso.value||'').trim();
 
-      mark(rfc, okRFC); mark(cp, okCP); mark(reg, okReg); mark(uso, okUso);
+      mark(rfc, okRFC); mark(razon, okRazon); mark(cp, okCP); mark(reg, okReg); mark(uso, okUso);
 
       if(!okRFC){ msg(false,'RFC inválido. Formato SAT requerido.'); return false; }
+      if(!okRazon){ msg(false,'Escribe la razón social exactamente como aparece en la constancia fiscal.'); return false; }
       if(!okCP){  msg(false,'Código postal debe ser 5 dígitos.'); return false; }
       if(!okReg){ msg(false,'Selecciona Régimen fiscal.'); return false; }
       if(!okUso){ msg(false,'Selecciona Uso de CFDI.'); return false; }
@@ -459,6 +463,20 @@
       }
       return 'No se pudo timbrar. Revisa los datos e intenta nuevamente.';
     }
+    function showServerFieldErrors(data){
+      const map = {
+        rfc: document.getElementById('rfc'),
+        nombre: document.getElementById('razon'),
+        cp: document.getElementById('cp'),
+        regimen_fiscal: document.getElementById('regimen')
+      };
+      Object.values(map).forEach(el=>mark(el, true));
+      const errors = data && data.field_errors;
+      if(!errors || typeof errors !== 'object') return;
+      Object.keys(errors).forEach(key=>mark(map[key], false));
+      const first = Object.keys(errors)[0];
+      if(first && map[first]) map[first].focus();
+    }
     document.getElementById('btnTimbrar').onclick = async () => {
       if(!valReceptor()) return;
       if(!valConceptos()) return;
@@ -466,8 +484,8 @@
       const stampButton = document.getElementById('btnTimbrar');
       if(stampButton.disabled) return;
       stampButton.disabled = true;
-      stampButton.textContent = '⏳ Timbrando…';
-      msg(true, 'Timbrando…');
+      stampButton.textContent = '⏳ Validando…';
+      msg(true, 'Validando los datos fiscales del receptor antes de timbrar…');
       document.getElementById('accionesPost').style.display = 'none';
       document.getElementById('accionesREP').style.display  = 'none';
 
@@ -527,6 +545,7 @@
           stampButton.textContent = '✅ Timbrada';
           setTimeout(()=>{ window.location.assign('/facturacion?timbrada=1'); }, 900);
         } else {
+          showServerFieldErrors(data);
           msg(false, readableError(data));
           stampButton.disabled = false;
           stampButton.textContent = '🧾 Timbrar';

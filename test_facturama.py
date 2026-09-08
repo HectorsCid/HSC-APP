@@ -9,6 +9,8 @@ import facturacion_bp as billing
 
 
 class FacturamaIntegrationTests(unittest.TestCase):
+    VALID_UUID = "2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb"
+
     def setUp(self):
         billing._STAMP_RESULTS.clear()
         self.app = Flask(__name__)
@@ -103,9 +105,10 @@ class FacturamaIntegrationTests(unittest.TestCase):
             billing._FM_BRANCH_CACHE = old_branches
 
     def test_stamp_is_idempotent_inside_running_service(self):
-        answer = {"Id": "sandbox-id", "Uuid": "2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb", "Status": "active", "Total": 232}
+        answer = {"Id": "sandbox-id", "Uuid": self.VALID_UUID, "Status": "active", "Total": 232}
         with (
             patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
+            patch.object(billing, "_facturama_receiver_validation", return_value=({}, {})),
             patch.object(billing, "_fm_request", return_value=answer) as request_mock,
         ):
             first = self.client.post("/api/facturar", json=self.payload("same-request"))
@@ -116,7 +119,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertTrue(second.get_json()["duplicate_prevented"])
 
     def test_stamp_extracts_nested_facturama_uuid(self):
-        expected_uuid = "2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb"
+        expected_uuid = self.VALID_UUID
         answer = {
             "Id": "sandbox-id",
             "Complement": {"TaxStamp": {"Uuid": expected_uuid, "CfdiSign": "secret-signature"}},
@@ -125,6 +128,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
         }
         with (
             patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
+            patch.object(billing, "_facturama_receiver_validation", return_value=({}, {})),
             patch.object(billing, "_fm_request", return_value=answer),
         ):
             response = self.client.post("/api/facturar", json=self.payload("nested-request"))
@@ -136,6 +140,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
         answer = {"Id": "invalid-attempt", "Status": "invalid", "Total": 232}
         with (
             patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
+            patch.object(billing, "_facturama_receiver_validation", return_value=({}, {})),
             patch.object(billing, "_fm_request", return_value=answer),
         ):
             response = self.client.post("/api/facturar", json=self.payload("invalid-request"))
@@ -144,7 +149,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertNotIn("invalid-request", billing._STAMP_RESULTS)
 
     def test_invoice_list_hides_failed_attempts_and_reads_flat_receiver(self):
-        valid_uuid = "2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb"
+        valid_uuid = self.VALID_UUID
         rows = [
             {"Id": "ok-1", "Uuid": valid_uuid, "TaxName": "CLIENTE SAT", "Rfc": "URE180429TM6", "Total": 116, "IsActive": True},
             {"Id": "failed-1", "Uuid": "", "TaxName": "INTENTO FALLIDO", "Status": "invalid"},
@@ -156,6 +161,30 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["customer_name"], "CLIENTE SAT")
         self.assertEqual(data[0]["customer_tax_id"], "URE180429TM6")
+
+    def test_receiver_validation_reports_each_mismatched_sat_field(self):
+        validation = {
+            "ExistRfc": True,
+            "MatchName": False,
+            "MatchZipCode": True,
+            "MatchFiscalRegime": False,
+        }
+        with patch.object(billing, "_fm_request", return_value=validation):
+            _, errors = billing._facturama_receiver_validation(self.payload()["receptor"])
+        self.assertEqual(set(errors), {"nombre", "regimen_fiscal"})
+
+    def test_receiver_mismatch_stops_before_stamp(self):
+        with (
+            patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
+            patch.object(billing, "_facturama_receiver_validation", return_value=({}, {
+                "nombre": "La razón social no coincide con la registrada ante el SAT."
+            })),
+            patch.object(billing, "_fm_request") as stamp_mock,
+        ):
+            response = self.client.post("/api/facturar", json=self.payload("bad-receiver"))
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["stage"], "receiver_validation")
+        stamp_mock.assert_not_called()
 
     def test_download_decodes_facturama_base64(self):
         expected = b"%PDF-sandbox"
