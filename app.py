@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file, abort, jsonify, current_app
+from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file, abort, jsonify, current_app, session
 
 app = Flask(__name__)
 @app.get("/ping_root")
@@ -9,7 +9,8 @@ def ping_root():
 
 
 from markupsafe import escape
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+import hmac
 import json
 import os
 import platform
@@ -189,6 +190,71 @@ app.secret_key = (
     or os.environ.get("GOOGLE_TOKEN_B64")
     or "solo-desarrollo-local"
 )
+app.config.update(
+    PERMANENT_SESSION_LIFETIME=timedelta(days=400),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=IS_RENDER,
+    SESSION_REFRESH_EACH_REQUEST=True,
+)
+
+
+def _app_access_password():
+    """Clave general; reutiliza temporalmente la clave de correo si no hay una exclusiva."""
+    return os.environ.get("HSC_APP_PASSWORD", "") or os.environ.get("SMTP_SEND_KEY", "")
+
+
+def _safe_return_path(value):
+    target = str(value or "").strip()
+    return target if target.startswith("/") and not target.startswith("//") else "/inicio-app"
+
+
+@app.route("/acceso", methods=["GET", "POST"])
+def acceso():
+    password = _app_access_password()
+    next_path = _safe_return_path(request.values.get("next"))
+    error = ""
+    if request.method == "POST":
+        supplied = str(request.form.get("password") or "")
+        if password and hmac.compare_digest(supplied, password):
+            session.clear()
+            session.permanent = True
+            session["hsc_authenticated"] = True
+            return redirect(next_path)
+        error = "La contraseña no es correcta. Intenta nuevamente."
+    return render_template("acceso.html", error=error, next_path=next_path, configured=bool(password))
+
+
+@app.get("/cerrar-sesion")
+def cerrar_sesion():
+    session.clear()
+    return redirect(url_for("acceso"))
+
+
+@app.before_request
+def _require_app_login():
+    endpoint = request.endpoint or ""
+    if endpoint in {"acceso", "healthz", "health", "health_check", "ping_root"}:
+        return None
+    if endpoint == "static" and (
+        request.path.startswith("/static/img/")
+        or request.path.endswith((".css", ".js", ".ico", ".svg", ".png", ".jpg", ".jpeg", ".webp"))
+    ):
+        return None
+    password = _app_access_password()
+    if current_app.testing and not password:
+        return None
+    if not password and not IS_RENDER:
+        return None
+    if session.get("hsc_authenticated") is True:
+        return None
+    if not password:
+        message = "Falta configurar HSC_APP_PASSWORD en Render."
+        return (jsonify({"ok": False, "error": message}), 503) if request.path.startswith("/api/") else (message, 503)
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "error": "Tu sesión está cerrada. Vuelve a ingresar."}), 401
+    return redirect(url_for("acceso", next=_safe_return_path(request.full_path.rstrip("?"))))
+
 app.register_blueprint(reportes_bp)
 start_auto_report_monitor(app)
 

@@ -266,6 +266,34 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(invoice["type"], "I")
         self.assertEqual(invoice["payment_method"], "PPD")
 
+    def test_cannot_cancel_a_payment_when_a_later_partiality_exists(self):
+        index = {self.VALID_UUID: {"payments": [
+            {"rep_id": "rep-1", "partiality_number": 1, "status": "active", "amount": 40},
+            {"rep_id": "rep-2", "partiality_number": 2, "status": "active", "amount": 30},
+        ]}}
+        with (
+            patch.object(billing, "_read_index", return_value=index),
+            patch.object(billing, "_fm_request") as api,
+        ):
+            response = self.client.post("/api/invoices/rep-1/cancel", json={"motive": "02"})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Cancela primero el más reciente", response.get_json()["error"])
+        api.assert_not_called()
+
+    def test_canceling_latest_payment_reopens_its_invoice_balance(self):
+        index = {self.VALID_UUID: {"payments": [
+            {"rep_id": "rep-1", "partiality_number": 1, "status": "active", "amount": 40},
+            {"rep_id": "rep-2", "partiality_number": 2, "status": "active", "amount": 30},
+        ]}}
+        with (
+            patch.object(billing, "_read_index", return_value=index),
+            patch.object(billing, "_fm_request", return_value={"Status": "canceled"}),
+            patch.object(billing, "_remove_rep_by_id") as remove,
+        ):
+            response = self.client.post("/api/invoices/rep-2/cancel", json={"motive": "02"})
+        self.assertEqual(response.status_code, 200)
+        remove.assert_called_once_with("rep-2")
+
     def test_receiver_validation_reports_each_mismatched_sat_field(self):
         validation = {
             "ExistRfc": True,

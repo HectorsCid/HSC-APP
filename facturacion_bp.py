@@ -156,6 +156,22 @@ def _payment_summary(record, invoice_total=0):
         "paid": bool(payments) and remaining <= 0,
     }
 
+def _rep_cancellation_state(rep_id):
+    """Ubica un REP y confirma que sea la última parcialidad de su factura."""
+    wanted = str(rep_id or "")
+    for invoice_uuid, record in _read_index().items():
+        entries = _payment_entries(record)
+        for position, payment in enumerate(entries):
+            if str(payment.get("rep_id") or "") == wanted:
+                return {
+                    "tracked": True,
+                    "invoice_uuid": invoice_uuid,
+                    "is_latest": position == len(entries) - 1,
+                    "partiality_number": payment.get("partiality_number") or position + 1,
+                    "later_count": len(entries) - position - 1,
+                }
+    return {"tracked": False, "is_latest": True, "later_count": 0}
+
 def _remove_rep_by_id(rep_id: str):
     """Elimina del índice el REP cuyo id coincide, para re-habilitar complemento."""
     idx = _read_index()
@@ -1233,11 +1249,23 @@ def api_invoice_cancel(inv_id):
     if motive == "01" and sub:
         params["substitution_folio"] = sub
     if _provider() == "facturama":
+        rep_state = _rep_cancellation_state(inv_id)
+        if rep_state["tracked"] and not rep_state["is_latest"]:
+            return jsonify({
+                "ok": False,
+                "stage": "cancel_order",
+                "error": (
+                    f"No puedes cancelar la parcialidad {rep_state['partiality_number']} porque tiene "
+                    f"{rep_state['later_count']} complemento(s) posterior(es). Cancela primero el más reciente."
+                ),
+            }), 409
         fm_params = {"type": "issued", "motive": motive}
         if motive == "01" and sub:
             fm_params["uuidReplacement"] = sub
         try:
             result = _fm_request("DELETE", f"/api/cfdi/{inv_id}", params=fm_params)
+            if rep_state["tracked"]:
+                _remove_rep_by_id(inv_id)
             return jsonify({"ok": True, "provider": "facturama", "result": result}), 200
         except requests.HTTPError as exc:
             return jsonify({
@@ -1249,6 +1277,12 @@ def api_invoice_cancel(inv_id):
             }), 400
     try:
         inv = _fa_get(f"/invoices/{inv_id}")
+        rep_state = _rep_cancellation_state(inv_id) if inv.get("type") == "P" else {"is_latest": True}
+        if not rep_state["is_latest"]:
+            return jsonify({
+                "ok": False, "stage": "cancel_order",
+                "error": "Cancela primero el complemento de pago más reciente.",
+            }), 409
         res = _fa_delete(f"/invoices/{inv_id}", params=params)
         if inv.get("type") == "P":
             _remove_rep_by_id(inv_id)

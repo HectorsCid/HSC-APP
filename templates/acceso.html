@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Acceso · HSC</title>
+  <style>
+    :root{--bg:#0b1120;--card:#151f33;--ink:#f8fafc;--muted:#9fb0c9;--line:#30405a;--brand:#2563eb;--danger:#fecaca;--danger-bg:#48212a}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Segoe UI,Roboto,system-ui,sans-serif;background:radial-gradient(circle at 30% 0,#17233b 0,var(--bg) 52%);color:var(--ink)}
+    body{min-height:100vh;display:grid;place-items:center;padding:20px}.card{width:min(420px,100%);padding:28px;border:1px solid var(--line);border-radius:22px;background:var(--card);box-shadow:0 24px 70px rgba(0,0,0,.35)}
+    .brand{font-size:.8rem;font-weight:850;letter-spacing:.12em;color:#60a5fa;text-transform:uppercase}.title{margin:8px 0 4px;font-size:1.8rem;font-weight:900;letter-spacing:-.03em}.muted{margin:0 0 22px;color:var(--muted)}
+    label{display:block;margin-bottom:7px;color:var(--muted);font-size:.82rem;font-weight:750}input{width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:#0f192b;color:var(--ink);font:inherit;outline:none}input:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+    button{width:100%;margin-top:14px;padding:12px;border:0;border-radius:12px;background:var(--brand);color:#fff;font:inherit;font-weight:800;cursor:pointer}.error{margin-bottom:14px;padding:10px 12px;border:1px solid #7f1d1d;border-radius:11px;background:var(--danger-bg);color:var(--danger);font-size:.88rem}.note{margin-top:16px;color:var(--muted);font-size:.76rem;text-align:center}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand">HSC Partner</div>
+    <h1 class="title">Bienvenido</h1>
+    <p class="muted">Ingresa tu contraseña para abrir el programa.</p>
+    {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
+    {% if not configured %}<div class="error" role="alert">Falta configurar la contraseña de acceso en Render.</div>{% endif %}
+    <form method="post" autocomplete="on">
+      <input type="hidden" name="next" value="{{ next_path }}">
+      <label for="password">Contraseña</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+      <button type="submit">Entrar</button>
+    </form>
+    <div class="note">La sesión permanecerá abierta en este dispositivo hasta que la cierres o borres sus datos.</div>
+  </main>
+</body>
+</html>
