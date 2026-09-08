@@ -103,7 +103,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
             billing._FM_BRANCH_CACHE = old_branches
 
     def test_stamp_is_idempotent_inside_running_service(self):
-        answer = {"Id": "sandbox-id", "Uuid": "sandbox-uuid", "Status": "active", "Total": 232}
+        answer = {"Id": "sandbox-id", "Uuid": "2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb", "Status": "active", "Total": 232}
         with (
             patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
             patch.object(billing, "_fm_request", return_value=answer) as request_mock,
@@ -116,9 +116,10 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertTrue(second.get_json()["duplicate_prevented"])
 
     def test_stamp_extracts_nested_facturama_uuid(self):
+        expected_uuid = "2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb"
         answer = {
             "Id": "sandbox-id",
-            "Complement": {"TaxStamp": {"Uuid": "nested-uuid", "CfdiSign": "secret-signature"}},
+            "Complement": {"TaxStamp": {"Uuid": expected_uuid, "CfdiSign": "secret-signature"}},
             "Status": "active",
             "Total": 1.16,
         }
@@ -128,8 +129,33 @@ class FacturamaIntegrationTests(unittest.TestCase):
         ):
             response = self.client.post("/api/facturar", json=self.payload("nested-request"))
         data = response.get_json()
-        self.assertEqual(data["uuid"], "nested-uuid")
+        self.assertEqual(data["uuid"], expected_uuid)
         self.assertNotIn("secret-signature", str(data))
+
+    def test_stamp_without_valid_uuid_is_rejected_and_not_cached(self):
+        answer = {"Id": "invalid-attempt", "Status": "invalid", "Total": 232}
+        with (
+            patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
+            patch.object(billing, "_fm_request", return_value=answer),
+        ):
+            response = self.client.post("/api/facturar", json=self.payload("invalid-request"))
+        self.assertEqual(response.status_code, 502)
+        self.assertFalse(response.get_json()["ok"])
+        self.assertNotIn("invalid-request", billing._STAMP_RESULTS)
+
+    def test_invoice_list_hides_failed_attempts_and_reads_flat_receiver(self):
+        valid_uuid = "2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb"
+        rows = [
+            {"Id": "ok-1", "Uuid": valid_uuid, "TaxName": "CLIENTE SAT", "Rfc": "URE180429TM6", "Total": 116, "IsActive": True},
+            {"Id": "failed-1", "Uuid": "", "TaxName": "INTENTO FALLIDO", "Status": "invalid"},
+        ]
+        with patch.object(billing, "_fm_request", return_value=rows):
+            response = self.client.get("/api/facturas/list")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()["data"]
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["customer_name"], "CLIENTE SAT")
+        self.assertEqual(data[0]["customer_tax_id"], "URE180429TM6")
 
     def test_download_decodes_facturama_base64(self):
         expected = b"%PDF-sandbox"

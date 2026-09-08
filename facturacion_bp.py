@@ -26,6 +26,9 @@ _STAMP_LOCK = Lock()
 _STAMP_RESULTS = {}
 _FM_PROFILE_CACHE = None
 _FM_BRANCH_CACHE = None
+_CFDI_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+)
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -106,6 +109,34 @@ def _facturama_config():
 def _provider():
     """Facturama tiene prioridad; Facturapi queda como respaldo temporal."""
     return "facturama" if _facturama_config()["configured"] else "facturapi"
+
+
+def _valid_cfdi_uuid(value):
+    """Acepta solamente un folio fiscal UUID confirmado, nunca textos sustitutos."""
+    return bool(_CFDI_UUID_RE.fullmatch(str(value or "").strip()))
+
+
+def _facturama_invoice_row(inv):
+    """Normaliza tanto el resultado plano de búsqueda como el detalle de Facturama."""
+    receiver = _pick(inv, "Receiver", "Customer") or {}
+    uuid = _pick(inv, "Uuid", "FolioFiscal")
+    if not uuid:
+        complement = _pick(inv, "Complement") or {}
+        uuid = _pick(_pick(complement, "TaxStamp") or {}, "Uuid")
+    active = _pick(inv, "IsActive")
+    status = _pick(inv, "Status") or ("active" if active is not False else "canceled")
+    return {
+        "id": _pick(inv, "Id"),
+        "uuid": str(uuid or "").strip(),
+        "date": _pick(inv, "Date"),
+        "total": _pick(inv, "Total"),
+        "status": status,
+        "payment_method": _pick(inv, "PaymentMethod"),
+        "type": _pick(inv, "CfdiType", "Type") or "I",
+        "customer_name": _pick(receiver, "Name", "LegalName", "TaxName") or _pick(inv, "TaxName"),
+        "customer_tax_id": _pick(receiver, "Rfc", "TaxId") or _pick(inv, "Rfc"),
+        "paid": False,
+    }
 
 
 def _fm_request(method, path, *, json_body=None, params=None, timeout=60):
@@ -541,12 +572,20 @@ def facturar():
                         "stage": "response",
                         "error": "Facturama respondió sin identificador de CFDI",
                     }), 502
+                if not _valid_cfdi_uuid(uuid):
+                    return jsonify({
+                        "ok": False,
+                        "provider": "facturama",
+                        "environment": "sandbox" if cfg["sandbox"] else "production",
+                        "stage": "stamp_confirmation",
+                        "error": "Facturama no confirmó el timbrado con un folio fiscal (UUID). La factura no se agregará al panel.",
+                    }), 502
                 result = {
                     "ok": True,
                     "provider": "facturama",
                     "environment": "sandbox" if cfg["sandbox"] else "production",
                     "invoice_id": str(inv_id),
-                    "uuid": uuid or "Timbrado de prueba",
+                    "uuid": str(uuid).strip(),
                     "status": _pick(invoice, "Status") or "active",
                     "total": _pick(invoice, "Total"),
                     "pdf_url": f"/api/invoices/{inv_id}/pdf",
@@ -678,19 +717,10 @@ def api_list_facturas():
         rows = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
         out = []
         for inv in rows:
-            receiver = _pick(inv, "Receiver", "Customer") or {}
-            out.append({
-                "id": _pick(inv, "Id"),
-                "uuid": _pick(inv, "Uuid"),
-                "date": _pick(inv, "Date"),
-                "total": _pick(inv, "Total"),
-                "status": _pick(inv, "Status"),
-                "payment_method": _pick(inv, "PaymentMethod"),
-                "type": _pick(inv, "CfdiType", "Type") or "I",
-                "customer_name": _pick(receiver, "Name", "LegalName"),
-                "customer_tax_id": _pick(receiver, "Rfc", "TaxId"),
-                "paid": False,
-            })
+            normalized = _facturama_invoice_row(inv)
+            # Los intentos rechazados pueden tener Id, pero no folio fiscal.
+            if normalized["id"] and _valid_cfdi_uuid(normalized["uuid"]):
+                out.append(normalized)
         return jsonify({"ok": True, "provider": "facturama", "data": out}), 200
     try:
         rs = _fa_get("/invoices", params={"limit": 100})

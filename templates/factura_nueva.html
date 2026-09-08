@@ -451,6 +451,14 @@
 
     // -------- Timbrar ----------
     let lastResult = null;
+    function readableError(data){
+      const err = data && data.error;
+      if(typeof err === 'string') return err;
+      if(err && typeof err === 'object'){
+        return err.Message || err.message || err.error || 'Facturama rechazó la solicitud.';
+      }
+      return 'No se pudo timbrar. Revisa los datos e intenta nuevamente.';
+    }
     document.getElementById('btnTimbrar').onclick = async () => {
       if(!valReceptor()) return;
       if(!valConceptos()) return;
@@ -517,8 +525,9 @@
           document.getElementById('btnPago').style.display = data.complementos_disponibles ? '' : 'none';
           document.getElementById('accionesPost').style.display = 'flex';
           stampButton.textContent = '✅ Timbrada';
+          setTimeout(()=>{ window.location.assign('/facturacion?timbrada=1'); }, 900);
         } else {
-          msg(false, `Error: ${data.error ? JSON.stringify(data.error) : 'ver detalles'}`);
+          msg(false, readableError(data));
           stampButton.disabled = false;
           stampButton.textContent = '🧾 Timbrar';
         }

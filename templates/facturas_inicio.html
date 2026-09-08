@@ -57,6 +57,8 @@
   .cm-input, .cm-select{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px}
   .cm-hint{font-size:.85rem;color:#6b7280}
   .hidden{display:none}
+  .flash{display:none;margin-bottom:14px;padding:11px 14px;border-radius:12px;font-weight:700}
+  .flash.ok{display:block;background:#dcfce7;border:1px solid #86efac;color:#14532d}
 </style>
 </head>
 <body>
@@ -73,6 +75,7 @@
   </aside>
 
   <main class="wrap">
+    <div id="pageMsg" class="flash"></div>
     <div class="row">
       <div>
         <div class="title">Facturación</div>
@@ -156,6 +159,13 @@ const $ = s=>document.querySelector(s);
 const tbody = $('#tbl tbody');
 const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Plantillas:'#panelPlantillas'};
 const clickLocks = new Set(); // antirrebote por fila
+const pageMsg = document.getElementById('pageMsg');
+if(new URLSearchParams(location.search).get('timbrada') === '1'){
+  pageMsg.className = 'flash ok';
+  pageMsg.textContent = 'Factura timbrada correctamente y agregada al panel.';
+  history.replaceState({}, '', '/facturacion');
+  setTimeout(()=>{ pageMsg.className = 'flash'; }, 5000);
+}
 
 ['Emitidas','Recibidas','Plantillas'].forEach(n=>{
   const tab = document.getElementById('tab'+n);
