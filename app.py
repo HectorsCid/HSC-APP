@@ -2766,9 +2766,14 @@ def api_enviar_cotizacion(qid):
             folio=folio,
             extra_attachments=extras,
         )
+        copy_warning = result.get("sent_copy_saved") is False
         response = jsonify({
             "ok": True,
-            "message": f"Cotización enviada a {result.get('recipient')}.",
+            "message": (
+                f"Cotización enviada a {result.get('recipient')}."
+                + (" CarrierZone no confirmó la copia en Enviados." if copy_warning else "")
+            ),
+            "sent_copy_saved": not copy_warning,
             "result": result,
         })
         token = trusted_device_token()

@@ -5,8 +5,10 @@ import ssl
 import hmac
 import hashlib
 import mimetypes
+import imaplib
+import time
 from email.message import EmailMessage
-from email.utils import formataddr, parseaddr
+from email.utils import formataddr, formatdate, make_msgid, parseaddr
 
 
 _HEADER_BREAKS = re.compile(r"[\r\n]+")
@@ -75,6 +77,27 @@ def _safe_header(value, fallback):
     return cleaned[:240] or fallback
 
 
+def _save_sent_copy(message, cfg):
+    host = os.getenv("IMAP_HOST", cfg["host"]).strip()
+    try:
+        port = int(os.getenv("IMAP_PORT", "993").strip())
+    except ValueError:
+        port = 993
+    folder = os.getenv("IMAP_SENT_FOLDER", "mail/sent-mail").strip() or "mail/sent-mail"
+    try:
+        with imaplib.IMAP4_SSL(host, port, timeout=30) as mailbox:
+            mailbox.login(cfg["username"], cfg["password"])
+            status, _ = mailbox.append(
+                folder,
+                "(\\Seen)",
+                imaplib.Time2Internaldate(time.time()),
+                message.as_bytes(),
+            )
+            return status == "OK"
+    except Exception:
+        return False
+
+
 def send_email_with_attachments(*, recipient, subject, body, attachments):
     cfg = smtp_config()
     if not cfg["configured"]:
@@ -90,6 +113,9 @@ def send_email_with_attachments(*, recipient, subject, body, attachments):
     message = EmailMessage()
     message["From"] = formataddr((cfg["from_name"], cfg["from_email"]))
     message["To"] = ", ".join(recipients)
+    message["Reply-To"] = cfg["from_email"]
+    message["Date"] = formatdate(localtime=True)
+    message["Message-ID"] = make_msgid(domain=cfg["from_email"].partition("@")[2] or None)
     message["Subject"] = _safe_header(subject, "Documento de HSC Refrigeración")
     message.set_content(str(body).strip())
     for attachment in attachments:
@@ -110,11 +136,13 @@ def send_email_with_attachments(*, recipient, subject, body, attachments):
     with smtplib.SMTP_SSL(cfg["host"], cfg["port"], context=context, timeout=30) as server:
         server.login(cfg["username"], cfg["password"])
         server.send_message(message)
+    sent_copy_saved = _save_sent_copy(message, cfg)
     return {
         "recipient": ", ".join(recipients),
         "recipients": recipients,
         "from": cfg["from_email"],
         "attachments": len(attachments),
+        "sent_copy_saved": sent_copy_saved,
     }
 
 

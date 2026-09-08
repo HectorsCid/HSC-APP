@@ -1131,9 +1131,14 @@ def api_invoice_email(inv_id):
             folio=folio,
             extra_attachments=extras,
         )
+        copy_warning = result.get("sent_copy_saved") is False
         response = jsonify({
             "ok": True,
-            "message": f"Factura enviada a {result.get('recipient') or recipient}.",
+            "message": (
+                f"Factura enviada a {result.get('recipient') or recipient}."
+                + (" CarrierZone no confirmó la copia en Enviados." if copy_warning else "")
+            ),
+            "sent_copy_saved": not copy_warning,
             "result": result,
         })
         response.set_cookie(

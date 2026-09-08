@@ -20,7 +20,11 @@ class SmtpMailerTests(unittest.TestCase):
             "SMTP_PASSWORD": "secret",
             "SMTP_FROM": "hectorsc@hscrefrigeracion.com",
         }
-        with patch.dict(os.environ, env, clear=False), patch.object(smtp_mailer.smtplib, "SMTP_SSL", return_value=smtp) as client:
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch.object(smtp_mailer.smtplib, "SMTP_SSL", return_value=smtp) as client,
+            patch.object(smtp_mailer, "_save_sent_copy", return_value=True),
+        ):
             result = smtp_mailer.send_cfdi_email(
                 recipient="cliente@example.com", subject="Factura 10", body="Adjuntos",
                 pdf_bytes=b"%PDF", xml_bytes=b"<xml/>", folio="10",
@@ -29,6 +33,8 @@ class SmtpMailerTests(unittest.TestCase):
         smtp.login.assert_called_once_with("hectorsc@hscrefrigeracion.com", "secret")
         message = smtp.send_message.call_args.args[0]
         self.assertEqual(message["To"], "cliente@example.com")
+        self.assertTrue(message["Message-ID"])
+        self.assertEqual(message["Reply-To"], "hectorsc@hscrefrigeracion.com")
         self.assertEqual({part.get_filename() for part in message.iter_attachments()}, {"Factura-10.pdf", "Factura-10.xml"})
         self.assertEqual(result["from"], "hectorsc@hscrefrigeracion.com")
 
@@ -48,7 +54,11 @@ class SmtpMailerTests(unittest.TestCase):
             "SMTP_PASSWORD": "secret",
             "SMTP_FROM": "hectorsc@hscrefrigeracion.com",
         }
-        with patch.dict(os.environ, env, clear=False), patch.object(smtp_mailer.smtplib, "SMTP_SSL", return_value=smtp):
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch.object(smtp_mailer.smtplib, "SMTP_SSL", return_value=smtp),
+            patch.object(smtp_mailer, "_save_sent_copy", return_value=True),
+        ):
             result = smtp_mailer.send_quote_email(
                 recipient="uno@example.com; dos@example.com, uno@example.com",
                 subject="Cotización HSC No. 10",
@@ -61,6 +71,25 @@ class SmtpMailerTests(unittest.TestCase):
         self.assertEqual(message["To"], "uno@example.com, dos@example.com")
         self.assertEqual(result["recipients"], ["uno@example.com", "dos@example.com"])
         self.assertEqual({part.get_filename() for part in message.iter_attachments()}, {"Cotizacion-10.pdf", "orden.pdf"})
+
+    def test_sent_copy_uses_carrierzone_folder(self):
+        mailbox = MagicMock()
+        mailbox.__enter__.return_value = mailbox
+        mailbox.append.return_value = ("OK", [b"guardado"])
+        cfg = {
+            "host": "mailc75.carrierzone.com",
+            "username": "hectorsc@hscrefrigeracion.com",
+            "password": "secret",
+        }
+        message = smtp_mailer.EmailMessage()
+        message.set_content("prueba")
+        with (
+            patch.dict(os.environ, {}, clear=False),
+            patch.object(smtp_mailer.imaplib, "IMAP4_SSL", return_value=mailbox) as imap,
+        ):
+            self.assertTrue(smtp_mailer._save_sent_copy(message, cfg))
+        imap.assert_called_once_with("mailc75.carrierzone.com", 993, timeout=30)
+        self.assertEqual(mailbox.append.call_args.args[0], "mail/sent-mail")
 
     def test_trusted_device_token_is_accepted_without_raw_key(self):
         with patch.dict(os.environ, {"SMTP_SEND_KEY": "a-long-private-send-key"}, clear=False):
