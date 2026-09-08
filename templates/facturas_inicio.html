@@ -4,6 +4,12 @@
 <meta charset="UTF-8" />
 <title>Facturación – HSC</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>
+  (()=>{
+    const saved = localStorage.getItem('hsc-theme');
+    document.documentElement.dataset.theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  })();
+</script>
 <style>
   :root{--bg:#fff;--card:#f9fafb;--ink:#111827;--muted:#6b7280;--line:#e5e7eb;--brand:#374151;--ok:#22c55e;--warn:#f59e0b;--danger:#ef4444}
   *{box-sizing:border-box}
@@ -60,6 +66,99 @@
   .flash{display:none;margin-bottom:14px;padding:11px 14px;border-radius:12px;font-weight:700}
   .flash.ok{display:block;background:#dcfce7;border:1px solid #86efac;color:#14532d}
   .flash.err{display:block;background:#fee2e2;border:1px solid #fca5a5;color:#7f1d1d}
+
+  /* Panel compacto 2026 */
+  :root{--bg:#f4f7fb;--surface:#fff;--card:#fff;--ink:#17233b;--muted:#64748b;--line:#dce3ed;--brand:#2563eb;--soft:#f8fafc;--ok-soft:#dcfce7;--purple:#7c3aed;--purple-soft:#f1eafe;--shadow:0 12px 32px rgba(30,41,59,.08)}
+  html[data-theme="dark"]{--bg:#0b1120;--surface:#121b2e;--card:#151f33;--ink:#f8fafc;--muted:#9fb0c9;--line:#30405a;--brand:#3b82f6;--soft:#1c2940;--ok-soft:#123a28;--purple:#a78bfa;--purple-soft:#2d2450;--shadow:0 16px 38px rgba(0,0,0,.24)}
+  html,body{min-width:0;background:var(--bg);color:var(--ink)}
+  body{overflow:hidden}
+  button,input,select,textarea{font:inherit;color:inherit}
+  .layout{grid-template-columns:212px minmax(0,1fr);height:100vh;min-height:0}
+  .side{padding:18px 14px;background:var(--surface)}
+  .side .logo{font-size:1.22rem;font-weight:900;margin:2px 8px 20px}
+  .nav{gap:7px}
+  .nav .btn{justify-content:flex-start;padding:10px 11px;font-weight:700}
+  .btn{justify-content:center;gap:5px;min-height:32px;padding:6px 9px;border-radius:9px;background:var(--surface);color:var(--ink);font-weight:700;white-space:nowrap;transition:.16s ease}
+  .btn:hover{background:var(--soft);transform:translateY(-1px)}
+  .btn-primary,.btn.btn-primary{background:var(--brand);color:#fff}
+  .btn-danger{background:var(--danger);color:#fff}
+  .wrap{width:100%;max-width:1500px;min-width:0;padding:17px 20px;overflow:hidden}
+  .title{font-size:1.5rem;font-weight:900;letter-spacing:-.025em}
+  .pill{margin-top:2px;color:var(--muted)}
+  .filters{gap:8px}
+  .filters label{font-size:.76rem;font-weight:800;color:var(--muted)}
+  select,input[type="search"],.cm-input,.cm-select{background:var(--surface);color:var(--ink);border-color:var(--line);outline:none}
+  select:focus,input:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 18%,transparent)}
+  #q{width:250px}
+  .theme-toggle{display:inline-flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font-weight:750;cursor:pointer}
+  .theme-track{width:38px;height:21px;padding:2px;border-radius:999px;background:#94a3b8;transition:.2s;display:flex}
+  .theme-knob{width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:.2s}
+  html[data-theme="dark"] .theme-track{background:#22c55e}
+  html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
+  .theme-text{font-size:.75rem;white-space:nowrap}
+  .tabs{gap:7px;margin:12px 0 10px}
+  .tab{padding:7px 13px;background:var(--surface);font-weight:750}
+  .tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
+  .card{padding:9px;background:var(--card);border-radius:16px;box-shadow:var(--shadow)}
+  .table-wrap{height:calc(100vh - 145px);min-height:350px;max-height:none;margin:0;overflow-y:auto;overflow-x:hidden;background:var(--surface);scrollbar-color:#94a3b8 transparent}
+  table{display:block;width:100%;min-width:0}
+  thead{display:none}
+  tbody{display:block}
+  tbody tr{display:grid;grid-template-columns:minmax(165px,1.45fr) 108px 132px minmax(125px,1fr) minmax(254px,auto);gap:10px;align-items:center;min-height:80px;padding:9px 11px;border-bottom:1px solid var(--line);transition:.15s ease}
+  tbody tr:hover{background:var(--soft)}
+  tbody tr.is-payment{border-left:4px solid var(--purple);padding-left:7px;background:color-mix(in srgb,var(--purple-soft) 35%,var(--surface))}
+  tbody td{min-width:0;padding:0;border:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  tbody td:nth-child(1){grid-column:1;grid-row:1;font-weight:850;padding-bottom:20px}
+  tbody td:nth-child(2){grid-column:1;grid-row:1;align-self:end;padding-bottom:8px;color:var(--muted);font-size:.72rem}
+  tbody td:nth-child(3){grid-column:2;grid-row:1;align-self:end;padding-bottom:8px;color:var(--muted);font-size:.72rem}
+  tbody td:nth-child(4){grid-column:2;grid-row:1;align-self:start;padding-top:8px;font-weight:900;font-variant-numeric:tabular-nums}
+  tbody td:nth-child(5){display:none}
+  tbody td:nth-child(6),tbody td:nth-child(7),tbody td:nth-child(8){grid-column:3;grid-row:1;width:max-content}
+  tbody td:nth-child(6){align-self:start;padding-top:5px}
+  tbody td:nth-child(7){align-self:center}
+  tbody td:nth-child(8){align-self:end;padding-bottom:5px}
+  tbody td:nth-child(9){grid-column:4;grid-row:1;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.7rem;color:var(--muted);max-width:none}
+  tbody td:nth-child(9)::before{content:'Folio fiscal';display:block;margin-bottom:5px;font-family:Segoe UI,Roboto,system-ui,sans-serif;font-size:.65rem;font-weight:850;color:var(--ink);text-transform:uppercase;letter-spacing:.04em}
+  tbody td:nth-child(10){grid-column:5;grid-row:1;display:grid;grid-template-columns:repeat(3,max-content);justify-content:end;gap:5px;min-width:0;overflow:visible}
+  tbody td:nth-child(10) .btn{min-height:28px;padding:4px 7px;border-radius:8px;font-size:.68rem}
+  .badge{display:inline-flex;padding:3px 7px;background:var(--surface);font-size:.68rem;font-weight:750}
+  .badge.gray{background:var(--soft)}
+  .badge.green{background:var(--ok-soft);color:var(--ok)}
+  .badge.purple{background:var(--purple-soft);color:var(--purple)}
+  .cm-card,.cm-btn{background:var(--surface);color:var(--ink)}
+  .cm-btn-primary{background:var(--brand);color:#fff}
+  .cm-btn-danger{background:var(--danger);color:#fff}
+  .cm-title{color:var(--ink)}
+  .cm-kv,.cm-hint{color:var(--muted)}
+  .cm-btn:hover{background:var(--soft)}
+  tbody td[colspan]{grid-column:1/-1!important;padding:36px 10px!important;text-align:center}
+  @media(max-width:1120px){
+    .layout{grid-template-columns:180px minmax(0,1fr)}
+    .wrap{padding-left:13px;padding-right:13px}
+    .nav .btn{font-size:.8rem;padding:9px 8px}
+    #q{width:185px}
+    tbody tr{grid-template-columns:minmax(135px,1.3fr) 96px 118px minmax(105px,.8fr) minmax(218px,auto);gap:7px}
+    tbody td:nth-child(10) .btn{padding:4px 5px;font-size:.63rem}
+  }
+  @media(max-width:850px){
+    body{overflow:auto}
+    .layout{display:block;height:auto;min-height:100vh}
+    .side{position:sticky;top:0;z-index:8;padding:8px 10px;border-right:0;border-bottom:1px solid var(--line)}
+    .side .logo{display:none}
+    .nav{flex-direction:row;overflow-x:auto}
+    .nav .btn{justify-content:center;flex:0 0 auto}
+    .wrap{padding:12px 9px;overflow:visible}
+    .row{align-items:flex-start;flex-direction:column}
+    .filters{width:100%;flex-wrap:wrap}
+    #q{flex:1;min-width:170px;width:auto}
+    .table-wrap{height:auto;max-height:none}
+    tbody tr{grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:12px}
+    tbody td:nth-child(1),tbody td:nth-child(2){grid-column:1;grid-row:1}
+    tbody td:nth-child(3),tbody td:nth-child(4){grid-column:2;grid-row:1}
+    tbody td:nth-child(6),tbody td:nth-child(7),tbody td:nth-child(8){grid-column:auto;grid-row:2;align-self:center;padding:0}
+    tbody td:nth-child(9){grid-column:1/-1;grid-row:3}
+    tbody td:nth-child(10){grid-column:1/-1;grid-row:4;justify-content:start}
+  }
 </style>
 </head>
 <body>
@@ -81,12 +180,16 @@
     <div class="row">
       <div>
         <div class="title">Facturación</div>
-        <div class="pill">Lista mensual y acciones</div>
+        <div class="pill">Comprobantes del mes y acciones rápidas</div>
       </div>
       <div class="filters">
-        <input id="q" type="search" placeholder="Buscar: receptor, RFC o UUID" />
+        <input id="q" type="search" placeholder="Buscar receptor, RFC o folio" />
         <label for="mes">Mes</label>
         <select id="mes"></select>
+        <button class="theme-toggle" type="button" id="theme-toggle" role="switch" aria-label="Cambiar modo de color">
+          <span class="theme-track" aria-hidden="true"><span class="theme-knob"></span></span>
+          <span class="theme-text" id="theme-label">Modo</span>
+        </button>
       </div>
     </div>
 
@@ -184,6 +287,20 @@ const tbody = $('#tbl tbody');
 const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Plantillas:'#panelPlantillas'};
 const clickLocks = new Set(); // antirrebote por fila
 const pageMsg = document.getElementById('pageMsg');
+const themeToggle = document.getElementById('theme-toggle');
+const themeLabel = document.getElementById('theme-label');
+function syncThemeToggle(){
+  const dark = document.documentElement.dataset.theme === 'dark';
+  themeToggle.setAttribute('aria-checked', String(dark));
+  themeLabel.textContent = dark ? 'Oscuro' : 'Claro';
+}
+themeToggle.addEventListener('click', ()=>{
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('hsc-theme', next);
+  syncThemeToggle();
+});
+syncThemeToggle();
 const arrivalParams = new URLSearchParams(location.search);
 if(arrivalParams.get('timbrada') === '1'){
   pageMsg.className = 'flash ok';
@@ -249,8 +366,13 @@ async function load(){
     }
 
     tbody.innerHTML='';
+    if(!rows.length){
+      tbody.innerHTML = '<tr><td colspan="10" style="grid-column:1/-1;text-align:center;color:var(--muted);padding:42px 10px">No hay comprobantes para este mes o búsqueda.</td></tr>';
+      return;
+    }
     for(const x of rows){
       const tr = document.createElement('tr');
+      if(x.type === 'P') tr.classList.add('is-payment');
       const pagoStatus =
         x.type==='P' ? '<span class="badge purple">REP</span>' :
         (x.paid ? '<span class="badge green">Pagado</span>' :
@@ -287,13 +409,6 @@ async function load(){
                   data-uuid="${x.uuid||''}"
                   data-key="cancel-${x.id}">⛔ Cancelar</button>
         </td>`;
-      tbody.appendChild(tr);
-    }
-
-    const pad = Math.max(0, 10 - rows.length);
-    for(let i=0;i<pad;i++){
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td colspan="10">&nbsp;</td>`;
       tbody.appendChild(tr);
     }
 
@@ -354,7 +469,7 @@ async function openEmailModal(ctx){
   emailCtx = ctx;
   emEmail.value = ctx.email || '';
   emSubject.value = `Factura ${ctx.folio || ''} — HSC Refrigeración`;
-  emMessage.value = `Buen día${ctx.cliente ? ' ' + ctx.cliente : ''},\n\nAdjuntamos su factura en formatos PDF y XML.\n\nSaludos,\nHSC Refrigeración`;
+  emMessage.value = `Buen día, estimado cliente:\n\nLe hacemos llegar su factura adjunta en formatos PDF y XML.\n\nQuedamos atentos a cualquier comentario.\n\nSaludos cordiales,\nHSC Refrigeración`;
   emKey.value = '';
   emKeyWrap.classList.add('hidden');
   emErr.textContent = '';
