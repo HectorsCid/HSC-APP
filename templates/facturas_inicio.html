@@ -161,9 +161,12 @@ const tbody = $('#tbl tbody');
 const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Plantillas:'#panelPlantillas'};
 const clickLocks = new Set(); // antirrebote por fila
 const pageMsg = document.getElementById('pageMsg');
-if(new URLSearchParams(location.search).get('timbrada') === '1'){
+const arrivalParams = new URLSearchParams(location.search);
+if(arrivalParams.get('timbrada') === '1'){
   pageMsg.className = 'flash ok';
-  pageMsg.textContent = 'Factura timbrada correctamente y agregada al panel.';
+  pageMsg.textContent = arrivalParams.get('drive') === 'fail'
+    ? 'Factura timbrada correctamente. Drive no confirmó el respaldo; puedes reimprimirla desde este panel.'
+    : 'Factura timbrada correctamente y respaldada en Drive.';
   history.replaceState({}, '', '/facturacion');
   setTimeout(()=>{ pageMsg.className = 'flash'; }, 5000);
 }

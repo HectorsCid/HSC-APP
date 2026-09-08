@@ -197,7 +197,7 @@ $('btnCrear').onclick = async () => {
     const data = await r.json();
     $('out').textContent = JSON.stringify(data,null,2);
     if(r.ok && data.ok){
-      msg(true, `REP creado: ${data.uuid}`);
+      msg(!data.warning, data.warning || `REP creado y respaldado en Drive: ${data.uuid}`);
       const repPdf = data.pdf_url || ('/' + (data.pdf_path||'').replace(/\\/g,'/'));
       const repXml = data.xml_url || ('/' + (data.xml_path||'').replace(/\\/g,'/'));
       if (data.pdf_url || data.pdf_path) { $('lnkVerPDF').href = repPdf; $('lnkVerPDF').style.display='inline-flex'; }

@@ -203,6 +203,7 @@
       ? `quote:${pageQuoteId}:${Date.now()}`
       : (crypto.randomUUID ? crypto.randomUUID() : `manual:${Date.now()}:${Math.random()}`);
     let pageQuoteFolio = '';
+    let pageClientName = '';
     let fiscalCatalogRequest = 0;
 
     function replaceCatalog(selectId, rows, preferred, fallbackValue=''){
@@ -531,6 +532,7 @@
         const data = await r.json();
         if(!data.ok){ msg(false, data.error?.message || 'Cotización no disponible'); return; }
         pageQuoteFolio = String(data.folio || '').trim();
+        pageClientName = String(data.cliente || '').trim();
         document.getElementById('retencionIsr').value = String(data.retenciones?.isr || 0);
         const quoteIvaRetention = Number(data.retenciones?.iva || 0);
         document.getElementById('retencionIva').value = quoteIvaRetention > 0.10666 && quoteIvaRetention < 0.10668
@@ -635,6 +637,7 @@
         serie: (document.getElementById('serie').value||'').trim(),
         condiciones: document.getElementById('cond').value||'',
         source_quote_id: pageQuoteId,
+        cliente_carpeta: document.getElementById('cliente').value || pageClientName || document.getElementById('razon').value,
         folio: pageQuoteFolio,
         request_id: stampRequestId,
         retenciones: {
@@ -660,7 +663,7 @@
         document.getElementById('out').textContent = JSON.stringify(data, null, 2);
 
         if(r.ok && data.ok){
-          msg(true, `${data.environment === 'sandbox' ? 'Prueba timbrada' : 'Timbrada'}: ${data.uuid}`);
+          msg(!data.warning, data.warning || `${data.environment === 'sandbox' ? 'Prueba timbrada' : 'Timbrada'}: ${data.uuid}`);
           const pdf = data.pdf_url || ('/' + (data.pdf_path||'').replace(/\\/g,'/'));
           const xml = data.xml_url || ('/' + (data.xml_path||'').replace(/\\/g,'/'));
           if (pdf && pdf !== '/') document.getElementById('lnkPDF').href = pdf;
@@ -668,7 +671,8 @@
           document.getElementById('btnPago').style.display = data.complementos_disponibles ? '' : 'none';
           document.getElementById('accionesPost').style.display = 'flex';
           stampButton.textContent = '✅ Timbrada';
-          setTimeout(()=>{ window.location.assign('/facturacion?timbrada=1'); }, 900);
+          const driveState = data.drive_backup?.ok ? 'ok' : 'fail';
+          setTimeout(()=>{ window.location.assign(`/facturacion?timbrada=1&drive=${driveState}`); }, data.warning ? 1800 : 900);
         } else {
           showServerFieldErrors(data);
           msg(false, readableError(data));

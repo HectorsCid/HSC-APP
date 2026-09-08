@@ -84,6 +84,7 @@ def _local_customer_fiscal_data(rfc, name=""):
             row_name = str(value.get("razon_social") or value.get("nombre") or key).strip()
             if (wanted_rfc and row_rfc == wanted_rfc) or (not wanted_rfc and row_name == name):
                 return {
+                    "folder_name": str(key),
                     "tax_system": str(value.get("regimen_fiscal") or "").split(" ", 1)[0],
                     "zip": str(value.get("cp") or value.get("codigo_postal") or ""),
                 }
@@ -93,11 +94,10 @@ def _local_customer_fiscal_data(rfc, name=""):
 def _complete_customer(invoice):
     normalized = _normalize_facturama_invoice(invoice)
     customer = normalized["customer"]
-    if customer["tax_system"] and customer["zip"]:
-        return normalized
     local = _local_customer_fiscal_data(customer["tax_id"], customer["legal_name"])
     customer["tax_system"] = customer["tax_system"].split(" ", 1)[0] or local.get("tax_system", "")
     customer["zip"] = customer["zip"] or local.get("zip", "")
+    customer["folder_name"] = local.get("folder_name") or customer["legal_name"]
     return normalized
 
 
@@ -304,12 +304,23 @@ def crear_pago():
             "amount": float(_money(body.get("amount"))), "remaining_balance": float(unpaid),
         }
         billing._write_index(index)
-        return jsonify({
+        folio_folder = normalized["folio"] or normalized["uuid"]
+        drive_backup = billing._backup_facturama_cfdi(
+            rep_id, rep_uuid, normalized["customer"].get("folder_name") or normalized["customer"]["legal_name"],
+            folio_folder, "Complemento-Pago",
+        )
+        response = {
             "ok": True, "provider": "facturama", "id": rep_id, "uuid": rep_uuid,
             "remaining_balance": float(unpaid),
             "pdf_url": f"/api/invoices/{rep_id}/pdf",
             "xml_url": f"/api/invoices/{rep_id}/xml",
-        }), 200
+            "drive_backup": drive_backup,
+        }
+        if not drive_backup.get("ok"):
+            response["warning"] = (
+                "El complemento se timbró correctamente, pero Drive no confirmó el respaldo."
+            )
+        return jsonify(response), 200
     except ValueError as exc:
         return jsonify({"ok": False, "stage": "validation", "error": str(exc)}), 400
     except requests.HTTPError as exc:

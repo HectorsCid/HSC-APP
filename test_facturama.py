@@ -177,6 +177,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
             patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
             patch.object(billing, "_facturama_receiver_validation", return_value=({}, {})) as receiver_mock,
             patch.object(billing, "_fm_request", return_value=answer) as request_mock,
+            patch.object(billing, "_backup_facturama_cfdi", return_value={"ok": True}),
         ):
             first = self.client.post("/api/facturar", json=self.payload("same-request"))
             second = self.client.post("/api/facturar", json=self.payload("same-request"))
@@ -199,6 +200,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
             patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
             patch.object(billing, "_facturama_receiver_validation", return_value=({}, {})),
             patch.object(billing, "_fm_request", return_value=answer),
+            patch.object(billing, "_backup_facturama_cfdi", return_value={"ok": True}),
         ):
             response = self.client.post("/api/facturar", json=self.payload("nested-request"))
         data = response.get_json()

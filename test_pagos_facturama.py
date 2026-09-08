@@ -94,6 +94,7 @@ class FacturamaPaymentTests(unittest.TestCase):
             patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
             patch.object(billing, "_read_index", return_value={}),
             patch.object(billing, "_write_index") as write_index,
+            patch.object(billing, "_backup_facturama_cfdi", return_value={"ok": True}) as backup,
         ):
             response = self.client.post("/api/pagos/crear", json={
                 "invoice_id": "invoice-id", "amount": 116, "payment_form": "03",
@@ -104,6 +105,10 @@ class FacturamaPaymentTests(unittest.TestCase):
         self.assertEqual(data["pdf_url"], "/api/invoices/rep-id/pdf")
         self.assertEqual(calls[-1][0:2], ("POST", "/3/cfdis"))
         write_index.assert_called_once()
+        backup.assert_called_once_with(
+            "rep-id", self.REP_UUID, "UNIVERSIDAD ROBOTICA ESPAÑOLA",
+            "10", "Complemento-Pago",
+        )
 
 
 if __name__ == "__main__":

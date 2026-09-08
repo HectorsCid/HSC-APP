@@ -10,6 +10,8 @@ import json
 import re
 import requests
 
+from cfdi_drive import backup_cfdi
+
 # ----------------------------------------------------------------------
 # Blueprint
 # ----------------------------------------------------------------------
@@ -558,6 +560,20 @@ def _decode_facturama_file(data):
     except Exception as exc:
         raise ValueError("Facturama devolvió un archivo inválido") from exc
 
+
+def _backup_facturama_cfdi(inv_id, uuid, client_name, internal_folio, document_type="Factura"):
+    """Descarga PDF/XML y los respalda sin comprometer un timbrado exitoso."""
+    try:
+        pdf = _decode_facturama_file(_fm_request("GET", f"/Cfdi/pdf/issued/{inv_id}"))
+        xml = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
+        return backup_cfdi(
+            client_name, internal_folio, uuid, pdf, xml, document_type=document_type
+        )
+    except Exception as exc:
+        current_app.logger.warning("CFDI timbrado, pero falló su respaldo en Drive: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
 # ----------------------------------------------------------------------
 # Armado de datos
 # ----------------------------------------------------------------------
@@ -826,6 +842,24 @@ def facturar():
                     "xml_url": f"/api/invoices/{inv_id}/xml",
                     "complementos_disponibles": False,
                 }
+                internal_folio = str(
+                    payload.get("folio") or _pick(invoice, "Folio")
+                    or payload.get("source_quote_id") or inv_id
+                ).strip()
+                drive_backup = _backup_facturama_cfdi(
+                    str(inv_id), str(uuid).strip(),
+                    str(payload.get("cliente_carpeta")
+                        or (payload.get("receptor") or {}).get("nombre") or "SIN_CLIENTE"),
+                    internal_folio,
+                    "Factura",
+                )
+                result["drive_backup"] = drive_backup
+                result["internal_folio"] = internal_folio
+                if not drive_backup.get("ok"):
+                    result["warning"] = (
+                        "La factura se timbró correctamente, pero Drive no confirmó el respaldo. "
+                        "Puedes descargarla desde el panel de facturación."
+                    )
                 _STAMP_RESULTS[request_id] = dict(result)
                 return jsonify(result), 200
 
