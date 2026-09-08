@@ -4,6 +4,12 @@
 <meta charset="UTF-8" />
 <title>Complemento de Pago - HSC</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>
+  (()=>{
+    const saved = localStorage.getItem('hsc-theme');
+    document.documentElement.dataset.theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  })();
+</script>
 <style>
   :root{--bg:#fff;--card:#f9fafb;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--brand:#374151;--ok:#22c55e;--danger:#ef4444}
   *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Roboto,system-ui,-apple-system,sans-serif}
@@ -26,6 +32,31 @@
   .pill{font-size:.85rem;color:var(--muted)}
   .spin{width:16px;height:16px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:sp .8s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
+  :root{--bg:#f4f7fb;--surface:#fff;--card:#fff;--ink:#17233b;--muted:#64748b;--line:#dce3ed;--brand:#2563eb;--soft:#f8fafc;--ok:#16a34a;--danger:#ef4444;--shadow:0 12px 32px rgba(30,41,59,.08)}
+  html[data-theme="dark"]{--bg:#0b1120;--surface:#121b2e;--card:#151f33;--ink:#f8fafc;--muted:#9fb0c9;--line:#30405a;--brand:#3b82f6;--soft:#1c2940;--ok:#22c55e;--shadow:0 16px 38px rgba(0,0,0,.24)}
+  html,body{background:var(--bg);color:var(--ink)}
+  button,input,select{font:inherit;color:inherit}
+  .wrap{max-width:1040px;padding:20px}
+  .top{gap:16px;margin-bottom:16px}
+  .title{font-size:1.55rem;font-weight:900;letter-spacing:-.025em}
+  .card{background:var(--card);border-color:var(--line);border-radius:16px;box-shadow:var(--shadow)}
+  label{font-size:.78rem;font-weight:800;color:var(--muted)}
+  input,select{padding:10px 11px;background:var(--surface);color:var(--ink)}
+  input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 18%,transparent)}
+  input:disabled{background:var(--soft);color:var(--muted)}
+  .btn{padding:9px 11px;background:var(--surface);color:var(--ink);border-color:var(--line)}
+  .btn:hover{background:var(--soft)}
+  .btn-primary{background:var(--brand);color:#fff}
+  .btn-ok{background:var(--ok);color:#fff}
+  .pill{color:var(--muted)}
+  .theme-toggle{display:inline-flex;align-items:center;gap:7px;padding:8px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font-weight:750;cursor:pointer}
+  .theme-track{width:38px;height:21px;padding:2px;border-radius:999px;background:#94a3b8;transition:.2s;display:flex}
+  .theme-knob{width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:.2s}
+  html[data-theme="dark"] .theme-track{background:#22c55e}
+  html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
+  .theme-text{font-size:.76rem;white-space:nowrap}
+  .section-title{margin:0 0 8px}
+  @media(max-width:720px){.top{align-items:flex-start;flex-direction:column}.top .actions{width:100%}.top .actions .btn{flex:1}.wrap{padding:12px}.card{padding:13px}}
 </style>
 </head>
 <body>
@@ -36,7 +67,13 @@
       <div class="pill">Genera REP para facturas PPD</div>
     </div>
     <div class="actions">
-      <a class="btn" href="/facturacion">← Listado</a>
+      <a class="btn" href="/inicio-app">🏠 Inicio</a>
+      <a class="btn" href="/facturacion">🧾 Facturas</a>
+      <a class="btn" href="/cotizaciones">📋 Cotizaciones</a>
+      <button class="theme-toggle" type="button" id="theme-toggle" role="switch" aria-label="Cambiar modo de color">
+        <span class="theme-track" aria-hidden="true"><span class="theme-knob"></span></span>
+        <span class="theme-text" id="theme-label">Modo</span>
+      </button>
     </div>
   </div>
 
@@ -45,8 +82,8 @@
   <div class="card">
     <div class="row row-2">
       <div>
-        <label>UUID o Invoice ID</label>
-        <input id="ref" placeholder="Pega el UUID (xxxx-...) o el ID (68dd...)" />
+        <label>Folio fiscal (UUID)</label>
+        <input id="ref" placeholder="Pega el UUID de la factura" />
       </div>
       <div>
         <label>&nbsp;</label>
@@ -62,9 +99,8 @@
         <div><label>Método</label><input id="invMetodo" disabled /></div>
         <div><label>Total</label><input id="invTotal" disabled /></div>
       </div>
-      <div class="row row-2">
-        <div><label>UUID</label><input id="invUUID" disabled /></div>
-        <div><label>Invoice ID</label><input id="invID" disabled /></div>
+      <div class="row">
+        <div><label>Folio fiscal (UUID)</label><input id="invUUID" disabled /></div>
       </div>
       <div class="row row-2">
         <div><label>Régimen fiscal</label><input id="invRegimen" placeholder="Ej. 601" /></div>
@@ -82,9 +118,27 @@
       <div>
         <label>Forma de pago</label>
         <select id="payment_form">
-          <option value="03">03 - Transferencia</option>
           <option value="01">01 - Efectivo</option>
+          <option value="02">02 - Cheque nominativo</option>
+          <option value="03" selected>03 - Transferencia electrónica de fondos</option>
+          <option value="04">04 - Tarjeta de crédito</option>
+          <option value="05">05 - Monedero electrónico</option>
+          <option value="06">06 - Dinero electrónico</option>
+          <option value="08">08 - Vales de despensa</option>
+          <option value="12">12 - Dación en pago</option>
+          <option value="13">13 - Pago por subrogación</option>
+          <option value="14">14 - Pago por consignación</option>
+          <option value="15">15 - Condonación</option>
+          <option value="17">17 - Compensación</option>
+          <option value="23">23 - Novación</option>
+          <option value="24">24 - Confusión</option>
+          <option value="25">25 - Remisión de deuda</option>
+          <option value="26">26 - Prescripción o caducidad</option>
+          <option value="27">27 - A satisfacción del acreedor</option>
           <option value="28">28 - Tarjeta de débito</option>
+          <option value="29">29 - Tarjeta de servicios</option>
+          <option value="30">30 - Aplicación de anticipos</option>
+          <option value="31">31 - Intermediario de pagos</option>
         </select>
       </div>
     </div>
@@ -126,6 +180,20 @@ const msg = (ok,t) => { const el=document.getElementById('msg'); el.className='f
 const $ = id => document.getElementById(id);
 let cachedInvoice = null;
 let lock = false; // antirrebote
+const themeToggle = $('theme-toggle');
+const themeLabel = $('theme-label');
+function syncThemeToggle(){
+  const dark = document.documentElement.dataset.theme === 'dark';
+  themeToggle.setAttribute('aria-checked', String(dark));
+  themeLabel.textContent = dark ? 'Oscuro' : 'Claro';
+}
+themeToggle.onclick = ()=>{
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem('hsc-theme', next);
+  syncThemeToggle();
+};
+syncThemeToggle();
 
 $('btnBuscar').onclick = async () => {
   if(lock) return;
@@ -153,7 +221,6 @@ $('btnBuscar').onclick = async () => {
     $('invMetodo').value = inv.payment_method || '';
     $('invTotal').value = inv.total?.toFixed ? inv.total.toFixed(2) : inv.total;
     $('invUUID').value = inv.uuid || '';
-    $('invID').value = inv.id || '';
     $('invRegimen').value = inv.customer?.tax_system || '';
     $('invCP').value = inv.customer?.zip || '';
     $('invBox').style.display='block';
@@ -219,7 +286,7 @@ $('btnCrear').onclick = async () => {
 (function preload(){
   const qs = new URLSearchParams(location.search);
   const id = qs.get('invoice_id'); const u = qs.get('uuid');
-  if(id || u){ $('ref').value = id || u; $('btnBuscar').click(); }
+  if(id || u){ $('ref').value = u || id; $('btnBuscar').click(); }
 })();
 </script>
 </body>
