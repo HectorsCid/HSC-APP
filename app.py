@@ -2761,9 +2761,11 @@ def ui_cotizacion_detalle(qid):
 # --- Vista de clientes (lista simple) ---
 @app.get("/clientes")
 def ui_clientes():
-    # Preferir el diccionario en memoria sincronizado desde Drive
+    # Tomar una fotografía estable: la sincronización de Drive puede reemplazar
+    # o actualizar el catálogo mientras Jinja lo convierte a JSON.
     try:
-        data = clientes_predefinidos or {}
+        with _CLIENTES_DATA_LOCK:
+            data = dict(clientes_predefinidos or {})
     except NameError:
         data = {}
 
@@ -2772,7 +2774,8 @@ def ui_clientes():
     if not data and (IS_RENDER or AUTO_SYNC_FROM_DRIVE):
         try:
             _sync_clientes_from_drive_into_memory()
-            data = clientes_predefinidos or {}
+            with _CLIENTES_DATA_LOCK:
+                data = dict(clientes_predefinidos or {})
         except Exception as exc:
             app.logger.warning("No se pudieron actualizar clientes al abrir el panel: %s", exc)
 
