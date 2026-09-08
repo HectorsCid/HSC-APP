@@ -118,11 +118,16 @@ def send_email_with_attachments(*, recipient, subject, body, attachments):
     }
 
 
-def send_cfdi_email(*, recipient, subject, body, pdf_bytes, xml_bytes, folio):
+def send_cfdi_email(*, recipient, subject, body, pdf_bytes, xml_bytes, folio, extra_attachments=None):
     if not pdf_bytes or not xml_bytes:
         raise ValueError("No se pudieron preparar el PDF y XML de la factura.")
 
     safe_folio = re.sub(r"[^A-Za-z0-9._-]+", "-", str(folio or "CFDI")).strip("-.") or "CFDI"
+    attachments = [
+        {"data": pdf_bytes, "content_type": "application/pdf", "filename": f"Factura-{safe_folio}.pdf"},
+        {"data": xml_bytes, "content_type": "application/xml", "filename": f"Factura-{safe_folio}.xml"},
+    ]
+    attachments.extend(extra_attachments or [])
     return send_email_with_attachments(
         recipient=recipient,
         subject=subject or f"Factura HSC {safe_folio}",
@@ -133,10 +138,7 @@ def send_cfdi_email(*, recipient, subject, body, pdf_bytes, xml_bytes, folio):
             "Ing. Héctor Silva Cid\n\n"
             "Cel: 5527605496"
         ),
-        attachments=[
-            {"data": pdf_bytes, "content_type": "application/pdf", "filename": f"Factura-{safe_folio}.pdf"},
-            {"data": xml_bytes, "content_type": "application/xml", "filename": f"Factura-{safe_folio}.xml"},
-        ],
+        attachments=attachments,
     )
 
 

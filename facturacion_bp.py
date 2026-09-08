@@ -9,7 +9,9 @@ import os
 import json
 import re
 import smtplib
+import mimetypes
 import requests
+from werkzeug.utils import secure_filename
 
 from cfdi_drive import backup_cfdi
 from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config, trusted_device_token
@@ -1075,7 +1077,7 @@ def api_invoice_xml(inv_id):
 
 @facturacion_bp.post("/invoices/<inv_id>/email")
 def api_invoice_email(inv_id):
-    body = request.get_json(silent=True) or {}
+    body = (request.get_json(silent=True) or {}) if request.is_json else request.form.to_dict()
     recipient = str(body.get("email") or "").strip()
     folio = str(body.get("folio") or body.get("uuid") or inv_id).strip()
     subject = str(body.get("subject") or f"Factura HSC {folio}")
@@ -1092,6 +1094,27 @@ def api_invoice_email(inv_id):
     supplied_key = body.get("send_key")
     if not authorized_to_send(supplied_key, trusted_cookie):
         return jsonify({"ok": False, "error": "La clave de envío no es correcta."}), 403
+
+    extras = []
+    allowed = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".xls", ".xlsx", ".csv"}
+    files = [upload for upload in request.files.getlist("attachments") if upload and upload.filename]
+    if len(files) > 8:
+        return jsonify({"ok": False, "error": "Puedes adjuntar como máximo 8 archivos adicionales."}), 400
+    total_size = 0
+    for upload in files:
+        filename = secure_filename(upload.filename)
+        suffix = Path(filename).suffix.lower()
+        if not filename or suffix not in allowed:
+            return jsonify({"ok": False, "error": f"El archivo {upload.filename} no tiene un formato permitido."}), 400
+        content = upload.read()
+        total_size += len(content)
+        if total_size > 15 * 1024 * 1024:
+            return jsonify({"ok": False, "error": "Los archivos adicionales superan el límite total de 15 MB."}), 400
+        extras.append({
+            "data": content,
+            "filename": filename,
+            "content_type": upload.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream",
+        })
     try:
         if _provider() == "facturama":
             pdf = _decode_facturama_file(_fm_request("GET", f"/Cfdi/pdf/issued/{inv_id}"))
@@ -1106,6 +1129,7 @@ def api_invoice_email(inv_id):
             pdf_bytes=pdf,
             xml_bytes=xml,
             folio=folio,
+            extra_attachments=extras,
         )
         response = jsonify({
             "ok": True,

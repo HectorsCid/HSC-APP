@@ -1,4 +1,5 @@
 import os
+import io
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -110,6 +111,26 @@ class InvoiceEmailEndpointTests(unittest.TestCase):
             response = self.client.get("/api/email/status")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"ok": True, "configured": True, "trusted": True})
+
+    def test_invoice_email_accepts_optional_attachment(self):
+        with (
+            patch.object(billing, "smtp_config", return_value={"configured": True}),
+            patch.object(billing, "authorized_to_send", return_value=True),
+            patch.object(billing, "trusted_device_token", return_value="trusted-cookie"),
+            patch.object(billing, "_provider", return_value="facturama"),
+            patch.object(billing, "_fm_request", side_effect=[{"Content": "JVBERg=="}, {"Content": "PHhtbC8+"}]),
+            patch.object(billing, "send_cfdi_email", return_value={"recipient": "x@example.com"}) as send,
+        ):
+            response = self.client.post("/api/invoices/abc/email", data={
+                "email": "x@example.com; compras@example.com",
+                "subject": "Factura HSC 1587",
+                "message": "Mensaje",
+                "folio": "1587",
+                "send_key": "correct",
+                "attachments": (io.BytesIO(b"orden"), "orden-compra.pdf"),
+            }, content_type="multipart/form-data")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(send.call_args.kwargs["extra_attachments"][0]["filename"], "orden-compra.pdf")
 
 
 if __name__ == "__main__":

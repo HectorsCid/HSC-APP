@@ -273,7 +273,7 @@
       <button class="cm-close" id="emClose" aria-label="Cerrar">×</button>
     </div>
     <div class="cm-body">
-      <div class="cm-kv">Se adjuntarán el PDF y el XML.</div>
+      <div class="cm-kv">Se adjuntarán automáticamente el PDF y el XML.</div>
       <div>
         <label for="emEmail">Destinatarios</label>
         <input id="emEmail" class="cm-input" type="text" placeholder="cliente@empresa.com; compras@empresa.com" />
@@ -281,6 +281,11 @@
       </div>
       <div><label for="emSubject">Asunto</label><input id="emSubject" class="cm-input" type="text" /></div>
       <div><label for="emMessage">Mensaje</label><textarea id="emMessage" class="cm-input" rows="5"></textarea></div>
+      <div>
+        <label for="emFiles">Archivos adicionales (opcional)</label>
+        <input id="emFiles" class="cm-input" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.csv" />
+        <div class="cm-hint">Puedes agregar órdenes de compra u otros documentos. Hasta 8 archivos y 15 MB en total.</div>
+      </div>
       <div id="emKeyWrap"><label for="emKey">Clave de envío (solo la primera vez)</label><input id="emKey" class="cm-input" type="password" autocomplete="off" placeholder="Clave privada configurada en Render" /></div>
       <div id="emErr" class="cm-hint" style="color:var(--danger)"></div>
     </div>
@@ -469,6 +474,7 @@ const em = $('#em');
 const emEmail = $('#emEmail');
 const emSubject = $('#emSubject');
 const emMessage = $('#emMessage');
+const emFiles = $('#emFiles');
 const emKey = $('#emKey');
 const emKeyWrap = $('#emKeyWrap');
 const emErr = $('#emErr');
@@ -481,6 +487,7 @@ async function openEmailModal(ctx){
   emSubject.value = `Factura HSC ${ctx.folio || ''}`;
   emMessage.value = `Buen día, estimado cliente. Envío la factura solicitada.\n\nDe antemano muchas gracias.\n\nQuedo a sus órdenes.\n\nIng. Héctor Silva Cid\n\nCel: 5527605496`;
   emKey.value = '';
+  emFiles.value = '';
   emKeyWrap.classList.add('hidden');
   emErr.textContent = '';
   emConfirm.disabled = false;
@@ -524,12 +531,15 @@ emConfirm.addEventListener('click', async ()=>{
   emConfirm.disabled = true;
   emConfirm.textContent = 'Enviando…';
   try{
+    const form = new FormData();
+    form.append('email', emEmail.value.trim());
+    form.append('subject', emSubject.value.trim());
+    form.append('message', emMessage.value);
+    form.append('folio', emailCtx.folio);
+    form.append('send_key', emKey.value);
+    Array.from(emFiles.files).forEach(file=>form.append('attachments', file));
     const response = await fetch(`/api/invoices/${encodeURIComponent(emailCtx.id)}/email`, {
-      method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
-      body:JSON.stringify({
-        email:emEmail.value.trim(), subject:emSubject.value.trim(), message:emMessage.value,
-        folio:emailCtx.folio, send_key:emKey.value
-      })
+      method:'POST', headers:{'Accept':'application/json'}, body:form
     });
     const data = await response.json();
     if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo enviar el correo.');
