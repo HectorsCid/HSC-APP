@@ -331,6 +331,31 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(invoice["type"], "I")
         self.assertEqual(invoice["payment_method"], "PPD")
 
+    def test_billing_clients_groups_invoices_balances_and_complements(self):
+        rows = [{
+            "Id": "ppd-1", "Uuid": self.VALID_UUID, "Folio": "1594", "CfdiType": "ingreso",
+            "PaymentMethod": "PPD", "TaxName": "CLIENTE SAT", "Rfc": "URE180429TM6",
+            "Total": 116, "Status": "active", "Date": "2026-09-09T10:00:00",
+        }]
+        index = {self.VALID_UUID: {"payments": [{
+            "rep_id": "rep-1", "rep_uuid": "215cec43-7e57-44ac-9d63-b54bbc4745bd",
+            "amount": 40, "remaining_balance": 76, "partiality_number": 1,
+            "date": "2026-10-01T10:00:00", "status": "active",
+        }]}}
+        with (
+            patch.object(billing, "_fm_request", return_value=rows),
+            patch.object(billing, "_read_index", return_value=index),
+            patch.object(billing, "read_email_deliveries", return_value={}),
+        ):
+            response = self.client.get("/api/facturacion/clientes")
+        self.assertEqual(response.status_code, 200)
+        client = response.get_json()["data"][0]
+        self.assertEqual(client["invoiced_total"], 116)
+        self.assertEqual(client["collected_total"], 40)
+        self.assertEqual(client["pending_total"], 76)
+        self.assertEqual(client["pending_complements"], 1)
+        self.assertEqual(client["complements"][0]["partiality_number"], 1)
+
     def test_received_list_uses_issuer_as_supplier(self):
         rows = [{
             "Id": "received-1", "Uuid": self.VALID_UUID, "CfdiType": "I",

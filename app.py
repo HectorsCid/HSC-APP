@@ -49,6 +49,7 @@ from google.auth.exceptions import RefreshError
 from werkzeug.utils import safe_join, secure_filename
 from smtp_mailer import authorized_to_send, parse_recipients, send_quote_email, smtp_config, trusted_device_token
 from cfdi_drive import delete_pending_document, list_pending_documents, save_pending_document
+from email_tracking import delivery_status, read_email_deliveries, record_email_delivery
 from reportes_bp import reportes_bp, start_auto_report_monitor
 
 from facturacion_bp import facturacion_bp
@@ -2966,7 +2967,14 @@ def api_cotizaciones_list():
                 elif isinstance(data.get("data"), list): items = data["data"]
         except Exception:
             pass
-    return jsonify(items), 200
+    deliveries = read_email_deliveries()
+    enriched = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        qid = str(item.get("id") or item.get("folio") or item.get("numero") or "").strip()
+        enriched.append({**item, "email_delivery": delivery_status("cotizacion", qid, deliveries)})
+    return jsonify(enriched), 200
 
 
 def _buscar_cotizacion_registrada(qid):
@@ -3128,6 +3136,7 @@ def api_enviar_cotizacion(qid):
             ok=True,
             configured=bool(cfg.get("configured")),
             trusted=trusted,
+            id=str(cotizacion.get("id") or cotizacion.get("folio") or qid),
             cliente=str(cotizacion.get("cliente") or ""),
             rfc=str((cotizacion.get("receptor") or {}).get("rfc") or ""),
             folio=str(cotizacion.get("folio") or cotizacion.get("id") or ""),
@@ -3181,6 +3190,11 @@ def api_enviar_cotizacion(qid):
             folio=folio,
             extra_attachments=extras,
         )
+        delivery = record_email_delivery(
+            "cotizacion", str(cotizacion.get("id") or folio),
+            recipients=result.get("recipients") or [], cc=result.get("cc") or [],
+            client_name=str(cotizacion.get("cliente") or ""), folio=folio,
+        )
         copy_warning = result.get("sent_copy_saved") is False
         response = jsonify({
             "ok": True,
@@ -3189,6 +3203,7 @@ def api_enviar_cotizacion(qid):
                 + (" CarrierZone no confirmó la copia en Enviados." if copy_warning else "")
             ),
             "sent_copy_saved": not copy_warning,
+            "email_delivery": delivery,
             "result": result,
         })
         token = trusted_device_token()

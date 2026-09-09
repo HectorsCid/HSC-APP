@@ -141,8 +141,9 @@ class QuoteEmailTests(unittest.TestCase):
             patch.object(cotizador, "trusted_device_token", return_value="trusted-cookie"),
             patch.object(cotizador, "_pdf_cotizacion_bytes", return_value=b"%PDF"),
             patch.object(cotizador, "send_quote_email", return_value={
-                "recipient": "uno@example.com, dos@example.com", "attachments": 2,
+                "recipient": "uno@example.com, dos@example.com", "recipients": ["uno@example.com", "dos@example.com"], "cc": ["supervisor@example.com"], "attachments": 2,
             }) as send,
+            patch.object(cotizador, "record_email_delivery", return_value={"sent": True}) as track,
         ):
             response = self.client.post("/api/cotizaciones/1587/email", data={
                 "email": "uno@example.com; dos@example.com",
@@ -158,6 +159,7 @@ class QuoteEmailTests(unittest.TestCase):
         self.assertEqual(send.call_args.kwargs["cc"], "supervisor@example.com")
         self.assertEqual(send.call_args.kwargs["pdf_bytes"], b"%PDF")
         self.assertEqual(send.call_args.kwargs["extra_attachments"][0]["filename"], "orden-compra.pdf")
+        track.assert_called_once()
         self.assertIn("hsc_mail_trusted=trusted-cookie", response.headers.get("Set-Cookie", ""))
 
 

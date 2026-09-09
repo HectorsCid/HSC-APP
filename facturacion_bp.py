@@ -21,6 +21,7 @@ from cfdi_drive import (
     load_json_file, load_payments_index, move_pending_documents,
 )
 from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config, trusted_device_token
+from email_tracking import delivery_status, read_email_deliveries, record_email_delivery
 from factura_pdf_hsc import build_invoice_pdf_bytes, parse_cfdi
 
 # ----------------------------------------------------------------------
@@ -1312,6 +1313,7 @@ def api_list_facturas():
         rows = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
         out = []
         paid_idx = _read_index()
+        deliveries = read_email_deliveries()
         for inv in rows:
             normalized = _facturama_invoice_row(inv)
             summary = _payment_summary(paid_idx.get(normalized["uuid"]), normalized["total"])
@@ -1320,6 +1322,7 @@ def api_list_facturas():
                 "payment_count": summary["payment_count"] if normalized["type"] == "I" else 0,
                 "paid_amount": summary["paid_amount"] if normalized["type"] == "I" else 0,
                 "remaining_balance": summary["remaining_balance"] if normalized["type"] == "I" else 0,
+                "email_delivery": delivery_status("factura", normalized["id"], deliveries),
             })
             # Los intentos rechazados pueden tener Id, pero no folio fiscal.
             if normalized["id"] and _valid_cfdi_uuid(normalized["uuid"]):
@@ -1331,6 +1334,7 @@ def api_list_facturas():
         return jsonify({"ok": False, "error": getattr(e.response, "text", str(e))}), 400
 
     paid_idx = _read_index()  # claves = UUID de facturas origen con REP activo
+    deliveries = read_email_deliveries()
     out = []
     for inv in rs.get("data", []):
         cust = inv.get("customer") or {}
@@ -1351,8 +1355,69 @@ def api_list_facturas():
             "payment_count": summary["payment_count"] if inv.get("type") == "I" else 0,
             "paid_amount": summary["paid_amount"] if inv.get("type") == "I" else 0,
             "remaining_balance": summary["remaining_balance"] if inv.get("type") == "I" else 0,
+            "email_delivery": delivery_status("factura", inv.get("id"), deliveries),
         })
     return jsonify({"ok": True, "data": out}), 200
+
+
+@facturacion_bp.get("/facturacion/clientes")
+def api_billing_clients():
+    """Relación por receptor de facturas, cobros y complementos registrados."""
+    if _provider() != "facturama":
+        return jsonify({"ok": False, "error": "El panel por cliente requiere Facturama."}), 503
+    try:
+        raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "all", "page": 0})
+    except requests.HTTPError as exc:
+        return jsonify({"ok": False, "error": _http_error_detail(exc)}), 400
+    source = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
+    payments = _read_index()
+    deliveries = read_email_deliveries()
+    groups = {}
+    for item in source:
+        invoice = _facturama_invoice_row(item)
+        if invoice["type"] != "I" or not invoice["id"] or not _valid_cfdi_uuid(invoice["uuid"]):
+            continue
+        rfc = str(invoice.get("customer_tax_id") or "").strip().upper()
+        name = str(invoice.get("customer_name") or "Cliente sin nombre").strip()
+        key = rfc or re.sub(r"\W+", "", name.casefold())
+        group = groups.setdefault(key, {
+            "key": key, "name": name, "rfc": rfc, "invoice_count": 0,
+            "invoiced_total": 0.0, "collected_total": 0.0, "pending_total": 0.0,
+            "pending_complements": 0, "invoices": [], "complements": [],
+        })
+        status_text = str(invoice.get("status") or "").lower()
+        active = not any(word in status_text for word in ("cancel", "canceled", "cancelado"))
+        summary = _payment_summary(payments.get(invoice["uuid"]), invoice.get("total"))
+        total = round(float(invoice.get("total") or 0), 2)
+        pending = summary["remaining_balance"] if invoice.get("payment_method") == "PPD" and active else 0.0
+        collected = (total if invoice.get("payment_method") == "PUE" else summary["paid_amount"]) if active else 0.0
+        group["invoice_count"] += 1
+        group["invoiced_total"] = round(group["invoiced_total"] + (total if active else 0), 2)
+        group["collected_total"] = round(group["collected_total"] + collected, 2)
+        group["pending_total"] = round(group["pending_total"] + pending, 2)
+        if active and invoice.get("payment_method") == "PPD" and pending > 0.009:
+            group["pending_complements"] += 1
+        group["invoices"].append({
+            **invoice, "active": active, "paid_amount": summary["paid_amount"],
+            "remaining_balance": pending, "payment_count": summary["payment_count"],
+            "email_delivery": delivery_status("factura", invoice["id"], deliveries),
+        })
+        for payment in summary["payments"]:
+            rep_id = str(payment.get("rep_id") or "")
+            group["complements"].append({
+                "id": rep_id, "uuid": str(payment.get("rep_uuid") or ""),
+                "invoice_id": invoice["id"], "invoice_uuid": invoice["uuid"],
+                "invoice_folio": invoice.get("folio") or "", "date": payment.get("date") or "",
+                "amount": float(payment.get("amount") or 0),
+                "partiality_number": payment.get("partiality_number") or 1,
+                "email_delivery": delivery_status("factura", rep_id, deliveries),
+            })
+    result = list(groups.values())
+    for group in result:
+        group["invoices"].sort(key=lambda row: str(row.get("date") or ""), reverse=True)
+        group["complements"].sort(key=lambda row: str(row.get("date") or ""), reverse=True)
+    result.sort(key=lambda row: (row["pending_complements"] == 0, -row["pending_total"], row["name"].casefold()))
+    return jsonify({"ok": True, "data": result}), 200
 
 
 @facturacion_bp.get("/facturas/received")
@@ -1585,6 +1650,10 @@ def api_invoice_email(inv_id):
             folio=folio,
             extra_attachments=extras,
         )
+        delivery = record_email_delivery(
+            "factura", inv_id, recipients=result.get("recipients") or [], cc=result.get("cc") or [],
+            folio=folio,
+        )
         copy_warning = result.get("sent_copy_saved") is False
         response = jsonify({
             "ok": True,
@@ -1593,6 +1662,7 @@ def api_invoice_email(inv_id):
                 + (" CarrierZone no confirmó la copia en Enviados." if copy_warning else "")
             ),
             "sent_copy_saved": not copy_warning,
+            "email_delivery": delivery,
             "result": result,
         })
         response.set_cookie(

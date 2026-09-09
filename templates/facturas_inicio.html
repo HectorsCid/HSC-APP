@@ -86,6 +86,8 @@
   .btn:hover{background:var(--soft);transform:translateY(-1px)}
   .btn-primary,.btn.btn-primary{background:var(--brand);color:#fff}
   .btn-danger{background:var(--danger);color:#fff}
+  .btn-mail-pending{background:var(--ok-soft)!important;border-color:color-mix(in srgb,var(--ok) 45%,var(--line))!important;color:#15803d!important}
+  html[data-theme="dark"] .btn-mail-pending{color:#86efac!important}
   .wrap{width:100%;max-width:1500px;min-width:0;padding:17px 20px;overflow:hidden}
   .title{font-size:1.5rem;font-weight:900;letter-spacing:-.025em}
   .pill{margin-top:2px;color:var(--muted)}
@@ -145,6 +147,7 @@
   .mini-row{display:grid;grid-template-columns:minmax(170px,1.25fr) 105px 130px minmax(180px,1fr) auto;gap:10px;align-items:center;min-height:67px;padding:8px 10px;border-bottom:1px solid var(--line)}.mini-row:last-child{border-bottom:0}.mini-row:hover{background:var(--soft)}
   .mini-main{min-width:0}.mini-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem;font-weight:780}.mini-sub{margin-top:3px;color:var(--muted);font-size:.68rem}.mini-amount{font-size:.86rem;font-weight:780;font-variant-numeric:tabular-nums}.mini-uuid{min-width:0;font-family:ui-monospace,Consolas,monospace;color:var(--muted);font-size:.65rem;overflow-wrap:anywhere}.mini-actions{display:flex;justify-content:flex-end;gap:5px}.mini-actions .btn{min-height:28px;padding:4px 7px;font-size:.68rem}
   .empty-state{padding:42px 12px;text-align:center;color:var(--muted)}
+  .client-layout{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(0,1.7fr);gap:10px}.client-list,.client-detail{max-height:min(calc(100vh - 190px),520px);overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.client-item{width:100%;display:grid;grid-template-columns:1fr auto;gap:5px 10px;padding:11px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);text-align:left;cursor:pointer}.client-item:hover,.client-item.active{background:var(--brand-soft)}.client-item strong{font-size:.82rem}.client-item small{color:var(--muted)}.client-item .pending{color:var(--danger);font-weight:800}.client-detail{padding:12px}.client-detail-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}.client-detail h3{margin:0;font-size:1rem}.client-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}.client-doc{display:grid;grid-template-columns:minmax(150px,1fr) 90px 105px auto;gap:8px;align-items:center;padding:9px 4px;border-top:1px solid var(--line);font-size:.75rem}.client-doc .doc-title{font-weight:800}.client-doc .doc-sub{margin-top:2px;color:var(--muted);font-size:.67rem}.client-doc-actions{display:flex;gap:5px}.client-doc-actions .btn{font-size:.64rem;padding:4px 6px;min-height:27px}.section-label{margin:13px 0 5px;color:var(--muted);font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em}
   @media(max-width:1120px){
     .layout{grid-template-columns:180px minmax(0,1fr)}
     .wrap{padding-left:13px;padding-right:13px}
@@ -174,7 +177,7 @@
     tbody td:nth-child(8){grid-column:1;grid-row:3;align-self:center;padding:0}
     tbody td:nth-child(9){grid-column:1/-1;grid-row:4}
     tbody td:nth-child(10){grid-column:1/-1;grid-row:5;justify-content:start}
-    .summary-grid{grid-template-columns:1fr}.mini-list{max-height:none}.mini-row{grid-template-columns:1fr auto}.mini-row>*{grid-column:1}.mini-row .mini-amount{grid-column:2;grid-row:1}.mini-row .mini-actions{grid-column:1/-1;justify-content:start}
+    .summary-grid{grid-template-columns:1fr}.mini-list{max-height:none}.mini-row{grid-template-columns:1fr auto}.mini-row>*{grid-column:1}.mini-row .mini-amount{grid-column:2;grid-row:1}.mini-row .mini-actions{grid-column:1/-1;justify-content:start}.client-layout{grid-template-columns:1fr}.client-list,.client-detail{max-height:none}.client-kpis{grid-template-columns:1fr}.client-doc{grid-template-columns:1fr auto}.client-doc>*{grid-column:1}.client-doc .client-doc-actions{grid-column:2;grid-row:1/4;flex-direction:column}
   }
 </style>
 </head>
@@ -216,6 +219,7 @@
       <div id="tabEmitidas" class="tab active">Emitidas</div>
       <div id="tabRecibidas" class="tab">Recibidas</div>
       <div id="tabPlantillas" class="tab">Plantillas</div>
+      <div id="tabClientes" class="tab">Clientes</div>
     </div>
 
     <div class="card" id="panelEmitidas">
@@ -252,6 +256,10 @@
     <div class="card" id="panelPlantillas" style="display:none">
       <div class="panel-head"><div><h2>Plantillas de factura</h2><div class="pill">Reutiliza cliente, conceptos, impuestos y condiciones sin timbrar automáticamente</div></div><a class="btn btn-primary" href="/facturas/nueva">＋ Preparar plantilla</a></div>
       <div class="mini-list" id="templateList"><div class="empty-state">Cargando plantillas…</div></div>
+    </div>
+    <div class="card" id="panelClientes" style="display:none">
+      <div class="panel-head"><div><h2>Relación por cliente</h2><div class="pill">Facturas, cobros y complementos en un solo lugar</div></div><button class="btn" id="reloadClients">↻ Actualizar</button></div>
+      <div class="client-layout"><div class="client-list" id="billingClientList"><div class="empty-state">Abre esta pestaña para consultar.</div></div><div class="client-detail" id="billingClientDetail"><div class="empty-state">Selecciona un cliente.</div></div></div>
     </div>
   </main>
 </div>
@@ -339,7 +347,7 @@
 <script>
 const $ = s=>document.querySelector(s);
 const tbody = $('#tbl tbody');
-const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Plantillas:'#panelPlantillas'};
+const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Plantillas:'#panelPlantillas', Clientes:'#panelClientes'};
 let activePanel = 'Emitidas';
 const clickLocks = new Set(); // antirrebote por fila
 const pageMsg = document.getElementById('pageMsg');
@@ -385,7 +393,7 @@ if(arrivalParams.get('complemento') === '1'){
   setTimeout(()=>{ pageMsg.className = 'flash'; }, 6000);
 }
 
-['Emitidas','Recibidas','Plantillas'].forEach(n=>{
+['Emitidas','Recibidas','Plantillas','Clientes'].forEach(n=>{
   const tab = document.getElementById('tab'+n);
   tab.onclick=()=>{
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -416,6 +424,7 @@ $('#q').addEventListener('input', refreshActive);
 function refreshActive(){
   if(activePanel === 'Recibidas') return loadReceived();
   if(activePanel === 'Plantillas') return loadTemplates();
+  if(activePanel === 'Clientes') return loadBillingClients();
   return load();
 }
 
@@ -475,12 +484,12 @@ async function load(){
           <a class="btn" href="/api/invoices/${x.id}/pdf" target="_blank">👁 Ver</a>
           <a class="btn" href="/api/invoices/${x.id}/pdf" target="_blank">PDF</a>
           <a class="btn" href="/api/invoices/${x.id}/xml" target="_blank">XML</a>
-          <button class="btn"
+          <button class="btn ${x.email_delivery?.sent ? '' : 'btn-mail-pending'}"
                   data-email-send="${escAttr(x.id)}"
                   data-email="${escAttr(x.customer_email)}"
                   data-folio="${escAttr(x.folio || x.uuid)}"
                   data-rfc="${escAttr(x.customer_tax_id)}"
-                  data-cliente="${escAttr(x.customer_name)}">✉ Enviar</button>
+                  data-cliente="${escAttr(x.customer_name)}" title="${x.email_delivery?.sent ? `Enviada ${escAttr(x.email_delivery.last_sent_at || '')}` : 'Correo pendiente de enviar'}">${x.email_delivery?.sent ? '✉ ✓' : '✉ Enviar'}</button>
           ${
             (x.type==='I' && x.payment_method==='PPD' && !x.paid)
               ? `<button class="btn" title="Generar complemento de pago" aria-label="Generar complemento de pago" data-goto="/pagos/nuevo?invoice_id=${encodeURIComponent(x.id)}&uuid=${encodeURIComponent(x.uuid||'')}" data-key="rep-${x.id}">💳 Comp.</button>`
@@ -606,7 +615,34 @@ async function loadTemplates(){
   }catch(error){list.innerHTML=`<div class="empty-state">${escAttr(error.message)}</div>`;}
 }
 
+let billingClients=[];
+function billingEmailButton(row, client){
+  const sent=row.email_delivery?.sent;
+  return `<button class="btn ${sent?'':'btn-mail-pending'}" data-client-email="${escAttr(row.id)}" data-email="" data-folio="${escAttr(row.folio||row.uuid)}" data-rfc="${escAttr(client.rfc)}" data-cliente="${escAttr(client.name)}" title="${sent?'Correo enviado':'Correo pendiente'}">${sent?'✉ ✓':'✉ Enviar'}</button>`;
+}
+function renderBillingClient(client){
+  const detail=document.getElementById('billingClientDetail');
+  const invoices=(client.invoices||[]).map(row=>`<div class="client-doc"><div><div class="doc-title">Factura ${escAttr(row.folio||'sin folio')}</div><div class="doc-sub">${escAttr((row.date||'').slice(0,10))} · ${escAttr(row.payment_method)} · ${row.active?'Vigente':'Cancelada'}</div></div><div>${moneyMx(row.total)}</div><div>${row.remaining_balance>0?`Pendiente ${moneyMx(row.remaining_balance)}`:(row.active?'Cubierta':'—')}</div><div class="client-doc-actions"><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/pdf">PDF</a><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/xml">XML</a>${billingEmailButton(row,client)}${row.active&&row.payment_method==='PPD'&&row.remaining_balance>0?`<a class="btn btn-primary" href="/pagos/nuevo?invoice_id=${encodeURIComponent(row.id)}&uuid=${encodeURIComponent(row.uuid||'')}">Comp.</a>`:''}</div></div>`).join('');
+  const complements=(client.complements||[]).map(row=>`<div class="client-doc"><div><div class="doc-title">Complemento P${row.partiality_number}</div><div class="doc-sub">Factura ${escAttr(row.invoice_folio||'')} · ${escAttr((row.date||'').slice(0,10))}</div></div><div>${moneyMx(row.amount)}</div><div>Aplicado</div><div class="client-doc-actions"><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/pdf">PDF</a><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/xml">XML</a>${billingEmailButton(row,client)}</div></div>`).join('');
+  detail.innerHTML=`<div class="client-detail-head"><div><h3>${escAttr(client.name)}</h3><div class="mini-sub">${escAttr(client.rfc)}</div></div>${client.pending_complements?`<span class="badge red">${client.pending_complements} pendiente(s)</span>`:'<span class="badge green">Al corriente</span>'}</div><div class="client-kpis"><div class="summary-box"><span>Facturado</span><strong>${moneyMx(client.invoiced_total)}</strong></div><div class="summary-box"><span>Cobrado</span><strong>${moneyMx(client.collected_total)}</strong></div><div class="summary-box"><span>Por cobrar</span><strong>${moneyMx(client.pending_total)}</strong></div></div><div class="section-label">Facturas</div>${invoices||'<div class="empty-state">Sin facturas.</div>'}<div class="section-label">Complementos</div>${complements||'<div class="mini-sub">Sin complementos registrados.</div>'}`;
+  detail.querySelectorAll('[data-client-email]').forEach(button=>button.onclick=()=>openEmailModal({id:button.dataset.clientEmail,email:button.dataset.email||'',folio:button.dataset.folio||'',rfc:button.dataset.rfc||'',cliente:button.dataset.cliente||''}));
+}
+async function loadBillingClients(){
+  const list=document.getElementById('billingClientList');const detail=document.getElementById('billingClientDetail');
+  list.innerHTML='<div class="empty-state">Consultando facturas y complementos…</div>';detail.innerHTML='<div class="empty-state">Preparando relación…</div>';
+  try{
+    const response=await fetch('/api/facturacion/clientes');const result=await response.json();
+    if(!response.ok||!result.ok)throw new Error(errorText(result.error));
+    const query=($('#q').value||'').trim().toLowerCase();billingClients=(result.data||[]).filter(row=>!query||[row.name,row.rfc].some(value=>String(value||'').toLowerCase().includes(query)));
+    if(!billingClients.length){list.innerHTML='<div class="empty-state">No hay clientes para esta búsqueda.</div>';detail.innerHTML='<div class="empty-state">Sin información.</div>';return;}
+    list.innerHTML=billingClients.map((client,index)=>`<button class="client-item ${index===0?'active':''}" data-client-index="${index}"><strong>${escAttr(client.name)}</strong><strong class="${client.pending_complements?'pending':''}">${client.pending_complements?`${client.pending_complements} pendiente(s)`:'Al corriente'}</strong><small>${escAttr(client.rfc)} · ${client.invoice_count} factura(s)</small><small>${moneyMx(client.pending_total)}</small></button>`).join('');
+    list.querySelectorAll('[data-client-index]').forEach(button=>button.onclick=()=>{list.querySelectorAll('.client-item').forEach(item=>item.classList.remove('active'));button.classList.add('active');renderBillingClient(billingClients[Number(button.dataset.clientIndex)]);});
+    renderBillingClient(billingClients[0]);
+  }catch(error){list.innerHTML=`<div class="empty-state">${escAttr(error.message)}</div>`;detail.innerHTML='<div class="empty-state">No se pudo preparar la relación.</div>';}
+}
+
 document.getElementById('reloadReceived').onclick=loadReceived;
+document.getElementById('reloadClients').onclick=loadBillingClients;
 
 /* ===== Envío de PDF y XML por CarrierZone ===== */
 const em = $('#em');
@@ -786,6 +822,7 @@ emConfirm.addEventListener('click', async ()=>{
     }).catch(()=>{});
     pageMsg.className = 'flash ok';
     pageMsg.textContent = data.message || 'Factura enviada correctamente.';
+    refreshActive();
     setTimeout(()=>{ pageMsg.className='flash'; }, 6000);
   }catch(error){
     emErr.textContent = error.message || String(error);

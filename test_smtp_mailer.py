@@ -135,6 +135,7 @@ class InvoiceEmailEndpointTests(unittest.TestCase):
             patch.object(billing, "_fm_request", return_value={"Content": "PHhtbC8+"}),
             patch.object(billing, "_facturama_printable_pdf", return_value=b"%PDF"),
             patch.object(billing, "send_cfdi_email", return_value={"recipient": "x@example.com"}) as send,
+            patch.object(billing, "record_email_delivery", return_value={"sent": True}),
         ):
             response = self.client.post("/api/invoices/abc/email", json={
                 "email": "x@example.com", "send_key": "correct", "folio": "1587",
@@ -163,6 +164,7 @@ class InvoiceEmailEndpointTests(unittest.TestCase):
             patch.object(billing, "_fm_request", return_value={"Content": "PHhtbC8+"}),
             patch.object(billing, "_facturama_printable_pdf", return_value=b"%PDF"),
             patch.object(billing, "send_cfdi_email", return_value={"recipient": "x@example.com"}) as send,
+            patch.object(billing, "record_email_delivery", return_value={"sent": True}),
         ):
             response = self.client.post("/api/invoices/abc/email", data={
                 "email": "x@example.com; compras@example.com",
