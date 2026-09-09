@@ -95,6 +95,7 @@ class FacturamaPaymentTests(unittest.TestCase):
             patch.object(billing, "_read_index", return_value={}),
             patch.object(billing, "_write_index") as write_index,
             patch.object(billing, "_backup_facturama_cfdi", return_value={"ok": True}) as backup,
+            patch.object(payments, "_local_customer_fiscal_data", return_value={}),
         ):
             response = self.client.post("/api/pagos/crear", json={
                 "invoice_id": "invoice-id", "amount": 116, "payment_form": "03",

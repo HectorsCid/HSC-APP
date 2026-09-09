@@ -268,23 +268,29 @@ class FacturamaIntegrationTests(unittest.TestCase):
 
     def test_stamp_preserves_internal_folio_and_purchase_order_for_pdf(self):
         payload = self.payload("pdf-metadata-request")
-        payload.update({"folio": "1370", "numero_orden_compra": "OC-45872"})
+        payload.update({
+            "folio": "1370", "numero_orden_compra": "OC-45872",
+            "alias_factura": "Mantenimiento septiembre",
+        })
         answer = {"Id": "invoice-with-metadata", "Uuid": self.VALID_UUID, "Status": "active", "Total": 232}
         with (
             patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
             patch.object(billing, "_facturama_receiver_validation", return_value=({}, {})),
             patch.object(billing, "_fm_request", return_value=answer),
-            patch.object(billing, "_backup_facturama_cfdi", return_value={"ok": True}),
+            patch.object(billing, "_backup_facturama_cfdi", return_value={"ok": True}) as backup,
         ):
             response = self.client.post("/api/facturar", json=payload)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["internal_folio"], "1370")
         self.assertEqual(response.get_json()["order_number"], "OC-45872")
+        self.assertEqual(response.get_json()["invoice_alias"], "Mantenimiento septiembre")
+        self.assertEqual(backup.call_args.args[-1], "Mantenimiento septiembre")
         with self.app.app_context():
             metadata = billing._invoice_pdf_metadata("invoice-with-metadata")
         self.assertEqual(metadata, {
             "internal_folio": "1370", "order_number": "OC-45872",
             "client_name": "UNIVERSIDAD ROBOTICA ESPAÑOLA", "source_quote_id": "",
+            "invoice_alias": "Mantenimiento septiembre", "drive_folder_name": "1370",
         })
 
     def test_stamp_without_valid_uuid_is_rejected_and_not_cached(self):
@@ -431,6 +437,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
                 "invoice_id": "sandbox-id",
                 "internal_folio": "1370",
                 "order_number": "OC-BTICINO-45872",
+                "invoice_alias": "Mantenimiento septiembre",
             },
         }
         with patch.object(billing, "_fm_request", return_value={"Content": encoded}):
@@ -438,7 +445,22 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data.startswith(b"%PDF-"))
         self.assertEqual(response.mimetype, "application/pdf")
-        self.assertIn("Factura-HSC-1370.pdf", response.headers["Content-Disposition"])
+        self.assertIn("Factura-HSC-Mantenimiento_septiembre_-_1370.pdf", response.headers["Content-Disposition"])
+
+    def test_xml_download_uses_alias_and_internal_folio(self):
+        encoded = base64.b64encode(self.SAMPLE_XML).decode("ascii")
+        billing._STAMP_RESULTS["xml-request"] = {
+            "state": "completed",
+            "result": {
+                "invoice_id": "sandbox-id",
+                "internal_folio": "1370",
+                "invoice_alias": "Servicio mensual",
+            },
+        }
+        with patch.object(billing, "_fm_request", return_value={"Content": encoded}):
+            response = self.client.get("/api/invoices/sandbox-id/xml")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Factura-HSC-Servicio_mensual_-_1370.xml", response.headers["Content-Disposition"])
 
     def test_payment_cfdi_keeps_facturama_printable_format(self):
         payment_xml = self.SAMPLE_XML.replace(

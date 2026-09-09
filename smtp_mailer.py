@@ -105,7 +105,7 @@ def _save_sent_copy(message, cfg):
         return False
 
 
-def send_email_with_attachments(*, recipient, subject, body, attachments, cc=""):
+def send_email_with_attachments(*, recipient, subject, body, attachments, cc="", from_name=""):
     cfg = smtp_config()
     if not cfg["configured"]:
         raise RuntimeError("Falta configurar el correo de salida de HSC en Render.")
@@ -123,7 +123,8 @@ def send_email_with_attachments(*, recipient, subject, body, attachments, cc="")
         raise ValueError("No hay archivos preparados para enviar.")
 
     message = EmailMessage()
-    message["From"] = formataddr((cfg["from_name"], cfg["from_email"]))
+    sender_name = str(from_name or cfg["from_name"]).strip() or cfg["from_name"]
+    message["From"] = formataddr((sender_name, cfg["from_email"]))
     message["To"] = ", ".join(recipients)
     if cc_recipients:
         message["Cc"] = ", ".join(cc_recipients)
@@ -165,6 +166,7 @@ def send_email_with_attachments(*, recipient, subject, body, attachments, cc="")
         "recipients": recipients,
         "cc": cc_recipients,
         "from": cfg["from_email"],
+        "from_name": sender_name,
         "attachments": len(attachments),
         "sent_copy_saved": sent_copy_saved,
     }
@@ -192,6 +194,7 @@ def send_cfdi_email(*, recipient, subject, body, pdf_bytes, xml_bytes, folio, ex
         ),
         attachments=attachments,
         cc=cc,
+        from_name="HSC Facturación",
     )
 
 
@@ -211,4 +214,5 @@ def send_quote_email(*, recipient, subject, body, pdf_bytes, folio, extra_attach
         body=body,
         attachments=attachments,
         cc=cc,
+        from_name="Hector Silva Cid",
     )

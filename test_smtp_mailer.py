@@ -42,8 +42,10 @@ class SmtpMailerTests(unittest.TestCase):
         self.assertNotIn("href=", html_part.get_content())
         self.assertTrue(message["Message-ID"])
         self.assertEqual(message["Reply-To"], "hectorsc@hscrefrigeracion.com")
+        self.assertIn("HSC Facturación", message["From"])
         self.assertEqual({part.get_filename() for part in message.iter_attachments()}, {"Factura-10.pdf", "Factura-10.xml"})
         self.assertEqual(result["from"], "hectorsc@hscrefrigeracion.com")
+        self.assertEqual(result["from_name"], "HSC Facturación")
         self.assertEqual(result["cc"], ["compras@example.com", "supervisor@example.com"])
 
     def test_rejects_invalid_recipient(self):
@@ -77,6 +79,8 @@ class SmtpMailerTests(unittest.TestCase):
             )
         message = smtp.send_message.call_args.args[0]
         self.assertEqual(message["To"], "uno@example.com, dos@example.com")
+        self.assertIn("Hector Silva Cid", message["From"])
+        self.assertEqual(result["from_name"], "Hector Silva Cid")
         self.assertEqual(result["recipients"], ["uno@example.com", "dos@example.com"])
         self.assertEqual({part.get_filename() for part in message.iter_attachments()}, {"Cotizacion-10.pdf", "orden.pdf"})
 

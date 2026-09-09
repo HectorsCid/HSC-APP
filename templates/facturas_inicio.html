@@ -46,15 +46,15 @@
   .td-acciones{min-width:360px}
 
   /* === Modal cancelación === */
-  .cm-backdrop{position:fixed;inset:0;background:rgba(17,24,39,.45);display:none;align-items:center;justify-content:center;z-index:9999}
+  .cm-backdrop{position:fixed;inset:0;background:rgba(17,24,39,.45);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;overflow-y:auto}
   .cm-backdrop.show{display:flex}
-  .cm-card{width:min(560px,92vw);background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .cm-card{width:min(560px,92vw);max-height:calc(100vh - 32px);overflow:hidden;display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
   .cm-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
   .cm-title{font-weight:800;color:#1f2937}
   .cm-close{border:none;background:transparent;font-size:20px;cursor:pointer;color:#6b7280}
-  .cm-body{padding:14px 16px;display:grid;gap:12px}
+  .cm-body{padding:14px 16px;display:grid;gap:12px;overflow-y:auto;min-height:0;scrollbar-gutter:stable}
   .cm-kv{color:#6b7280;font-size:.92rem}
-  .cm-actions{display:flex;gap:10px;justify-content:flex-end;padding:14px 16px;border-top:1px solid var(--line)}
+  .cm-actions{display:flex;flex:0 0 auto;gap:10px;justify-content:flex-end;padding:14px 16px;border-top:1px solid var(--line);background:var(--card)}
   .cm-btn{display:inline-flex;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:#fff;color:#111827;font-weight:700;cursor:pointer}
   .cm-btn:hover{background:#f3f4f6}
   .cm-btn-primary{background:var(--brand);color:#fff;border-color:transparent}
@@ -299,20 +299,21 @@
     <div class="cm-body">
       <div class="cm-kv">Se adjuntarán automáticamente el PDF y el XML.</div>
       <div>
+        <label for="emContact">Atención / destinatario</label>
+        <select id="emContact" class="cm-input"><option value="">Escribir destinatario manualmente</option></select>
+        <div class="cm-hint">Elige una persona; se usará únicamente el correo asignado a ella.</div>
+      </div>
+      <div>
         <label for="emEmail">Destinatarios</label>
         <input id="emEmail" class="cm-input" type="text" placeholder="cliente@empresa.com; compras@empresa.com" autocomplete="off" autocapitalize="none" spellcheck="false" />
         <div class="cm-hint">Puedes separar varios correos con coma, punto y coma o un renglón nuevo.</div>
-        <div class="cm-recipient-presets">
-          <button class="cm-btn cm-btn-ghost" type="button" data-invoice-recipient="compras">Compras</button>
-          <button class="cm-btn cm-btn-ghost" type="button" data-invoice-recipient="cuentas_pagar">Cuentas por pagar</button>
-          <button class="cm-btn cm-btn-ghost" type="button" data-invoice-recipient="ambos">Ambos</button>
-        </div>
-        <div id="emHistory" class="email-history" aria-label="Correos usados recientemente"></div>
       </div>
       <div>
         <label for="emCc">CC</label>
         <input id="emCc" class="cm-input" type="text" placeholder="Correos con copia, separados por coma" autocomplete="off" autocapitalize="none" spellcheck="false" />
-        <div class="cm-hint">Los contactos frecuentes del cliente se colocan aquí automáticamente.</div>
+        <div class="cm-hint">Elige abajo los correos que deseas agregar con copia.</div>
+        <div id="emFrequent" class="email-history" aria-label="Correos frecuentes para CC"></div>
+        <div id="emHistory" class="email-history" aria-label="Correos usados recientemente"></div>
       </div>
       <div><label for="emSubject">Asunto</label><input id="emSubject" class="cm-input" type="text" /></div>
       <div><label for="emMessage">Mensaje</label><textarea id="emMessage" class="cm-input" rows="5"></textarea></div>
@@ -620,6 +621,8 @@ const emKeyWrap = $('#emKeyWrap');
 const emErr = $('#emErr');
 const emConfirm = $('#emConfirm');
 const emHistory = $('#emHistory');
+const emContact = $('#emContact');
+const emFrequent = $('#emFrequent');
 let emailCtx = null;
 
 function addInvoiceCc(email){
@@ -655,6 +658,24 @@ function renderInvoiceHistory(history){
   });
 }
 
+function renderInvoiceFrequent(value){
+  emFrequent.innerHTML = '';
+  String(value || '').split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean).forEach(email=>{
+    const chip=document.createElement('button');chip.type='button';chip.className='email-history-chip';
+    chip.textContent=email;chip.title='Agregar a CC';chip.onclick=()=>addInvoiceCc(email);emFrequent.append(chip);
+  });
+}
+
+function renderInvoiceContacts(contacts, fallbackEmail){
+  emContact.innerHTML = '';
+  const eligible=(contacts || []).filter(item=>item.correo && ['cuentas_pagar','ambos'].includes(item.tipo));
+  const usable=eligible.length ? eligible : (contacts || []).filter(item=>item.correo);
+  usable.forEach(item=>emContact.add(new Option(`${item.nombre} — ${item.correo}`, item.correo)));
+  if(!usable.length) emContact.add(new Option('Escribir destinatario manualmente', ''));
+  emEmail.value=emContact.value || fallbackEmail || '';
+  emContact.onchange=()=>{if(emContact.value) emEmail.value=emContact.value;};
+}
+
 async function openEmailModal(ctx){
   emailCtx = ctx;
   emEmail.value = ctx.email || '';
@@ -668,9 +689,10 @@ async function openEmailModal(ctx){
   emConfirm.disabled = false;
   emConfirm.textContent = '✉ Enviar PDF y XML';
   renderInvoiceHistory([]);
+  renderInvoiceFrequent('');
+  renderInvoiceContacts([], ctx.email || '');
   emStoredFiles.innerHTML = '<span class="cm-hint">Consultando documentos guardados…</span>';
   em.classList.add('show');
-  document.querySelectorAll('[data-invoice-recipient]').forEach(button=>button.disabled=true);
   try{
     const statusResponse = await fetch('/api/email/status', {headers:{'Accept':'application/json'}});
     const status = await statusResponse.json();
@@ -684,15 +706,10 @@ async function openEmailModal(ctx){
         const contacts = await contactsResponse.json();
         if(contactsResponse.ok && contacts.ok){
           emailCtx.correos = contacts.correos || {};
-          emEmail.value = emailCtx.correos.cuentas_pagar || ctx.email || '';
-          emCc.value = emailCtx.correos.frecuentes || '';
+          renderInvoiceContacts(emailCtx.correos.contactos || [], ctx.email || '');
+          emCc.value = '';
+          renderInvoiceFrequent(emailCtx.correos.frecuentes || '');
           renderInvoiceHistory(emailCtx.correos.historial || []);
-          document.querySelectorAll('[data-invoice-recipient]').forEach(button=>{
-            const mode = button.getAttribute('data-invoice-recipient');
-            button.disabled = mode === 'ambos'
-              ? !(emailCtx.correos.compras || emailCtx.correos.cuentas_pagar)
-              : !emailCtx.correos[mode];
-          });
         }
       }catch(_){ /* Conserva el correo que entregó la factura. */ }
     }
@@ -721,16 +738,6 @@ function closeEmailModal(){
 
 $('#emClose').addEventListener('click', closeEmailModal);
 $('#emCancel').addEventListener('click', closeEmailModal);
-document.querySelectorAll('[data-invoice-recipient]').forEach(button=>{
-  button.addEventListener('click', ()=>{
-    const correos = emailCtx?.correos || {};
-    const mode = button.getAttribute('data-invoice-recipient');
-    const selected = mode === 'ambos'
-      ? [correos.compras, correos.cuentas_pagar].filter(Boolean)
-      : [correos[mode]].filter(Boolean);
-    emEmail.value = [...new Set(selected)].join('; ');
-  });
-});
 emConfirm.addEventListener('click', async ()=>{
   if(!emailCtx || emConfirm.disabled) return;
   const recipients = emEmail.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);

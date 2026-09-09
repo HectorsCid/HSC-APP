@@ -83,6 +83,18 @@ class CfdiDriveTests(unittest.TestCase):
         self.assertEqual(drive.api.created, 4)  # dos carpetas + PDF + XML
         self.assertEqual(drive.api.updated, 2)
 
+    def test_alias_is_used_only_for_invoice_folder_name(self):
+        drive = _Drive()
+        with patch.object(cfdi_drive, "get_drive_service_user", return_value=drive):
+            saved = cfdi_drive.backup_cfdi(
+                "Bticino", "1592", "uuid-2", b"%PDF", b"<xml/>", "Factura",
+                folder_alias="Mantenimiento septiembre",
+            )
+        folder = next(row for row in drive.api.rows if row["name"] == "Mantenimiento septiembre - 1592")
+        self.assertEqual(saved["folder_name"], "Mantenimiento septiembre - 1592")
+        self.assertEqual(saved["folder_id"], folder["id"])
+        self.assertTrue(any(row["name"] == "Factura-1592.pdf" for row in drive.api.rows))
+
     def test_payment_index_is_upserted_in_facturas_root(self):
         drive = _Drive()
         with patch.object(cfdi_drive, "get_drive_service_user", return_value=drive):

@@ -201,15 +201,17 @@ def backup_json_file(filename, value, parent_id=FACTURAS_ROOT_FOLDER_ID):
     return {"ok": True, "file_id": result.get("id"), "file_url": result.get("webViewLink")}
 
 
-def backup_cfdi(cliente, folio_interno, uuid, pdf_bytes, xml_bytes, document_type="Factura"):
-    """Guarda ambos archivos en 05.Facturas/Cliente/Folio interno."""
+def backup_cfdi(cliente, folio_interno, uuid, pdf_bytes, xml_bytes, document_type="Factura", folder_alias=""):
+    """Guarda ambos archivos en 05.Facturas/Cliente/Alias - Folio."""
     if not pdf_bytes or not xml_bytes:
         raise ValueError("Facturama no entregó ambos archivos del CFDI")
     service = get_drive_service_user(timeout=35)
     client_name = safe_drive_name(cliente, "SIN_CLIENTE")
     folio_name = safe_drive_name(folio_interno, f"SIN_FOLIO-{uuid}")
+    alias_name = safe_drive_name(folder_alias, "") if str(folder_alias or "").strip() else ""
+    folder_name = safe_drive_name(f"{alias_name} - {folio_name}", folio_name) if alias_name else folio_name
     client_folder_id = _get_or_create_folder(service, FACTURAS_ROOT_FOLDER_ID, client_name)
-    folio_folder_id = _get_or_create_folder(service, client_folder_id, folio_name)
+    folio_folder_id = _get_or_create_folder(service, client_folder_id, folder_name)
 
     prefix = safe_drive_name(document_type, "CFDI")
     file_base = f"{prefix}-{folio_name}" if prefix == "Factura" else f"{prefix}-{uuid}"
@@ -222,6 +224,7 @@ def backup_cfdi(cliente, folio_interno, uuid, pdf_bytes, xml_bytes, document_typ
     return {
         "ok": True,
         "folder_id": folio_folder_id,
+        "folder_name": folder_name,
         "folder_url": f"https://drive.google.com/drive/folders/{folio_folder_id}",
         "pdf_id": pdf.get("id"),
         "pdf_url": pdf.get("webViewLink"),

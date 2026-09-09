@@ -26,6 +26,7 @@
     .hint{font-size:.8rem;color:var(--muted);margin-top:6px}
     fieldset{border:1px solid #e5e7eb;border-radius:12px;padding:12px}
     legend{padding:0 6px;color:var(--muted);font-size:.9rem}
+    .contact-list{display:grid;gap:9px}.contact-row{display:grid;grid-template-columns:1.05fr 1.35fr .9fr auto;gap:8px;align-items:end;padding:10px;border:1px solid #e5e7eb;border-radius:12px}.contact-row label{font-size:.76rem}.contact-remove{width:42px;height:48px;border:1px solid #fecaca;border-radius:10px;background:#fff1f2;color:#b91c1c;font-size:18px;cursor:pointer}.contact-add{width:auto;flex:0 0 auto;padding:10px 13px;font-size:14px}@media(max-width:680px){.contact-row{grid-template-columns:1fr}.contact-remove{width:100%;height:42px}}
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
   <script src="{{ url_for('static', filename='hsc_theme.js') }}"></script>
@@ -37,9 +38,6 @@
       <h1>Editar cliente: {{ cliente }} · fisc v1</h1>
     </div>
 
-    {% set atn = datos.atencion %}
-    {% set atencion_val = (atn | join(', ') ) if (atn is iterable and atn is not string) else (atn or '') %}
-
     <form class="card grid" method="post" action="{{ url_for('editar_cliente') }}">
       <input type="hidden" name="cliente_original" value="{{ cliente }}" />
       <div>
@@ -49,8 +47,19 @@
       </div>
 
       <div>
-        <label for="atencion">Atención (separar por comas)</label>
-        <input id="atencion" name="atencion" type="text" value="{{ atencion_val }}" autocapitalize="words" />
+        <label>Personas de atención y sus correos</label>
+        <div id="contactList" class="contact-list">
+          {% for contacto in datos.contactos or [] %}
+          <div class="contact-row">
+            <div><label>Atención</label><input name="contacto_nombre" type="text" value="{{ contacto.nombre or '' }}" placeholder="Ej. María del Sol" autocapitalize="words" /></div>
+            <div><label>Correo individual</label><input name="contacto_correo" type="email" value="{{ contacto.correo or '' }}" placeholder="persona@cliente.com" autocomplete="off" /></div>
+            <div><label>Se usa para</label><select name="contacto_tipo"><option value="compras" {% if contacto.tipo == 'compras' %}selected{% endif %}>Cotizaciones</option><option value="cuentas_pagar" {% if contacto.tipo == 'cuentas_pagar' %}selected{% endif %}>Facturas</option><option value="ambos" {% if contacto.tipo == 'ambos' %}selected{% endif %}>Ambos</option></select></div>
+            <button class="contact-remove" type="button" title="Quitar contacto">×</button>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="actions"><button id="addContact" class="btn btn-ghost contact-add" type="button">＋ Agregar persona</button></div>
+        <div class="hint">Cada persona lleva un solo correo. Al enviar podrás elegirla por su nombre.</div>
       </div>
 
       <div>
@@ -94,21 +103,10 @@
           <input id="razon_social" name="razon_social" type="text" value="{{ datos.razon_social or datos.razon or '' }}" placeholder="Nombre o razón social" />
         </div>
 
-        <div class="grid grid-2">
-          <div>
-            <label for="correo_compras">Correo de compras</label>
-            <input id="correo_compras" name="correo_compras" type="text" value="{{ datos.correo_compras or '' }}" placeholder="Uno o varios, separados por coma" autocomplete="off" />
-          </div>
-          <div>
-            <label for="correo_cuentas_pagar">Correo de cuentas por pagar</label>
-            <input id="correo_cuentas_pagar" name="correo_cuentas_pagar" type="text" value="{{ datos.correo_cuentas_pagar or datos.correo_facturacion or datos.email or '' }}" placeholder="Uno o varios, separados por coma" autocomplete="off" />
-          </div>
-        </div>
-
         <div>
-          <label for="correos_frecuentes">Otros correos frecuentes</label>
+          <label for="correos_frecuentes">Correos frecuentes para CC</label>
           <input id="correos_frecuentes" name="correos_frecuentes" type="text" value="{{ datos.correos_frecuentes or '' }}" placeholder="supervisor@cliente.com, almacen@cliente.com" autocomplete="off" />
-          <div class="hint">Puedes guardar varios correos separados por coma. Estarán disponibles como opciones rápidas al enviar.</div>
+          <div class="hint">Aparecerán separados como opciones rápidas. Ninguno se agregará a CC hasta que lo elijas.</div>
         </div>
 
         <div class="grid grid-2">
@@ -169,5 +167,14 @@
       </div>
     </form>
   </div>
+  <template id="contactTemplate"><div class="contact-row"><div><label>Atención</label><input name="contacto_nombre" type="text" placeholder="Ej. María del Sol" autocapitalize="words" /></div><div><label>Correo individual</label><input name="contacto_correo" type="email" placeholder="persona@cliente.com" autocomplete="off" /></div><div><label>Se usa para</label><select name="contacto_tipo"><option value="compras">Cotizaciones</option><option value="cuentas_pagar">Facturas</option><option value="ambos" selected>Ambos</option></select></div><button class="contact-remove" type="button" title="Quitar contacto">×</button></div></template>
+  <script>
+    const contactList=document.getElementById('contactList');
+    const contactTemplate=document.getElementById('contactTemplate');
+    function bindContactRow(row){row.querySelector('.contact-remove').onclick=()=>{row.remove();if(!contactList.children.length)addContactRow();};}
+    function addContactRow(){const row=contactTemplate.content.firstElementChild.cloneNode(true);contactList.append(row);bindContactRow(row);}
+    [...contactList.children].forEach(bindContactRow);if(!contactList.children.length)addContactRow();
+    document.getElementById('addContact').onclick=addContactRow;
+  </script>
 </body>
 </html>

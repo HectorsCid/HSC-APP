@@ -170,20 +170,21 @@
       <div class="mail-body">
         <div class="mail-hint">Se adjuntará automáticamente el PDF de la cotización.</div>
         <div>
+          <label for="quoteMailContact">Atención / destinatario</label>
+          <select id="quoteMailContact" class="mail-input"></select>
+          <div class="mail-hint">Elige una persona; se usará únicamente el correo asignado a ella.</div>
+        </div>
+        <div>
           <label for="quoteMailTo">Destinatarios</label>
           <input id="quoteMailTo" class="mail-input" type="text" placeholder="cliente@empresa.com; compras@empresa.com" autocomplete="off" autocapitalize="none" spellcheck="false" />
           <div class="mail-hint">Separa varios correos con coma, punto y coma o un renglón nuevo.</div>
-          <div class="recipient-presets">
-            <button class="btn" type="button" data-quote-recipient="compras">Compras</button>
-            <button class="btn" type="button" data-quote-recipient="cuentas_pagar">Cuentas por pagar</button>
-            <button class="btn" type="button" data-quote-recipient="ambos">Ambos</button>
-          </div>
-          <div id="quoteMailHistory" class="mail-history" aria-label="Correos usados recientemente"></div>
         </div>
         <div>
           <label for="quoteMailCc">CC</label>
           <input id="quoteMailCc" class="mail-input" type="text" placeholder="Correos con copia, separados por coma" autocomplete="off" autocapitalize="none" spellcheck="false" />
-          <div class="mail-hint">Los contactos frecuentes del cliente se colocan aquí automáticamente.</div>
+          <div class="mail-hint">Elige abajo los correos que deseas agregar con copia.</div>
+          <div id="quoteMailFrequent" class="mail-history" aria-label="Correos frecuentes para CC"></div>
+          <div id="quoteMailHistory" class="mail-history" aria-label="Correos usados recientemente"></div>
         </div>
         <div><label for="quoteMailSubject">Asunto</label><input id="quoteMailSubject" class="mail-input" type="text" /></div>
         <div><label for="quoteMailMessage">Mensaje</label><textarea id="quoteMailMessage" class="mail-input" rows="6"></textarea></div>
@@ -457,6 +458,32 @@
       quoteMailCc.value = [...new Set([...current, email])].join('; ');
     }
 
+    function renderQuoteContacts(contacts, selectedAttention, fallbackEmail){
+      const select = document.getElementById('quoteMailContact');
+      select.innerHTML = '';
+      const eligible = (contacts || []).filter(item=>item.correo && ['compras','ambos'].includes(item.tipo));
+      const usable = eligible.length ? eligible : (contacts || []).filter(item=>item.correo);
+      usable.forEach(item=>{
+        const option = new Option(`${item.nombre} — ${item.correo}`, item.correo);
+        option.dataset.name = item.nombre || '';
+        if(String(item.nombre || '').toLocaleLowerCase() === String(selectedAttention || '').toLocaleLowerCase()) option.selected = true;
+        select.add(option);
+      });
+      if(!usable.length) select.add(new Option('Escribir destinatario manualmente', ''));
+      if(!select.value && fallbackEmail) select.value = fallbackEmail;
+      if(select.value) quoteMailTo.value = select.value;
+      select.onchange = ()=>{ if(select.value) quoteMailTo.value = select.value; };
+    }
+
+    function renderQuoteFrequent(value){
+      const container = document.getElementById('quoteMailFrequent');
+      container.innerHTML = '';
+      String(value || '').split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean).forEach(email=>{
+        const chip=document.createElement('button');chip.type='button';chip.className='history-chip';
+        chip.textContent=email;chip.title='Agregar a CC';chip.onclick=()=>addQuoteCc(email);container.append(chip);
+      });
+    }
+
     function renderQuoteHistory(history){
       quoteMailHistory.innerHTML = '';
       (history || []).forEach(item=>{
@@ -498,6 +525,7 @@
       quoteMailSend.disabled = false;
       quoteMailSend.textContent = '✉ Enviar cotización';
       renderQuoteHistory([]);
+      renderQuoteFrequent('');
       quoteMail.classList.add('show');
       try{
         const response = await fetch(`/api/cotizaciones/${encodeURIComponent(id)}/email`, {headers:{'Accept':'application/json'}});
@@ -505,15 +533,10 @@
         if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo preparar el envío.');
         quoteMailContext = data;
         quoteMailTo.value = data.email || '';
-        quoteMailCc.value = data.correos?.frecuentes || '';
+        quoteMailCc.value = '';
+        renderQuoteContacts(data.correos?.contactos || [], data.atencion || '', data.email || '');
+        renderQuoteFrequent(data.correos?.frecuentes || '');
         renderQuoteHistory(data.correos?.historial || []);
-        document.querySelectorAll('[data-quote-recipient]').forEach(button=>{
-          const mode = button.getAttribute('data-quote-recipient');
-          const hasValue = mode === 'ambos'
-            ? Boolean(data.correos?.compras || data.correos?.cuentas_pagar)
-            : Boolean(data.correos?.[mode]);
-          button.disabled = !hasValue;
-        });
         quoteMailSubject.value = `Cotización HSC ${data.folio || ''}`;
         quoteMailMessage.value = `Buen día, estimado cliente. Envío la cotización solicitada.\n\nDe antemano muchas gracias.\n\nQuedo a sus órdenes.\n\nIng. Héctor Silva Cid\n\nCel: 5527605496`;
         if(!data.trusted) quoteMailKeyWrap.style.display = '';
@@ -532,16 +555,6 @@
 
     document.getElementById('quoteMailClose').addEventListener('click', closeQuoteMail);
     document.getElementById('quoteMailCancel').addEventListener('click', closeQuoteMail);
-    document.querySelectorAll('[data-quote-recipient]').forEach(button=>{
-      button.addEventListener('click', ()=>{
-        const correos = quoteMailContext?.correos || {};
-        const mode = button.getAttribute('data-quote-recipient');
-        const selected = mode === 'ambos'
-          ? [correos.compras, correos.cuentas_pagar].filter(Boolean)
-          : [correos[mode]].filter(Boolean);
-        quoteMailTo.value = [...new Set(selected)].join('; ');
-      });
-    });
     quoteMail.addEventListener('click', event=>{ if(event.target === quoteMail) closeQuoteMail(); });
     quoteMailSend.addEventListener('click', async ()=>{
       if(!quoteMailContext || quoteMailSend.disabled) return;

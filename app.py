@@ -1332,11 +1332,107 @@ def nueva_cotizacion():
     _reiniciar_costos_internos()
     return redirect(url_for('inicio'))
 
+def _normalizar_contactos_cliente(datos):
+    """Devuelve contactos individuales y conserva compatibilidad con correos antiguos."""
+    datos = datos if isinstance(datos, dict) else {}
+    contactos = []
+    vistos = set()
+    for item in datos.get("contactos") or []:
+        if not isinstance(item, dict):
+            continue
+        nombre = str(item.get("nombre") or item.get("atencion") or "").strip()
+        correo = str(item.get("correo") or item.get("email") or "").strip()
+        tipo = str(item.get("tipo") or "ambos").strip().lower()
+        if tipo not in {"compras", "cuentas_pagar", "ambos", "otro"}:
+            tipo = "ambos"
+        try:
+            parsed = parse_recipients(correo)
+        except ValueError:
+            parsed = []
+        if not nombre or len(parsed) > 1 or (parsed and parsed[0].casefold() in vistos):
+            continue
+        correo_normalizado = parsed[0] if parsed else ""
+        if correo_normalizado:
+            vistos.add(correo_normalizado.casefold())
+        contactos.append({"nombre": nombre, "correo": correo_normalizado, "tipo": tipo})
+    if contactos:
+        return contactos
+
+    atencion_raw = datos.get("atencion") or []
+    if isinstance(atencion_raw, str):
+        atencion_raw = [value for value in atencion_raw.split(",")]
+    nombres = [str(value).strip() for value in atencion_raw if str(value).strip()]
+    legacy = []
+    for campo, tipo, etiqueta in (
+        ("correo_compras", "compras", "Compras"),
+        ("correo_cuentas_pagar", "cuentas_pagar", "Cuentas por pagar"),
+        ("correo_facturacion", "cuentas_pagar", "Facturación"),
+        ("email", "ambos", "Contacto"),
+    ):
+        try:
+            emails = parse_recipients(datos.get(campo) or "")
+        except ValueError:
+            emails = []
+        for correo in emails:
+            if correo.casefold() in vistos:
+                continue
+            vistos.add(correo.casefold())
+            legacy.append((correo, tipo, etiqueta))
+    conteo_etiquetas = {}
+    for index, (correo, tipo, etiqueta) in enumerate(legacy):
+        conteo_etiquetas[etiqueta] = conteo_etiquetas.get(etiqueta, 0) + 1
+        nombre = nombres[index] if index < len(nombres) else f"{etiqueta} {conteo_etiquetas[etiqueta]}"
+        contactos.append({"nombre": nombre, "correo": correo, "tipo": tipo})
+    for nombre in nombres[len(legacy):]:
+        contactos.append({"nombre": nombre, "correo": "", "tipo": "ambos"})
+    return contactos
+
+
+def _contactos_desde_form(form):
+    nombres = form.getlist("contacto_nombre")
+    correos = form.getlist("contacto_correo")
+    tipos = form.getlist("contacto_tipo")
+    contactos = []
+    vistos = set()
+    for index in range(max(len(nombres), len(correos), len(tipos))):
+        nombre = str(nombres[index] if index < len(nombres) else "").strip()
+        correo = str(correos[index] if index < len(correos) else "").strip()
+        tipo = str(tipos[index] if index < len(tipos) else "ambos").strip().lower()
+        if not nombre and not correo:
+            continue
+        if not nombre:
+            raise ValueError("Cada correo debe tener un nombre de contacto en Atención.")
+        parsed = parse_recipients(correo) if correo else []
+        if correo and len(parsed) != 1:
+            raise ValueError(f"Guarda un solo correo para {nombre}.")
+        correo = parsed[0] if parsed else ""
+        if correo and correo.casefold() in vistos:
+            raise ValueError(f"El correo {correo} está repetido.")
+        if tipo not in {"compras", "cuentas_pagar", "ambos", "otro"}:
+            tipo = "ambos"
+        if correo:
+            vistos.add(correo.casefold())
+        contactos.append({"nombre": nombre, "correo": correo, "tipo": tipo})
+    return contactos
+
+
+def _correos_por_tipo(contactos, *tipos):
+    return ", ".join(
+        item["correo"] for item in contactos
+        if item.get("correo") and item.get("tipo") in tipos
+    )
+
+
 @app.route('/nuevo_cliente', methods=['GET', 'POST'])
 def nuevo_cliente():
     if request.method == 'POST':
         nombre = (request.form.get('nombre') or '').strip()
-        atencion = [a.strip() for a in (request.form.get('atencion') or '').split(',') if a.strip()]
+        try:
+            contactos = _contactos_desde_form(request.form)
+        except ValueError as exc:
+            flash(str(exc))
+            return redirect(url_for('nuevo_cliente'))
+        atencion = [item["nombre"] for item in contactos]
         direccion = request.form.get('direccion', '')
         tiempo = request.form.get('tiempo', '')
         anticipo = request.form.get('anticipo', '')
@@ -1348,8 +1444,8 @@ def nuevo_cliente():
         cp             = (request.form.get('cp') or '').strip()
         regimen_fiscal = (request.form.get('regimen_fiscal') or '').strip()  # ej. 601, 612, 621, 626
         uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # ej. G03, G01, P01
-        correo_compras = (request.form.get('correo_compras') or '').strip()
-        correo_cuentas_pagar = (request.form.get('correo_cuentas_pagar') or request.form.get('correo_facturacion') or '').strip()
+        correo_compras = _correos_por_tipo(contactos, "compras", "ambos")
+        correo_cuentas_pagar = _correos_por_tipo(contactos, "cuentas_pagar", "ambos")
         correos_frecuentes = (request.form.get('correos_frecuentes') or '').strip()
         retencion_isr_tasa = (request.form.get('retencion_isr_tasa') or '0').strip()
         retencion_iva_tasa = (request.form.get('retencion_iva_tasa') or '0').strip()
@@ -1361,6 +1457,7 @@ def nuevo_cliente():
         with _CLIENTES_DATA_LOCK:
             clientes_predefinidos[nombre] = {
                 "atencion": atencion,
+                "contactos": contactos,
                 "direccion": direccion,
                 "tiempo": tiempo,
                 "anticipo": anticipo,
@@ -2013,7 +2110,12 @@ def editar_cliente():
 
     if request.method == 'POST':
         nuevo_nombre = (request.form.get('nombre') or "").strip()
-        atencion = [a.strip() for a in (request.form.get('atencion') or "").split(',') if a.strip()]
+        try:
+            contactos = _contactos_desde_form(request.form)
+        except ValueError as exc:
+            flash(str(exc))
+            return redirect(url_for('editar_cliente', cliente=nombre_actual))
+        atencion = [item["nombre"] for item in contactos]
         direccion = (request.form.get('direccion') or '').strip()
         tiempo    = (request.form.get('tiempo') or '').strip()
         anticipo  = (request.form.get('anticipo') or '').strip()
@@ -2025,8 +2127,8 @@ def editar_cliente():
         cp             = (request.form.get('cp') or '').strip()
         regimen_fiscal = (request.form.get('regimen_fiscal') or '').strip()  # 601, 612, 621, 626
         uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # G03, G01, P01
-        correo_compras = (request.form.get('correo_compras') or '').strip()
-        correo_cuentas_pagar = (request.form.get('correo_cuentas_pagar') or request.form.get('correo_facturacion') or '').strip()
+        correo_compras = _correos_por_tipo(contactos, "compras", "ambos")
+        correo_cuentas_pagar = _correos_por_tipo(contactos, "cuentas_pagar", "ambos")
         correos_frecuentes = (request.form.get('correos_frecuentes') or '').strip()
         retencion_isr_tasa = (request.form.get('retencion_isr_tasa') or '0').strip()
         retencion_iva_tasa = (request.form.get('retencion_iva_tasa') or '0').strip()
@@ -2044,6 +2146,7 @@ def editar_cliente():
         merged = dict(datos)
         merged.update({
             "atencion": atencion,
+            "contactos": contactos,
             "direccion": direccion,
             "tiempo": tiempo,
             "anticipo": anticipo,
@@ -2081,7 +2184,9 @@ def editar_cliente():
         flash("Cliente actualizado correctamente.")
         return redirect(url_for('inicio'))
 
-    return render_template('editar_cliente.html', cliente=nombre_actual, datos=datos)
+    datos_vista = dict(datos)
+    datos_vista["contactos"] = _normalizar_contactos_cliente(datos)
+    return render_template('editar_cliente.html', cliente=nombre_actual, datos=datos_vista)
 
 
 @app.route('/borrar_cliente', methods=['GET', 'POST'])
@@ -2785,9 +2890,10 @@ def _contactos_cliente_seleccionado(nombre="", rfc=""):
                 "compras": str(datos.get("correo_compras") or "").strip(),
                 "cuentas_pagar": str(datos.get("correo_cuentas_pagar") or legacy).strip(),
                 "frecuentes": str(datos.get("correos_frecuentes") or "").strip(),
+                "contactos": _normalizar_contactos_cliente(datos),
                 "historial": historial,
             }
-    return {"compras": "", "cuentas_pagar": "", "frecuentes": "", "historial": []}
+    return {"compras": "", "cuentas_pagar": "", "frecuentes": "", "contactos": [], "historial": []}
 
 
 @app.post("/api/clientes/contactos-seleccionado")
@@ -2930,6 +3036,39 @@ def _correos_cotizacion(cotizacion):
     return correos
 
 
+def _atencion_cotizacion(cotizacion):
+    datos = cotizacion.get("datos") or {}
+    value = datos.get("atencion") or cotizacion.get("atencion") or []
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _correo_individual_preferido(correos, atenciones=None, tipo="compras"):
+    contactos = correos.get("contactos") or []
+    buscados = {str(value).strip().casefold() for value in (atenciones or []) if str(value).strip()}
+    elegibles = [
+        item for item in contactos
+        if item.get("correo") and item.get("tipo") in {tipo, "ambos"}
+    ]
+    coincidencia = next(
+        (item for item in elegibles if str(item.get("nombre") or "").strip().casefold() in buscados),
+        None,
+    )
+    if coincidencia:
+        return coincidencia["correo"]
+    if elegibles:
+        return elegibles[0]["correo"]
+    cualquier_contacto = next((item for item in contactos if item.get("correo")), None)
+    if cualquier_contacto:
+        return cualquier_contacto["correo"]
+    try:
+        legacy = parse_recipients(correos.get(tipo) or "")
+    except ValueError:
+        legacy = []
+    return legacy[0] if legacy else ""
+
+
 @app.route("/api/cotizaciones/<qid>/documentos", methods=["GET", "POST", "DELETE"])
 def api_documentos_pendientes_cotizacion(qid):
     cotizacion = _buscar_cotizacion_registrada(qid)
@@ -2984,6 +3123,7 @@ def api_enviar_cotizacion(qid):
     trusted = authorized_to_send("", request.cookies.get("hsc_mail_trusted", ""))
     if request.method == "GET":
         correos = _correos_cotizacion(cotizacion)
+        atenciones = _atencion_cotizacion(cotizacion)
         return jsonify(
             ok=True,
             configured=bool(cfg.get("configured")),
@@ -2991,7 +3131,8 @@ def api_enviar_cotizacion(qid):
             cliente=str(cotizacion.get("cliente") or ""),
             rfc=str((cotizacion.get("receptor") or {}).get("rfc") or ""),
             folio=str(cotizacion.get("folio") or cotizacion.get("id") or ""),
-            email=correos["compras"] or correos["cuentas_pagar"],
+            email=_correo_individual_preferido(correos, atenciones, "compras"),
+            atencion=atenciones[0] if atenciones else "",
             correos=correos,
         )
 

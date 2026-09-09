@@ -61,7 +61,7 @@
     .theme-track{width:38px;height:21px;padding:2px;border-radius:999px;background:#94a3b8;display:flex}.theme-knob{width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:.2s}
     html[data-theme="dark"] .theme-track{background:#22c55e}html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
     @media(max-width:839px){.wrap{padding:11px}.top{align-items:flex-start;flex-direction:column}.top .actions{width:100%}.top .actions>*{flex:1}.card{padding:11px}}
-    .template-backdrop{position:fixed;inset:0;z-index:9999;display:none;place-items:center;padding:18px;background:rgba(2,6,23,.62)}.template-backdrop.show{display:grid}.template-dialog{width:min(460px,100%);max-height:92vh;overflow:auto;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.template-dialog.mail-dialog{width:min(680px,100%)}.template-dialog h2{margin:0 0 5px;font-size:1.15rem}.template-dialog p{margin:0 0 14px;color:var(--muted);font-size:.82rem}.template-dialog .actions{margin-top:14px;justify-content:flex-end}.modal-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:13px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);font-size:.84rem}.modal-summary strong{display:block;margin-top:2px;color:var(--ink)}.recipient-presets,.email-history{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.email-history button{padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:var(--soft);color:var(--ink);cursor:pointer}.email-history button span{margin-left:7px;color:var(--muted)}.modal-error{min-height:18px;margin-top:8px;color:var(--danger);font-size:.82rem;font-weight:700}.hidden{display:none!important}.environment-pill{display:inline-flex;margin-top:3px;padding:3px 8px;border:1px solid #93c5fd;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:.75rem;font-weight:800}.environment-pill.production{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}html[data-theme="dark"] .environment-pill{background:#152849;color:#93c5fd}html[data-theme="dark"] .environment-pill.production{background:#451a1a;color:#fca5a5}@media(max-width:560px){.modal-summary{grid-template-columns:1fr}}
+    .template-backdrop{position:fixed;inset:0;z-index:9999;display:none;place-items:center;padding:18px;background:rgba(2,6,23,.62);overflow-y:auto}.template-backdrop.show{display:grid}.template-dialog{width:min(460px,100%);max-height:calc(100vh - 36px);overflow:auto;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.template-dialog.mail-dialog{width:min(680px,100%);scrollbar-gutter:stable}.template-dialog h2{margin:0 0 5px;font-size:1.15rem}.template-dialog p{margin:0 0 14px;color:var(--muted);font-size:.82rem}.template-dialog .actions{margin-top:14px;justify-content:flex-end}.mail-dialog>.actions{position:sticky;bottom:-18px;margin-left:-18px;margin-right:-18px;margin-bottom:-18px;padding:14px 18px;background:var(--card);border-top:1px solid var(--line)}.modal-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:13px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);font-size:.84rem}.modal-summary strong{display:block;margin-top:2px;color:var(--ink)}.recipient-presets,.email-history{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.email-history button{padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:var(--soft);color:var(--ink);cursor:pointer}.email-history button span{margin-left:7px;color:var(--muted)}.modal-error{min-height:18px;margin-top:8px;color:var(--danger);font-size:.82rem;font-weight:700}.hidden{display:none!important}.environment-pill{display:inline-flex;margin-top:3px;padding:3px 8px;border:1px solid #93c5fd;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:.75rem;font-weight:800}.environment-pill.production{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}html[data-theme="dark"] .environment-pill{background:#152849;color:#93c5fd}html[data-theme="dark"] .environment-pill.production{background:#451a1a;color:#fca5a5}@media(max-width:560px){.modal-summary{grid-template-columns:1fr}}
   </style>
 </head>
 <body data-billing-environment="{{ facturama_environment|default('sandbox') }}">
@@ -155,6 +155,10 @@
 
         <label>Número de orden de compra (opcional)</label>
         <input id="ordenCompra" maxlength="100" placeholder="Ej. OC-45872" autocomplete="off" />
+
+        <label>Alias para guardar la factura (opcional)</label>
+        <input id="aliasFactura" maxlength="100" placeholder="Ej. Mantenimiento septiembre" autocomplete="off" />
+        <div class="pill">En Drive quedará como: Alias - Folio. El folio fiscal y el folio interno no cambian.</div>
 
         <label>Condiciones (opcional)</label>
         <input id="cond" placeholder="Crédito 15 días" />
@@ -263,18 +267,17 @@
     <div class="template-dialog mail-dialog">
       <h2 id="invoiceEmailTitle">Enviar factura por correo</h2>
       <p>Se adjuntarán automáticamente el PDF y el XML. También puedes agregar otros documentos.</p>
+      <label for="invoiceEmailContact">Atención / destinatario</label>
+      <select id="invoiceEmailContact"><option value="">Escribir destinatario manualmente</option></select>
+      <div class="pill">Elige una persona; se usará únicamente el correo asignado a ella.</div>
       <label for="invoiceEmailRecipients">Destinatarios</label>
       <input id="invoiceEmailRecipients" type="text" placeholder="cliente@empresa.com; compras@empresa.com" autocomplete="off" autocapitalize="none" spellcheck="false">
       <div class="pill">Separa varios correos con coma, punto y coma o un renglón nuevo.</div>
-      <div class="recipient-presets">
-        <button class="btn" type="button" data-stamp-recipient="compras">Compras</button>
-        <button class="btn" type="button" data-stamp-recipient="cuentas_pagar">Cuentas por pagar</button>
-        <button class="btn" type="button" data-stamp-recipient="ambos">Ambos</button>
-      </div>
-      <div class="email-history" id="invoiceEmailHistory"></div>
       <label for="invoiceEmailCc">CC</label>
       <input id="invoiceEmailCc" type="text" placeholder="Correos con copia, separados por coma" autocomplete="off" autocapitalize="none" spellcheck="false">
-      <div class="pill">Los contactos frecuentes del cliente se colocan aquí automáticamente.</div>
+      <div class="pill">Elige abajo los correos que deseas agregar con copia.</div>
+      <div class="email-history" id="invoiceEmailFrequent"></div>
+      <div class="email-history" id="invoiceEmailHistory"></div>
       <label for="invoiceEmailSubject">Asunto</label>
       <input id="invoiceEmailSubject" type="text">
       <label for="invoiceEmailMessage">Mensaje</label>
@@ -396,7 +399,10 @@
         setVal('rfc', rfc);
         setVal('razon',   c.razon_social || c.razon || c.nombre || c.legal_name || '');
         setVal('cp',      c.cp || c.codigo_postal || c.zip || '');
-        setVal('email',   c.correo_cuentas_pagar || c.correo_facturacion || c.email || '');
+        const invoiceContact = (c.contactos || []).find(item=>item.correo && ['cuentas_pagar','ambos'].includes(item.tipo))
+          || (c.contactos || []).find(item=>item.correo);
+        const legacyEmail = String(c.correo_cuentas_pagar || c.correo_facturacion || c.email || '').split(/[,;\n]+/)[0].trim();
+        setVal('email', invoiceContact?.correo || legacyEmail);
         setVal('retencionIsr', c.retencion_isr_tasa || '0');
         setVal('retencionIva', c.retencion_iva_tasa || '0');
         await loadFiscalCatalogs(rfc, {regimen, uso});
@@ -631,6 +637,7 @@
           payment_method:document.getElementById('metodo').value,
           serie:document.getElementById('serie').value.trim(),
           purchase_order:document.getElementById('ordenCompra').value.trim(),
+          invoice_alias:document.getElementById('aliasFactura').value.trim(),
           notes:document.getElementById('cond').value.trim()
         },
         retentions:{isr:Number(document.getElementById('retencionIsr').value||0),iva:Number(document.getElementById('retencionIva').value||0)},
@@ -672,6 +679,7 @@
         await loadFiscalCatalogs(receiver.tax_id||'',{regimen:String(receiver.tax_system||''),uso:receiver.cfdi_use||'G03',forma:conditions.payment_form||'03',metodo:conditions.payment_method||'PUE'});
         document.getElementById('serie').value=conditions.serie||'';
         document.getElementById('ordenCompra').value=conditions.purchase_order||'';
+        document.getElementById('aliasFactura').value=conditions.invoice_alias||'';
         document.getElementById('cond').value=conditions.notes||'';
         document.getElementById('retencionIsr').value=String(template.retentions?.isr||0);
         const ivaRetention=Number(template.retentions?.iva||0);
@@ -863,6 +871,7 @@
       const rfc = document.getElementById('rfc').value.trim().toUpperCase();
       const method = document.getElementById('metodo').value;
       const payment = document.getElementById('forma').selectedOptions[0]?.textContent || document.getElementById('forma').value;
+      const invoiceAlias = document.getElementById('aliasFactura').value.trim();
       const production = document.body.dataset.billingEnvironment === 'production';
       document.getElementById('stampConfirmTitle').textContent = production ? 'Confirmar timbrado real' : 'Confirmar timbrado de prueba';
       document.getElementById('stampConfirmText').textContent = production
@@ -873,7 +882,8 @@
         <div>Receptor<strong>${escapeHtml(receiver)}</strong></div>
         <div>RFC<strong>${escapeHtml(rfc)}</strong></div>
         <div>Total<strong>${escapeHtml(document.getElementById('totalCell').textContent.trim())}</strong></div>
-        <div>Pago<strong>${escapeHtml(method)} · ${escapeHtml(payment)}</strong></div>`;
+        <div>Pago<strong>${escapeHtml(method)} · ${escapeHtml(payment)}</strong></div>
+        ${invoiceAlias ? `<div>Carpeta en Drive<strong>${escapeHtml(invoiceAlias)} - folio</strong></div>` : ''}`;
       stampConfirmModal.classList.add('show');
       setTimeout(()=>document.getElementById('stampConfirmGo').focus(), 0);
     }
@@ -917,6 +927,7 @@
         metodo_pago: document.getElementById('metodo').value||'PUE',
         serie: (document.getElementById('serie').value||'').trim(),
         numero_orden_compra: (document.getElementById('ordenCompra').value||'').trim(),
+        alias_factura: (document.getElementById('aliasFactura').value||'').trim(),
         condiciones: document.getElementById('cond').value||'',
         source_quote_id: pageQuoteId,
         cliente_carpeta: document.getElementById('cliente').value || pageClientName || document.getElementById('razon').value,
@@ -1004,6 +1015,8 @@
     const invoiceEmailError = document.getElementById('invoiceEmailError');
     const invoiceEmailSend = document.getElementById('invoiceEmailSend');
     const invoiceEmailHistory = document.getElementById('invoiceEmailHistory');
+    const invoiceEmailContact = document.getElementById('invoiceEmailContact');
+    const invoiceEmailFrequent = document.getElementById('invoiceEmailFrequent');
 
     function addStampedCc(email){
       const current = invoiceEmailCc.value.split(/[,;\n]+/).map(value=>value.trim()).filter(Boolean);
@@ -1037,6 +1050,22 @@
         invoiceEmailHistory.append(chip);
       });
     }
+    function renderStampedFrequent(value){
+      invoiceEmailFrequent.innerHTML = '';
+      String(value || '').split(/[,;\n]+/).map(value=>value.trim()).filter(Boolean).forEach(email=>{
+        const chip=document.createElement('button');chip.type='button';chip.textContent=email;
+        chip.title='Agregar a CC';chip.onclick=()=>addStampedCc(email);invoiceEmailFrequent.append(chip);
+      });
+    }
+    function renderStampedContacts(contacts, fallbackEmail){
+      invoiceEmailContact.innerHTML = '';
+      const eligible=(contacts || []).filter(item=>item.correo && ['cuentas_pagar','ambos'].includes(item.tipo));
+      const usable=eligible.length ? eligible : (contacts || []).filter(item=>item.correo);
+      usable.forEach(item=>invoiceEmailContact.add(new Option(`${item.nombre} — ${item.correo}`, item.correo)));
+      if(!usable.length) invoiceEmailContact.add(new Option('Escribir destinatario manualmente', ''));
+      invoiceEmailRecipients.value = invoiceEmailContact.value || fallbackEmail || '';
+      invoiceEmailContact.onchange=()=>{if(invoiceEmailContact.value) invoiceEmailRecipients.value=invoiceEmailContact.value;};
+    }
     async function openStampedEmailModal(){
       if(!stampedEmailContext) return;
       stampSuccessModal.classList.remove('show');
@@ -1052,8 +1081,9 @@
       invoiceEmailSend.textContent = '✉ Enviar PDF y XML';
       stampedEmailContext.correos = {};
       renderStampedEmailHistory([]);
+      renderStampedFrequent('');
+      renderStampedContacts([], stampedEmailContext.email || '');
       invoiceEmailStoredFiles.innerHTML = '<span class="pill">Consultando documentos guardados…</span>';
-      document.querySelectorAll('[data-stamp-recipient]').forEach(button=>button.disabled=true);
       invoiceEmailModal.classList.add('show');
       try{
         const statusResponse = await fetch('/api/email/status', {headers:{'Accept':'application/json'}});
@@ -1067,15 +1097,10 @@
           const contacts = await contactsResponse.json();
           if(contactsResponse.ok && contacts.ok){
             stampedEmailContext.correos = contacts.correos || {};
-            invoiceEmailRecipients.value = stampedEmailContext.correos.cuentas_pagar || stampedEmailContext.email || '';
-            invoiceEmailCc.value = stampedEmailContext.correos.frecuentes || '';
+            renderStampedContacts(stampedEmailContext.correos.contactos || [], stampedEmailContext.email || '');
+            invoiceEmailCc.value = '';
+            renderStampedFrequent(stampedEmailContext.correos.frecuentes || '');
             renderStampedEmailHistory(stampedEmailContext.correos.historial || []);
-            document.querySelectorAll('[data-stamp-recipient]').forEach(button=>{
-              const mode = button.dataset.stampRecipient;
-              button.disabled = mode === 'ambos'
-                ? !(stampedEmailContext.correos.compras || stampedEmailContext.correos.cuentas_pagar)
-                : !stampedEmailContext.correos[mode];
-            });
           }
         }
       }catch(_){ invoiceEmailKeyWrap.classList.remove('hidden'); }
@@ -1098,12 +1123,6 @@
       invoiceEmailModal.classList.remove('show');
       stampSuccessModal.classList.add('show');
     };
-    document.querySelectorAll('[data-stamp-recipient]').forEach(button=>button.onclick=()=>{
-      const correos = stampedEmailContext?.correos || {};
-      const mode = button.dataset.stampRecipient;
-      const selected = mode === 'ambos' ? [correos.compras, correos.cuentas_pagar].filter(Boolean) : [correos[mode]].filter(Boolean);
-      invoiceEmailRecipients.value = [...new Set(selected)].join('; ');
-    });
     invoiceEmailSend.onclick = async ()=>{
       if(!stampedEmailContext || invoiceEmailSend.disabled) return;
       const recipients = invoiceEmailRecipients.value.split(/[,;\n]+/).map(value=>value.trim()).filter(Boolean);

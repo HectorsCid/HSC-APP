@@ -42,6 +42,10 @@ class QuoteEmailTests(unittest.TestCase):
         self.assertEqual(response.get_json()["correos"], {
             "compras": "compras@example.com", "cuentas_pagar": "pagos@example.com",
             "frecuentes": "", "historial": [],
+            "contactos": [
+                {"nombre": "Compras 1", "correo": "compras@example.com", "tipo": "compras"},
+                {"nombre": "Cuentas por pagar 1", "correo": "pagos@example.com", "tipo": "cuentas_pagar"},
+            ],
         })
         self.assertTrue(response.get_json()["trusted"])
 
@@ -53,6 +57,43 @@ class QuoteEmailTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["correos"]["compras"], "compras@example.com")
         self.assertEqual(response.get_json()["correos"]["cuentas_pagar"], "pagos@example.com")
+
+    def test_quote_attention_selects_one_assigned_email(self):
+        self.quote_path.write_text(
+            '[{"id":"1587","folio":"1587","cliente":"Bticino","datos":{"atencion":["Ana Compras"]}}]',
+            encoding="utf-8",
+        )
+        cotizador.clientes_predefinidos["Bticino"]["contactos"] = [
+            {"nombre": "María Compras", "correo": "maria@example.com", "tipo": "compras"},
+            {"nombre": "Ana Compras", "correo": "ana@example.com", "tipo": "compras"},
+        ]
+        with (
+            patch.object(cotizador, "smtp_config", return_value={"configured": True}),
+            patch.object(cotizador, "authorized_to_send", return_value=True),
+        ):
+            response = self.client.get("/api/cotizaciones/1587/email")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["atencion"], "Ana Compras")
+        self.assertEqual(response.get_json()["email"], "ana@example.com")
+
+    def test_client_contact_form_requires_one_email_per_person(self):
+        form = {"contacto_nombre": ["Ana"], "contacto_correo": ["ana@example.com"], "contacto_tipo": ["compras"]}
+
+        class Form(dict):
+            def getlist(self, key):
+                return self.get(key, [])
+
+        self.assertEqual(cotizador._contactos_desde_form(Form(form)), [
+            {"nombre": "Ana", "correo": "ana@example.com", "tipo": "compras"}
+        ])
+
+    def test_edit_client_renders_individual_legacy_contacts(self):
+        response = self.client.get("/editar_cliente?cliente=Bticino")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('value="compras@example.com"', html)
+        self.assertIn('value="pagos@example.com"', html)
+        self.assertIn('name="contacto_nombre"', html)
 
     def test_client_alias_typo_resolves_to_the_single_master_record(self):
         canonical, data = cotizador._resolver_cliente_catalogo("Biticino de México SA de CV")

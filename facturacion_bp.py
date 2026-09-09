@@ -763,8 +763,10 @@ def _invoice_pdf_metadata(inv_id):
                 "order_number": str(result.get("order_number") or "").strip(),
                 "client_name": str(result.get("client_name") or "").strip(),
                 "source_quote_id": str(result.get("source_quote_id") or "").strip(),
+                "invoice_alias": str(result.get("invoice_alias") or "").strip(),
+                "drive_folder_name": str(result.get("drive_folder_name") or "").strip(),
             }
-    return {"internal_folio": "", "order_number": "", "client_name": "", "source_quote_id": ""}
+    return {"internal_folio": "", "order_number": "", "client_name": "", "source_quote_id": "", "invoice_alias": "", "drive_folder_name": ""}
 
 
 def _hsc_invoice_pdf(xml_bytes, inv_id, *, internal_folio="", order_number=""):
@@ -788,7 +790,7 @@ def _facturama_printable_pdf(xml_bytes, inv_id, *, internal_folio="", order_numb
 
 
 def _backup_facturama_cfdi(
-    inv_id, uuid, client_name, internal_folio, document_type="Factura", order_number="", source_quote_id=""
+    inv_id, uuid, client_name, internal_folio, document_type="Factura", order_number="", source_quote_id="", invoice_alias=""
 ):
     """Descarga PDF/XML y los respalda sin comprometer un timbrado exitoso."""
     try:
@@ -797,7 +799,8 @@ def _backup_facturama_cfdi(
             xml, inv_id, internal_folio=internal_folio, order_number=order_number
         )
         result = backup_cfdi(
-            client_name, internal_folio, uuid, pdf, xml, document_type=document_type
+            client_name, internal_folio, uuid, pdf, xml,
+            document_type=document_type, folder_alias=invoice_alias
         )
         moved = []
         if source_quote_id and result.get("folder_id"):
@@ -974,6 +977,9 @@ def facturar():
                     "stage": "configuration",
                     "error": "Facturama no está configurado. No se intentó timbrar con otro proveedor.",
                 }), 503
+            invoice_alias = str(payload.get("alias_factura") or "").strip()
+            if len(invoice_alias) > 100:
+                return jsonify({"ok": False, "stage": "validation", "error": "El alias admite hasta 100 caracteres"}), 400
             try:
                 cfdi = _build_facturama_cfdi(payload)
             except (KeyError, TypeError, ValueError) as exc:
@@ -1158,12 +1164,15 @@ def facturar():
                     "Factura",
                     order_number,
                     str(payload.get("source_quote_id") or "").strip(),
+                    invoice_alias,
                 )
                 result["drive_backup"] = drive_backup
                 result["internal_folio"] = internal_folio
                 result["order_number"] = order_number
                 result["client_name"] = str(payload.get("cliente_carpeta") or (payload.get("receptor") or {}).get("nombre") or "SIN_CLIENTE")
                 result["source_quote_id"] = str(payload.get("source_quote_id") or "").strip()
+                result["invoice_alias"] = invoice_alias
+                result["drive_folder_name"] = str(drive_backup.get("folder_name") or internal_folio)
                 if not drive_backup.get("ok"):
                     result["warning"] = (
                         "La factura se timbró correctamente, pero Drive no confirmó el respaldo. "
@@ -1444,7 +1453,8 @@ def api_invoice_pdf(inv_id):
             xml = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
             metadata = _invoice_pdf_metadata(inv_id)
             content = _facturama_printable_pdf(xml, inv_id)
-            filename_folio = metadata["internal_folio"] or inv_id
+            filename_folio = " - ".join(filter(None, [metadata.get("invoice_alias"), metadata["internal_folio"]])) or inv_id
+            filename_folio = secure_filename(filename_folio) or secure_filename(inv_id) or "factura"
         except (requests.HTTPError, ValueError, OSError) as exc:
             detail = _http_error_detail(exc) if isinstance(exc, requests.HTTPError) else {"message": str(exc)}
             return jsonify({"ok": False, "error": detail}), 400
@@ -1467,6 +1477,9 @@ def api_invoice_xml(inv_id):
     if _provider() == "facturama":
         try:
             content = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
+            metadata = _invoice_pdf_metadata(inv_id)
+            filename_folio = " - ".join(filter(None, [metadata.get("invoice_alias"), metadata["internal_folio"]])) or inv_id
+            filename_folio = secure_filename(filename_folio) or secure_filename(inv_id) or "factura"
         except (requests.HTTPError, ValueError) as exc:
             detail = _http_error_detail(exc) if isinstance(exc, requests.HTTPError) else {"message": str(exc)}
             return jsonify({"ok": False, "error": detail}), 400
@@ -1475,9 +1488,10 @@ def api_invoice_xml(inv_id):
             content = _fa_get_binary(f"/invoices/{inv_id}/xml", "application/xml")
         except requests.HTTPError as exc:
             return getattr(exc.response, "text", str(exc)), 400
+        filename_folio = secure_filename(inv_id) or "factura"
     return Response(
         content, mimetype="application/xml",
-        headers={"Content-Disposition": f"inline; filename=Factura-{inv_id}.xml"},
+        headers={"Content-Disposition": f"inline; filename=Factura-HSC-{filename_folio}.xml"},
     )
 
 
@@ -1545,7 +1559,7 @@ def api_invoice_email(inv_id):
         try:
             metadata = _invoice_pdf_metadata(inv_id)
             stored = download_invoice_support_documents(
-                metadata.get("client_name"), metadata.get("internal_folio"), stored_ids
+                metadata.get("client_name"), metadata.get("drive_folder_name") or metadata.get("internal_folio"), stored_ids
             )
             total_size += sum(len(item.get("data") or b"") for item in stored)
             if total_size > 15 * 1024 * 1024:
@@ -1605,7 +1619,9 @@ def api_invoice_documents(inv_id):
     if not metadata.get("client_name") or not metadata.get("internal_folio"):
         return jsonify({"ok": True, "documents": []}), 200
     try:
-        items = list_invoice_support_documents(metadata["client_name"], metadata["internal_folio"])
+        items = list_invoice_support_documents(
+            metadata["client_name"], metadata.get("drive_folder_name") or metadata["internal_folio"]
+        )
         return jsonify({"ok": True, "documents": [{
             "id": item.get("id"), "name": item.get("name"),
             "size": int(item.get("size") or 0),
