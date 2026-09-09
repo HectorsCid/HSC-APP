@@ -148,6 +148,7 @@
   .mini-main{min-width:0}.mini-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.82rem;font-weight:780}.mini-sub{margin-top:3px;color:var(--muted);font-size:.68rem}.mini-amount{font-size:.86rem;font-weight:780;font-variant-numeric:tabular-nums}.mini-uuid{min-width:0;font-family:ui-monospace,Consolas,monospace;color:var(--muted);font-size:.65rem;overflow-wrap:anywhere}.mini-actions{display:flex;justify-content:flex-end;gap:5px}.mini-actions .btn{min-height:28px;padding:4px 7px;font-size:.68rem}
   .empty-state{padding:42px 12px;text-align:center;color:var(--muted)}
   .client-layout{display:grid;grid-template-columns:minmax(260px,.8fr) minmax(0,1.7fr);gap:10px}.client-list,.client-detail{max-height:min(calc(100vh - 190px),520px);overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.client-item{width:100%;display:grid;grid-template-columns:1fr auto;gap:5px 10px;padding:11px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--ink);text-align:left;cursor:pointer}.client-item:hover,.client-item.active{background:var(--brand-soft)}.client-item strong{font-size:.82rem}.client-item small{color:var(--muted)}.client-item .pending{color:var(--danger);font-weight:800}.client-detail{padding:12px}.client-detail-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}.client-detail h3{margin:0;font-size:1rem}.client-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:10px}.client-doc{display:grid;grid-template-columns:minmax(150px,1fr) 90px 105px auto;gap:8px;align-items:center;padding:9px 4px;border-top:1px solid var(--line);font-size:.75rem}.client-doc .doc-title{font-weight:800}.client-doc .doc-sub{margin-top:2px;color:var(--muted);font-size:.67rem}.client-doc-actions{display:flex;gap:5px}.client-doc-actions .btn{font-size:.64rem;padding:4px 6px;min-height:27px}.section-label{margin:13px 0 5px;color:var(--muted);font-size:.68rem;font-weight:900;text-transform:uppercase;letter-spacing:.05em}
+  .balance-toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.balance-toolbar select{max-width:210px}.balance-kpis{display:grid;grid-template-columns:repeat(6,minmax(105px,1fr));gap:7px;margin-bottom:9px}.balance-kpis .summary-box strong{font-size:1rem}.balance-kpis .summary-box.warn strong{color:var(--danger)}.balance-kpis .summary-box.result strong{color:var(--brand)}.balance-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(270px,.85fr);gap:9px}.balance-section{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:11px;min-height:180px}.balance-section h3{margin:0 0 9px;font-size:.82rem}.balance-chart{display:grid;gap:8px}.balance-month{display:grid;grid-template-columns:62px minmax(0,1fr) 92px;gap:7px;align-items:center;font-size:.69rem}.balance-bars{display:grid;gap:3px}.balance-bar{height:6px;border-radius:99px;min-width:2px}.balance-bar.income{background:var(--brand)}.balance-bar.expense{background:var(--danger)}.balance-bar.collected{background:var(--ok)}.balance-legend{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;color:var(--muted);font-size:.66rem}.balance-legend span::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;background:var(--dot)}.balance-rank,.balance-pending{display:grid;gap:5px}.balance-rank-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:.71rem}.balance-rank-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.balance-rank-row small{grid-column:1/-1;color:var(--muted)}.balance-pending-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:7px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:.7rem}.balance-pending-row strong{display:block}.balance-note{margin-top:7px;color:var(--muted);font-size:.65rem}
   @media(max-width:1120px){
     .layout{grid-template-columns:180px minmax(0,1fr)}
     .wrap{padding-left:13px;padding-right:13px}
@@ -177,7 +178,7 @@
     tbody td:nth-child(8){grid-column:1;grid-row:3;align-self:center;padding:0}
     tbody td:nth-child(9){grid-column:1/-1;grid-row:4}
     tbody td:nth-child(10){grid-column:1/-1;grid-row:5;justify-content:start}
-    .summary-grid{grid-template-columns:1fr}.mini-list{max-height:none}.mini-row{grid-template-columns:1fr auto}.mini-row>*{grid-column:1}.mini-row .mini-amount{grid-column:2;grid-row:1}.mini-row .mini-actions{grid-column:1/-1;justify-content:start}.client-layout{grid-template-columns:1fr}.client-list,.client-detail{max-height:none}.client-kpis{grid-template-columns:1fr}.client-doc{grid-template-columns:1fr auto}.client-doc>*{grid-column:1}.client-doc .client-doc-actions{grid-column:2;grid-row:1/4;flex-direction:column}
+    .summary-grid{grid-template-columns:1fr}.mini-list{max-height:none}.mini-row{grid-template-columns:1fr auto}.mini-row>*{grid-column:1}.mini-row .mini-amount{grid-column:2;grid-row:1}.mini-row .mini-actions{grid-column:1/-1;justify-content:start}.client-layout{grid-template-columns:1fr}.client-list,.client-detail{max-height:none}.client-kpis{grid-template-columns:1fr}.client-doc{grid-template-columns:1fr auto}.client-doc>*{grid-column:1}.client-doc .client-doc-actions{grid-column:2;grid-row:1/4;flex-direction:column}.balance-kpis{grid-template-columns:repeat(2,1fr)}.balance-grid{grid-template-columns:1fr}.balance-month{grid-template-columns:52px minmax(0,1fr) 82px}.balance-pending-row{grid-template-columns:1fr auto}.balance-pending-row .btn{grid-column:1/-1;justify-self:start}
   }
 </style>
 </head>
@@ -218,6 +219,7 @@
     <div class="tabs">
       <div id="tabEmitidas" class="tab active">Emitidas</div>
       <div id="tabRecibidas" class="tab">Recibidas</div>
+      <div id="tabBalance" class="tab">Balance</div>
       <div id="tabPlantillas" class="tab">Plantillas</div>
       <div id="tabClientes" class="tab">Clientes</div>
     </div>
@@ -252,6 +254,13 @@
         <div class="summary-box"><span>Total facturado</span><strong id="receivedTotal">$0.00</strong></div>
       </div>
       <div class="mini-list" id="receivedList"><div class="empty-state">Abre esta pestaña para consultar Facturama.</div></div>
+    </div>
+    <div class="card" id="panelBalance" style="display:none">
+      <div class="panel-head"><div><h2>Balance de facturación</h2><div class="pill">Ingresos, cobranza, gastos recibidos y pendientes</div></div><div class="balance-toolbar"><select id="balanceScope"><option value="month">Mes seleccionado</option><option value="year">Año completo</option></select><select id="balanceClient"><option value="">Todos los clientes</option></select><button class="btn" id="reloadBalance">↻ Actualizar</button></div></div>
+      <div class="balance-kpis">
+        <div class="summary-box"><span>Facturado</span><strong id="balanceIssued">$0.00</strong></div><div class="summary-box"><span>Cobrado</span><strong id="balanceCollected">$0.00</strong></div><div class="summary-box warn"><span>Por cobrar</span><strong id="balancePending">$0.00</strong></div><div class="summary-box"><span>Gastos recibidos</span><strong id="balanceExpenses">$0.00</strong></div><div class="summary-box result"><span>Resultado estimado</span><strong id="balanceResult">$0.00</strong></div><div class="summary-box"><span>Complementos pendientes</span><strong id="balanceRepCount">0</strong></div>
+      </div>
+      <div class="balance-grid"><section class="balance-section"><h3 id="balanceChartTitle">Movimiento del periodo</h3><div class="balance-legend"><span style="--dot:var(--brand)">Facturado</span><span style="--dot:var(--ok)">Cobrado</span><span style="--dot:var(--danger)">Gastos</span></div><div class="balance-chart" id="balanceChart"></div><div class="balance-note" id="balanceNote">El resultado estimado es facturación vigente menos CFDI recibidos; no sustituye la utilidad contable.</div></section><section class="balance-section"><h3>Clientes principales</h3><div class="balance-rank" id="balanceTop"></div></section><section class="balance-section" style="grid-column:1/-1"><h3>Facturas pendientes de complemento</h3><div class="balance-pending" id="balancePendingList"></div></section></div>
     </div>
     <div class="card" id="panelPlantillas" style="display:none">
       <div class="panel-head"><div><h2>Plantillas de factura</h2><div class="pill">Reutiliza cliente, conceptos, impuestos y condiciones sin timbrar automáticamente</div></div><a class="btn btn-primary" href="/facturas/nueva">＋ Preparar plantilla</a></div>
@@ -347,7 +356,7 @@
 <script>
 const $ = s=>document.querySelector(s);
 const tbody = $('#tbl tbody');
-const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Plantillas:'#panelPlantillas', Clientes:'#panelClientes'};
+const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Balance:'#panelBalance', Plantillas:'#panelPlantillas', Clientes:'#panelClientes'};
 let activePanel = 'Emitidas';
 const clickLocks = new Set(); // antirrebote por fila
 const pageMsg = document.getElementById('pageMsg');
@@ -393,7 +402,7 @@ if(arrivalParams.get('complemento') === '1'){
   setTimeout(()=>{ pageMsg.className = 'flash'; }, 6000);
 }
 
-['Emitidas','Recibidas','Plantillas','Clientes'].forEach(n=>{
+['Emitidas','Recibidas','Balance','Plantillas','Clientes'].forEach(n=>{
   const tab = document.getElementById('tab'+n);
   tab.onclick=()=>{
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -423,6 +432,7 @@ $('#q').addEventListener('input', refreshActive);
 
 function refreshActive(){
   if(activePanel === 'Recibidas') return loadReceived();
+  if(activePanel === 'Balance') return loadBalance();
   if(activePanel === 'Plantillas') return loadTemplates();
   if(activePanel === 'Clientes') return loadBillingClients();
   return load();
@@ -583,6 +593,26 @@ async function loadReceived(){
   }
 }
 
+async function loadBalance(){
+  const chart=document.getElementById('balanceChart');const top=document.getElementById('balanceTop');const pendingList=document.getElementById('balancePendingList');
+  chart.innerHTML='<div class="empty-state">Calculando el balance…</div>';top.innerHTML='';pendingList.innerHTML='';
+  const scope=document.getElementById('balanceScope').value;const clientSelect=document.getElementById('balanceClient');const selectedClient=clientSelect.value;
+  try{
+    const params=new URLSearchParams({period:$('#mes').value,scope});if(selectedClient)params.set('client',selectedClient);
+    const response=await fetch(`/api/facturacion/balance?${params}`);const result=await response.json();
+    if(!response.ok||!result.ok)throw new Error(errorText(result.error));
+    const data=result.data||{};
+    document.getElementById('balanceIssued').textContent=moneyMx(data.issued_total);document.getElementById('balanceCollected').textContent=moneyMx(data.collected_total);document.getElementById('balancePending').textContent=moneyMx(data.pending_total);document.getElementById('balanceExpenses').textContent=moneyMx(data.received_total);document.getElementById('balanceResult').textContent=data.client_filtered?'No aplica':moneyMx(data.estimated_result);document.getElementById('balanceRepCount').textContent=data.pending_complements||0;document.getElementById('balanceNote').textContent=data.client_filtered?'Los gastos son generales de HSC y no se asignan a un cliente; por eso el resultado estimado no aplica con este filtro.':'El resultado estimado es facturación vigente menos CFDI recibidos; no sustituye la utilidad contable.';
+    const choices=data.client_options||[];clientSelect.innerHTML='<option value="">Todos los clientes</option>'+choices.map(row=>`<option value="${escAttr(row.key)}">${escAttr(row.name)}${row.rfc?` · ${escAttr(row.rfc)}`:''}</option>`).join('');clientSelect.value=selectedClient;
+    const series=(data.series||[]).filter(row=>Number(row.issued)||Number(row.collected)||Number(row.received));
+    const maximum=Math.max(1,...series.flatMap(row=>[Number(row.issued||0),Number(row.collected||0),Number(row.received||0)].map(Math.abs)));
+    document.getElementById('balanceChartTitle').textContent=scope==='year'?'Movimiento mensual del año':'Movimiento del mes seleccionado';
+    chart.innerHTML=series.length?series.map(row=>{const label=new Date(`${row.month}-02T12:00:00`).toLocaleDateString('es-MX',{month:'short',year:scope==='year'?undefined:'numeric'});const width=value=>`${Math.max(1,Math.abs(Number(value||0))/maximum*100)}%`;return `<div class="balance-month"><strong>${escAttr(label)}</strong><div class="balance-bars"><span class="balance-bar income" style="width:${width(row.issued)}" title="Facturado ${moneyMx(row.issued)}"></span><span class="balance-bar collected" style="width:${width(row.collected)}" title="Cobrado ${moneyMx(row.collected)}"></span><span class="balance-bar expense" style="width:${width(row.received)}" title="Gastos ${moneyMx(row.received)}"></span></div><strong>${moneyMx(row.issued)}</strong></div>`}).join(''):'<div class="empty-state">No hay movimientos en este periodo.</div>';
+    top.innerHTML=(data.top_clients||[]).length?(data.top_clients||[]).map((row,index)=>`<div class="balance-rank-row"><strong>${index+1}. ${escAttr(row.name)}</strong><strong>${moneyMx(row.total)}</strong><small>${row.count} factura(s) · Cobrado ${moneyMx(row.collected)}${row.pending?` · Pendiente ${moneyMx(row.pending)}`:''}</small></div>`).join(''):'<div class="empty-state">Sin clientes en el periodo.</div>';
+    pendingList.innerHTML=(data.pending_invoices||[]).length?(data.pending_invoices||[]).map(row=>`<div class="balance-pending-row"><div><strong>${escAttr(row.client_name)}</strong><span class="mini-sub">Factura ${escAttr(row.folio||'sin folio')} · ${escAttr((row.date||'').slice(0,10))}</span></div><strong>${moneyMx(row.pending)}</strong><a class="btn btn-primary" href="/pagos/nuevo?invoice_id=${encodeURIComponent(row.id)}&uuid=${encodeURIComponent(row.uuid||'')}">Generar complemento</a></div>`).join(''):'<div class="empty-state">No hay facturas pendientes de complemento.</div>';
+  }catch(error){chart.innerHTML=`<div class="empty-state">${escAttr(error.message)}</div>`;top.innerHTML='<div class="empty-state">No se pudo cargar.</div>';pendingList.innerHTML='';}
+}
+
 async function loadTemplates(){
   const list = document.getElementById('templateList');
   list.innerHTML = '<div class="empty-state">Cargando plantillas…</div>';
@@ -642,6 +672,9 @@ async function loadBillingClients(){
 }
 
 document.getElementById('reloadReceived').onclick=loadReceived;
+document.getElementById('reloadBalance').onclick=loadBalance;
+document.getElementById('balanceScope').onchange=loadBalance;
+document.getElementById('balanceClient').onchange=loadBalance;
 document.getElementById('reloadClients').onclick=loadBillingClients;
 
 /* ===== Envío de PDF y XML por CarrierZone ===== */

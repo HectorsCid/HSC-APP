@@ -1420,6 +1420,152 @@ def api_billing_clients():
     return jsonify({"ok": True, "data": result}), 200
 
 
+def _facturama_period_rows(document_type, start_date, end_date):
+    """Recorre páginas sin depender del tamaño de página que use Facturama."""
+    rows = []
+    seen = set()
+    params = {
+        "type": document_type,
+        "status": "all",
+        "dateStart": start_date.strftime("%d/%m/%Y"),
+        "dateEnd": end_date.strftime("%d/%m/%Y"),
+    }
+    for page in range(20):
+        raw = _fm_request("GET", "/api/cfdi", params={**params, "page": page}, timeout=45)
+        batch = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
+        if not batch:
+            break
+        added = 0
+        for item in batch:
+            identity = str(_pick(item, "Id") or _pick(item, "Uuid", "FolioFiscal") or "").strip()
+            if identity and identity in seen:
+                continue
+            if identity:
+                seen.add(identity)
+            rows.append(item)
+            added += 1
+        if added == 0:
+            break
+    return rows
+
+
+@facturacion_bp.get("/facturacion/balance")
+def api_billing_balance():
+    """Resumen de ingresos, cobranza y CFDI recibidos para control operativo."""
+    if _provider() != "facturama":
+        return jsonify({"ok": False, "error": "El balance requiere Facturama."}), 503
+    period = str(request.args.get("period") or datetime.now().strftime("%Y-%m")).strip()
+    scope = str(request.args.get("scope") or "month").strip().lower()
+    if not re.fullmatch(r"\d{4}-\d{2}", period) or scope not in {"month", "year"}:
+        return jsonify({"ok": False, "error": "El periodo solicitado no es válido."}), 400
+    selected = datetime.strptime(period + "-01", "%Y-%m-%d")
+    if scope == "year":
+        start_date = selected.replace(month=1, day=1)
+        end_date = selected.replace(month=12, day=31)
+        date_prefix = selected.strftime("%Y-")
+    else:
+        start_date = selected
+        next_month = (selected.replace(day=28) + timedelta(days=4)).replace(day=1)
+        end_date = next_month - timedelta(days=1)
+        date_prefix = selected.strftime("%Y-%m")
+    client_filter = str(request.args.get("client") or "").strip().upper()
+
+    try:
+        issued_source = _facturama_period_rows("issued", start_date, end_date)
+        received_source = _facturama_period_rows("received", start_date, end_date)
+    except requests.HTTPError as exc:
+        return jsonify({"ok": False, "error": _http_error_detail(exc)}), 400
+
+    payments = _read_index()
+    issued_total = collected_total = pending_total = received_total = 0.0
+    invoice_count = expense_count = pending_complements = 0
+    client_rows = {}
+    client_options = {}
+    pending_rows = []
+    series = {f"{selected.year}-{month:02d}": {"issued": 0.0, "collected": 0.0, "received": 0.0} for month in range(1, 13)}
+
+    for item in issued_source:
+        invoice = _facturama_invoice_row(item)
+        if not str(invoice.get("date") or "").startswith(date_prefix) or not _valid_cfdi_uuid(invoice.get("uuid")):
+            continue
+        status_text = str(invoice.get("status") or "").lower()
+        if any(word in status_text for word in ("cancel", "canceled", "cancelado")):
+            continue
+        rfc = str(invoice.get("customer_tax_id") or "").strip().upper()
+        name = str(invoice.get("customer_name") or "Cliente sin nombre").strip()
+        client_key = rfc or re.sub(r"\W+", "", name.casefold())
+        client_options[client_key] = {"key": client_key, "name": name, "rfc": rfc}
+        if client_filter and client_key.upper() != client_filter:
+            continue
+        total = round(float(invoice.get("total") or 0), 2)
+        month_key = str(invoice.get("date") or "")[:7]
+        client = client_rows.setdefault(client_key, {"key": client_key, "name": name, "rfc": rfc, "total": 0.0, "collected": 0.0, "pending": 0.0, "count": 0})
+        if invoice.get("type") == "E":
+            issued_total -= total
+            client["total"] -= total
+            if month_key in series:
+                series[month_key]["issued"] -= total
+            continue
+        if invoice.get("type") != "I":
+            continue
+        summary = _payment_summary(payments.get(invoice.get("uuid")), total)
+        collected = total if invoice.get("payment_method") == "PUE" else summary["paid_amount"]
+        pending = summary["remaining_balance"] if invoice.get("payment_method") == "PPD" else 0.0
+        issued_total += total
+        collected_total += collected
+        pending_total += pending
+        invoice_count += 1
+        client["total"] += total
+        client["collected"] += collected
+        client["pending"] += pending
+        client["count"] += 1
+        if month_key in series:
+            series[month_key]["issued"] += total
+            series[month_key]["collected"] += collected
+        if invoice.get("payment_method") == "PPD" and pending > 0.009:
+            pending_complements += 1
+            pending_rows.append({
+                "id": invoice.get("id"), "uuid": invoice.get("uuid"), "folio": invoice.get("folio"),
+                "date": invoice.get("date"), "client_name": name, "client_tax_id": rfc,
+                "total": total, "paid": summary["paid_amount"], "pending": pending,
+            })
+
+    for item in received_source:
+        invoice = _facturama_received_row(item)
+        if not str(invoice.get("date") or "").startswith(date_prefix) or not _valid_cfdi_uuid(invoice.get("uuid")):
+            continue
+        status_text = str(invoice.get("status") or "").lower()
+        if any(word in status_text for word in ("cancel", "canceled", "cancelado")):
+            continue
+        if invoice.get("type") not in {"I", "E"}:
+            continue
+        amount = float(invoice.get("total") or 0) * (-1 if invoice.get("type") == "E" else 1)
+        received_total += amount
+        expense_count += 1 if invoice.get("type") == "I" else 0
+        month_key = str(invoice.get("date") or "")[:7]
+        if month_key in series:
+            series[month_key]["received"] += amount
+
+    clients = list(client_rows.values())
+    for row in clients:
+        for field in ("total", "collected", "pending"):
+            row[field] = round(row[field], 2)
+    clients.sort(key=lambda row: row["total"], reverse=True)
+    pending_rows.sort(key=lambda row: (-row["pending"], str(row.get("date") or "")))
+    series_rows = [{"month": key, **{name: round(value, 2) for name, value in values.items()}} for key, values in sorted(series.items())]
+    if scope == "month":
+        series_rows = [row for row in series_rows if row["month"] == selected.strftime("%Y-%m")]
+    return jsonify({"ok": True, "data": {
+        "scope": scope, "period": period, "client_filtered": bool(client_filter), "invoice_count": invoice_count, "expense_count": expense_count,
+        "issued_total": round(issued_total, 2), "collected_total": round(collected_total, 2),
+        "pending_total": round(pending_total, 2), "received_total": round(received_total, 2),
+        "estimated_result": round(issued_total - received_total, 2),
+        "pending_complements": pending_complements, "clients": clients,
+        "client_options": sorted(client_options.values(), key=lambda row: row["name"].casefold()),
+        "top_clients": clients[:8], "pending_invoices": pending_rows, "series": series_rows,
+    }}), 200
+
+
 @facturacion_bp.get("/facturas/received")
 def api_list_received_invoices():
     """CFDI recibidos por HSC disponibles en la cuenta Web de Facturama."""

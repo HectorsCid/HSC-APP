@@ -356,6 +356,40 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(client["pending_complements"], 1)
         self.assertEqual(client["complements"][0]["partiality_number"], 1)
 
+    def test_billing_balance_combines_income_collection_expenses_and_pending(self):
+        issued = [{
+            "Id": "ppd-1", "Uuid": self.VALID_UUID, "Folio": "1594", "CfdiType": "I",
+            "PaymentMethod": "PPD", "TaxName": "CLIENTE SAT", "Rfc": "URE180429TM6",
+            "Total": 116, "Status": "active", "Date": "2026-09-09T10:00:00",
+        }]
+        received = [{
+            "Id": "expense-1", "Uuid": "215cec43-7e57-44ac-9d63-b54bbc4745bd",
+            "CfdiType": "I", "Total": 40, "Status": "active", "Date": "2026-09-08T10:00:00",
+            "Issuer": {"Name": "PROVEEDOR", "Rfc": "AAA010101AAA"},
+        }]
+        index = {self.VALID_UUID: {"payments": [{
+            "rep_id": "rep-1", "amount": 60, "remaining_balance": 56,
+            "partiality_number": 1, "status": "active",
+        }]}}
+
+        def cfdi_pages(document_type, *_args, **_kwargs):
+            return issued if document_type == "issued" else received
+
+        with (
+            patch.object(billing, "_facturama_period_rows", side_effect=cfdi_pages),
+            patch.object(billing, "_read_index", return_value=index),
+        ):
+            response = self.client.get("/api/facturacion/balance?period=2026-09&scope=month")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()["data"]
+        self.assertEqual(data["issued_total"], 116)
+        self.assertEqual(data["collected_total"], 60)
+        self.assertEqual(data["pending_total"], 56)
+        self.assertEqual(data["received_total"], 40)
+        self.assertEqual(data["estimated_result"], 76)
+        self.assertEqual(data["pending_complements"], 1)
+        self.assertEqual(data["top_clients"][0]["name"], "CLIENTE SAT")
+
     def test_received_list_uses_issuer_as_supplier(self):
         rows = [{
             "Id": "received-1", "Uuid": self.VALID_UUID, "CfdiType": "I",
