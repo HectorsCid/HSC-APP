@@ -120,7 +120,8 @@ class InvoiceEmailEndpointTests(unittest.TestCase):
             patch.object(billing, "authorized_to_send", return_value=True),
             patch.object(billing, "trusted_device_token", return_value="trusted-cookie"),
             patch.object(billing, "_provider", return_value="facturama"),
-            patch.object(billing, "_fm_request", side_effect=[{"Content": "JVBERg=="}, {"Content": "PHhtbC8+"}]),
+            patch.object(billing, "_fm_request", return_value={"Content": "PHhtbC8+"}),
+            patch.object(billing, "_facturama_printable_pdf", return_value=b"%PDF"),
             patch.object(billing, "send_cfdi_email", return_value={"recipient": "x@example.com"}) as send,
         ):
             response = self.client.post("/api/invoices/abc/email", json={
@@ -147,7 +148,8 @@ class InvoiceEmailEndpointTests(unittest.TestCase):
             patch.object(billing, "authorized_to_send", return_value=True),
             patch.object(billing, "trusted_device_token", return_value="trusted-cookie"),
             patch.object(billing, "_provider", return_value="facturama"),
-            patch.object(billing, "_fm_request", side_effect=[{"Content": "JVBERg=="}, {"Content": "PHhtbC8+"}]),
+            patch.object(billing, "_fm_request", return_value={"Content": "PHhtbC8+"}),
+            patch.object(billing, "_facturama_printable_pdf", return_value=b"%PDF"),
             patch.object(billing, "send_cfdi_email", return_value={"recipient": "x@example.com"}) as send,
         ):
             response = self.client.post("/api/invoices/abc/email", data={

@@ -36,6 +36,7 @@ pyparsing==3.2.3
 pyphen==0.17.2
 requests==2.32.4
 requests-oauthlib==2.0.0
+reportlab==4.4.9
 rsa==4.9.1
 tinycss2==1.4.0
 tinyhtml5==2.0.0

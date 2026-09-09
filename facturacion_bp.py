@@ -20,6 +20,7 @@ from cfdi_drive import (
     load_json_file, load_payments_index,
 )
 from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config, trusted_device_token
+from factura_pdf_hsc import build_invoice_pdf_bytes, parse_cfdi
 
 # ----------------------------------------------------------------------
 # Blueprint
@@ -748,11 +749,50 @@ def _decode_facturama_file(data):
         raise ValueError("Facturama devolvió un archivo inválido") from exc
 
 
-def _backup_facturama_cfdi(inv_id, uuid, client_name, internal_folio, document_type="Factura"):
+def _invoice_pdf_metadata(inv_id):
+    """Recupera los datos comerciales que no forman parte del XML del SAT."""
+    wanted = str(inv_id or "")
+    for entry in _load_stamp_registry().values():
+        if not isinstance(entry, dict):
+            continue
+        result = entry.get("result") if isinstance(entry.get("result"), dict) else entry
+        if str(result.get("invoice_id") or "") == wanted:
+            return {
+                "internal_folio": str(result.get("internal_folio") or "").strip(),
+                "order_number": str(result.get("order_number") or "").strip(),
+            }
+    return {"internal_folio": "", "order_number": ""}
+
+
+def _hsc_invoice_pdf(xml_bytes, inv_id, *, internal_folio="", order_number=""):
+    metadata = _invoice_pdf_metadata(inv_id)
+    return build_invoice_pdf_bytes(
+        xml_bytes,
+        internal_folio=internal_folio or metadata["internal_folio"],
+        order_number=order_number or metadata["order_number"],
+    )
+
+
+def _facturama_printable_pdf(xml_bytes, inv_id, *, internal_folio="", order_number=""):
+    """Personaliza facturas de ingreso y conserva el formato oficial de otros CFDI."""
+    if parse_cfdi(xml_bytes).get("cfdi_type") == "I":
+        return _hsc_invoice_pdf(
+            xml_bytes, inv_id,
+            internal_folio=internal_folio,
+            order_number=order_number,
+        )
+    return _decode_facturama_file(_fm_request("GET", f"/Cfdi/pdf/issued/{inv_id}"))
+
+
+def _backup_facturama_cfdi(
+    inv_id, uuid, client_name, internal_folio, document_type="Factura", order_number=""
+):
     """Descarga PDF/XML y los respalda sin comprometer un timbrado exitoso."""
     try:
-        pdf = _decode_facturama_file(_fm_request("GET", f"/Cfdi/pdf/issued/{inv_id}"))
         xml = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
+        pdf = _facturama_printable_pdf(
+            xml, inv_id, internal_folio=internal_folio, order_number=order_number
+        )
         return backup_cfdi(
             client_name, internal_folio, uuid, pdf, xml, document_type=document_type
         )
@@ -1097,6 +1137,7 @@ def facturar():
                     "xml_url": f"/api/invoices/{inv_id}/xml",
                     "complementos_disponibles": False,
                 }
+                order_number = str(payload.get("numero_orden_compra") or "").strip()
                 internal_folio = str(
                     payload.get("folio") or _pick(invoice, "Folio")
                     or payload.get("source_quote_id") or inv_id
@@ -1107,9 +1148,11 @@ def facturar():
                         or (payload.get("receptor") or {}).get("nombre") or "SIN_CLIENTE"),
                     internal_folio,
                     "Factura",
+                    order_number,
                 )
                 result["drive_backup"] = drive_backup
                 result["internal_folio"] = internal_folio
+                result["order_number"] = order_number
                 if not drive_backup.get("ok"):
                     result["warning"] = (
                         "La factura se timbró correctamente, pero Drive no confirmó el respaldo. "
@@ -1387,13 +1430,16 @@ def api_delete_invoice_template(template_id):
 def api_invoice_pdf(inv_id):
     if _provider() == "facturama":
         try:
-            content = _decode_facturama_file(_fm_request("GET", f"/Cfdi/pdf/issued/{inv_id}"))
-        except (requests.HTTPError, ValueError) as exc:
+            xml = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
+            metadata = _invoice_pdf_metadata(inv_id)
+            content = _facturama_printable_pdf(xml, inv_id)
+            filename_folio = metadata["internal_folio"] or inv_id
+        except (requests.HTTPError, ValueError, OSError) as exc:
             detail = _http_error_detail(exc) if isinstance(exc, requests.HTTPError) else {"message": str(exc)}
             return jsonify({"ok": False, "error": detail}), 400
         return Response(
             content, mimetype="application/pdf",
-            headers={"Content-Disposition": f"inline; filename=Factura-{inv_id}.pdf"},
+            headers={"Content-Disposition": f"inline; filename=Factura-HSC-{filename_folio}.pdf"},
         )
     try:
         content = _fa_get_binary(f"/invoices/{inv_id}/pdf", "application/pdf")
@@ -1485,8 +1531,8 @@ def api_invoice_email(inv_id):
         })
     try:
         if _provider() == "facturama":
-            pdf = _decode_facturama_file(_fm_request("GET", f"/Cfdi/pdf/issued/{inv_id}"))
             xml = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
+            pdf = _facturama_printable_pdf(xml, inv_id)
         else:
             pdf = _fa_get_binary(f"/invoices/{inv_id}/pdf", "application/pdf")
             xml = _fa_get_binary(f"/invoices/{inv_id}/xml", "application/xml")

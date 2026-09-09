@@ -10,6 +10,8 @@ import facturacion_bp as billing
 
 class FacturamaIntegrationTests(unittest.TestCase):
     VALID_UUID = "2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb"
+    SAMPLE_XML = b'''<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="HSC" Folio="1370" Fecha="2026-09-09T10:00:00" Moneda="MXN" SubTotal="100.00" Total="116.00" FormaPago="03" MetodoPago="PUE" LugarExpedicion="76240" NoCertificado="00001000000706708942" Sello="SELLODEPRUEBA12345678"><cfdi:Emisor Rfc="SICH930611DV7" Nombre="HECTOR SILVA CID" RegimenFiscal="621"/><cfdi:Receptor Rfc="URE180429TM6" Nombre="UNIVERSIDAD ROBOTICA ESPANOLA" DomicilioFiscalReceptor="86991" RegimenFiscalReceptor="601" UsoCFDI="G03"/><cfdi:Conceptos><cfdi:Concepto ClaveProdServ="85121600" Descripcion="Servicio de prueba" Unidad="Servicio" Cantidad="1" ValorUnitario="100.00" Importe="100.00"/></cfdi:Conceptos><cfdi:Impuestos TotalImpuestosTrasladados="16.00"/><cfdi:Complemento><tfd:TimbreFiscalDigital Version="1.1" UUID="2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb" FechaTimbrado="2026-09-09T10:01:00" NoCertificadoSAT="00001000000500003456" RfcProvCertif="AAA010101AAA" SelloCFD="SELLOCFD" SelloSAT="SELLOSAT"/></cfdi:Complemento></cfdi:Comprobante>'''
 
     def setUp(self):
         billing._STAMP_RESULTS.clear()
@@ -264,6 +266,24 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(data["uuid"], expected_uuid)
         self.assertNotIn("secret-signature", str(data))
 
+    def test_stamp_preserves_internal_folio_and_purchase_order_for_pdf(self):
+        payload = self.payload("pdf-metadata-request")
+        payload.update({"folio": "1370", "numero_orden_compra": "OC-45872"})
+        answer = {"Id": "invoice-with-metadata", "Uuid": self.VALID_UUID, "Status": "active", "Total": 232}
+        with (
+            patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
+            patch.object(billing, "_facturama_receiver_validation", return_value=({}, {})),
+            patch.object(billing, "_fm_request", return_value=answer),
+            patch.object(billing, "_backup_facturama_cfdi", return_value={"ok": True}),
+        ):
+            response = self.client.post("/api/facturar", json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["internal_folio"], "1370")
+        self.assertEqual(response.get_json()["order_number"], "OC-45872")
+        with self.app.app_context():
+            metadata = billing._invoice_pdf_metadata("invoice-with-metadata")
+        self.assertEqual(metadata, {"internal_folio": "1370", "order_number": "OC-45872"})
+
     def test_stamp_without_valid_uuid_is_rejected_and_not_cached(self):
         answer = {"Id": "invalid-attempt", "Status": "invalid", "Total": 232}
         with (
@@ -400,14 +420,37 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(response.get_json()["stage"], "receiver_validation")
         stamp_mock.assert_not_called()
 
-    def test_download_decodes_facturama_base64(self):
-        expected = b"%PDF-sandbox"
-        encoded = base64.b64encode(expected).decode("ascii")
+    def test_download_builds_hsc_pdf_from_facturama_xml(self):
+        encoded = base64.b64encode(self.SAMPLE_XML).decode("ascii")
+        billing._STAMP_RESULTS["pdf-request"] = {
+            "state": "completed",
+            "result": {
+                "invoice_id": "sandbox-id",
+                "internal_folio": "1370",
+                "order_number": "OC-BTICINO-45872",
+            },
+        }
         with patch.object(billing, "_fm_request", return_value={"Content": encoded}):
             response = self.client.get("/api/invoices/sandbox-id/pdf")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, expected)
+        self.assertTrue(response.data.startswith(b"%PDF-"))
         self.assertEqual(response.mimetype, "application/pdf")
+        self.assertIn("Factura-HSC-1370.pdf", response.headers["Content-Disposition"])
+
+    def test_payment_cfdi_keeps_facturama_printable_format(self):
+        payment_xml = self.SAMPLE_XML.replace(
+            b'Version="4.0"', b'Version="4.0" TipoDeComprobante="P"', 1
+        )
+        expected = b"%PDF-complemento"
+        encoded = base64.b64encode(expected).decode("ascii")
+        with (
+            patch.object(billing, "_hsc_invoice_pdf") as hsc_pdf,
+            patch.object(billing, "_fm_request", return_value={"Content": encoded}) as provider_pdf,
+        ):
+            result = billing._facturama_printable_pdf(payment_xml, "rep-id")
+        self.assertEqual(result, expected)
+        hsc_pdf.assert_not_called()
+        provider_pdf.assert_called_once_with("GET", "/Cfdi/pdf/issued/rep-id")
 
 
 if __name__ == "__main__":
