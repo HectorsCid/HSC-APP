@@ -77,6 +77,8 @@
     .st-actions{ display:flex; gap:8px; justify-content:flex-end; }
     .st-foot{ margin-top:8px; font-size:.8rem; color:var(--muted); text-align:right; }
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
+  <script src="{{ url_for('static', filename='hsc_theme.js') }}"></script>
 </head>
 <body>
   <a class="btn sm logout" href="/cerrar-sesion">Cerrar sesión</a>
