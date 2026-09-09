@@ -33,6 +33,7 @@ class _Files:
                 "id": f"id-{self.created}", "name": body["name"],
                 "mimeType": body.get("mimeType") or media_body._mimetype,
                 "parent": body["parents"][0], "webViewLink": f"https://drive/{self.created}",
+                "appProperties": body.get("appProperties") or {},
             }
             self.rows.append(row)
             return dict(row)
@@ -93,6 +94,18 @@ class CfdiDriveTests(unittest.TestCase):
         self.assertTrue(second["ok"])
         self.assertEqual(drive.api.created, 1)
         self.assertEqual(drive.api.updated, 1)
+
+    def test_pending_document_keeps_original_name_and_quote_relation(self):
+        drive = _Drive()
+        with patch.object(cfdi_drive, "get_drive_service_user", return_value=drive):
+            saved = cfdi_drive.save_pending_document(
+                "Bticino", "1587", "OC real 4587.pdf", b"orden", "application/pdf",
+                category="orden_compra", order_number="4587",
+            )
+            listed = cfdi_drive.list_pending_documents("Bticino", "1587")
+        self.assertEqual(saved["name"], "OC real 4587.pdf")
+        self.assertEqual([item["name"] for item in listed], ["OC real 4587.pdf"])
+        self.assertEqual(listed[0]["appProperties"]["hscOrderNumber"], "4587")
 
 
 if __name__ == "__main__":

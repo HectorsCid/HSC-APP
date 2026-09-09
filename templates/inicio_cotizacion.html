@@ -143,6 +143,24 @@
     </div>
   </div>
 
+  <div id="quoteDocs" class="mail-backdrop" aria-modal="true" role="dialog">
+    <div class="mail-card" role="document">
+      <div class="mail-head">
+        <div class="mail-title">Documentos para la factura</div>
+        <button id="quoteDocsClose" class="mail-close" type="button" aria-label="Cerrar">×</button>
+      </div>
+      <div class="mail-body">
+        <div class="mail-hint">Se guardan en Pendientes del cliente. Al timbrar, pasarán a la carpeta definitiva de la factura conservando su nombre original.</div>
+        <div><label for="quoteDocsOrder">Número de orden de compra (opcional)</label><input id="quoteDocsOrder" class="mail-input" type="text" maxlength="100" /></div>
+        <div><label for="quoteDocsCategory">Tipo de documento</label><select id="quoteDocsCategory" class="mail-input"><option value="orden_compra">Orden de compra</option><option value="cotizacion_firmada">Cotización firmada</option><option value="reporte_servicio">Reporte de servicio</option><option value="evidencia">Evidencia</option><option value="otro">Otro</option></select></div>
+        <div><label for="quoteDocsFile">Archivo</label><input id="quoteDocsFile" class="mail-input" type="file" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.csv" /></div>
+        <div id="quoteDocsList" class="mail-history"></div>
+        <div id="quoteDocsError" class="mail-hint mail-error"></div>
+      </div>
+      <div class="mail-actions"><button id="quoteDocsCancel" class="btn" type="button">Cerrar</button><button id="quoteDocsSave" class="btn btn-accent" type="button">Guardar en Drive</button></div>
+    </div>
+  </div>
+
   <div id="quoteMail" class="mail-backdrop" aria-modal="true" role="dialog">
     <div class="mail-card" role="document">
       <div class="mail-head">
@@ -161,6 +179,11 @@
             <button class="btn" type="button" data-quote-recipient="ambos">Ambos</button>
           </div>
           <div id="quoteMailHistory" class="mail-history" aria-label="Correos usados recientemente"></div>
+        </div>
+        <div>
+          <label for="quoteMailCc">CC</label>
+          <input id="quoteMailCc" class="mail-input" type="text" placeholder="Correos con copia, separados por coma" autocomplete="off" autocapitalize="none" spellcheck="false" />
+          <div class="mail-hint">Los contactos frecuentes del cliente se colocan aquí automáticamente.</div>
         </div>
         <div><label for="quoteMailSubject">Asunto</label><input id="quoteMailSubject" class="mail-input" type="text" /></div>
         <div><label for="quoteMailMessage">Mensaje</label><textarea id="quoteMailMessage" class="mail-input" rows="6"></textarea></div>
@@ -334,6 +357,7 @@
                 <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">Duplicar</a>
                 <a class="btn btn-ok" href="${it.facturar_url}">Facturar</a>
                 <button class="btn" type="button" data-quote-email="${escapeHTML(String(it.id))}">✉ Enviar</button>
+                <button class="btn" type="button" data-quote-docs="${escapeHTML(String(it.id))}" title="Documentos para la factura">📎</button>
               `}
             </div>
           </td>
@@ -350,6 +374,9 @@
       tbody.querySelectorAll('button[data-quote-email]').forEach(btn=>{
         btn.onclick = () => openQuoteMail(btn.getAttribute('data-quote-email'));
       });
+      tbody.querySelectorAll('button[data-quote-docs]').forEach(btn=>{
+        btn.onclick = () => openQuoteDocs(btn.getAttribute('data-quote-docs'));
+      });
     }
 
     function escapeHTML(s){
@@ -362,6 +389,7 @@
     let quoteMailContext = null;
     const quoteMail = document.getElementById('quoteMail');
     const quoteMailTo = document.getElementById('quoteMailTo');
+    const quoteMailCc = document.getElementById('quoteMailCc');
     const quoteMailSubject = document.getElementById('quoteMailSubject');
     const quoteMailMessage = document.getElementById('quoteMailMessage');
     const quoteMailFiles = document.getElementById('quoteMailFiles');
@@ -370,10 +398,63 @@
     const quoteMailError = document.getElementById('quoteMailError');
     const quoteMailSend = document.getElementById('quoteMailSend');
     const quoteMailHistory = document.getElementById('quoteMailHistory');
+    const quoteDocs = document.getElementById('quoteDocs');
+    const quoteDocsFile = document.getElementById('quoteDocsFile');
+    const quoteDocsOrder = document.getElementById('quoteDocsOrder');
+    const quoteDocsCategory = document.getElementById('quoteDocsCategory');
+    const quoteDocsList = document.getElementById('quoteDocsList');
+    const quoteDocsError = document.getElementById('quoteDocsError');
+    const quoteDocsSave = document.getElementById('quoteDocsSave');
+    let quoteDocsId = '';
 
-    function addQuoteRecipient(email){
-      const current = quoteMailTo.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
-      quoteMailTo.value = [...new Set([...current, email])].join('; ');
+    function documentSize(value){
+      const bytes = Number(value || 0);
+      return bytes ? `${(bytes / 1024 / 1024).toFixed(bytes > 1048576 ? 1 : 2)} MB` : '';
+    }
+    async function loadQuoteDocs(){
+      quoteDocsList.innerHTML = '<span class="mail-hint">Consultando Drive…</span>';
+      const response = await fetch(`/api/cotizaciones/${encodeURIComponent(quoteDocsId)}/documentos`, {headers:{'Accept':'application/json'}});
+      const data = await response.json();
+      if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudieron consultar los documentos.');
+      quoteDocsList.innerHTML = '';
+      (data.documents || []).forEach(item=>{
+        const row = document.createElement('div'); row.className = 'history-chip';
+        row.append(document.createTextNode(`${item.name}${item.order_number ? ` · OC ${item.order_number}` : ''}${item.size ? ` · ${documentSize(item.size)}` : ''}`));
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'history-remove'; remove.textContent = '×'; remove.title = 'Eliminar de Pendientes';
+        remove.onclick = async ()=>{
+          if(!confirm(`¿Eliminar ${item.name} de documentos pendientes?`)) return;
+          const result = await fetch(`/api/cotizaciones/${encodeURIComponent(quoteDocsId)}/documentos`, {method:'DELETE',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({file_id:item.id})});
+          const payload = await result.json();
+          if(!result.ok || !payload.ok) throw new Error(payload.error || 'No se pudo eliminar.');
+          await loadQuoteDocs();
+        };
+        row.append(remove); quoteDocsList.append(row);
+      });
+      if(!(data.documents || []).length) quoteDocsList.innerHTML = '<span class="mail-hint">Todavía no hay documentos pendientes para esta cotización.</span>';
+    }
+    async function openQuoteDocs(id){
+      quoteDocsId = id; quoteDocsFile.value = ''; quoteDocsOrder.value = ''; quoteDocsError.textContent = ''; quoteDocs.classList.add('show');
+      try{ await loadQuoteDocs(); }catch(error){ quoteDocsError.textContent = error.message || String(error); }
+    }
+    function closeQuoteDocs(){ quoteDocs.classList.remove('show'); quoteDocsId = ''; }
+    document.getElementById('quoteDocsClose').onclick = closeQuoteDocs;
+    document.getElementById('quoteDocsCancel').onclick = closeQuoteDocs;
+    quoteDocs.addEventListener('click', event=>{ if(event.target === quoteDocs) closeQuoteDocs(); });
+    quoteDocsSave.onclick = async ()=>{
+      if(!quoteDocsFile.files.length){ quoteDocsError.textContent = 'Selecciona un archivo.'; return; }
+      quoteDocsSave.disabled = true; quoteDocsSave.textContent = 'Guardando…'; quoteDocsError.textContent = '';
+      try{
+        const form = new FormData(); form.append('file', quoteDocsFile.files[0]); form.append('category', quoteDocsCategory.value); form.append('order_number', quoteDocsOrder.value.trim());
+        const response = await fetch(`/api/cotizaciones/${encodeURIComponent(quoteDocsId)}/documentos`, {method:'POST',headers:{'Accept':'application/json'},body:form});
+        const data = await response.json(); if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo guardar el documento.');
+        quoteDocsFile.value = ''; await loadQuoteDocs();
+      }catch(error){ quoteDocsError.textContent = error.message || String(error); }
+      finally{ quoteDocsSave.disabled = false; quoteDocsSave.textContent = 'Guardar en Drive'; }
+    };
+
+    function addQuoteCc(email){
+      const current = quoteMailCc.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
+      quoteMailCc.value = [...new Set([...current, email])].join('; ');
     }
 
     function renderQuoteHistory(history){
@@ -401,7 +482,8 @@
           }catch(_){ /* La sugerencia puede quitarse después. */ }
         };
         chip.append(remove);
-        chip.onclick = ()=>addQuoteRecipient(email);
+        chip.title = 'Agregar a CC';
+        chip.onclick = ()=>addQuoteCc(email);
         quoteMailHistory.append(chip);
       });
     }
@@ -410,6 +492,7 @@
       quoteMailContext = {id};
       quoteMailError.textContent = '';
       quoteMailFiles.value = '';
+      quoteMailCc.value = '';
       quoteMailKey.value = '';
       quoteMailKeyWrap.style.display = 'none';
       quoteMailSend.disabled = false;
@@ -422,6 +505,7 @@
         if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo preparar el envío.');
         quoteMailContext = data;
         quoteMailTo.value = data.email || '';
+        quoteMailCc.value = data.correos?.frecuentes || '';
         renderQuoteHistory(data.correos?.historial || []);
         document.querySelectorAll('[data-quote-recipient]').forEach(button=>{
           const mode = button.getAttribute('data-quote-recipient');
@@ -462,10 +546,12 @@
     quoteMailSend.addEventListener('click', async ()=>{
       if(!quoteMailContext || quoteMailSend.disabled) return;
       const recipients = quoteMailTo.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
+      const ccRecipients = quoteMailCc.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
       const invalid = recipients.find(v=>!/^\S+@\S+\.\S+$/.test(v));
-      if(!recipients.length || invalid){
-        quoteMailError.textContent = invalid ? `Revisa este correo electrónico: ${invalid}` : 'Escribe al menos un correo electrónico.';
-        quoteMailTo.focus(); return;
+      const invalidCc = ccRecipients.find(v=>!/^\S+@\S+\.\S+$/.test(v));
+      if(!recipients.length || invalid || invalidCc){
+        quoteMailError.textContent = invalid ? `Revisa este correo electrónico: ${invalid}` : invalidCc ? `Revisa este correo en CC: ${invalidCc}` : 'Escribe al menos un correo electrónico.';
+        (invalidCc ? quoteMailCc : quoteMailTo).focus(); return;
       }
       if(!quoteMailSubject.value.trim() || !quoteMailMessage.value.trim()){
         quoteMailError.textContent = 'Completa el asunto y el mensaje.'; return;
@@ -475,6 +561,7 @@
       }
       const form = new FormData();
       form.append('email', quoteMailTo.value.trim());
+      form.append('cc', quoteMailCc.value.trim());
       form.append('subject', quoteMailSubject.value.trim());
       form.append('message', quoteMailMessage.value.trim());
       form.append('send_key', quoteMailKey.value);
@@ -489,7 +576,7 @@
         const data = await response.json();
         if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo enviar el correo.');
         const sentContext = quoteMailContext;
-        const sentEmails = quoteMailTo.value.trim();
+        const sentEmails = [quoteMailTo.value.trim(), quoteMailCc.value.trim()].filter(Boolean).join('; ');
         quoteMail.classList.remove('show');
         quoteMailContext = null;
         fetch('/api/clientes/correos-historial', {

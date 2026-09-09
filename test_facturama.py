@@ -282,7 +282,10 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(response.get_json()["order_number"], "OC-45872")
         with self.app.app_context():
             metadata = billing._invoice_pdf_metadata("invoice-with-metadata")
-        self.assertEqual(metadata, {"internal_folio": "1370", "order_number": "OC-45872"})
+        self.assertEqual(metadata, {
+            "internal_folio": "1370", "order_number": "OC-45872",
+            "client_name": "UNIVERSIDAD ROBOTICA ESPAÑOLA", "source_quote_id": "",
+        })
 
     def test_stamp_without_valid_uuid_is_rejected_and_not_cached(self):
         answer = {"Id": "invalid-attempt", "Status": "invalid", "Total": 232}

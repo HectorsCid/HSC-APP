@@ -309,8 +309,17 @@
         </div>
         <div id="emHistory" class="email-history" aria-label="Correos usados recientemente"></div>
       </div>
+      <div>
+        <label for="emCc">CC</label>
+        <input id="emCc" class="cm-input" type="text" placeholder="Correos con copia, separados por coma" autocomplete="off" autocapitalize="none" spellcheck="false" />
+        <div class="cm-hint">Los contactos frecuentes del cliente se colocan aquí automáticamente.</div>
+      </div>
       <div><label for="emSubject">Asunto</label><input id="emSubject" class="cm-input" type="text" /></div>
       <div><label for="emMessage">Mensaje</label><textarea id="emMessage" class="cm-input" rows="5"></textarea></div>
+      <div>
+        <label>Documentos guardados en Drive</label>
+        <div id="emStoredFiles" class="email-history"><span class="cm-hint">Se consultarán al abrir el envío.</span></div>
+      </div>
       <div>
         <label for="emFiles">Archivos adicionales (opcional)</label>
         <input id="emFiles" class="cm-input" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.csv" />
@@ -601,9 +610,11 @@ document.getElementById('reloadReceived').onclick=loadReceived;
 /* ===== Envío de PDF y XML por CarrierZone ===== */
 const em = $('#em');
 const emEmail = $('#emEmail');
+const emCc = $('#emCc');
 const emSubject = $('#emSubject');
 const emMessage = $('#emMessage');
 const emFiles = $('#emFiles');
+const emStoredFiles = $('#emStoredFiles');
 const emKey = $('#emKey');
 const emKeyWrap = $('#emKeyWrap');
 const emErr = $('#emErr');
@@ -611,9 +622,9 @@ const emConfirm = $('#emConfirm');
 const emHistory = $('#emHistory');
 let emailCtx = null;
 
-function addInvoiceRecipient(email){
-  const current = emEmail.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
-  emEmail.value = [...new Set([...current, email])].join('; ');
+function addInvoiceCc(email){
+  const current = emCc.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
+  emCc.value = [...new Set([...current, email])].join('; ');
 }
 
 function renderInvoiceHistory(history){
@@ -638,7 +649,8 @@ function renderInvoiceHistory(history){
       }catch(_){ /* La sugerencia puede quitarse después. */ }
     };
     chip.append(remove);
-    chip.onclick = ()=>addInvoiceRecipient(email);
+    chip.title = 'Agregar a CC';
+    chip.onclick = ()=>addInvoiceCc(email);
     emHistory.append(chip);
   });
 }
@@ -646,6 +658,7 @@ function renderInvoiceHistory(history){
 async function openEmailModal(ctx){
   emailCtx = ctx;
   emEmail.value = ctx.email || '';
+  emCc.value = '';
   emSubject.value = `Factura HSC ${ctx.folio || ''}`;
   emMessage.value = `Buen día, estimado cliente. Envío la factura solicitada.\n\nDe antemano muchas gracias.\n\nQuedo a sus órdenes.\n\nIng. Héctor Silva Cid\n\nCel: 5527605496`;
   emKey.value = '';
@@ -655,6 +668,7 @@ async function openEmailModal(ctx){
   emConfirm.disabled = false;
   emConfirm.textContent = '✉ Enviar PDF y XML';
   renderInvoiceHistory([]);
+  emStoredFiles.innerHTML = '<span class="cm-hint">Consultando documentos guardados…</span>';
   em.classList.add('show');
   document.querySelectorAll('[data-invoice-recipient]').forEach(button=>button.disabled=true);
   try{
@@ -671,6 +685,7 @@ async function openEmailModal(ctx){
         if(contactsResponse.ok && contacts.ok){
           emailCtx.correos = contacts.correos || {};
           emEmail.value = emailCtx.correos.cuentas_pagar || ctx.email || '';
+          emCc.value = emailCtx.correos.frecuentes || '';
           renderInvoiceHistory(emailCtx.correos.historial || []);
           document.querySelectorAll('[data-invoice-recipient]').forEach(button=>{
             const mode = button.getAttribute('data-invoice-recipient');
@@ -684,6 +699,17 @@ async function openEmailModal(ctx){
   }catch(_){
     emKeyWrap.classList.remove('hidden');
   }
+  try{
+    const documentsResponse = await fetch(`/api/invoices/${encodeURIComponent(ctx.id)}/documents`, {headers:{'Accept':'application/json'}});
+    const documents = await documentsResponse.json();
+    emStoredFiles.innerHTML = '';
+    (documents.documents || []).forEach(item=>{
+      const label = document.createElement('label'); label.className = 'email-history-chip';
+      const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = item.id; checkbox.checked = true; checkbox.dataset.storedAttachment = '1';
+      label.append(checkbox, document.createTextNode(item.name)); emStoredFiles.append(label);
+    });
+    if(!(documents.documents || []).length) emStoredFiles.innerHTML = '<span class="cm-hint">No hay documentos adicionales guardados.</span>';
+  }catch(_){ emStoredFiles.innerHTML = '<span class="cm-hint">No se pudieron consultar los documentos guardados.</span>'; }
   setTimeout(()=>emEmail.focus(), 0);
 }
 
@@ -708,12 +734,15 @@ document.querySelectorAll('[data-invoice-recipient]').forEach(button=>{
 emConfirm.addEventListener('click', async ()=>{
   if(!emailCtx || emConfirm.disabled) return;
   const recipients = emEmail.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
+  const ccRecipients = emCc.value.split(/[,;\n]+/).map(v=>v.trim()).filter(Boolean);
   const invalidRecipient = recipients.find(v=>!/^\S+@\S+\.\S+$/.test(v));
-  if(!recipients.length || invalidRecipient){
+  const invalidCc = ccRecipients.find(v=>!/^\S+@\S+\.\S+$/.test(v));
+  if(!recipients.length || invalidRecipient || invalidCc){
     emErr.textContent = invalidRecipient
       ? `Revisa este correo electrónico: ${invalidRecipient}`
+      : invalidCc ? `Revisa este correo en CC: ${invalidCc}`
       : 'Escribe al menos un correo electrónico.';
-    emEmail.focus();
+    (invalidCc ? emCc : emEmail).focus();
     return;
   }
   if(!emKeyWrap.classList.contains('hidden') && !emKey.value){
@@ -727,18 +756,20 @@ emConfirm.addEventListener('click', async ()=>{
   try{
     const form = new FormData();
     form.append('email', emEmail.value.trim());
+    form.append('cc', emCc.value.trim());
     form.append('subject', emSubject.value.trim());
     form.append('message', emMessage.value);
     form.append('folio', emailCtx.folio);
     form.append('send_key', emKey.value);
     Array.from(emFiles.files).forEach(file=>form.append('attachments', file));
+    emStoredFiles.querySelectorAll('input[data-stored-attachment]:checked').forEach(input=>form.append('stored_attachments', input.value));
     const response = await fetch(`/api/invoices/${encodeURIComponent(emailCtx.id)}/email`, {
       method:'POST', headers:{'Accept':'application/json'}, body:form
     });
     const data = await response.json();
     if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo enviar el correo.');
     const sentContext = emailCtx;
-    const sentEmails = emEmail.value.trim();
+    const sentEmails = [emEmail.value.trim(), emCc.value.trim()].filter(Boolean).join('; ');
     emKey.value = '';
     em.classList.remove('show');
     emailCtx = null;

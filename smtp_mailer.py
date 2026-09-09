@@ -7,6 +7,7 @@ import hashlib
 import mimetypes
 import imaplib
 import time
+import html
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid, parseaddr
 
@@ -72,6 +73,12 @@ def parse_recipients(value):
     return list(dict.fromkeys(parts))
 
 
+def parse_optional_recipients(value):
+    if not str(value or "").strip():
+        return []
+    return parse_recipients(value)
+
+
 def _safe_header(value, fallback):
     cleaned = _HEADER_BREAKS.sub(" ", str(value or "")).strip()
     return cleaned[:240] or fallback
@@ -98,11 +105,16 @@ def _save_sent_copy(message, cfg):
         return False
 
 
-def send_email_with_attachments(*, recipient, subject, body, attachments):
+def send_email_with_attachments(*, recipient, subject, body, attachments, cc=""):
     cfg = smtp_config()
     if not cfg["configured"]:
         raise RuntimeError("Falta configurar el correo de salida de HSC en Render.")
     recipients = parse_recipients(recipient)
+    cc_recipients = parse_optional_recipients(cc)
+    recipient_keys = {item.casefold() for item in recipients}
+    cc_recipients = [item for item in cc_recipients if item.casefold() not in recipient_keys]
+    if len(recipients) + len(cc_recipients) > 15:
+        raise ValueError("Puedes enviar a un máximo de 15 destinatarios entre Para y CC.")
     if not str(subject or "").strip():
         raise ValueError("Escribe el asunto del correo.")
     if not str(body or "").strip():
@@ -113,11 +125,22 @@ def send_email_with_attachments(*, recipient, subject, body, attachments):
     message = EmailMessage()
     message["From"] = formataddr((cfg["from_name"], cfg["from_email"]))
     message["To"] = ", ".join(recipients)
+    if cc_recipients:
+        message["Cc"] = ", ".join(cc_recipients)
     message["Reply-To"] = cfg["from_email"]
     message["Date"] = formatdate(localtime=True)
     message["Message-ID"] = make_msgid(domain=cfg["from_email"].partition("@")[2] or None)
     message["Subject"] = _safe_header(subject, "Documento de HSC Refrigeración")
-    message.set_content(str(body).strip())
+    plain_body = str(body).strip()
+    message.set_content(plain_body)
+    html_body = html.escape(plain_body).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>\n")
+    message.add_alternative(
+        '<!doctype html><html><head><meta name="format-detection" content="telephone=no,email=no,address=no">'
+        '</head><body style="margin:0;padding:24px;background:#ffffff;color:#172033;">'
+        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;white-space:normal;">'
+        f'{html_body}</div></body></html>',
+        subtype="html",
+    )
     for attachment in attachments:
         data = attachment.get("data") or b""
         filename = str(attachment.get("filename") or "archivo").strip()
@@ -140,13 +163,14 @@ def send_email_with_attachments(*, recipient, subject, body, attachments):
     return {
         "recipient": ", ".join(recipients),
         "recipients": recipients,
+        "cc": cc_recipients,
         "from": cfg["from_email"],
         "attachments": len(attachments),
         "sent_copy_saved": sent_copy_saved,
     }
 
 
-def send_cfdi_email(*, recipient, subject, body, pdf_bytes, xml_bytes, folio, extra_attachments=None):
+def send_cfdi_email(*, recipient, subject, body, pdf_bytes, xml_bytes, folio, extra_attachments=None, cc=""):
     if not pdf_bytes or not xml_bytes:
         raise ValueError("No se pudieron preparar el PDF y XML de la factura.")
 
@@ -167,10 +191,11 @@ def send_cfdi_email(*, recipient, subject, body, pdf_bytes, xml_bytes, folio, ex
             "Cel: 5527605496"
         ),
         attachments=attachments,
+        cc=cc,
     )
 
 
-def send_quote_email(*, recipient, subject, body, pdf_bytes, folio, extra_attachments=None):
+def send_quote_email(*, recipient, subject, body, pdf_bytes, folio, extra_attachments=None, cc=""):
     if not pdf_bytes:
         raise ValueError("No se pudo preparar el PDF de la cotización.")
     safe_folio = re.sub(r"[^A-Za-z0-9._-]+", "-", str(folio or "Cotizacion")).strip("-.") or "Cotizacion"
@@ -185,4 +210,5 @@ def send_quote_email(*, recipient, subject, body, pdf_bytes, folio, extra_attach
         subject=subject,
         body=body,
         attachments=attachments,
+        cc=cc,
     )

@@ -26,17 +26,25 @@ class SmtpMailerTests(unittest.TestCase):
             patch.object(smtp_mailer, "_save_sent_copy", return_value=True),
         ):
             result = smtp_mailer.send_cfdi_email(
-                recipient="cliente@example.com", subject="Factura 10", body="Adjuntos",
+                recipient="cliente@example.com", cc="compras@example.com; supervisor@example.com",
+                subject="Factura 10", body="Adjuntos\n\nCel: 5527605496",
                 pdf_bytes=b"%PDF", xml_bytes=b"<xml/>", folio="10",
             )
         client.assert_called_once()
         smtp.login.assert_called_once_with("hectorsc@hscrefrigeracion.com", "secret")
         message = smtp.send_message.call_args.args[0]
         self.assertEqual(message["To"], "cliente@example.com")
+        self.assertEqual(message["Cc"], "compras@example.com, supervisor@example.com")
+        self.assertTrue(message.is_multipart())
+        html_part = message.get_body(preferencelist=("html",))
+        self.assertIsNotNone(html_part)
+        self.assertIn("font-family:Arial", html_part.get_content())
+        self.assertNotIn("href=", html_part.get_content())
         self.assertTrue(message["Message-ID"])
         self.assertEqual(message["Reply-To"], "hectorsc@hscrefrigeracion.com")
         self.assertEqual({part.get_filename() for part in message.iter_attachments()}, {"Factura-10.pdf", "Factura-10.xml"})
         self.assertEqual(result["from"], "hectorsc@hscrefrigeracion.com")
+        self.assertEqual(result["cc"], ["compras@example.com", "supervisor@example.com"])
 
     def test_rejects_invalid_recipient(self):
         with patch.object(smtp_mailer, "smtp_config", return_value={"configured": True}):

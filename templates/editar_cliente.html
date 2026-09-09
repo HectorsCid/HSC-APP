@@ -97,12 +97,18 @@
         <div class="grid grid-2">
           <div>
             <label for="correo_compras">Correo de compras</label>
-            <input id="correo_compras" name="correo_compras" type="email" value="{{ datos.correo_compras or '' }}" placeholder="compras@cliente.com" />
+            <input id="correo_compras" name="correo_compras" type="text" value="{{ datos.correo_compras or '' }}" placeholder="Uno o varios, separados por coma" autocomplete="off" />
           </div>
           <div>
             <label for="correo_cuentas_pagar">Correo de cuentas por pagar</label>
-            <input id="correo_cuentas_pagar" name="correo_cuentas_pagar" type="email" value="{{ datos.correo_cuentas_pagar or datos.correo_facturacion or datos.email or '' }}" placeholder="pagos@cliente.com" />
+            <input id="correo_cuentas_pagar" name="correo_cuentas_pagar" type="text" value="{{ datos.correo_cuentas_pagar or datos.correo_facturacion or datos.email or '' }}" placeholder="Uno o varios, separados por coma" autocomplete="off" />
           </div>
+        </div>
+
+        <div>
+          <label for="correos_frecuentes">Otros correos frecuentes</label>
+          <input id="correos_frecuentes" name="correos_frecuentes" type="text" value="{{ datos.correos_frecuentes or '' }}" placeholder="supervisor@cliente.com, almacen@cliente.com" autocomplete="off" />
+          <div class="hint">Puedes guardar varios correos separados por coma. Estarán disponibles como opciones rápidas al enviar.</div>
         </div>
 
         <div class="grid grid-2">

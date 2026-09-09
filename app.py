@@ -48,6 +48,7 @@ from google.auth.exceptions import RefreshError
 # Otros
 from werkzeug.utils import safe_join, secure_filename
 from smtp_mailer import authorized_to_send, parse_recipients, send_quote_email, smtp_config, trusted_device_token
+from cfdi_drive import delete_pending_document, list_pending_documents, save_pending_document
 from reportes_bp import reportes_bp, start_auto_report_monitor
 
 from facturacion_bp import facturacion_bp
@@ -723,6 +724,48 @@ def _plan_importacion_clientes(rows, existentes):
 
 clientes_predefinidos = cargar_clientes()
 
+
+def _resolver_cliente_catalogo(nombre="", rfc=""):
+    """Devuelve (clave, ficha) aunque llegue el alias, razón social o una variación menor."""
+    name = str(nombre or "").strip()
+    rfc_key = str(rfc or "").strip().upper()
+    name_key = _normalizar_nombre_importacion(name)
+    name_base = _nombre_base_importacion(name)
+    with _CLIENTES_DATA_LOCK:
+        catalogo = dict(clientes_predefinidos or {})
+
+    if rfc_key:
+        for alias, data in catalogo.items():
+            if isinstance(data, dict) and str(data.get("rfc") or "").strip().upper() == rfc_key:
+                return alias, data
+
+    exact_matches = []
+    candidates = []
+    for alias, data in catalogo.items():
+        if not isinstance(data, dict):
+            continue
+        names = [alias, data.get("razon_social"), data.get("razon"), data.get("legal_name")]
+        saved_aliases = data.get("aliases") or []
+        names.extend(saved_aliases if isinstance(saved_aliases, list) else [saved_aliases])
+        normalized = {_normalizar_nombre_importacion(value) for value in names if str(value or "").strip()}
+        bases = {_nombre_base_importacion(value) for value in names if str(value or "").strip()}
+        if name_key and (name_key in normalized or name_base in bases):
+            exact_matches.append((alias, data))
+            continue
+        if name_key:
+            score = max((max(
+                SequenceMatcher(None, name_key, candidate).ratio(),
+                SequenceMatcher(None, name_base, _nombre_base_importacion(candidate)).ratio(),
+            ) for candidate in normalized), default=0)
+            candidates.append((score, alias, data))
+
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    if candidates and candidates[0][0] >= 0.90 and (len(candidates) == 1 or candidates[0][0] - candidates[1][0] >= 0.06):
+        return candidates[0][1], candidates[0][2]
+    return None, None
+
 def _sync_clientes_from_drive_into_memory():
     global clientes_predefinidos
     with _CLIENTES_DATA_LOCK:
@@ -1307,6 +1350,7 @@ def nuevo_cliente():
         uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # ej. G03, G01, P01
         correo_compras = (request.form.get('correo_compras') or '').strip()
         correo_cuentas_pagar = (request.form.get('correo_cuentas_pagar') or request.form.get('correo_facturacion') or '').strip()
+        correos_frecuentes = (request.form.get('correos_frecuentes') or '').strip()
         retencion_isr_tasa = (request.form.get('retencion_isr_tasa') or '0').strip()
         retencion_iva_tasa = (request.form.get('retencion_iva_tasa') or '0').strip()
 
@@ -1335,6 +1379,7 @@ def nuevo_cliente():
             if correo_cuentas_pagar:
                 clientes_predefinidos[nombre]["correo_cuentas_pagar"] = correo_cuentas_pagar
                 clientes_predefinidos[nombre]["correo_facturacion"] = correo_cuentas_pagar
+            if correos_frecuentes: clientes_predefinidos[nombre]["correos_frecuentes"] = correos_frecuentes
 
             guardar_clientes(clientes_predefinidos)
         return redirect(url_for('inicio'))
@@ -1951,6 +1996,9 @@ def editar_cliente():
     if not nombre_actual:
         flash("Primero selecciona un cliente en Inicio para poder editarlo.")
         return redirect(url_for('inicio'))
+    canonical_name, _ = _resolver_cliente_catalogo(nombre_actual)
+    if canonical_name:
+        nombre_actual = canonical_name
     if nombre_actual not in clientes_predefinidos:
         flash("El cliente seleccionado ya no existe.")
         return redirect(url_for('inicio'))
@@ -1979,6 +2027,7 @@ def editar_cliente():
         uso_cfdi       = (request.form.get('uso_cfdi') or '').strip()        # G03, G01, P01
         correo_compras = (request.form.get('correo_compras') or '').strip()
         correo_cuentas_pagar = (request.form.get('correo_cuentas_pagar') or request.form.get('correo_facturacion') or '').strip()
+        correos_frecuentes = (request.form.get('correos_frecuentes') or '').strip()
         retencion_isr_tasa = (request.form.get('retencion_isr_tasa') or '0').strip()
         retencion_iva_tasa = (request.form.get('retencion_iva_tasa') or '0').strip()
 
@@ -2014,6 +2063,7 @@ def editar_cliente():
         set_or_pop(merged, "correo_compras", correo_compras)
         set_or_pop(merged, "correo_cuentas_pagar", correo_cuentas_pagar)
         set_or_pop(merged, "correo_facturacion", correo_cuentas_pagar)
+        set_or_pop(merged, "correos_frecuentes", correos_frecuentes)
         merged["retencion_isr_tasa"] = retencion_isr_tasa
         merged["retencion_iva_tasa"] = retencion_iva_tasa
 
@@ -2715,27 +2765,14 @@ def set_cliente():
     nombre = (data.get("cliente") or "").strip()
     if not nombre:
         return ("falta 'cliente'", 400)
-    datos_cliente["cliente"] = nombre  # ya usas esta variable en editar_cliente
+    canonical, _ = _resolver_cliente_catalogo(nombre)
+    datos_cliente["cliente"] = canonical or nombre
     return ("", 204)
 
 
 def _contactos_cliente_seleccionado(nombre="", rfc=""):
-    nombre_key = str(nombre or "").strip().casefold()
-    rfc_key = str(rfc or "").strip().upper()
-    with _CLIENTES_DATA_LOCK:
-        catalogo = dict(clientes_predefinidos or {})
-    for alias, datos in catalogo.items():
-        if not isinstance(datos, dict):
-            continue
-        nombres = {
-            str(alias or "").strip().casefold(),
-            str(datos.get("razon_social") or "").strip().casefold(),
-            str(datos.get("razon") or "").strip().casefold(),
-        }
-        coincide = (rfc_key and str(datos.get("rfc") or "").strip().upper() == rfc_key) or (
-            nombre_key and nombre_key in nombres
-        )
-        if coincide:
+    _, datos = _resolver_cliente_catalogo(nombre, rfc)
+    if isinstance(datos, dict):
             legacy = str(datos.get("correo_facturacion") or datos.get("email") or "").strip()
             historial = datos.get("correos_historial") or []
             historial = [item if isinstance(item, dict) else {"email": str(item)} for item in historial]
@@ -2747,9 +2784,10 @@ def _contactos_cliente_seleccionado(nombre="", rfc=""):
             return {
                 "compras": str(datos.get("correo_compras") or "").strip(),
                 "cuentas_pagar": str(datos.get("correo_cuentas_pagar") or legacy).strip(),
+                "frecuentes": str(datos.get("correos_frecuentes") or "").strip(),
                 "historial": historial,
             }
-    return {"compras": "", "cuentas_pagar": "", "historial": []}
+    return {"compras": "", "cuentas_pagar": "", "frecuentes": "", "historial": []}
 
 
 @app.post("/api/clientes/contactos-seleccionado")
@@ -2775,18 +2813,7 @@ def api_historial_correos_cliente():
         return jsonify(ok=False, error=str(exc)), 400
 
     with _CLIENTES_DATA_LOCK:
-        selected = None
-        for alias, datos in clientes_predefinidos.items():
-            if not isinstance(datos, dict):
-                continue
-            nombres = {
-                str(alias or "").strip().casefold(),
-                str(datos.get("razon_social") or "").strip().casefold(),
-                str(datos.get("razon") or "").strip().casefold(),
-            }
-            if (rfc_key and str(datos.get("rfc") or "").strip().upper() == rfc_key) or (nombre_key and nombre_key in nombres):
-                selected = datos
-                break
+        _, selected = _resolver_cliente_catalogo(payload.get("nombre"), payload.get("rfc"))
         if selected is None:
             return jsonify(ok=False, error="No se encontró el cliente para guardar su historial."), 404
 
@@ -2862,7 +2889,11 @@ def _drive_file_id(url):
 
 
 def _pdf_cotizacion_bytes(cotizacion):
-    cliente = str(cotizacion.get("cliente") or "SIN_CLIENTE").strip()
+    cliente_raw = str(cotizacion.get("cliente") or "SIN_CLIENTE").strip()
+    canonical_name, _ = _resolver_cliente_catalogo(
+        cliente_raw, (cotizacion.get("receptor") or {}).get("rfc")
+    )
+    cliente = canonical_name or cliente_raw
     folio = str(cotizacion.get("folio") or cotizacion.get("id") or "S-F").strip()
     cliente_seguro = cliente.replace("/", "-").replace("\\", "-")
     nombre = f"{cliente} - {folio}.pdf"
@@ -2897,6 +2928,50 @@ def _correos_cotizacion(cotizacion):
     if not correos["cuentas_pagar"]:
         correos["cuentas_pagar"] = fallback
     return correos
+
+
+@app.route("/api/cotizaciones/<qid>/documentos", methods=["GET", "POST", "DELETE"])
+def api_documentos_pendientes_cotizacion(qid):
+    cotizacion = _buscar_cotizacion_registrada(qid)
+    if not cotizacion:
+        return jsonify(ok=False, error="No se encontró la cotización."), 404
+    cliente = str(cotizacion.get("cliente") or "SIN_CLIENTE").strip()
+    try:
+        if request.method == "GET":
+            items = list_pending_documents(cliente, qid)
+            return jsonify(ok=True, documents=[{
+                "id": item.get("id"), "name": item.get("name"),
+                "size": int(item.get("size") or 0),
+                "category": (item.get("appProperties") or {}).get("hscCategory") or "otro",
+                "order_number": (item.get("appProperties") or {}).get("hscOrderNumber") or "",
+            } for item in items]), 200
+        if request.method == "DELETE":
+            payload = request.get_json(silent=True) or {}
+            delete_pending_document(cliente, qid, payload.get("file_id"))
+            return jsonify(ok=True), 200
+
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            return jsonify(ok=False, error="Selecciona un archivo."), 400
+        filename = secure_filename(upload.filename)
+        allowed = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".xls", ".xlsx", ".csv"}
+        if not filename or Path(filename).suffix.lower() not in allowed:
+            return jsonify(ok=False, error="El formato del archivo no está permitido."), 400
+        content = upload.read()
+        if len(content) > 15 * 1024 * 1024:
+            return jsonify(ok=False, error="El archivo supera el límite de 15 MB."), 400
+        result = save_pending_document(
+            cliente, qid, upload.filename, content,
+            upload.mimetype or mimetypes.guess_type(upload.filename)[0] or "application/octet-stream",
+            category=request.form.get("category") or "otro",
+            order_number=request.form.get("order_number") or "",
+        )
+        return jsonify(ok=True, document={"id": result.get("id"), "name": result.get("name")}), 201
+    except FileNotFoundError as exc:
+        return jsonify(ok=False, error=str(exc)), 404
+    except Exception:
+        current_app.logger.exception("No se pudo administrar el expediente de la cotización %s", qid)
+        return jsonify(ok=False, error="Drive no pudo guardar el documento. Intenta nuevamente."), 502
 
 
 @app.route("/api/cotizaciones/<qid>/email", methods=["GET", "POST"])
@@ -2958,6 +3033,7 @@ def api_enviar_cotizacion(qid):
         )
         result = send_quote_email(
             recipient=request.form.get("email", ""),
+            cc=request.form.get("cc", ""),
             subject=request.form.get("subject") or f"Cotización HSC {folio}",
             body=request.form.get("message") or default_message,
             pdf_bytes=_pdf_cotizacion_bytes(cotizacion),
@@ -3056,8 +3132,10 @@ def api_cotizacion_detalle(qid):
         return jsonify(ok=False, error={"message": "Cotización no encontrada"}), 404
 
     client_name = str(match.get("cliente") or "").strip()
-    with _CLIENTES_DATA_LOCK:
-        current_client = dict(clientes_predefinidos.get(client_name, {}) or {})
+    canonical_name, resolved_client = _resolver_cliente_catalogo(
+        client_name, (match.get("receptor") or {}).get("rfc")
+    )
+    current_client = dict(resolved_client or {})
     receptor = _combinar_receptor_cotizacion(match, current_client)
 
     detalle = match.get("conceptos") or match.get("items") or match.get("detalles") or match.get("partidas") or []
@@ -3100,7 +3178,7 @@ def api_cotizacion_detalle(qid):
     out = {
         "ok": True,
         "id": match.get("id") or match.get("folio") or match.get("numero") or match.get("uuid") or str(qid),
-        "cliente": match.get("cliente") or "",
+        "cliente": canonical_name or match.get("cliente") or "",
         "fecha": match.get("fecha") or match.get("created_at") or "",
         "folio": match.get("folio") or match.get("numero") or "",
         "total": total,
@@ -3378,9 +3456,9 @@ def guardar_datos_fiscales_cliente():
         return jsonify({"ok": False, "error": "Selecciona un cliente para guardar sus datos."}), 400
 
     with _CLIENTES_DATA_LOCK:
-        if nombre not in clientes_predefinidos:
+        canonical_name, client = _resolver_cliente_catalogo(nombre, payload.get("rfc"))
+        if not canonical_name or client is None:
             return jsonify({"ok": False, "error": "El cliente ya no existe."}), 404
-        client = clientes_predefinidos[nombre]
         correo_facturacion = str(payload.get("correo_facturacion") or "").strip()
         values = {
             "rfc": str(payload.get("rfc") or "").strip().upper(),
@@ -3397,7 +3475,7 @@ def guardar_datos_fiscales_cliente():
             if value or key in {"retencion_isr_tasa", "retencion_iva_tasa"}:
                 client[key] = value
         guardar_clientes(clientes_predefinidos)
-    return jsonify({"ok": True, "cliente": nombre})
+    return jsonify({"ok": True, "cliente": canonical_name})
 
 
 

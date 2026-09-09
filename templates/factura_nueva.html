@@ -272,10 +272,15 @@
         <button class="btn" type="button" data-stamp-recipient="ambos">Ambos</button>
       </div>
       <div class="email-history" id="invoiceEmailHistory"></div>
+      <label for="invoiceEmailCc">CC</label>
+      <input id="invoiceEmailCc" type="text" placeholder="Correos con copia, separados por coma" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <div class="pill">Los contactos frecuentes del cliente se colocan aquí automáticamente.</div>
       <label for="invoiceEmailSubject">Asunto</label>
       <input id="invoiceEmailSubject" type="text">
       <label for="invoiceEmailMessage">Mensaje</label>
       <textarea id="invoiceEmailMessage" rows="8"></textarea>
+      <label>Documentos guardados en Drive</label>
+      <div class="email-history" id="invoiceEmailStoredFiles"><span class="pill">Se consultarán al abrir el envío.</span></div>
       <label for="invoiceEmailFiles">Archivos adicionales (opcional)</label>
       <input id="invoiceEmailFiles" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.csv">
       <div class="pill">Hasta 8 archivos adicionales y 15 MB en total.</div>
@@ -989,18 +994,20 @@
 
     const invoiceEmailModal = document.getElementById('invoiceEmailModal');
     const invoiceEmailRecipients = document.getElementById('invoiceEmailRecipients');
+    const invoiceEmailCc = document.getElementById('invoiceEmailCc');
     const invoiceEmailSubject = document.getElementById('invoiceEmailSubject');
     const invoiceEmailMessage = document.getElementById('invoiceEmailMessage');
     const invoiceEmailFiles = document.getElementById('invoiceEmailFiles');
+    const invoiceEmailStoredFiles = document.getElementById('invoiceEmailStoredFiles');
     const invoiceEmailKey = document.getElementById('invoiceEmailKey');
     const invoiceEmailKeyWrap = document.getElementById('invoiceEmailKeyWrap');
     const invoiceEmailError = document.getElementById('invoiceEmailError');
     const invoiceEmailSend = document.getElementById('invoiceEmailSend');
     const invoiceEmailHistory = document.getElementById('invoiceEmailHistory');
 
-    function addStampedRecipient(email){
-      const current = invoiceEmailRecipients.value.split(/[,;\n]+/).map(value=>value.trim()).filter(Boolean);
-      invoiceEmailRecipients.value = [...new Set([...current, email])].join('; ');
+    function addStampedCc(email){
+      const current = invoiceEmailCc.value.split(/[,;\n]+/).map(value=>value.trim()).filter(Boolean);
+      invoiceEmailCc.value = [...new Set([...current, email])].join('; ');
     }
     function renderStampedEmailHistory(history){
       invoiceEmailHistory.innerHTML = '';
@@ -1025,7 +1032,8 @@
           }catch(_){ }
         };
         chip.append(remove);
-        chip.onclick = ()=>addStampedRecipient(email);
+        chip.title = 'Agregar a CC';
+        chip.onclick = ()=>addStampedCc(email);
         invoiceEmailHistory.append(chip);
       });
     }
@@ -1039,10 +1047,12 @@
       invoiceEmailKey.value = '';
       invoiceEmailKeyWrap.classList.add('hidden');
       invoiceEmailError.textContent = '';
+      invoiceEmailCc.value = '';
       invoiceEmailSend.disabled = false;
       invoiceEmailSend.textContent = '✉ Enviar PDF y XML';
       stampedEmailContext.correos = {};
       renderStampedEmailHistory([]);
+      invoiceEmailStoredFiles.innerHTML = '<span class="pill">Consultando documentos guardados…</span>';
       document.querySelectorAll('[data-stamp-recipient]').forEach(button=>button.disabled=true);
       invoiceEmailModal.classList.add('show');
       try{
@@ -1058,6 +1068,7 @@
           if(contactsResponse.ok && contacts.ok){
             stampedEmailContext.correos = contacts.correos || {};
             invoiceEmailRecipients.value = stampedEmailContext.correos.cuentas_pagar || stampedEmailContext.email || '';
+            invoiceEmailCc.value = stampedEmailContext.correos.frecuentes || '';
             renderStampedEmailHistory(stampedEmailContext.correos.historial || []);
             document.querySelectorAll('[data-stamp-recipient]').forEach(button=>{
               const mode = button.dataset.stampRecipient;
@@ -1068,6 +1079,17 @@
           }
         }
       }catch(_){ invoiceEmailKeyWrap.classList.remove('hidden'); }
+      try{
+        const documentsResponse = await fetch(`/api/invoices/${encodeURIComponent(stampedEmailContext.id)}/documents`, {headers:{'Accept':'application/json'}});
+        const documents = await documentsResponse.json();
+        invoiceEmailStoredFiles.innerHTML = '';
+        (documents.documents || []).forEach(item=>{
+          const label = document.createElement('label');
+          const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = item.id; checkbox.checked = true; checkbox.dataset.storedAttachment = '1';
+          label.append(checkbox, document.createTextNode(item.name)); invoiceEmailStoredFiles.append(label);
+        });
+        if(!(documents.documents || []).length) invoiceEmailStoredFiles.innerHTML = '<span class="pill">No hay documentos adicionales guardados.</span>';
+      }catch(_){ invoiceEmailStoredFiles.innerHTML = '<span class="pill">No se pudieron consultar los documentos guardados.</span>'; }
       setTimeout(()=>invoiceEmailRecipients.focus(), 0);
     }
     document.getElementById('stampSuccessEmail').onclick = openStampedEmailModal;
@@ -1085,10 +1107,12 @@
     invoiceEmailSend.onclick = async ()=>{
       if(!stampedEmailContext || invoiceEmailSend.disabled) return;
       const recipients = invoiceEmailRecipients.value.split(/[,;\n]+/).map(value=>value.trim()).filter(Boolean);
+      const ccRecipients = invoiceEmailCc.value.split(/[,;\n]+/).map(value=>value.trim()).filter(Boolean);
       const invalid = recipients.find(value=>!/^\S+@\S+\.\S+$/.test(value));
-      if(!recipients.length || invalid){
-        invoiceEmailError.textContent = invalid ? `Revisa este correo electrónico: ${invalid}` : 'Escribe al menos un correo electrónico.';
-        invoiceEmailRecipients.focus();
+      const invalidCc = ccRecipients.find(value=>!/^\S+@\S+\.\S+$/.test(value));
+      if(!recipients.length || invalid || invalidCc){
+        invoiceEmailError.textContent = invalid ? `Revisa este correo electrónico: ${invalid}` : invalidCc ? `Revisa este correo en CC: ${invalidCc}` : 'Escribe al menos un correo electrónico.';
+        (invalidCc ? invoiceEmailCc : invoiceEmailRecipients).focus();
         return;
       }
       if(!invoiceEmailKeyWrap.classList.contains('hidden') && !invoiceEmailKey.value){
@@ -1102,16 +1126,18 @@
       try{
         const form = new FormData();
         form.append('email', invoiceEmailRecipients.value.trim());
+        form.append('cc', invoiceEmailCc.value.trim());
         form.append('subject', invoiceEmailSubject.value.trim());
         form.append('message', invoiceEmailMessage.value);
         form.append('folio', stampedEmailContext.folio || '');
         form.append('send_key', invoiceEmailKey.value);
         Array.from(invoiceEmailFiles.files).forEach(file=>form.append('attachments', file));
+        invoiceEmailStoredFiles.querySelectorAll('input[data-stored-attachment]:checked').forEach(input=>form.append('stored_attachments', input.value));
         const response = await fetch(`/api/invoices/${encodeURIComponent(stampedEmailContext.id)}/email`, {method:'POST',headers:{'Accept':'application/json'},body:form});
         const result = await response.json();
         if(!response.ok || !result.ok) throw new Error(result.error || 'No se pudo enviar el correo.');
         const recordedContext = {...stampedEmailContext};
-        const recordedEmails = invoiceEmailRecipients.value.trim();
+        const recordedEmails = [invoiceEmailRecipients.value.trim(), invoiceEmailCc.value.trim()].filter(Boolean).join('; ');
         fetch('/api/clientes/correos-historial', {
           method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
           body:JSON.stringify({action:'record', emails:recordedEmails, nombre:recordedContext.cliente || '', rfc:recordedContext.rfc || ''})

@@ -28,7 +28,7 @@ def _list_children(service, parent_id, folders_only=False):
     return service.files().list(
         q=query,
         spaces="drive",
-        fields="files(id,name,mimeType,webViewLink)",
+        fields="files(id,name,mimeType,webViewLink,appProperties,size)",
         pageSize=1000,
     ).execute().get("files", [])
 
@@ -60,6 +60,122 @@ def _upsert_file(service, parent_id, filename, content, mimetype):
         media_body=media,
         fields="id,name,webViewLink",
     ).execute()
+
+
+def _download_file(service, file_id):
+    buffer = io.BytesIO()
+    downloader = MediaIoBaseDownload(buffer, service.files().get_media(fileId=file_id))
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    return buffer.getvalue()
+
+
+def save_pending_document(cliente, quote_id, filename, content, mimetype, category="otro", order_number=""):
+    """Guarda un documento previo a la factura conservando su nombre original."""
+    if not content:
+        raise ValueError("El archivo está vacío")
+    service = get_drive_service_user(timeout=35)
+    client_folder_id = _get_or_create_folder(
+        service, FACTURAS_ROOT_FOLDER_ID, safe_drive_name(cliente, "SIN_CLIENTE")
+    )
+    pending_folder_id = _get_or_create_folder(service, client_folder_id, "Pendientes")
+    expected = safe_drive_name(filename, "documento")
+    quote_key = str(quote_id or "").strip()
+    existing = next((item for item in _list_children(service, pending_folder_id)
+                     if item.get("mimeType") != FOLDER_MIME
+                     and str(item.get("name") or "").strip().casefold() == expected.casefold()
+                     and str((item.get("appProperties") or {}).get("hscQuoteId") or "") == quote_key), None)
+    properties = {
+        "hscQuoteId": quote_key[:120],
+        "hscCategory": str(category or "otro")[:120],
+        "hscOrderNumber": str(order_number or "")[:120],
+    }
+    media = MediaIoBaseUpload(io.BytesIO(content), mimetype=mimetype, resumable=False)
+    if existing:
+        item = service.files().update(
+            fileId=existing["id"], body={"appProperties": properties}, media_body=media,
+            fields="id,name,webViewLink,appProperties,size",
+        ).execute()
+    else:
+        item = service.files().create(
+            body={"name": expected, "parents": [pending_folder_id], "appProperties": properties},
+            media_body=media, fields="id,name,webViewLink,appProperties,size",
+        ).execute()
+    return {"ok": True, **item}
+
+
+def list_pending_documents(cliente, quote_id):
+    service = get_drive_service_user(timeout=35)
+    client_name = safe_drive_name(cliente, "SIN_CLIENTE")
+    client = next((item for item in _list_children(service, FACTURAS_ROOT_FOLDER_ID, True)
+                   if str(item.get("name") or "").casefold() == client_name.casefold()), None)
+    if not client:
+        return []
+    pending = next((item for item in _list_children(service, client["id"], True)
+                    if str(item.get("name") or "").casefold() == "pendientes"), None)
+    if not pending:
+        return []
+    quote_key = str(quote_id or "").strip()
+    return [item for item in _list_children(service, pending["id"])
+            if str((item.get("appProperties") or {}).get("hscQuoteId") or "") == quote_key]
+
+
+def delete_pending_document(cliente, quote_id, file_id):
+    service = get_drive_service_user(timeout=35)
+    allowed = {item["id"] for item in list_pending_documents(cliente, quote_id)}
+    if str(file_id) not in allowed:
+        raise FileNotFoundError("No se encontró el documento pendiente")
+    service.files().update(fileId=str(file_id), body={"trashed": True}, fields="id,trashed").execute()
+    return True
+
+
+def move_pending_documents(cliente, quote_id, invoice_folder_id):
+    """Mueve a la factura únicamente los documentos relacionados con esa cotización."""
+    service = get_drive_service_user(timeout=35)
+    documents = list_pending_documents(cliente, quote_id)
+    moved = []
+    for item in documents:
+        parents = service.files().get(fileId=item["id"], fields="parents").execute().get("parents", [])
+        result = service.files().update(
+            fileId=item["id"], addParents=invoice_folder_id,
+            removeParents=",".join(parents), fields="id,name,webViewLink,appProperties,size",
+        ).execute()
+        moved.append(result)
+    return moved
+
+
+def list_invoice_support_documents(cliente, folio_interno):
+    service = get_drive_service_user(timeout=35)
+    client_name = safe_drive_name(cliente, "SIN_CLIENTE")
+    folio_name = safe_drive_name(folio_interno, "SIN_FOLIO")
+    client = next((item for item in _list_children(service, FACTURAS_ROOT_FOLDER_ID, True)
+                   if str(item.get("name") or "").casefold() == client_name.casefold()), None)
+    if not client:
+        return []
+    folder = next((item for item in _list_children(service, client["id"], True)
+                   if str(item.get("name") or "").casefold() == folio_name.casefold()), None)
+    if not folder:
+        return []
+    return [item for item in _list_children(service, folder["id"])
+            if item.get("mimeType") != FOLDER_MIME and (item.get("appProperties") or {}).get("hscQuoteId")]
+
+
+def download_invoice_support_documents(cliente, folio_interno, selected_ids):
+    wanted = {str(item) for item in (selected_ids or [])}
+    service = get_drive_service_user(timeout=35)
+    available = {item["id"]: item for item in list_invoice_support_documents(cliente, folio_interno)}
+    result = []
+    for file_id in wanted:
+        item = available.get(file_id)
+        if not item:
+            continue
+        result.append({
+            "data": _download_file(service, file_id),
+            "filename": item.get("name") or "documento",
+            "content_type": item.get("mimeType") or "application/octet-stream",
+        })
+    return result
 
 
 def load_json_file(filename, parent_id=FACTURAS_ROOT_FOLDER_ID, default=None):

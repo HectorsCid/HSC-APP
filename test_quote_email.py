@@ -40,7 +40,8 @@ class QuoteEmailTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["email"], "compras@example.com")
         self.assertEqual(response.get_json()["correos"], {
-            "compras": "compras@example.com", "cuentas_pagar": "pagos@example.com", "historial": [],
+            "compras": "compras@example.com", "cuentas_pagar": "pagos@example.com",
+            "frecuentes": "", "historial": [],
         })
         self.assertTrue(response.get_json()["trusted"])
 
@@ -52,6 +53,17 @@ class QuoteEmailTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["correos"]["compras"], "compras@example.com")
         self.assertEqual(response.get_json()["correos"]["cuentas_pagar"], "pagos@example.com")
+
+    def test_client_alias_typo_resolves_to_the_single_master_record(self):
+        canonical, data = cotizador._resolver_cliente_catalogo("Biticino de México SA de CV")
+        self.assertEqual(canonical, "Bticino")
+        self.assertEqual(data["correo_compras"], "compras@example.com")
+        with patch.object(cotizador, "authorized_to_send", return_value=True):
+            response = self.client.post("/api/clientes/contactos-seleccionado", json={
+                "nombre": "Biticino de México SA de CV", "rfc": "",
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["correos"]["compras"], "compras@example.com")
 
     def test_selected_contacts_require_trusted_browser(self):
         with patch.object(cotizador, "authorized_to_send", return_value=False):
@@ -93,6 +105,7 @@ class QuoteEmailTests(unittest.TestCase):
         ):
             response = self.client.post("/api/cotizaciones/1587/email", data={
                 "email": "uno@example.com; dos@example.com",
+                "cc": "supervisor@example.com",
                 "subject": "Cotización HSC No. 1587 – Bticino",
                 "message": "Mensaje profesional",
                 "send_key": "correct",
@@ -101,6 +114,7 @@ class QuoteEmailTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.get_json()["ok"])
         self.assertEqual(send.call_args.kwargs["recipient"], "uno@example.com; dos@example.com")
+        self.assertEqual(send.call_args.kwargs["cc"], "supervisor@example.com")
         self.assertEqual(send.call_args.kwargs["pdf_bytes"], b"%PDF")
         self.assertEqual(send.call_args.kwargs["extra_attachments"][0]["filename"], "orden-compra.pdf")
         self.assertIn("hsc_mail_trusted=trusted-cookie", response.headers.get("Set-Cookie", ""))
