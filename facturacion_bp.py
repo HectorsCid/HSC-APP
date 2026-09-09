@@ -6,6 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from base64 import b64decode
 from threading import Lock
 from uuid import uuid4
+import hashlib
 import os
 import json
 import re
@@ -107,6 +108,8 @@ INDEX = DATA_DIR / "pagos_index.json"
 INVOICE_TEMPLATES = DATA_DIR / "plantillas_factura.json"
 INVOICE_TEMPLATES_DRIVE_FILE = "HSC-plantillas-factura.json"
 _TEMPLATE_LOCK = Lock()
+STAMP_REQUESTS = DATA_DIR / "solicitudes_timbrado.json"
+STAMP_REQUESTS_DRIVE_FILE = "HSC-solicitudes-timbrado.json"
 
 # ----------------------------------------------------------------------
 # Índice local de REP
@@ -166,6 +169,61 @@ def _write_invoice_templates(items):
         except Exception as exc:
             current_app.logger.warning("No se pudieron respaldar las plantillas en Drive: %s", exc)
             return False
+
+
+def _stamp_fingerprint(payload):
+    """Identifica el contenido fiscal, excluyendo únicamente la llave del intento."""
+    clean = {key: value for key, value in payload.items() if key != "request_id"}
+    raw = json.dumps(clean, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _load_stamp_registry():
+    """Carga el seguro antirrepetición local y, después de un despliegue, desde Drive."""
+    if current_app.testing:
+        return _STAMP_RESULTS
+    if _STAMP_RESULTS:
+        return _STAMP_RESULTS
+    value = None
+    if STAMP_REQUESTS.exists():
+        try:
+            value = json.loads(STAMP_REQUESTS.read_text("utf-8"))
+        except Exception:
+            value = None
+    if not isinstance(value, dict):
+        try:
+            value = load_json_file(STAMP_REQUESTS_DRIVE_FILE, default={})
+        except Exception as exc:
+            current_app.logger.warning("No se pudo recuperar el seguro de timbrado: %s", exc)
+            value = {}
+    if isinstance(value, dict):
+        _STAMP_RESULTS.update(value)
+    return _STAMP_RESULTS
+
+
+def _persist_stamp_registry(require_drive=False):
+    """Persiste como máximo los 500 intentos más recientes."""
+    ordered = sorted(
+        _STAMP_RESULTS.items(),
+        key=lambda item: str((item[1] or {}).get("updated_at") or ""),
+        reverse=True,
+    )[:500]
+    snapshot = dict(ordered)
+    if current_app.testing:
+        return True
+    STAMP_REQUESTS.write_text(
+        json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    try:
+        backup_json_file(STAMP_REQUESTS_DRIVE_FILE, snapshot)
+        return True
+    except Exception as exc:
+        current_app.logger.warning("No se pudo respaldar el seguro de timbrado: %s", exc)
+        if require_drive:
+            raise RuntimeError(
+                "No fue posible activar el seguro contra facturas duplicadas. No se timbró nada."
+            ) from exc
+        return False
 
 def _payment_entries(record):
     """Devuelve pagos activos y conserva compatibilidad con el índice anterior."""
@@ -278,8 +336,8 @@ def _facturama_config():
 
 
 def _provider():
-    """Facturama tiene prioridad; Facturapi queda como respaldo temporal."""
-    return "facturama" if _facturama_config()["configured"] else "facturapi"
+    """Proveedor único: nunca cambiar silenciosamente de PAC por una mala configuración."""
+    return "facturama"
 
 
 def _valid_cfdi_uuid(value):
@@ -850,8 +908,24 @@ def facturar():
         payload = request.get_json(force=True) or {}
         provider = _provider()
 
+        # El endpoint también exige la confirmación explícita de la interfaz.
+        # Así un doble clic, un script viejo o una llamada incompleta no timbra.
+        if payload.get("confirmed") is not True:
+            return jsonify({
+                "ok": False,
+                "stage": "confirmation",
+                "error": "Confirma los datos de la factura antes de timbrar.",
+            }), 400
+
         if provider == "facturama":
             cfg = _facturama_config()
+            if not cfg["configured"]:
+                return jsonify({
+                    "ok": False,
+                    "provider": "facturama",
+                    "stage": "configuration",
+                    "error": "Facturama no está configurado. No se intentó timbrar con otro proveedor.",
+                }), 503
             try:
                 cfdi = _build_facturama_cfdi(payload)
             except (KeyError, TypeError, ValueError) as exc:
@@ -911,15 +985,54 @@ def facturar():
                     "error": "Falta el identificador seguro de la solicitud; recarga la página",
                 }), 400
 
-            # Serializa el timbrado y reutiliza la respuesta de un doble clic/reintento.
+            # Serializa el timbrado y conserva el candado incluso tras reiniciar Render.
             with _STAMP_LOCK:
-                if request_id in _STAMP_RESULTS:
-                    cached = dict(_STAMP_RESULTS[request_id])
-                    cached["duplicate_prevented"] = True
-                    return jsonify(cached), 200
+                registry = _load_stamp_registry()
+                fingerprint = _stamp_fingerprint(payload)
+                existing = registry.get(request_id)
+                if existing:
+                    if existing.get("fingerprint") and existing.get("fingerprint") != fingerprint:
+                        return jsonify({
+                            "ok": False,
+                            "stage": "duplicate_check",
+                            "error": "El formulario cambió después de iniciar este timbrado. Recarga y verifica el panel antes de continuar.",
+                        }), 409
+                    if existing.get("state") == "completed" and isinstance(existing.get("result"), dict):
+                        cached = dict(existing["result"])
+                        cached["duplicate_prevented"] = True
+                        return jsonify(cached), 200
+                    # Compatibilidad con respuestas guardadas antes del registro persistente.
+                    if existing.get("ok") and existing.get("invoice_id"):
+                        cached = dict(existing)
+                        cached["duplicate_prevented"] = True
+                        return jsonify(cached), 200
+                    return jsonify({
+                        "ok": False,
+                        "stage": "duplicate_check",
+                        "uncertain": existing.get("state") == "uncertain",
+                        "error": (
+                            "Este timbrado quedó pendiente de confirmación. Revisa primero el panel de facturas; "
+                            "por seguridad no se enviará nuevamente."
+                        ),
+                    }), 409
+
+                registry[request_id] = {
+                    "state": "processing",
+                    "fingerprint": fingerprint,
+                    "updated_at": datetime.now().isoformat(timespec="seconds"),
+                    "receiver_rfc": str((payload.get("receptor") or {}).get("rfc") or ""),
+                    "folio": str(payload.get("folio") or ""),
+                }
+                try:
+                    _persist_stamp_registry(require_drive=not cfg["sandbox"])
+                except (OSError, RuntimeError) as exc:
+                    registry.pop(request_id, None)
+                    return jsonify({"ok": False, "stage": "duplicate_lock", "error": str(exc)}), 503
                 try:
                     invoice = _fm_request("POST", "/3/cfdis", json_body=cfdi, timeout=75)
                 except requests.HTTPError as exc:
+                    registry.pop(request_id, None)
+                    _persist_stamp_registry(require_drive=False)
                     status_code = getattr(exc.response, "status_code", 400) or 400
                     return jsonify({
                         "ok": False,
@@ -929,11 +1042,20 @@ def facturar():
                         "error": _http_error_detail(exc),
                     }), 400 if status_code < 500 else 502
                 except requests.RequestException as exc:
+                    registry[request_id].update({
+                        "state": "uncertain",
+                        "updated_at": datetime.now().isoformat(timespec="seconds"),
+                    })
+                    _persist_stamp_registry(require_drive=False)
                     return jsonify({
                         "ok": False,
                         "provider": "facturama",
                         "stage": "connection",
-                        "error": "Facturama no respondió a tiempo. Puedes reintentar sin duplicar.",
+                        "uncertain": True,
+                        "error": (
+                            "Facturama no confirmó la respuesta. Revisa el panel antes de hacer otra factura; "
+                            "este intento quedó bloqueado para evitar duplicados."
+                        ),
                         "detail": str(exc),
                     }), 502
 
@@ -944,6 +1066,8 @@ def facturar():
                     tax_stamp = _pick(complement, "TaxStamp") or {}
                     uuid = _pick(tax_stamp, "Uuid")
                 if not inv_id:
+                    registry.pop(request_id, None)
+                    _persist_stamp_registry(require_drive=False)
                     return jsonify({
                         "ok": False,
                         "provider": "facturama",
@@ -951,6 +1075,8 @@ def facturar():
                         "error": "Facturama respondió sin identificador de CFDI",
                     }), 502
                 if not _valid_cfdi_uuid(uuid):
+                    registry.pop(request_id, None)
+                    _persist_stamp_registry(require_drive=False)
                     return jsonify({
                         "ok": False,
                         "provider": "facturama",
@@ -989,10 +1115,19 @@ def facturar():
                         "La factura se timbró correctamente, pero Drive no confirmó el respaldo. "
                         "Puedes descargarla desde el panel de facturación."
                     )
-                _STAMP_RESULTS[request_id] = dict(result)
+                registry[request_id] = {
+                    "state": "completed",
+                    "fingerprint": fingerprint,
+                    "updated_at": datetime.now().isoformat(timespec="seconds"),
+                    "result": dict(result),
+                }
+                _persist_stamp_registry(require_drive=False)
                 return jsonify(result), 200
 
-        # 0) API key presente
+        # Código heredado de Facturapi conservado temporalmente para referencia,
+        # pero ya no es seleccionable automáticamente.
+        if provider != "facturapi":
+            return jsonify({"ok": False, "stage": "configuration", "error": "Proveedor de timbrado no permitido."}), 503
         if not os.getenv("FACTURAPI_API_KEY", "").strip():
             return jsonify({"ok": False, "stage": "precheck", "error": "Falta FACTURAPI_API_KEY"}), 500
 

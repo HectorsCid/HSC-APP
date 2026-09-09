@@ -358,9 +358,10 @@ syncThemeToggle();
 const arrivalParams = new URLSearchParams(location.search);
 if(arrivalParams.get('timbrada') === '1'){
   pageMsg.className = 'flash ok';
+  const sentNow = arrivalParams.get('email') === '1';
   pageMsg.textContent = arrivalParams.get('drive') === 'fail'
-    ? 'Factura timbrada correctamente. Drive no confirmó el respaldo; puedes reimprimirla desde este panel.'
-    : 'Factura timbrada correctamente y respaldada en Drive.';
+    ? `Factura timbrada${sentNow ? ' y enviada por correo' : ''}. Drive no confirmó el respaldo; puedes reimprimirla desde este panel.`
+    : `Factura timbrada y respaldada en Drive${sentNow ? ', y enviada por correo' : ''}.`;
   history.replaceState({}, '', '/facturacion');
   setTimeout(()=>{ pageMsg.className = 'flash'; }, 5000);
 }

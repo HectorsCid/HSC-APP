@@ -15,6 +15,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
         billing._STAMP_RESULTS.clear()
         billing._FISCAL_CATALOG_CACHE.clear()
         self.app = Flask(__name__)
+        self.app.config["TESTING"] = True
         self.app.register_blueprint(billing.facturacion_bp)
         self.client = self.app.test_client()
         self.env = patch.dict(os.environ, {
@@ -31,6 +32,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
     def payload(request_id="test-1"):
         return {
             "request_id": request_id,
+            "confirmed": True,
             "receptor": {
                 "rfc": "URE180429TM6",
                 "nombre": "UNIVERSIDAD ROBOTICA ESPAÑOLA",
@@ -208,6 +210,40 @@ class FacturamaIntegrationTests(unittest.TestCase):
         receiver_mock.assert_not_called()
         self.assertTrue(second.get_json()["duplicate_prevented"])
         self.assertEqual(first.get_json()["receiver_validation"], "local_sandbox")
+
+    def test_stamp_requires_explicit_confirmation(self):
+        payload = self.payload("unconfirmed-request")
+        payload["confirmed"] = False
+        with patch.object(billing, "_fm_request") as request_mock:
+            response = self.client.post("/api/facturar", json=payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["stage"], "confirmation")
+        request_mock.assert_not_called()
+
+    def test_missing_facturama_credentials_never_falls_back(self):
+        with (
+            patch.dict(os.environ, {"FACTURAMA_USER": "", "FACTURAMA_PASSWORD": ""}, clear=False),
+            patch.object(billing, "_fa_post") as fallback_mock,
+            patch.object(billing, "_fm_request") as facturama_mock,
+        ):
+            response = self.client.post("/api/facturar", json=self.payload("missing-config"))
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()["stage"], "configuration")
+        fallback_mock.assert_not_called()
+        facturama_mock.assert_not_called()
+
+    def test_uncertain_stamp_is_blocked_from_being_sent_twice(self):
+        with (
+            patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
+            patch.object(billing, "_fm_request", side_effect=billing.requests.Timeout("sin respuesta")) as request_mock,
+        ):
+            first = self.client.post("/api/facturar", json=self.payload("uncertain-request"))
+            second = self.client.post("/api/facturar", json=self.payload("uncertain-request"))
+        self.assertEqual(first.status_code, 502)
+        self.assertTrue(first.get_json()["uncertain"])
+        self.assertEqual(second.status_code, 409)
+        self.assertTrue(second.get_json()["uncertain"])
+        self.assertEqual(request_mock.call_count, 1)
 
     def test_stamp_extracts_nested_facturama_uuid(self):
         expected_uuid = self.VALID_UUID

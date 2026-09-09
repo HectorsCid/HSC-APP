@@ -44,6 +44,13 @@ class AppAccessTests(unittest.TestCase):
         })
         self.assertTrue(response.headers["Location"].endswith("/inicio-app"))
 
+    def test_sensitive_pages_include_security_and_no_cache_headers(self):
+        response = self.client.get("/api/ping")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+        self.assertIn("no-store", response.headers["Cache-Control"])
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+
 
 if __name__ == "__main__":
     unittest.main()

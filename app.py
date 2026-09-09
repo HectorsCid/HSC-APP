@@ -196,6 +196,7 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=IS_RENDER,
     SESSION_REFRESH_EACH_REQUEST=True,
+    MAX_CONTENT_LENGTH=20 * 1024 * 1024,
 )
 
 
@@ -254,6 +255,21 @@ def _require_app_login():
     if request.path.startswith("/api/"):
         return jsonify({"ok": False, "error": "Tu sesión está cerrada. Vuelve a ingresar."}), 401
     return redirect(url_for("acceso", next=_safe_return_path(request.full_path.rstrip("?"))))
+
+
+@app.after_request
+def _security_headers(response):
+    """Protecciones comunes sin interferir con los formularios existentes."""
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+    if IS_RENDER:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    if request.path.startswith(("/factur", "/api/", "/pagos", "/clientes", "/acceso")):
+        response.headers.setdefault("Cache-Control", "no-store, private")
+    return response
 
 app.register_blueprint(reportes_bp)
 start_auto_report_monitor(app)
@@ -2569,7 +2585,12 @@ def ui_factura_nueva():
     if not isinstance(clientes, (dict, list)):
         clientes = {}
 
-    return render_template("factura_nueva.html", clientes=clientes)
+    facturama_sandbox = os.environ.get("FACTURAMA_SANDBOX", "true").strip().lower() not in {"0", "false", "no"}
+    return render_template(
+        "factura_nueva.html",
+        clientes=clientes,
+        facturama_environment="sandbox" if facturama_sandbox else "production",
+    )
 
 
 def _normalizar_articulo(raw, codigo_forzado=""):
