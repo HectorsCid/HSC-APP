@@ -66,6 +66,17 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertNotIn("Date", cfdi)
         self.assertNotIn("Serie", cfdi)
 
+    def test_production_uses_hsc_series_and_never_accepts_browser_folio(self):
+        payload = self.payload()
+        payload["folio"] = "1594"
+        with (
+            patch.dict(os.environ, {"FACTURAMA_SANDBOX": "false"}, clear=False),
+            patch.object(billing, "_facturama_issuer_locations", return_value=("76240", "76240")),
+        ):
+            cfdi = billing._build_facturama_cfdi(payload)
+        self.assertEqual(cfdi["Serie"], "HSC")
+        self.assertNotIn("Folio", cfdi)
+
     def test_ppd_forces_payment_form_99(self):
         payload = self.payload()
         payload["metodo_pago"] = "PPD"
@@ -269,10 +280,13 @@ class FacturamaIntegrationTests(unittest.TestCase):
     def test_stamp_preserves_internal_folio_and_purchase_order_for_pdf(self):
         payload = self.payload("pdf-metadata-request")
         payload.update({
-            "folio": "1370", "numero_orden_compra": "OC-45872",
+            "folio": "1594", "quote_folio": "1594", "numero_orden_compra": "OC-45872",
             "alias_factura": "Mantenimiento septiembre",
         })
-        answer = {"Id": "invoice-with-metadata", "Uuid": self.VALID_UUID, "Status": "active", "Total": 232}
+        answer = {
+            "Id": "invoice-with-metadata", "Uuid": self.VALID_UUID,
+            "Folio": "1370", "Status": "active", "Total": 232,
+        }
         with (
             patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")),
             patch.object(billing, "_facturama_receiver_validation", return_value=({}, {})),
@@ -282,16 +296,34 @@ class FacturamaIntegrationTests(unittest.TestCase):
             response = self.client.post("/api/facturar", json=payload)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["internal_folio"], "1370")
+        self.assertEqual(response.get_json()["quote_folio"], "1594")
         self.assertEqual(response.get_json()["order_number"], "OC-45872")
         self.assertEqual(response.get_json()["invoice_alias"], "Mantenimiento septiembre")
         self.assertEqual(backup.call_args.args[-1], "Mantenimiento septiembre")
+        self.assertEqual(backup.call_args.kwargs["quote_folio"], "1594")
         with self.app.app_context():
             metadata = billing._invoice_pdf_metadata("invoice-with-metadata")
         self.assertEqual(metadata, {
             "internal_folio": "1370", "order_number": "OC-45872",
             "client_name": "UNIVERSIDAD ROBOTICA ESPAÑOLA", "source_quote_id": "",
+            "quote_folio": "1594",
             "invoice_alias": "Mantenimiento septiembre", "drive_folder_name": "1370",
         })
+
+    def test_subscription_returns_only_folio_balance_and_dates(self):
+        answer = {
+            "Plan": "API - anualidad", "CurrentFolios": 100,
+            "CreationDate": "2026-09-09T13:14:38", "ExpirationDate": "2027-09-09T13:14:38",
+            "Password": "must-not-leak",
+        }
+        with patch.object(billing, "_fm_request", return_value=answer) as api:
+            response = self.client.get("/api/facturama/subscription")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data["current_folios"], 100)
+        self.assertEqual(data["expiration_date"], "2027-09-09T13:14:38")
+        self.assertNotIn("must-not-leak", str(data))
+        api.assert_called_once_with("GET", "/SuscriptionPlan", timeout=25)
 
     def test_stamp_without_valid_uuid_is_rejected_and_not_cached(self):
         answer = {"Id": "invalid-attempt", "Status": "invalid", "Total": 232}
@@ -318,6 +350,28 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(len(data), 1)
         self.assertEqual(data[0]["customer_name"], "CLIENTE SAT")
         self.assertEqual(data[0]["customer_tax_id"], "URE180429TM6")
+
+    def test_invoice_list_requests_the_selected_historical_month(self):
+        rows = [{
+            "Id": "historical-1", "Uuid": self.VALID_UUID,
+            "Date": "2026-07-15T10:00:00", "Total": 116,
+            "Status": "active", "PaymentMethod": "PUE", "CfdiType": "I",
+            "Receiver": {"Name": "CLIENTE JULIO", "Rfc": "URE180429TM6"},
+        }, {
+            "Id": "historical-rep", "Uuid": "215cec43-7e57-44ac-9d63-b54bbc4745bd",
+            "Date": "2026-07-31T10:00:00", "Total": 0,
+            "Status": "active", "CfdiType": "P",
+            "Receiver": {"Name": "CLIENTE JULIO", "Rfc": "URE180429TM6"},
+        }]
+        with patch.object(billing, "_facturama_period_rows", return_value=rows) as period_rows:
+            response = self.client.get("/api/facturas/list?month=2026-07")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"][0]["customer_name"], "CLIENTE JULIO")
+        self.assertEqual(response.get_json()["data"][1]["type"], "P")
+        args = period_rows.call_args.args
+        self.assertEqual(args[0], "issued")
+        self.assertEqual(args[1].strftime("%Y-%m-%d"), "2026-07-01")
+        self.assertEqual(args[2].strftime("%Y-%m-%d"), "2026-07-31")
 
     def test_invoice_list_normalizes_facturama_labels_for_actions(self):
         rows = [{
@@ -389,6 +443,24 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(data["estimated_result"], 76)
         self.assertEqual(data["pending_complements"], 1)
         self.assertEqual(data["top_clients"][0]["name"], "CLIENTE SAT")
+
+    def test_annual_balance_returns_totals_and_twelve_month_breakdown(self):
+        issued = [
+            {"Id": "july", "Uuid": self.VALID_UUID, "Folio": "1370", "CfdiType": "I", "PaymentMethod": "PUE", "TaxName": "CLIENTE", "Rfc": "URE180429TM6", "Total": 100, "Status": "active", "Date": "2026-07-15T10:00:00"},
+            {"Id": "september", "Uuid": "215cec43-7e57-44ac-9d63-b54bbc4745bd", "Folio": "1371", "CfdiType": "I", "PaymentMethod": "PUE", "TaxName": "CLIENTE", "Rfc": "URE180429TM6", "Total": 200, "Status": "active", "Date": "2026-09-09T10:00:00"},
+        ]
+        with (
+            patch.object(billing, "_facturama_period_rows", side_effect=lambda kind, *_: issued if kind == "issued" else []),
+            patch.object(billing, "_read_index", return_value={}),
+        ):
+            response = self.client.get("/api/facturacion/balance?period=2026-09&scope=year")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()["data"]
+        self.assertEqual(data["issued_total"], 300)
+        self.assertEqual(len(data["series"]), 12)
+        months = {row["month"]: row["issued"] for row in data["series"]}
+        self.assertEqual(months["2026-07"], 100)
+        self.assertEqual(months["2026-09"], 200)
 
     def test_received_list_uses_issuer_as_supplier(self):
         rows = [{

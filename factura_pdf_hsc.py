@@ -195,10 +195,16 @@ class HscInvoiceDoc(BaseDocTemplate):
         canvas.drawCentredString(width - 36 * mm, height - 18.7 * mm, folio_label)
         if doc.page == 1:
             order = self.data.get("order_number")
+            quote_folio = self.data.get("quote_folio")
+            references = []
+            if quote_folio:
+                references.append(f"COTIZACIÓN HSC  {quote_folio}")
             if order:
+                references.append(f"ORDEN DE COMPRA  {order}")
+            if references:
                 canvas.setFillColor(NAVY)
                 canvas.setFont("Helvetica-Bold", 7.2)
-                canvas.drawRightString(width - 14 * mm, height - 29.5 * mm, f"ORDEN DE COMPRA  {order}")
+                canvas.drawRightString(width - 14 * mm, height - 29.5 * mm, "   ·   ".join(references))
             canvas.setFillColor(MUTED)
             canvas.setFont("Helvetica", 7)
             canvas.drawRightString(width - 14 * mm, height - 34 * mm, f"Emisión  {_text(self.data['date']).replace('T', ' ')}")
@@ -214,10 +220,14 @@ class HscInvoiceDoc(BaseDocTemplate):
         canvas.restoreState()
 
 
-def build_invoice_pdf(xml_path: str | Path | bytes, output_path, internal_folio=None, order_number=None):
+def build_invoice_pdf(
+    xml_path: str | Path | bytes, output_path, internal_folio=None,
+    order_number=None, quote_folio=None,
+):
     data = parse_cfdi(xml_path)
     data["internal_folio"] = _text(internal_folio or data["folio"], "S/F")
     data["order_number"] = _text(order_number, "") if order_number else ""
+    data["quote_folio"] = _text(quote_folio, "") if quote_folio else ""
     styles = _styles()
     if hasattr(output_path, "write"):
         output = output_path
@@ -368,10 +378,12 @@ def build_invoice_pdf(xml_path: str | Path | bytes, output_path, internal_folio=
     return output
 
 
-def build_invoice_pdf_bytes(xml_bytes: bytes, internal_folio=None, order_number=None) -> bytes:
+def build_invoice_pdf_bytes(
+    xml_bytes: bytes, internal_folio=None, order_number=None, quote_folio=None,
+) -> bytes:
     """Genera la representación HSC directamente desde el XML timbrado."""
     buffer = BytesIO()
-    build_invoice_pdf(xml_bytes, buffer, internal_folio, order_number)
+    build_invoice_pdf(xml_bytes, buffer, internal_folio, order_number, quote_folio)
     return buffer.getvalue()
 
 
@@ -381,5 +393,9 @@ if __name__ == "__main__":
     parser.add_argument("output")
     parser.add_argument("--folio-interno", default="")
     parser.add_argument("--orden-compra", default="")
+    parser.add_argument("--folio-cotizacion", default="")
     args = parser.parse_args()
-    print(build_invoice_pdf(args.xml, args.output, args.folio_interno, args.orden_compra))
+    print(build_invoice_pdf(
+        args.xml, args.output, args.folio_interno,
+        args.orden_compra, args.folio_cotizacion,
+    ))

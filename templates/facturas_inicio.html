@@ -256,7 +256,7 @@
       <div class="mini-list" id="receivedList"><div class="empty-state">Abre esta pestaña para consultar Facturama.</div></div>
     </div>
     <div class="card" id="panelBalance" style="display:none">
-      <div class="panel-head"><div><h2>Balance de facturación</h2><div class="pill">Ingresos, cobranza, gastos recibidos y pendientes</div></div><div class="balance-toolbar"><select id="balanceScope"><option value="month">Mes seleccionado</option><option value="year">Año completo</option></select><select id="balanceClient"><option value="">Todos los clientes</option></select><button class="btn" id="reloadBalance">↻ Actualizar</button></div></div>
+      <div class="panel-head"><div><h2>Balance de facturación</h2><div class="pill">Consulta un mes o el año completo con desglose de enero a diciembre</div></div><div class="balance-toolbar"><select id="balanceScope"><option value="month">Resumen del mes</option><option value="year">Resumen anual · por meses</option></select><select id="balanceClient"><option value="">Todos los clientes</option></select><button class="btn" id="reloadBalance">↻ Actualizar</button></div></div>
       <div class="balance-kpis">
         <div class="summary-box"><span>Facturado</span><strong id="balanceIssued">$0.00</strong></div><div class="summary-box"><span>Cobrado</span><strong id="balanceCollected">$0.00</strong></div><div class="summary-box warn"><span>Por cobrar</span><strong id="balancePending">$0.00</strong></div><div class="summary-box"><span>Gastos recibidos</span><strong id="balanceExpenses">$0.00</strong></div><div class="summary-box result"><span>Resultado estimado</span><strong id="balanceResult">$0.00</strong></div><div class="summary-box"><span>Complementos pendientes</span><strong id="balanceRepCount">0</strong></div>
       </div>
@@ -414,11 +414,11 @@ if(arrivalParams.get('complemento') === '1'){
   };
 });
 
-// meses últimos 12
+// Cinco años disponibles para consultar históricos importados y sus balances.
 (function initMeses(){
   const sel = document.getElementById('mes');
   const now = new Date();
-  for(let i=0;i<12;i++){
+  for(let i=0;i<60;i++){
     const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
     const v = d.toISOString().slice(0,7);
     const o = document.createElement('option');
@@ -451,10 +451,10 @@ function escAttr(value){
 async function load(){
   tbody.innerHTML = '<tr><td colspan="10">Cargando…</td></tr>';
   try{
-    const r = await fetch('/api/facturas/list');
+    const m = $('#mes').value;
+    const r = await fetch(`/api/facturas/list?month=${encodeURIComponent(m)}`);
     const d = await r.json();
     if(!r.ok) throw new Error(errorText(d.error));
-    const m = $('#mes').value;
     const q = ($('#q').value||'').toLowerCase();
 
     let rows = (d.data||[]).filter(x => (x.date||'').startsWith(m));
@@ -604,7 +604,8 @@ async function loadBalance(){
     const data=result.data||{};
     document.getElementById('balanceIssued').textContent=moneyMx(data.issued_total);document.getElementById('balanceCollected').textContent=moneyMx(data.collected_total);document.getElementById('balancePending').textContent=moneyMx(data.pending_total);document.getElementById('balanceExpenses').textContent=moneyMx(data.received_total);document.getElementById('balanceResult').textContent=data.client_filtered?'No aplica':moneyMx(data.estimated_result);document.getElementById('balanceRepCount').textContent=data.pending_complements||0;document.getElementById('balanceNote').textContent=data.client_filtered?'Los gastos son generales de HSC y no se asignan a un cliente; por eso el resultado estimado no aplica con este filtro.':'El resultado estimado es facturación vigente menos CFDI recibidos; no sustituye la utilidad contable.';
     const choices=data.client_options||[];clientSelect.innerHTML='<option value="">Todos los clientes</option>'+choices.map(row=>`<option value="${escAttr(row.key)}">${escAttr(row.name)}${row.rfc?` · ${escAttr(row.rfc)}`:''}</option>`).join('');clientSelect.value=selectedClient;
-    const series=(data.series||[]).filter(row=>Number(row.issued)||Number(row.collected)||Number(row.received));
+    const allSeries=data.series||[];
+    const series=scope==='year'?allSeries:allSeries.filter(row=>Number(row.issued)||Number(row.collected)||Number(row.received));
     const maximum=Math.max(1,...series.flatMap(row=>[Number(row.issued||0),Number(row.collected||0),Number(row.received||0)].map(Math.abs)));
     document.getElementById('balanceChartTitle').textContent=scope==='year'?'Movimiento mensual del año':'Movimiento del mes seleccionado';
     chart.innerHTML=series.length?series.map(row=>{const label=new Date(`${row.month}-02T12:00:00`).toLocaleDateString('es-MX',{month:'short',year:scope==='year'?undefined:'numeric'});const width=value=>`${Math.max(1,Math.abs(Number(value||0))/maximum*100)}%`;return `<div class="balance-month"><strong>${escAttr(label)}</strong><div class="balance-bars"><span class="balance-bar income" style="width:${width(row.issued)}" title="Facturado ${moneyMx(row.issued)}"></span><span class="balance-bar collected" style="width:${width(row.collected)}" title="Cobrado ${moneyMx(row.collected)}"></span><span class="balance-bar expense" style="width:${width(row.received)}" title="Gastos ${moneyMx(row.received)}"></span></div><strong>${moneyMx(row.issued)}</strong></div>`}).join(''):'<div class="empty-state">No hay movimientos en este periodo.</div>';

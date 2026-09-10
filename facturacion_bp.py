@@ -635,10 +635,12 @@ def _build_facturama_cfdi(payload):
         cfdi["Date"] = requested_date
     elif not cfg["sandbox"]:
         cfdi["Date"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    if payload.get("serie"):
-        cfdi["Serie"] = str(payload["serie"]).strip()
-    if payload.get("folio"):
-        cfdi["Folio"] = str(payload["folio"]).strip()
+    # En producción la serie HSC administra su propio consecutivo en Facturama.
+    # El navegador nunca envía un folio fiscal: así una cotización no puede
+    # alterar ni duplicar accidentalmente la numeración oficial.
+    series = str(payload.get("serie") or ("HSC" if not cfg["sandbox"] else "")).strip()
+    if series:
+        cfdi["Serie"] = series
     order_number = str(payload.get("numero_orden_compra") or "").strip()
     if len(order_number) > 100:
         raise ValueError("El número de orden de compra admite hasta 100 caracteres")
@@ -764,40 +766,44 @@ def _invoice_pdf_metadata(inv_id):
                 "order_number": str(result.get("order_number") or "").strip(),
                 "client_name": str(result.get("client_name") or "").strip(),
                 "source_quote_id": str(result.get("source_quote_id") or "").strip(),
+                "quote_folio": str(result.get("quote_folio") or "").strip(),
                 "invoice_alias": str(result.get("invoice_alias") or "").strip(),
                 "drive_folder_name": str(result.get("drive_folder_name") or "").strip(),
             }
-    return {"internal_folio": "", "order_number": "", "client_name": "", "source_quote_id": "", "invoice_alias": "", "drive_folder_name": ""}
+    return {"internal_folio": "", "order_number": "", "client_name": "", "source_quote_id": "", "quote_folio": "", "invoice_alias": "", "drive_folder_name": ""}
 
 
-def _hsc_invoice_pdf(xml_bytes, inv_id, *, internal_folio="", order_number=""):
+def _hsc_invoice_pdf(xml_bytes, inv_id, *, internal_folio="", order_number="", quote_folio=""):
     metadata = _invoice_pdf_metadata(inv_id)
     return build_invoice_pdf_bytes(
         xml_bytes,
         internal_folio=internal_folio or metadata["internal_folio"],
         order_number=order_number or metadata["order_number"],
+        quote_folio=quote_folio or metadata["quote_folio"],
     )
 
 
-def _facturama_printable_pdf(xml_bytes, inv_id, *, internal_folio="", order_number=""):
+def _facturama_printable_pdf(xml_bytes, inv_id, *, internal_folio="", order_number="", quote_folio=""):
     """Personaliza facturas de ingreso y conserva el formato oficial de otros CFDI."""
     if parse_cfdi(xml_bytes).get("cfdi_type") == "I":
         return _hsc_invoice_pdf(
             xml_bytes, inv_id,
             internal_folio=internal_folio,
             order_number=order_number,
+            quote_folio=quote_folio,
         )
     return _decode_facturama_file(_fm_request("GET", f"/Cfdi/pdf/issued/{inv_id}"))
 
 
 def _backup_facturama_cfdi(
-    inv_id, uuid, client_name, internal_folio, document_type="Factura", order_number="", source_quote_id="", invoice_alias=""
+    inv_id, uuid, client_name, internal_folio, document_type="Factura", order_number="", source_quote_id="", invoice_alias="", quote_folio=""
 ):
     """Descarga PDF/XML y los respalda sin comprometer un timbrado exitoso."""
     try:
         xml = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
         pdf = _facturama_printable_pdf(
-            xml, inv_id, internal_folio=internal_folio, order_number=order_number
+            xml, inv_id, internal_folio=internal_folio, order_number=order_number,
+            quote_folio=quote_folio,
         )
         result = backup_cfdi(
             client_name, internal_folio, uuid, pdf, xml,
@@ -945,6 +951,41 @@ def api_facturama_status():
         return jsonify({
             "ok": False,
             "provider": "facturama",
+            "environment": "sandbox" if cfg["sandbox"] else "production",
+            "error": _http_error_detail(exc),
+        }), getattr(exc.response, "status_code", 502) or 502
+    except requests.RequestException as exc:
+        return jsonify({"ok": False, "error": str(exc), "stage": "connection"}), 502
+
+
+@facturacion_bp.get("/facturama/subscription")
+def api_facturama_subscription():
+    """Expone únicamente el saldo y la vigencia del paquete API."""
+    cfg = _facturama_config()
+    if not cfg["configured"]:
+        return jsonify({
+            "ok": False,
+            "environment": "sandbox" if cfg["sandbox"] else "production",
+            "error": "Facturama no está configurado",
+        }), 503
+    try:
+        subscription = _fm_request("GET", "/SuscriptionPlan", timeout=25)
+        raw_folios = _pick(subscription, "CurrentFolios")
+        try:
+            current_folios = max(0, int(float(raw_folios)))
+        except (TypeError, ValueError):
+            current_folios = None
+        return jsonify({
+            "ok": True,
+            "environment": "sandbox" if cfg["sandbox"] else "production",
+            "plan": str(_pick(subscription, "Plan") or "").strip(),
+            "current_folios": current_folios,
+            "creation_date": str(_pick(subscription, "CreationDate") or "").strip(),
+            "expiration_date": str(_pick(subscription, "ExpirationDate") or "").strip(),
+        }), 200
+    except requests.HTTPError as exc:
+        return jsonify({
+            "ok": False,
             "environment": "sandbox" if cfg["sandbox"] else "production",
             "error": _http_error_detail(exc),
         }), getattr(exc.response, "status_code", 502) or 502
@@ -1153,10 +1194,10 @@ def facturar():
                     "complementos_disponibles": False,
                 }
                 order_number = str(payload.get("numero_orden_compra") or "").strip()
-                internal_folio = str(
-                    payload.get("folio") or _pick(invoice, "Folio")
-                    or payload.get("source_quote_id") or inv_id
-                ).strip()
+                quote_folio = str(payload.get("quote_folio") or "").strip()
+                # El folio interno siempre es el consecutivo que confirma Facturama.
+                # La cotización queda guardada como referencia comercial separada.
+                internal_folio = str(_pick(invoice, "Folio") or inv_id).strip()
                 drive_backup = _backup_facturama_cfdi(
                     str(inv_id), str(uuid).strip(),
                     str(payload.get("cliente_carpeta")
@@ -1166,12 +1207,14 @@ def facturar():
                     order_number,
                     str(payload.get("source_quote_id") or "").strip(),
                     invoice_alias,
+                    quote_folio=quote_folio,
                 )
                 result["drive_backup"] = drive_backup
                 result["internal_folio"] = internal_folio
                 result["order_number"] = order_number
                 result["client_name"] = str(payload.get("cliente_carpeta") or (payload.get("receptor") or {}).get("nombre") or "SIN_CLIENTE")
                 result["source_quote_id"] = str(payload.get("source_quote_id") or "").strip()
+                result["quote_folio"] = quote_folio
                 result["invoice_alias"] = invoice_alias
                 result["drive_folder_name"] = str(drive_backup.get("folder_name") or internal_folio)
                 if not drive_backup.get("ok"):
@@ -1304,13 +1347,21 @@ def facturar_safe():
 # ----------------------------------------------------------------------
 @facturacion_bp.get("/facturas/list")
 def api_list_facturas():
-    """Últimas 100 facturas, con bandera paid según índice local de REP."""
+    """Facturas del mes solicitado, incluyendo XML históricos importados."""
     if _provider() == "facturama":
+        selected_month = str(request.args.get("month") or "").strip()
+        if selected_month and not re.fullmatch(r"\d{4}-\d{2}", selected_month):
+            return jsonify({"ok": False, "error": "El mes solicitado no es válido."}), 400
         try:
-            raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "all", "page": 0})
+            if selected_month:
+                month_start = datetime.strptime(selected_month + "-01", "%Y-%m-%d")
+                next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+                rows = _facturama_period_rows("issued", month_start, next_month - timedelta(days=1))
+            else:
+                raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "all", "page": 0})
+                rows = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
         except requests.HTTPError as exc:
             return jsonify({"ok": False, "provider": "facturama", "error": _http_error_detail(exc)}), 400
-        rows = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
         out = []
         paid_idx = _read_index()
         deliveries = read_email_deliveries()

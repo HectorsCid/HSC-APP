@@ -61,7 +61,7 @@
     .theme-track{width:38px;height:21px;padding:2px;border-radius:999px;background:#94a3b8;display:flex}.theme-knob{width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:.2s}
     html[data-theme="dark"] .theme-track{background:#22c55e}html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
     @media(max-width:839px){.wrap{padding:11px}.top{align-items:flex-start;flex-direction:column}.top .actions{width:100%}.top .actions>*{flex:1}.card{padding:11px}}
-    .template-backdrop{position:fixed;inset:0;z-index:9999;display:none;place-items:center;padding:18px;background:rgba(2,6,23,.62);overflow-y:auto}.template-backdrop.show{display:grid}.template-dialog{width:min(460px,100%);max-height:calc(100vh - 36px);overflow:auto;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.template-dialog.mail-dialog{width:min(680px,100%);scrollbar-gutter:stable}.template-dialog h2{margin:0 0 5px;font-size:1.15rem}.template-dialog p{margin:0 0 14px;color:var(--muted);font-size:.82rem}.template-dialog .actions{margin-top:14px;justify-content:flex-end}.mail-dialog>.actions{position:sticky;bottom:-18px;margin-left:-18px;margin-right:-18px;margin-bottom:-18px;padding:14px 18px;background:var(--card);border-top:1px solid var(--line)}.modal-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:13px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);font-size:.84rem}.modal-summary strong{display:block;margin-top:2px;color:var(--ink)}.recipient-presets,.email-history{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.email-history button{padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:var(--soft);color:var(--ink);cursor:pointer}.email-history button span{margin-left:7px;color:var(--muted)}.modal-error{min-height:18px;margin-top:8px;color:var(--danger);font-size:.82rem;font-weight:700}.hidden{display:none!important}.environment-pill{display:inline-flex;margin-top:3px;padding:3px 8px;border:1px solid #93c5fd;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:.75rem;font-weight:800}.environment-pill.production{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}html[data-theme="dark"] .environment-pill{background:#152849;color:#93c5fd}html[data-theme="dark"] .environment-pill.production{background:#451a1a;color:#fca5a5}@media(max-width:560px){.modal-summary{grid-template-columns:1fr}}
+    .template-backdrop{position:fixed;inset:0;z-index:9999;display:none;place-items:center;padding:18px;background:rgba(2,6,23,.62);overflow-y:auto}.template-backdrop.show{display:grid}.template-dialog{width:min(460px,100%);max-height:calc(100vh - 36px);overflow:auto;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.template-dialog.mail-dialog{width:min(680px,100%);scrollbar-gutter:stable}.template-dialog h2{margin:0 0 5px;font-size:1.15rem}.template-dialog p{margin:0 0 14px;color:var(--muted);font-size:.82rem}.template-dialog .actions{margin-top:14px;justify-content:flex-end}.mail-dialog>.actions{position:sticky;bottom:-18px;margin-left:-18px;margin-right:-18px;margin-bottom:-18px;padding:14px 18px;background:var(--card);border-top:1px solid var(--line)}.modal-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:13px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);font-size:.84rem}.modal-summary strong{display:block;margin-top:2px;color:var(--ink)}.recipient-presets,.email-history{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.email-history button{padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:var(--soft);color:var(--ink);cursor:pointer}.email-history button span{margin-left:7px;color:var(--muted)}.modal-error{min-height:18px;margin-top:8px;color:var(--danger);font-size:.82rem;font-weight:700}.hidden{display:none!important}.billing-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:3px}.environment-pill,.folio-counter{display:inline-flex;padding:3px 8px;border:1px solid #93c5fd;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:.75rem;font-weight:800}.environment-pill.production{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}.folio-counter{gap:5px}.folio-counter small{font-size:.68rem;font-weight:650;color:var(--muted)}.folio-counter.warning{border-color:#fbbf24;background:#fffbeb;color:#92400e}.folio-counter.empty{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}html[data-theme="dark"] .environment-pill,html[data-theme="dark"] .folio-counter{background:#152849;color:#93c5fd}html[data-theme="dark"] .environment-pill.production,html[data-theme="dark"] .folio-counter.empty{background:#451a1a;color:#fca5a5}html[data-theme="dark"] .folio-counter.warning{background:#422006;color:#fcd34d}@media(max-width:560px){.modal-summary{grid-template-columns:1fr}.folio-counter small{display:none}}
   </style>
 </head>
 <body data-billing-environment="{{ facturama_environment|default('sandbox') }}">
@@ -69,11 +69,16 @@
     <div class="top">
       <div>
         <div class="title">Nueva Factura</div>
-        {% if facturama_environment == 'production' %}
-          <div class="environment-pill production">Facturama · PRODUCCIÓN REAL</div>
-        {% else %}
-          <div class="environment-pill">Facturama · ambiente de pruebas</div>
-        {% endif %}
+        <div class="billing-meta">
+          {% if facturama_environment == 'production' %}
+            <div class="environment-pill production">Facturama · PRODUCCIÓN REAL</div>
+          {% else %}
+            <div class="environment-pill">Facturama · ambiente de pruebas</div>
+          {% endif %}
+          <div id="folioCounter" class="folio-counter" title="Folios disponibles en el paquete API de Facturama">
+            <span>Folios API:</span><strong id="folioCount">consultando…</strong><small id="folioExpiry"></small>
+          </div>
+        </div>
       </div>
       <div class="actions" style="display:flex;gap:8px">
         <button class="theme-toggle" type="button" id="theme-toggle" role="switch"><span class="theme-track"><span class="theme-knob"></span></span><span id="theme-label">Modo</span></button>
@@ -150,11 +155,16 @@
           <option value="PPD">PPD - Parcialidades</option>
         </select>
 
-        <label>Serie (opcional)</label>
-        <input id="serie" placeholder="Dejar vacía para usar la serie de Facturama" />
+        <label>Serie de factura</label>
+        <input id="serie" value="HSC" maxlength="25" />
+        <div class="pill">Facturama asignará automáticamente el siguiente folio de la serie.</div>
 
         <label>Número de orden de compra (opcional)</label>
         <input id="ordenCompra" maxlength="100" placeholder="Ej. OC-45872" autocomplete="off" />
+
+        <label>Folio de cotización (opcional)</label>
+        <input id="folioCotizacion" maxlength="40" placeholder="Ej. 1594" autocomplete="off" />
+        <div class="pill">Solo es una referencia visible en el PDF; no modifica el folio de la factura.</div>
 
         <label>Alias para guardar la factura (opcional)</label>
         <input id="aliasFactura" maxlength="100" placeholder="Ej. Mantenimiento septiembre" autocomplete="off" />
@@ -310,6 +320,33 @@
     const themeToggle = document.getElementById('theme-toggle');
     const syncTheme = ()=>{const dark=document.documentElement.dataset.theme==='dark';themeToggle.setAttribute('aria-checked',String(dark));document.getElementById('theme-label').textContent=dark?'Oscuro':'Claro'};
     themeToggle.onclick=()=>{const next=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=next;localStorage.setItem('hsc-theme',next);syncTheme()};syncTheme();
+
+    async function loadApiFolioBalance(){
+      const counter = document.getElementById('folioCounter');
+      const count = document.getElementById('folioCount');
+      const expiry = document.getElementById('folioExpiry');
+      try{
+        const response = await fetch('/api/facturama/subscription', {headers:{'Accept':'application/json'}});
+        const data = await response.json();
+        if(!response.ok || !data.ok || !Number.isFinite(Number(data.current_folios))) throw new Error('Saldo no disponible');
+        const remaining = Number(data.current_folios);
+        count.textContent = `${remaining} disponibles`;
+        counter.classList.toggle('empty', remaining === 0);
+        counter.classList.toggle('warning', remaining > 0 && remaining <= 10);
+        if(data.expiration_date){
+          const rawDate = String(data.expiration_date).slice(0, 10);
+          const parts = rawDate.split('-').map(Number);
+          const label = parts.length === 3 && parts.every(Number.isFinite)
+            ? new Date(parts[0], parts[1] - 1, parts[2]).toLocaleDateString('es-MX', {day:'numeric', month:'short', year:'numeric'})
+            : rawDate;
+          expiry.textContent = `· vence ${label}`;
+        }else expiry.textContent = '';
+      }catch(_error){
+        count.textContent = 'no disponible';
+        expiry.textContent = '';
+      }
+    }
+    loadApiFolioBalance();
 
     function replaceCatalog(selectId, rows, preferred, fallbackValue=''){
       const select = document.getElementById(selectId);
@@ -677,7 +714,7 @@
         document.getElementById('email').value=receiver.email||'';
         document.getElementById('metodo').value=conditions.payment_method||'PUE';
         await loadFiscalCatalogs(receiver.tax_id||'',{regimen:String(receiver.tax_system||''),uso:receiver.cfdi_use||'G03',forma:conditions.payment_form||'03',metodo:conditions.payment_method||'PUE'});
-        document.getElementById('serie').value=conditions.serie||'';
+        document.getElementById('serie').value=conditions.serie||'HSC';
         document.getElementById('ordenCompra').value=conditions.purchase_order||'';
         document.getElementById('aliasFactura').value=conditions.invoice_alias||'';
         document.getElementById('cond').value=conditions.notes||'';
@@ -773,6 +810,7 @@
         if(!data.ok){ msg(false, data.error?.message || 'Cotización no disponible'); return; }
         pageQuoteFolio = String(data.folio || '').trim();
         pageClientName = String(data.cliente || '').trim();
+        document.getElementById('folioCotizacion').value = pageQuoteFolio;
         const clientSelect = document.getElementById('cliente');
         if(clientSelect && [...clientSelect.options].some(option=>option.value === pageClientName)){
           clientSelect.value = pageClientName;
@@ -930,8 +968,8 @@
         alias_factura: (document.getElementById('aliasFactura').value||'').trim(),
         condiciones: document.getElementById('cond').value||'',
         source_quote_id: pageQuoteId,
+        quote_folio: (document.getElementById('folioCotizacion').value||'').trim(),
         cliente_carpeta: document.getElementById('cliente').value || pageClientName || document.getElementById('razon').value,
-        folio: pageQuoteFolio,
         request_id: stampRequestId,
         confirmed: true,
         retenciones: {
@@ -968,12 +1006,13 @@
           document.getElementById('btnPago').style.display = data.complementos_disponibles ? '' : 'none';
           document.getElementById('accionesPost').style.display = 'flex';
           stampButton.textContent = '✅ Timbrada';
+          loadApiFolioBalance();
           const driveState = data.drive_backup?.ok ? 'ok' : 'fail';
           sessionStorage.removeItem(stampStorageKey);
           stampedEmailContext = {
             id: data.invoice_id,
             email: (document.getElementById('email').value || '').trim(),
-            folio: data.internal_folio || pageQuoteFolio || data.uuid,
+            folio: data.internal_folio || data.uuid,
             rfc: (document.getElementById('rfc').value || '').trim().toUpperCase(),
             cliente: document.getElementById('cliente').value || pageClientName || document.getElementById('razon').value,
             driveState
