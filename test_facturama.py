@@ -12,6 +12,8 @@ class FacturamaIntegrationTests(unittest.TestCase):
     VALID_UUID = "2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb"
     SAMPLE_XML = b'''<?xml version="1.0" encoding="UTF-8"?>
 <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Serie="HSC" Folio="1370" Fecha="2026-09-09T10:00:00" Moneda="MXN" SubTotal="100.00" Total="116.00" FormaPago="03" MetodoPago="PUE" LugarExpedicion="76240" NoCertificado="00001000000706708942" Sello="SELLODEPRUEBA12345678"><cfdi:Emisor Rfc="SICH930611DV7" Nombre="HECTOR SILVA CID" RegimenFiscal="621"/><cfdi:Receptor Rfc="URE180429TM6" Nombre="UNIVERSIDAD ROBOTICA ESPANOLA" DomicilioFiscalReceptor="86991" RegimenFiscalReceptor="601" UsoCFDI="G03"/><cfdi:Conceptos><cfdi:Concepto ClaveProdServ="85121600" Descripcion="Servicio de prueba" Unidad="Servicio" Cantidad="1" ValorUnitario="100.00" Importe="100.00"/></cfdi:Conceptos><cfdi:Impuestos TotalImpuestosTrasladados="16.00"/><cfdi:Complemento><tfd:TimbreFiscalDigital Version="1.1" UUID="2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb" FechaTimbrado="2026-09-09T10:01:00" NoCertificadoSAT="00001000000500003456" RfcProvCertif="AAA010101AAA" SelloCFD="SELLOCFD" SelloSAT="SELLOSAT"/></cfdi:Complemento></cfdi:Comprobante>'''
+    SAMPLE_PAYMENT_XML = b'''<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:pago20="http://www.sat.gob.mx/Pagos20" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="4.0" Fecha="2026-09-10T12:00:00" Moneda="XXX" SubTotal="0" Total="0" TipoDeComprobante="P"><cfdi:Complemento><pago20:Pagos Version="2.0"><pago20:Pago FechaPago="2026-09-10T10:00:00" FormaDePagoP="03" MonedaP="MXN" Monto="60.00"><pago20:DoctoRelacionado IdDocumento="2c4c8e4a-b337-4bf6-ade2-cd972f8a93bb" MonedaDR="MXN" NumParcialidad="1" ImpSaldoAnt="116.00" ImpPagado="60.00" ImpSaldoInsoluto="56.00"/></pago20:Pago></pago20:Pagos><tfd:TimbreFiscalDigital Version="1.1" UUID="215cec43-7e57-44ac-9d63-b54bbc4745bd"/></cfdi:Complemento></cfdi:Comprobante>'''
 
     def setUp(self):
         billing._STAMP_RESULTS.clear()
@@ -363,7 +365,10 @@ class FacturamaIntegrationTests(unittest.TestCase):
             "Status": "active", "CfdiType": "P",
             "Receiver": {"Name": "CLIENTE JULIO", "Rfc": "URE180429TM6"},
         }]
-        with patch.object(billing, "_facturama_period_rows", return_value=rows) as period_rows:
+        with (
+            patch.object(billing, "_facturama_period_rows", return_value=rows) as period_rows,
+            patch.object(billing, "_sync_facturama_payment_rows", return_value={"found": 1, "imported": 0, "removed": 0, "errors": 0}),
+        ):
             response = self.client.get("/api/facturas/list?month=2026-07")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["data"][0]["customer_name"], "CLIENTE JULIO")
@@ -409,6 +414,69 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(client["pending_total"], 76)
         self.assertEqual(client["pending_complements"], 1)
         self.assertEqual(client["complements"][0]["partiality_number"], 1)
+
+    def test_imported_payment_xml_is_linked_to_original_invoice(self):
+        entries = billing._parse_payment_complement_xml(
+            self.SAMPLE_PAYMENT_XML, rep_id="rep-imported", status="active"
+        )
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["invoice_uuid"], self.VALID_UUID)
+        self.assertEqual(entries[0]["amount"], 60.0)
+        self.assertEqual(entries[0]["remaining_balance"], 56.0)
+        self.assertEqual(entries[0]["partiality_number"], 1)
+
+    def test_facturama_payment_sync_is_idempotent(self):
+        rows = [{
+            "Id": "rep-imported", "Uuid": "215cec43-7e57-44ac-9d63-b54bbc4745bd",
+            "CfdiType": "P", "Status": "active", "Date": "2026-09-10T12:00:00",
+        }]
+        saved = {}
+
+        def save_index(value):
+            saved.clear()
+            saved.update(value)
+
+        encoded = base64.b64encode(self.SAMPLE_PAYMENT_XML).decode("ascii")
+        with self.app.app_context():
+            with (
+                patch.object(billing, "_read_index", side_effect=lambda: saved.copy()),
+                patch.object(billing, "_write_index", side_effect=save_index) as write_index,
+                patch.object(billing, "_fm_request", return_value={"Content": encoded}) as download,
+            ):
+                first = billing._sync_facturama_payment_rows(rows)
+                second = billing._sync_facturama_payment_rows(rows)
+        self.assertEqual(first["imported"], 1)
+        self.assertEqual(second["imported"], 0)
+        self.assertEqual(saved[self.VALID_UUID]["remaining_balance"], 56.0)
+        self.assertEqual(download.call_count, 1)
+        write_index.assert_called_once()
+
+    def test_canceled_imported_payment_is_removed_from_balance_index(self):
+        rep_uuid = "215cec43-7e57-44ac-9d63-b54bbc4745bd"
+        saved = {self.VALID_UUID.upper(): {"payments": [{
+            "rep_id": "rep-canceled", "rep_uuid": rep_uuid,
+            "amount": 60.0, "remaining_balance": 56.0,
+            "partiality_number": 1, "status": "active",
+        }]}}
+
+        def save_index(value):
+            saved.clear()
+            saved.update(value)
+
+        rows = [{
+            "Id": "rep-canceled", "Uuid": rep_uuid,
+            "CfdiType": "P", "Status": "cancelado",
+        }]
+        with self.app.app_context():
+            with (
+                patch.object(billing, "_read_index", side_effect=lambda: saved.copy()),
+                patch.object(billing, "_write_index", side_effect=save_index),
+                patch.object(billing, "_fm_request") as download,
+            ):
+                result = billing._sync_facturama_payment_rows(rows)
+        self.assertEqual(result["removed"], 1)
+        self.assertEqual(saved, {})
+        download.assert_not_called()
 
     def test_billing_balance_combines_income_collection_expenses_and_pending(self):
         issued = [{

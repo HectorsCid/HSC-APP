@@ -489,7 +489,7 @@ async function load(){
         <td>${(x.date||'').slice(0,10)}</td>
         <td>$${Number(x.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
         <td>${x.status||''}</td>
-        <td><span class="badge gray">${x.payment_method||''}</span></td>
+        <td><span class="badge gray" ${x.type==='P'?'title="El método PUE/PPD no aplica en complementos de pago"':''}>${x.type==='P'?'N/A':(x.payment_method||'—')}</span></td>
         <td>${tipoBadge(x.type)}</td>
         <td>${pagoStatus}</td>
         <td class="td-uuid" title="${x.uuid||''}">${x.uuid||''}</td>

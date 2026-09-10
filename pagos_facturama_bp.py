@@ -103,7 +103,7 @@ def _complete_customer(invoice):
 
 def _invoice_payment_state(invoice):
     normalized = _complete_customer(invoice)
-    record = billing._read_index().get(normalized["uuid"])
+    record = billing._payment_record(billing._read_index(), normalized["uuid"])
     summary = billing._payment_summary(record, normalized["total"])
     normalized.update({
         "payment_count": summary["payment_count"],
@@ -302,7 +302,7 @@ def crear_pago():
         invoice = _facturama_detail(invoice_id)
         index = billing._read_index()
         normalized = _complete_customer(invoice)
-        summary = billing._payment_summary(index.get(normalized["uuid"]), normalized["total"])
+        summary = billing._payment_summary(billing._payment_record(index, normalized["uuid"]), normalized["total"])
         if summary["paid"] or summary["remaining_balance"] <= 0:
             return jsonify({"ok": False, "stage": "validation", "field": "amount",
                             "error": "Esta factura ya está totalmente pagada."}), 409
@@ -324,8 +324,9 @@ def crear_pago():
             "partiality_number": body["partiality_number"],
             "date": str(body.get("date") or datetime.now().isoformat(timespec="seconds")),
         }
-        prior = billing._payment_entries(index.get(normalized["uuid"]))
-        index[normalized["uuid"]] = {
+        payment_key = billing._payment_index_key(index, normalized["uuid"])
+        prior = billing._payment_entries(index.get(payment_key))
+        index[payment_key] = {
             "status": "active", "payments": [*prior, payment_entry],
             "paid_amount": round(summary["paid_amount"] + payment_entry["amount"], 2),
             "remaining_balance": float(unpaid),

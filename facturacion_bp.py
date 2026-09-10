@@ -6,6 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from base64 import b64decode
 from threading import Lock
 from uuid import uuid4
+from xml.etree import ElementTree as ET
 import hashlib
 import os
 import json
@@ -37,6 +38,7 @@ FACTURAMA_SANDBOX_BASE = "https://apisandbox.facturama.mx"
 FACTURAMA_PRODUCTION_BASE = "https://api.facturama.mx"
 
 _STAMP_LOCK = Lock()
+_PAYMENT_SYNC_LOCK = Lock()
 _STAMP_RESULTS = {}
 _FM_PROFILE_CACHE = None
 _FM_BRANCH_CACHE = None
@@ -252,6 +254,148 @@ def _payment_summary(record, invoice_total=0):
         "remaining_balance": remaining,
         "paid": bool(payments) and remaining <= 0,
     }
+
+
+def _payment_index_key(index, invoice_uuid):
+    """Conserva una sola clave aunque el UUID cambie entre mayúsculas y minúsculas."""
+    wanted = str(invoice_uuid or "").strip()
+    folded = wanted.casefold()
+    return next((key for key in (index or {}) if str(key).strip().casefold() == folded), wanted)
+
+
+def _payment_record(index, invoice_uuid):
+    """Busca el UUID sin depender de si Facturama lo devolvió en mayúsculas."""
+    if not isinstance(index, dict):
+        return None
+    wanted = str(invoice_uuid or "").strip().casefold()
+    if not wanted:
+        return None
+    return index.get(_payment_index_key(index, invoice_uuid))
+
+
+def _xml_local_name(tag):
+    return str(tag or "").rsplit("}", 1)[-1]
+
+
+def _parse_payment_complement_xml(xml_bytes, *, rep_id="", status="active", fallback_date=""):
+    """Extrae cada documento relacionado de un REP 1.0/2.0 del SAT."""
+    root = ET.fromstring(xml_bytes)
+    if str(root.attrib.get("TipoDeComprobante") or "").upper() != "P":
+        return []
+    stamp = next((node for node in root.iter() if _xml_local_name(node.tag) == "TimbreFiscalDigital"), None)
+    rep_uuid = str((stamp.attrib if stamp is not None else {}).get("UUID") or "").strip()
+    cfdi_date = str(root.attrib.get("Fecha") or fallback_date or "").strip()
+    entries = []
+    for payment in (node for node in root.iter() if _xml_local_name(node.tag) == "Pago"):
+        payment_date = str(payment.attrib.get("FechaPago") or cfdi_date).strip()
+        payment_form = str(payment.attrib.get("FormaDePagoP") or "").strip()
+        for related in (node for node in payment.iter() if _xml_local_name(node.tag) == "DoctoRelacionado"):
+            invoice_uuid = str(related.attrib.get("IdDocumento") or "").strip()
+            if not _valid_cfdi_uuid(invoice_uuid):
+                continue
+            try:
+                amount = float(_money(related.attrib.get("ImpPagado")))
+                previous = float(_money(related.attrib.get("ImpSaldoAnt")))
+                remaining = float(_money(related.attrib.get("ImpSaldoInsoluto")))
+                partiality = max(1, int(related.attrib.get("NumParcialidad") or 1))
+            except (TypeError, ValueError):
+                continue
+            entries.append({
+                "invoice_uuid": invoice_uuid,
+                "rep_id": str(rep_id or ""),
+                "rep_uuid": rep_uuid,
+                "status": status,
+                "amount": amount,
+                "previous_balance": previous,
+                "remaining_balance": remaining,
+                "partiality_number": partiality,
+                "date": payment_date,
+                "payment_form": payment_form,
+                "imported": True,
+            })
+    return entries
+
+
+def _sync_facturama_payment_rows(rows):
+    """Incorpora REP importados en Facturama al índice que alimenta saldos y balance."""
+    payment_rows = []
+    for item in rows or []:
+        normalized = _facturama_invoice_row(item)
+        if normalized.get("type") == "P" and normalized.get("id"):
+            payment_rows.append((item, normalized))
+    if not payment_rows:
+        return {"found": 0, "imported": 0, "removed": 0, "errors": 0}
+
+    with _PAYMENT_SYNC_LOCK:
+        index = _read_index()
+        changed = False
+        imported = removed = errors = 0
+        for _raw, row in payment_rows:
+            rep_id = str(row.get("id") or "").strip()
+            rep_uuid = str(row.get("uuid") or "").strip()
+            status_text = str(row.get("status") or "").strip().lower()
+            canceled = any(word in status_text for word in ("cancel", "canceled", "cancelado"))
+
+            if canceled:
+                for invoice_uuid, record in list(index.items()):
+                    prior = _payment_entries(record)
+                    kept = [entry for entry in prior if not (
+                        str(entry.get("rep_id") or "") == rep_id
+                        or (rep_uuid and str(entry.get("rep_uuid") or "").casefold() == rep_uuid.casefold())
+                    )]
+                    if len(kept) == len(prior):
+                        continue
+                    removed += len(prior) - len(kept)
+                    changed = True
+                    if kept:
+                        index[invoice_uuid] = {
+                            "status": "active", "payments": kept,
+                            "paid_amount": round(sum(float(entry.get("amount") or 0) for entry in kept), 2),
+                            "remaining_balance": kept[-1].get("remaining_balance"),
+                        }
+                    else:
+                        index.pop(invoice_uuid, None)
+                continue
+
+            already_known = any(
+                str(entry.get("rep_id") or "") == rep_id
+                or (rep_uuid and str(entry.get("rep_uuid") or "").casefold() == rep_uuid.casefold())
+                for record in index.values() for entry in _payment_entries(record)
+            )
+            if already_known:
+                continue
+            try:
+                xml_bytes = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{rep_id}"))
+                relations = _parse_payment_complement_xml(
+                    xml_bytes, rep_id=rep_id, status="active", fallback_date=row.get("date") or ""
+                )
+            except Exception as exc:
+                errors += 1
+                current_app.logger.warning("No se pudo sincronizar el REP %s: %s", rep_id, exc)
+                continue
+            for relation in relations:
+                invoice_uuid = relation.pop("invoice_uuid")
+                matching_key = _payment_index_key(index, invoice_uuid)
+                prior = list(_payment_entries(index.get(matching_key)))
+                duplicate = any(
+                    str(entry.get("rep_id") or "") == rep_id
+                    and int(entry.get("partiality_number") or 1) == relation["partiality_number"]
+                    for entry in prior
+                )
+                if duplicate:
+                    continue
+                prior.append(relation)
+                prior.sort(key=lambda entry: (int(entry.get("partiality_number") or 1), str(entry.get("date") or "")))
+                index[matching_key] = {
+                    "status": "active", "payments": prior,
+                    "paid_amount": round(sum(float(entry.get("amount") or 0) for entry in prior), 2),
+                    "remaining_balance": prior[-1].get("remaining_balance"),
+                }
+                imported += 1
+                changed = True
+        if changed:
+            _write_index(index)
+        return {"found": len(payment_rows), "imported": imported, "removed": removed, "errors": errors}
 
 def _rep_cancellation_state(rep_id):
     """Ubica un REP y confirma que sea la última parcialidad de su factura."""
@@ -1362,12 +1506,13 @@ def api_list_facturas():
                 rows = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
         except requests.HTTPError as exc:
             return jsonify({"ok": False, "provider": "facturama", "error": _http_error_detail(exc)}), 400
+        payment_sync = _sync_facturama_payment_rows(rows)
         out = []
         paid_idx = _read_index()
         deliveries = read_email_deliveries()
         for inv in rows:
             normalized = _facturama_invoice_row(inv)
-            summary = _payment_summary(paid_idx.get(normalized["uuid"]), normalized["total"])
+            summary = _payment_summary(_payment_record(paid_idx, normalized["uuid"]), normalized["total"])
             normalized.update({
                 "paid": normalized["type"] == "I" and summary["paid"],
                 "payment_count": summary["payment_count"] if normalized["type"] == "I" else 0,
@@ -1378,7 +1523,7 @@ def api_list_facturas():
             # Los intentos rechazados pueden tener Id, pero no folio fiscal.
             if normalized["id"] and _valid_cfdi_uuid(normalized["uuid"]):
                 out.append(normalized)
-        return jsonify({"ok": True, "provider": "facturama", "data": out}), 200
+        return jsonify({"ok": True, "provider": "facturama", "data": out, "payment_sync": payment_sync}), 200
     try:
         rs = _fa_get("/invoices", params={"limit": 100})
     except requests.HTTPError as e:
@@ -1390,7 +1535,7 @@ def api_list_facturas():
     for inv in rs.get("data", []):
         cust = inv.get("customer") or {}
         uuid = inv.get("uuid")
-        summary = _payment_summary(paid_idx.get(uuid), inv.get("total"))
+        summary = _payment_summary(_payment_record(paid_idx, uuid), inv.get("total"))
         paid = summary["paid"] if inv.get("type") == "I" else False
         out.append({
             "id": inv.get("id"),
@@ -1421,6 +1566,7 @@ def api_billing_clients():
     except requests.HTTPError as exc:
         return jsonify({"ok": False, "error": _http_error_detail(exc)}), 400
     source = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
+    payment_sync = _sync_facturama_payment_rows(source)
     payments = _read_index()
     deliveries = read_email_deliveries()
     groups = {}
@@ -1438,7 +1584,7 @@ def api_billing_clients():
         })
         status_text = str(invoice.get("status") or "").lower()
         active = not any(word in status_text for word in ("cancel", "canceled", "cancelado"))
-        summary = _payment_summary(payments.get(invoice["uuid"]), invoice.get("total"))
+        summary = _payment_summary(_payment_record(payments, invoice["uuid"]), invoice.get("total"))
         total = round(float(invoice.get("total") or 0), 2)
         pending = summary["remaining_balance"] if invoice.get("payment_method") == "PPD" and active else 0.0
         collected = (total if invoice.get("payment_method") == "PUE" else summary["paid_amount"]) if active else 0.0
@@ -1468,7 +1614,7 @@ def api_billing_clients():
         group["invoices"].sort(key=lambda row: str(row.get("date") or ""), reverse=True)
         group["complements"].sort(key=lambda row: str(row.get("date") or ""), reverse=True)
     result.sort(key=lambda row: (row["pending_complements"] == 0, -row["pending_total"], row["name"].casefold()))
-    return jsonify({"ok": True, "data": result}), 200
+    return jsonify({"ok": True, "data": result, "payment_sync": payment_sync}), 200
 
 
 def _facturama_period_rows(document_type, start_date, end_date):
@@ -1527,6 +1673,7 @@ def api_billing_balance():
     except requests.HTTPError as exc:
         return jsonify({"ok": False, "error": _http_error_detail(exc)}), 400
 
+    payment_sync = _sync_facturama_payment_rows(issued_source)
     payments = _read_index()
     issued_total = collected_total = pending_total = received_total = 0.0
     invoice_count = expense_count = pending_complements = 0
@@ -1559,7 +1706,7 @@ def api_billing_balance():
             continue
         if invoice.get("type") != "I":
             continue
-        summary = _payment_summary(payments.get(invoice.get("uuid")), total)
+        summary = _payment_summary(_payment_record(payments, invoice.get("uuid")), total)
         collected = total if invoice.get("payment_method") == "PUE" else summary["paid_amount"]
         pending = summary["remaining_balance"] if invoice.get("payment_method") == "PPD" else 0.0
         issued_total += total
@@ -1614,6 +1761,7 @@ def api_billing_balance():
         "pending_complements": pending_complements, "clients": clients,
         "client_options": sorted(client_options.values(), key=lambda row: row["name"].casefold()),
         "top_clients": clients[:8], "pending_invoices": pending_rows, "series": series_rows,
+        "payment_sync": payment_sync,
     }}), 200
 
 
