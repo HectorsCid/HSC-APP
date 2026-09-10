@@ -21,7 +21,25 @@
 
     header{ text-align:center; margin-bottom:14px; } /* ⬅️ menos espacio debajo del logo */
     header img{ height:300px; display:block; margin:0 auto 8px; } /* logo más grande (tu 300) */
-    header h1{ margin:6px 0 4px; font-weight:700; letter-spacing:.2px; }
+    header h1.home-title{
+      display:inline-block;
+      width:auto;
+      margin:10px auto 18px!important;
+      padding:10px 22px 11px!important;
+      border:1px solid rgba(93,124,166,.34)!important;
+      border-radius:10px;
+      background:rgba(5,13,29,.2)!important;
+      color:#edf4ff!important;
+      font-family:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif!important;
+      font-size:clamp(1.85rem,4vw,2.5rem);
+      font-weight:650!important;
+      font-variant-caps:normal!important;
+      letter-spacing:-.018em!important;
+      box-shadow:inset 0 2px 6px rgba(0,0,0,.34),inset 0 -1px 0 rgba(255,255,255,.04),0 1px 0 rgba(255,255,255,.025);
+    }
+    header h1.home-title::after{display:none!important}
+    header h1 span{color:inherit}
+    .eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#8da8cb}
     header p{ margin:0; color:var(--muted); }
 
     .grid{
@@ -52,7 +70,6 @@
     .btn.sm{ padding:7px 10px; font-size:.9rem; border-radius:10px; }
 
     .footer{ text-align:center; margin-top:18px; color:var(--muted); font-size:.95rem; }
-    .app-status{margin-top:12px;color:var(--muted);font-size:.86rem;line-height:1.4}
     .logout{position:fixed;left:14px;top:14px;z-index:20}
 
     /* ==== Semáforo fijo arriba-derecha ==== */
@@ -75,7 +92,7 @@
     .pill.ok   { color:#a7f3d0; border-color:rgba(34,197,94,.35); background:rgba(34,197,94,.12); }
     .pill.err  { color:#fecaca; border-color:rgba(248,113,113,.4); background:rgba(248,113,113,.12); }
     .pill.warn { color:#fde68a; border-color:rgba(251,191,36,.4); background:rgba(251,191,36,.12); }
-    .st-actions{ display:flex; gap:8px; justify-content:flex-end; }
+    .st-actions{ display:flex; gap:7px; justify-content:flex-end; flex-wrap:wrap; }
     .st-foot{ margin-top:8px; font-size:.8rem; color:var(--muted); text-align:right; }
     @media(max-width:700px){
       body{display:block;padding:14px 12px 24px}
@@ -105,6 +122,8 @@
       </ul>
       <div class="st-actions">
         <button class="btn sm" id="btnTest" type="button" title="Probar conexión sin modificar datos">🔍 Probar</button>
+        <button class="btn sm" type="button" data-pwa-install title="Instalar HSC en este dispositivo">⬇ Instalar</button>
+        <button class="btn sm" type="button" data-pwa-notify title="Enviar una notificación de prueba">🔔 Aviso</button>
         {% if not IS_RENDER %}
         <a class="btn sm" href="/oauth/renew-local" title="Abrir renovación OAuth (solo local)">🔑 Renovar</a>
         {% endif %}
@@ -114,10 +133,11 @@
       </div>
     </aside>
 
-    <header>
+    <header data-title-centered>
       <img src="{{ url_for('static', filename='img/logo2.png') }}" alt="HSC" onerror="this.style.display='none'">
-      <h1>Panel HSC</h1>
-      <p>Elige qué quieres hacer</p>
+      <div class="eyebrow">Centro de operaciones</div>
+      <h1 class="home-title">Panel HSC</h1>
+      <p>Todo tu trabajo, en un solo lugar</p>
     </header>
 
     <section class="grid">
@@ -148,16 +168,6 @@
     <a class="btn primary" href="/facturacion">Abrir facturación</a>
   </div>
 </article>
-
-      <article class="card">
-        <h2>Aplicación HSC</h2>
-        <p>Instala este panel en tu teléfono y comprueba que pueda mostrar avisos.</p>
-        <div class="actions">
-          <button class="btn primary" type="button" data-pwa-install>⬇ Instalar HSC</button>
-          <button class="btn" type="button" data-pwa-notify>🔔 Probar aviso</button>
-        </div>
-        <div class="app-status" data-pwa-status>Preparando el modo aplicación…</div>
-      </article>
 
     </section>
 
