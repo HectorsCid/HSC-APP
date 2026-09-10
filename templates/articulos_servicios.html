@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
   <script src="{{ url_for('static', filename='hsc_theme.js') }}"></script>
   <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
+  {% include "_pwa_head.html" %}
 </head>
 <body><main class="wrap">
   <div class="top"><div><h1>Artículos y servicios</h1><div class="muted">Tu catálogo rápido para facturación</div></div><div class="actions"><a class="btn" href="/facturacion">← Facturas</a><a class="btn primary" href="/facturas/nueva">Nueva factura</a></div></div>

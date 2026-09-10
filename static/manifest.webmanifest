@@ -1,0 +1,49 @@
+{
+  "id": "/inicio-app",
+  "name": "HSC Mantenimiento Industrial",
+  "short_name": "HSC",
+  "description": "Cotizaciones, facturación y reportes de servicio HSC.",
+  "lang": "es-MX",
+  "start_url": "/inicio-app?origen=app",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#091221",
+  "theme_color": "#0f2f5f",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/static/img/hsc-app-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/img/hsc-app-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Cotizaciones",
+      "short_name": "Cotizar",
+      "url": "/cotizaciones",
+      "icons": [{"src": "/static/img/hsc-app-192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Facturación",
+      "short_name": "Facturas",
+      "url": "/facturacion",
+      "icons": [{"src": "/static/img/hsc-app-192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Reportes",
+      "short_name": "Reportes",
+      "url": "/reportes",
+      "icons": [{"src": "/static/img/hsc-app-192.png", "sizes": "192x192"}]
+    }
+  ]
+}

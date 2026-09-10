@@ -36,6 +36,27 @@ class ManualReportsTests(unittest.TestCase):
         self.assertIn('name="presion_cto1"', text)
         self.assertIn('name="obs_electronico"', text)
 
+    def test_both_forms_use_the_unified_clients_catalog(self):
+        catalog = {
+            "CLIENTE NUEVO": {
+                "direccion": "Parque Industrial 10",
+                "atencion": ["Ing. Ana"],
+                "contactos": [{"nombre": "Sr. Luis", "correo": "luis@example.com"}],
+            }
+        }
+        old_sheet_client = {"ID-1": {"NombreCliente": "CLIENTE VIEJO DE APPSHEET"}}
+        with (
+            patch.dict(hsc.app.config, {"HSC_CLIENTES_PROVIDER": lambda: catalog}),
+            patch.dict(reports._clientes_cache, {"by_id": old_sheet_client}, clear=False),
+        ):
+            general = self.client.get("/reportes/diag/nuevo?tipo=trabajo").get_data(as_text=True)
+            refrigeration = self.client.get("/reportes/diag/nuevo?tipo=refrigeracion").get_data(as_text=True)
+        for html in (general, refrigeration):
+            self.assertIn("CLIENTE NUEVO", html)
+            self.assertIn("Ing. Ana", html)
+            self.assertIn("Sr. Luis", html)
+            self.assertNotIn("CLIENTE VIEJO DE APPSHEET", html)
+
     def test_autosave_assigns_work_report_folio(self):
         with (
             patch.object(reports, "_diag_read_records", return_value=[]),

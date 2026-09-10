@@ -52,6 +52,7 @@
     .btn.sm{ padding:7px 10px; font-size:.9rem; border-radius:10px; }
 
     .footer{ text-align:center; margin-top:18px; color:var(--muted); font-size:.95rem; }
+    .app-status{margin-top:12px;color:var(--muted);font-size:.86rem;line-height:1.4}
     .logout{position:fixed;left:14px;top:14px;z-index:20}
 
     /* ==== Semáforo fijo arriba-derecha ==== */
@@ -76,9 +77,19 @@
     .pill.warn { color:#fde68a; border-color:rgba(251,191,36,.4); background:rgba(251,191,36,.12); }
     .st-actions{ display:flex; gap:8px; justify-content:flex-end; }
     .st-foot{ margin-top:8px; font-size:.8rem; color:var(--muted); text-align:right; }
+    @media(max-width:700px){
+      body{display:block;padding:14px 12px 24px}
+      .wrap{margin:0 auto}
+      .logout{position:static;display:inline-flex;margin-bottom:12px}
+      .status-box{position:static;width:100%;margin-bottom:14px}
+      header img{width:min(240px,78vw);height:auto}
+      .grid{grid-template-columns:1fr;gap:12px}
+      .card{padding:16px}
+    }
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
   <script src="{{ url_for('static', filename='hsc_theme.js') }}"></script>
+  {% include "_pwa_head.html" %}
 </head>
 <body>
   <a class="btn sm logout" href="/cerrar-sesion">Cerrar sesión</a>
@@ -137,6 +148,16 @@
     <a class="btn primary" href="/facturacion">Abrir facturación</a>
   </div>
 </article>
+
+      <article class="card">
+        <h2>Aplicación HSC</h2>
+        <p>Instala este panel en tu teléfono y comprueba que pueda mostrar avisos.</p>
+        <div class="actions">
+          <button class="btn primary" type="button" data-pwa-install>⬇ Instalar HSC</button>
+          <button class="btn" type="button" data-pwa-notify>🔔 Probar aviso</button>
+        </div>
+        <div class="app-status" data-pwa-status>Preparando el modo aplicación…</div>
+      </article>
 
     </section>
 

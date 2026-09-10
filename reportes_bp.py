@@ -1777,57 +1777,75 @@ def _diag_pick(rec, *keys):
     return ""
 
 def _diag_clientes_catalogo():
-    """Catalogo liviano para el formulario manual; nunca modifica Clientes."""
+    """Usa el mismo catalogo unificado de Clientes para ambos reportes manuales."""
     clientes = {}
 
-    # Primero reutiliza clientes.json, que ya usa el cotizador y no requiere
-    # una consulta adicional a Google para abrir el formulario.
-    for path in (
-        Path(current_app.root_path) / "clientes.json",
-        Path(current_app.root_path) / "data" / "clientes.json",
-    ):
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            continue
+    def agregar_catalogo(raw):
         if not isinstance(raw, dict):
-            continue
+            return
         for nombre, info in raw.items():
             info = info if isinstance(info, dict) else {}
             nombre = str(nombre or "").strip()
             if not nombre:
                 continue
-            atenciones = info.get("atencion", [])
+            atenciones = info.get("atencion") or info.get("atenciones") or []
             if isinstance(atenciones, str):
                 atenciones = [atenciones]
+            atenciones = [str(x).strip() for x in atenciones if str(x).strip()]
+            for contacto in info.get("contactos") or []:
+                if not isinstance(contacto, dict):
+                    continue
+                contacto_nombre = _diag_pick(contacto, "nombre", "atencion", "atención", "contacto")
+                if contacto_nombre and contacto_nombre not in atenciones:
+                    atenciones.append(contacto_nombre)
             clientes[nombre.casefold()] = {
                 "nombre": nombre,
-                "direccion": str(info.get("direccion") or "").strip(),
-                "atenciones": [str(x).strip() for x in atenciones if str(x).strip()],
+                "direccion": _diag_pick(info, "direccion", "dirección", "domicilio"),
+                "atenciones": atenciones,
             }
 
-    # Completa con la hoja Clientes solo si ya esta en cache o no existe el
-    # catalogo local. Asi abrir el formulario no agrega consultas innecesarias.
-    if not clientes and not _clientes_cache.get("by_id"):
-        _load_clientes_cache()
-    for rec in _clientes_cache.get("by_id", {}).values():
-        if not isinstance(rec, dict):
-            continue
-        nombre = _diag_pick(rec, "NombreCliente", "Nombre", "Cliente", "RazonSocial", "Razón Social")
-        if not nombre:
-            continue
-        key = nombre.casefold()
-        actual = clientes.get(key, {"nombre": nombre, "direccion": "", "atenciones": []})
-        direccion = _diag_pick(rec, "Direccion", "Dirección", "Domicilio")
-        atencion = _diag_pick(
-            rec, "Atencion", "Atención", "Solicitante", "Responsable",
-            "NombreContacto", "Contacto"
-        )
-        if direccion:
-            actual["direccion"] = direccion
-        if atencion and atencion not in actual["atenciones"]:
-            actual["atenciones"].append(atencion)
-        clientes[key] = actual
+    # La memoria sincronizada con clientes.json de Drive es la fuente vigente
+    # para cotizaciones, facturacion y ahora tambien para ambos reportes.
+    provider = current_app.config.get("HSC_CLIENTES_PROVIDER")
+    if callable(provider):
+        try:
+            agregar_catalogo(provider())
+        except Exception:
+            pass
+
+    # Respaldo local de arranque si la memoria aun no fue sincronizada.
+    if not clientes:
+        for path in (
+            Path(current_app.root_path) / "clientes.json",
+            Path(current_app.root_path) / "data" / "clientes.json",
+        ):
+            try:
+                agregar_catalogo(json.loads(path.read_text(encoding="utf-8")))
+            except Exception:
+                continue
+            if clientes:
+                break
+
+    # La hoja antigua de AppSheet queda solo como ultimo respaldo; no se mezcla
+    # con la lista principal para evitar dos catalogos diferentes.
+    if not clientes:
+        if not _clientes_cache.get("by_id"):
+            _load_clientes_cache()
+        for rec in _clientes_cache.get("by_id", {}).values():
+            if not isinstance(rec, dict):
+                continue
+            nombre = _diag_pick(rec, "NombreCliente", "Nombre", "Cliente", "RazonSocial", "Razón Social")
+            if not nombre:
+                continue
+            atencion = _diag_pick(
+                rec, "Atencion", "Atención", "Solicitante", "Responsable",
+                "NombreContacto", "Contacto"
+            )
+            clientes[nombre.casefold()] = {
+                "nombre": nombre,
+                "direccion": _diag_pick(rec, "Direccion", "Dirección", "Domicilio"),
+                "atenciones": [atencion] if atencion else [],
+            }
 
     return sorted(clientes.values(), key=lambda c: c["nombre"].casefold())
 

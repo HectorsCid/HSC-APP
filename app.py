@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file, abort, jsonify, current_app, session
+from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file, send_from_directory, abort, jsonify, current_app, session
 
 app = Flask(__name__)
 @app.get("/ping_root")
@@ -236,7 +236,7 @@ def cerrar_sesion():
 @app.before_request
 def _require_app_login():
     endpoint = request.endpoint or ""
-    if endpoint in {"acceso", "healthz", "health", "health_check", "ping_root"}:
+    if endpoint in {"acceso", "healthz", "health", "health_check", "ping_root", "pwa_manifest", "pwa_service_worker"}:
         return None
     if endpoint == "static" and (
         request.path.startswith("/static/img/")
@@ -270,7 +270,23 @@ def _security_headers(response):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     if request.path.startswith(("/factur", "/api/", "/pagos", "/clientes", "/acceso")):
         response.headers.setdefault("Cache-Control", "no-store, private")
+    if request.path == "/service-worker.js":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Service-Worker-Allowed"] = "/"
     return response
+
+
+@app.get("/manifest.webmanifest")
+def pwa_manifest():
+    response = send_from_directory(app.static_folder, "manifest.webmanifest")
+    response.headers["Content-Type"] = "application/manifest+json"
+    response.headers["Cache-Control"] = "public, max-age=3600"
+    return response
+
+
+@app.get("/service-worker.js")
+def pwa_service_worker():
+    return send_from_directory(app.static_folder, "service-worker.js", mimetype="application/javascript")
 
 app.register_blueprint(reportes_bp)
 start_auto_report_monitor(app)
@@ -723,6 +739,7 @@ def _plan_importacion_clientes(rows, existentes):
     return planned
 
 clientes_predefinidos = cargar_clientes()
+app.config["HSC_CLIENTES_PROVIDER"] = lambda: clientes_predefinidos
 
 
 def _resolver_cliente_catalogo(nombre="", rfc=""):
