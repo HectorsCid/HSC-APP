@@ -73,8 +73,8 @@
     .pdf-footer .gridf { display: grid; grid-template-columns: 1fr; gap: 6px; text-align:center; }
 
     /* Altos para llenar mejor P1 (ajustables) */
-    .mh-correctivo{ min-height: 10.5em; max-height: 12.8em; overflow: hidden; }
-    .mh-partes{    min-height: 12.5em; max-height: 14.8em; overflow: hidden; }
+    .mh-correctivo{ min-height:10.5em; overflow-wrap:anywhere; }
+    .mh-partes{ min-height:12.5em; overflow-wrap:anywhere; }
 
     /* Encabezado P2 */
     .p2-title{ font-size:13px; text-transform:uppercase; letter-spacing:.25px; margin:0 0 6px; color:#111827; }
@@ -95,6 +95,8 @@
     }
     .actions-bar .btn:hover{ background:#f9fafb }
     .actions-bar .btn.primary{ border-color:#22c55e; background:#ecfdf5; font-weight:700; }
+    .signatures{display:grid;grid-template-columns:1fr 1fr;gap:34px;margin-top:48px;break-inside:avoid;page-break-inside:avoid}
+    .signature{padding-top:6px;border-top:1px solid #6b7280;text-align:center}.signature strong{display:block;min-height:14px;font-weight:500}.signature span{display:block;margin-top:2px;font-size:10.5px;color:#6b7280}
     @media print { .actions-bar { display: none !important; } }
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
@@ -104,16 +106,24 @@
 
   <!-- Barra de acciones (vista previa) -->
   {% set _id = datos.get('ID_Reporte') or '' %}
+  {% if show_toolbar is not defined or show_toolbar %}
   <div class="actions-bar">
     <div class="left">
       <strong>Reporte:</strong> {{ _id }} · {{ datos.get('NombreEquipo','') }}
     </div>
     <div class="right">
-      <a class="btn" href="{{ url_for('reportes.reportes_inicio') }}">← Regresar</a>
-      <a class="btn" href="{{ url_for('reportes.reportes_editar', id_reporte=_id) }}">Editar</a>
-      <a class="btn primary" href="{{ url_for('reportes.reportes_pdf', id_reporte=_id) }}">Generar PDF</a>
+      <a class="btn" href="{{ url_for('reportes.reportes_inicio') }}">← Panel de reportes</a>
+      {% if manual_token %}
+        <a class="btn" href="{{ url_for('reportes.diag_nuevo', token=manual_token) }}">Editar</a>
+        <a class="btn" href="{{ url_for('reportes.diag_pdf', token=manual_token) }}?dl=1">Descargar PDF</a>
+        <a class="btn primary" href="{{ url_for('reportes.diag_pdf', token=manual_token) }}">Finalizar y guardar</a>
+      {% else %}
+        <a class="btn" href="{{ url_for('reportes.reportes_editar', id_reporte=_id) }}">Editar</a>
+        <a class="btn primary" href="{{ url_for('reportes.reportes_pdf', id_reporte=_id) }}">Generar PDF</a>
+      {% endif %}
     </div>
   </div>
+  {% endif %}
 
   <!-- ========= PÁGINA 1 ========= -->
   <div class="wrap page">
@@ -311,7 +321,7 @@
         <div class="photos">
           {% for f in fotos if f %}
             <div class="ph">
-              <img src="{{ f if embed_for_pdf else url_for('reportes.reportes_imgproxy', url=f, _external=True) }}" alt="foto {{ loop.index }}">
+              <img src="{{ f if embed_for_pdf or manual_token else url_for('reportes.reportes_imgproxy', url=f, _external=True) }}" alt="foto {{ loop.index }}">
             </div>
           {% endfor %}
           {% for _ in range(6 - (fotos|length)) %}
@@ -323,6 +333,12 @@
           {% for _ in range(6) %}
             <div class="ph"><div class="placeholder">Sin foto</div></div>
           {% endfor %}
+        </div>
+      {% endif %}
+      {% if manual_token %}
+        <div class="signatures">
+          <div class="signature"><strong>{{ datos.get('TecnicoResponsable','') }}</strong><span>Nombre y firma del técnico</span></div>
+          <div class="signature"><strong>&nbsp;</strong><span>Nombre y firma de conformidad del cliente</span></div>
         </div>
       {% endif %}
     </div>

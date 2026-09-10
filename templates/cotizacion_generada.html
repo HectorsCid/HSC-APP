@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cotización {{ folio }} generada · HSC</title>
+  <script>
+    (() => {
+      const saved = localStorage.getItem('hsc-theme');
+      document.documentElement.dataset.theme = saved || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    })();
+  </script>
+  <style>
+    :root{
+      --bg:#f3f7fc;--card:#fff;--ink:#10213a;--muted:#64748b;--line:#d9e3ef;
+      --blue:#2563eb;--blue-dark:#1d4ed8;--green:#16a34a;--soft:#eef5ff;
+      --shadow:0 22px 60px rgba(15,35,65,.13);--button:#fff;
+    }
+    html[data-theme="dark"]{
+      --bg:#091221;--card:#111d30;--ink:#edf4ff;--muted:#a7b5c9;--line:#2d405d;
+      --blue:#3b82f6;--blue-dark:#60a5fa;--green:#22c55e;--soft:#172946;
+      --shadow:0 24px 70px rgba(0,0,0,.35);--button:#17243a;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:grid;place-items:center;padding:28px 18px;background:
+      radial-gradient(circle at 12% 8%,rgba(37,99,235,.13),transparent 34%),var(--bg);
+      color:var(--ink);font-family:"Segoe UI",Roboto,system-ui,-apple-system,sans-serif}
+    .shell{width:min(860px,100%)}
+    .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;color:var(--muted);font-size:14px}
+    .brand{font-size:20px;font-weight:900;letter-spacing:.04em;color:var(--ink)}
+    .theme{border:1px solid var(--line);border-radius:999px;background:var(--button);color:var(--ink);padding:8px 12px;cursor:pointer;font-weight:700}
+    .card{position:relative;overflow:hidden;background:var(--card);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow)}
+    .accent{height:7px;background:linear-gradient(90deg,var(--blue),#38bdf8)}
+    .content{padding:clamp(24px,5vw,48px)}
+    .check{width:58px;height:58px;border-radius:18px;display:grid;place-items:center;background:rgba(34,197,94,.13);color:var(--green);font-size:29px;font-weight:900;margin-bottom:20px}
+    h1{font-size:clamp(28px,4vw,40px);line-height:1.08;margin:0 0 10px;letter-spacing:-.03em}
+    .lead{margin:0;color:var(--muted);font-size:17px}
+    .summary{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center;margin:28px 0;padding:18px 20px;border:1px solid var(--line);border-radius:16px;background:var(--soft)}
+    .summary small{display:block;color:var(--muted);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+    .summary strong{font-size:18px;overflow-wrap:anywhere}.folio{font-size:25px!important;color:var(--blue)}
+    .section-title{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:900;margin:25px 0 10px}
+    .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .btn{min-height:48px;display:flex;align-items:center;justify-content:center;gap:9px;border:1px solid var(--line);border-radius:13px;background:var(--button);color:var(--ink);text-decoration:none;font:inherit;font-weight:800;cursor:pointer;padding:11px 15px;text-align:center}
+    .btn:hover{border-color:var(--blue);transform:translateY(-1px)}
+    .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}.btn.primary:hover{background:var(--blue-dark)}
+    .btn.whatsapp{background:#16a34a;border-color:#16a34a;color:#fff}
+    .btn.wide{grid-column:1/-1}
+    .note{display:none;margin-top:12px;padding:11px 13px;border-radius:11px;background:var(--soft);color:var(--muted);font-size:13px}
+    .note.show{display:block}
+    .footer{margin-top:20px;color:var(--muted);font-size:12px;text-align:center}
+    @media(max-width:600px){body{padding:12px}.topbar{padding:2px 4px}.content{padding:24px 18px}.actions{grid-template-columns:1fr}.btn.wide{grid-column:auto}.summary{grid-template-columns:1fr}.folio{text-align:left}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <div class="topbar">
+      <div class="brand">HSC</div>
+      <button class="theme" id="themeToggle" type="button">◐ Cambiar tema</button>
+    </div>
+    <section class="card">
+      <div class="accent"></div>
+      <div class="content">
+        <div class="check">✓</div>
+        <h1>Cotización lista</h1>
+        <p class="lead">El PDF se generó correctamente y quedó respaldado en Google Drive.</p>
+
+        <div class="summary">
+          <div><small>Cliente</small><strong>{{ cliente }}</strong></div>
+          <div><small>Folio</small><strong class="folio">{{ folio }}</strong></div>
+        </div>
+
+        <div class="section-title">Documento</div>
+        <div class="actions">
+          <a class="btn primary" href="{{ pdf_descarga_url }}" download="{{ nombre_archivo }}">⬇ Descargar PDF</a>
+          <button class="btn whatsapp" id="sharePdf" type="button">▣ Compartir PDF por WhatsApp</button>
+          <a class="btn" href="{{ archivo_url }}" target="_blank" rel="noopener">↗ Abrir PDF en Drive</a>
+          <a class="btn" href="{{ carpeta_url }}" target="_blank" rel="noopener">📁 Abrir carpeta en Drive</a>
+        </div>
+        <div class="note" id="shareNote" role="status"></div>
+
+        <div class="section-title">Continuar</div>
+        <div class="actions">
+          <a class="btn" href="{{ url_for('inicio') }}">← Volver a esta cotización</a>
+          <a class="btn" href="{{ url_for('ui_inicio_cotizacion') }}">▤ Ir a cotizaciones</a>
+          <a class="btn" href="{{ url_for('inicio_app') }}">⌂ Panel principal</a>
+          <a class="btn" href="{{ url_for('nueva_cotizacion') }}">＋ Nueva cotización</a>
+        </div>
+        <div class="footer">{{ nombre_archivo }}</div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const themeButton = document.getElementById('themeToggle');
+    themeButton.addEventListener('click', () => {
+      const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem('hsc-theme', next);
+    });
+
+    const shareButton = document.getElementById('sharePdf');
+    const shareNote = document.getElementById('shareNote');
+    const pdfUrl = {{ pdf_descarga_url|tojson }};
+    const fileName = {{ nombre_archivo|tojson }};
+    const shareTitle = {{ ('Cotización HSC ' ~ folio)|tojson }};
+
+    function showNote(message) {
+      shareNote.textContent = message;
+      shareNote.classList.add('show');
+    }
+
+    shareButton.addEventListener('click', async () => {
+      const original = shareButton.textContent;
+      shareButton.disabled = true;
+      shareButton.textContent = 'Preparando PDF…';
+      try {
+        const response = await fetch(pdfUrl);
+        if (!response.ok) throw new Error('No se pudo obtener el PDF');
+        const blob = await response.blob();
+        const file = new File([blob], fileName, {type: 'application/pdf'});
+        if (navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))) {
+          await navigator.share({title: shareTitle, text: shareTitle, files:[file]});
+          showNote('PDF compartido. Puedes elegir WhatsApp u otra aplicación compatible.');
+        } else {
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = fileName;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+          showNote('Tu navegador no permite adjuntar el PDF directamente. Ya se descargó para que lo arrastres a WhatsApp.');
+        }
+      } catch (error) {
+        if (error && error.name === 'AbortError') {
+          showNote('No se compartió el archivo. Puedes intentarlo nuevamente.');
+        } else {
+          showNote('No se pudo preparar el archivo. Usa el botón Descargar PDF.');
+        }
+      } finally {
+        shareButton.disabled = false;
+        shareButton.textContent = original;
+      }
+    });
+  </script>
+</body>
+</html>

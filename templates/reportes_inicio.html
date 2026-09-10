@@ -44,6 +44,11 @@
     .btn-nav{border-color:rgba(59,130,246,.28);background:rgba(59,130,246,.08);color:var(--blue)}
     .btn-nav:hover{box-shadow:0 6px 16px rgba(59,130,246,.14)}
     .btn-nav-primary{border-color:rgba(34,197,94,.45);background:var(--accent-bg);color:var(--accent-text)}
+    .report-types{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 20px}
+    .type-card{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px;border:1px solid var(--border);border-radius:18px;background:var(--card);color:var(--text);text-decoration:none;box-shadow:0 10px 24px var(--shadow);transition:.18s}
+    .type-card:hover{transform:translateY(-2px);border-color:#3b82f6}.type-card strong{display:block;font-size:17px}.type-card span{display:block;margin-top:4px;color:var(--muted);font-size:12px}.type-icon{font-size:28px}
+    .manual-card{grid-column:1/-1}.record-status{display:inline-flex;width:max-content;margin-top:3px;padding:3px 7px;border:1px solid var(--border);border-radius:999px;font-size:11px;color:var(--muted)}.record-status.done{color:#bbf7d0;border-color:#22c55e}
+    .danger-form{margin:0}.btn-danger{border-color:rgba(248,113,113,.4);background:rgba(127,29,29,.16);color:var(--danger-text)}
 
     .page-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px}
     .page-head p{margin-bottom:0}
@@ -67,7 +72,7 @@
     .cliente{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
     .actions{display:flex;gap:8px;flex-shrink:0}
     @media (max-width:900px){
-      .grid{grid-template-columns:1fr}
+      .grid,.report-types{grid-template-columns:1fr}
       .eq,.cliente{max-width:60vw}
     }
     .flash{margin:8px 0;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--danger-text)}
@@ -127,8 +132,8 @@
   <div class="wrap">
     <div class="page-head">
       <div>
-        <h1>Generar reporte</h1>
-        <p>Elige un <strong>ID_Reporte</strong> o ingrésalo manualmente.</p>
+        <h1>Reportes HSC</h1>
+        <p>Crea, continúa y consulta reportes de servicio.</p>
       </div>
       <button class="theme-toggle" type="button" id="theme-toggle" role="switch" aria-label="Cambiar modo de color">
         <span class="theme-track" aria-hidden="true"><span class="theme-knob"></span></span>
@@ -144,10 +149,39 @@
       {% endif %}
     {% endwith %}
 
+    <div class="report-types">
+      <a class="type-card" href="{{ url_for('reportes.diag_nuevo', tipo='trabajo') }}">
+        <div><strong>Reporte de trabajo</strong><span>Formato flexible para cualquier servicio.</span></div><div class="type-icon">📝</div>
+      </a>
+      <a class="type-card" href="{{ url_for('reportes.diag_nuevo', tipo='refrigeracion') }}">
+        <div><strong>Reporte de refrigeración</strong><span>Equipo, lecturas y revisión técnica con el formato de Sheets.</span></div><div class="type-icon">❄️</div>
+      </a>
+    </div>
+
+    <div class="card manual-card" style="margin-bottom:20px">
+      <div class="header-row"><div><h3 style="margin:0">Borradores y reportes manuales</h3><div class="muted">Se respaldan en Drive y puedes continuarlos después.</div></div><a class="btn btn-nav" href="{{ url_for('reportes.reportes_inicio', refresh_manual=1) }}">Actualizar</a></div>
+      <div class="list">
+        {% for report in manual_records %}
+          <div class="item">
+            <div class="left"><div class="icon">{{ '❄️' if report.report_type == 'refrigeracion' else '📝' }}</div><div class="meta"><div class="id">{{ report.folio }}</div><div class="cliente">{{ report.datos.cliente or 'Sin cliente' }} · {{ report.datos.fecha or '' }}</div><div class="eq">{{ report.datos.equipo if report.report_type == 'refrigeracion' else report.datos.trabajo_solicitado }}</div><span class="record-status {{ 'done' if report.status == 'completed' else '' }}">{{ 'Terminado' if report.status == 'completed' else 'Borrador guardado' }}</span></div></div>
+            <div class="actions">
+              <a class="btn" href="{{ url_for('reportes.diag_nuevo', token=report.token) }}">{{ 'Editar' if report.status == 'completed' else 'Continuar' }}</a>
+              <a class="btn" href="{{ url_for('reportes.diag_prev_guardado', token=report.token) }}">Vista previa</a>
+              {% if report.pdf_url %}<a class="btn btn-nav" href="{{ report.pdf_url }}" target="_blank" rel="noopener">PDF</a>{% endif %}
+              {% if report.status != 'completed' %}<form class="danger-form" method="post" action="{{ url_for('reportes.diag_eliminar', token=report.token) }}" onsubmit="return confirm('¿Eliminar este borrador?')"><button class="btn btn-danger" type="submit">Eliminar</button></form>{% endif %}
+            </div>
+          </div>
+        {% else %}
+          <div class="empty">Todavía no hay reportes manuales guardados.</div>
+        {% endfor %}
+      </div>
+    </div>
+
     <div class="grid">
       <!-- Izquierda: Ingreso manual (con autocomplete) -->
       <div class="card">
-        <h3>Ingresar manual</h3>
+        <h3>Reportes provenientes de Sheets</h3>
+        <p class="muted">Consulta un reporte existente mediante su ID.</p>
         <form id="form-manual" method="post" action="">
           <div class="row">
             <input id="id-manual" type="text" name="id_reporte"
@@ -159,7 +193,6 @@
         </form>
         <div class="nav-actions">
           <a class="btn btn-nav" href="{{ url_for('inicio_app') }}">← Panel HSC</a>
-          <a class="btn btn-nav btn-nav-primary" href="{{ url_for('reportes.diag_nuevo') }}">Generar reporte de trabajo</a>
           <a class="btn btn-nav" href="{{ url_for('reportes.reportes_debug') }}">Debug de reportes</a>
         </div>
 
@@ -204,7 +237,7 @@
       <!-- Derecha: Últimos 10 -->
       <div class="card">
         <div class="header-row">
-          <h3>Reportes recientes</h3>
+          <h3>Recientes de Sheets</h3>
           {% if recent_loaded %}
             <a class="btn" href="{{ url_for('reportes.reportes_inicio') }}">Ocultar</a>
           {% else %}

@@ -29,6 +29,7 @@ from pdf_runtime import (
     release_pdf_memory,
     rss_megabytes,
 )
+from cfdi_drive import backup_json_file, load_json_file
 
 # ----------------------------------------------------------------------
 # Blueprint
@@ -55,6 +56,8 @@ _LAST10_CACHE = {"ts": 0, "items": []}
 
 # Carpeta raíz de Drive para guardar PDFs (04. Reportes)
 REPORTES_ROOT_ID = os.environ.get("REPORTES_ROOT_ID", "13x9OPrPJNcT3E17lcyISbpL5uE6az5ty")
+DIAG_RECORDS_FILENAME = os.environ.get("REPORTES_MANUALES_FILENAME", "reportes_manuales.json")
+_DIAG_RECORDS_LOCK = threading.RLock()
 
 # Generación automática. El monitor consulta los IDs recientes y usa
 # HistorialPDF como registro durable para no volver a procesarlos.
@@ -821,6 +824,29 @@ def _upsert_pdf(parent_id: str, filename: str, pdf_bytes: bytes) -> str:
 
     return _drive_files_call(operation)
 
+
+def _upsert_bytes(parent_id: str, filename: str, content: bytes, mimetype: str) -> str:
+    """Crea o reemplaza un archivo auxiliar dentro de una carpeta de reporte."""
+    safe_name = _sanitize_name(filename)
+    safe_q = safe_name.replace("'", "\\'")
+    q = "name='{}' and '{}' in parents and trashed=false".format(safe_q, parent_id)
+
+    def operation(drive):
+        existing = drive.files().list(
+            q=q, spaces="drive", fields="files(id,name)", pageSize=1
+        ).execute().get("files", [])
+        media = MediaIoBaseUpload(io.BytesIO(content), mimetype=mimetype, resumable=False)
+        if existing:
+            file_id = existing[0]["id"]
+            drive.files().update(fileId=file_id, media_body=media).execute()
+            return file_id
+        metadata = {"name": safe_name, "parents": [parent_id], "mimeType": mimetype}
+        return drive.files().create(
+            body=metadata, media_body=media, fields="id"
+        ).execute()["id"]
+
+    return _drive_files_call(operation)
+
 def _normalize_ronda(val: str) -> str | None:
     v = (val or "").strip()
     if not v:
@@ -919,10 +945,15 @@ def reportes_inicio():
             else:
                 flash(f"No se pudo leer Google Sheets: {e}")
 
+    manual_records = sorted(
+        _diag_read_records(refresh=request.args.get("refresh_manual") == "1"),
+        key=lambda row: row.get("updated_at", ""), reverse=True,
+    )[:30]
     return render_template(
         "reportes_inicio.html",
         ultimos_items=ultimos_items,
         recent_loaded=recent_loaded,
+        manual_records=manual_records,
     )
 
 @reportes_bp.route("/reportes/prev/<id_reporte>")
@@ -1534,6 +1565,192 @@ def reportes_debug():
 # ====== BLOQUE: Formato manual Servicio/Diagnóstico (diag) ============
 # ======================================================================
 
+_DIAG_DATA_FIELDS = (
+    "cliente", "departamento", "atencion", "fecha", "fecha_fin", "direccion",
+    "trabajo_solicitado", "tipo_mantenimiento", "descripcion_falla", "trabajo",
+    "observaciones", "notas", "equipo", "ubicacion", "marca", "modelo",
+    "no_serie", "no_inventario", "no_contrato", "responsable", "vigencia",
+    "tecnico_responsable", "presion_cto1", "presion_cto2", "temperatura_cto1",
+    "temperatura_cto2", "amperaje1", "amperaje2", "obs_amperaje",
+    "tol_presion", "tol_temperatura", "tol_amperaje", "obs_electrico",
+    "obs_electronico", "obs_mecanico",
+)
+
+
+def _diag_type(value):
+    return "refrigeracion" if str(value or "").strip().lower() == "refrigeracion" else "trabajo"
+
+
+def _diag_records_path():
+    path = Path(current_app.root_path) / "data" / DIAG_RECORDS_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _diag_read_records(*, refresh=False):
+    """Lee el índice durable de reportes manuales; Drive repone Render al reiniciar."""
+    path = _diag_records_path()
+    local = []
+    try:
+        local = json.loads(path.read_text("utf-8")) if path.exists() else []
+        if not isinstance(local, list):
+            local = []
+    except Exception:
+        local = []
+    if (refresh or not path.exists()) and REPORTES_ROOT_ID:
+        try:
+            remote = load_json_file(DIAG_RECORDS_FILENAME, parent_id=REPORTES_ROOT_ID, default=[])
+            if isinstance(remote, list):
+                local = remote
+                tmp = path.with_suffix(".tmp")
+                tmp.write_text(json.dumps(local, ensure_ascii=False, indent=2), encoding="utf-8")
+                tmp.replace(path)
+        except Exception as exc:
+            current_app.logger.warning("No se pudo leer el índice de reportes manuales: %s", exc)
+    return local
+
+
+def _diag_write_records(records, *, backup=True):
+    path = _diag_records_path()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+    if backup and REPORTES_ROOT_ID:
+        try:
+            backup_json_file(DIAG_RECORDS_FILENAME, records, parent_id=REPORTES_ROOT_ID)
+            return True
+        except Exception as exc:
+            current_app.logger.warning("Borrador local guardado, pero Drive no respondió: %s", exc)
+            return False
+    return True
+
+
+def _diag_next_folio(records, report_type, year=None):
+    year = int(year or date.today().year)
+    prefix = "RF" if _diag_type(report_type) == "refrigeracion" else "RT"
+    pattern = re.compile(rf"^{prefix}-{year}-(\d+)$")
+    numbers = []
+    for row in records:
+        match = pattern.fullmatch(str(row.get("folio") or "").strip())
+        if match:
+            numbers.append(int(match.group(1)))
+    return f"{prefix}-{year}-{(max(numbers, default=0) + 1):04d}"
+
+
+def _diag_clean_data(source):
+    get = source.get if hasattr(source, "get") else lambda key, default="": default
+    data = {key: str(get(key, "") or "").strip() for key in _DIAG_DATA_FIELDS}
+    data["fecha"] = data["fecha"] or date.today().isoformat()
+    return data
+
+
+def _diag_clean_parts(raw_parts):
+    parts = []
+    for item in raw_parts or []:
+        if not isinstance(item, dict):
+            continue
+        description = str(item.get("descripcion") or item.get("description") or "").strip()
+        quantity = str(item.get("cantidad") or item.get("quantity") or "").strip()
+        if description:
+            parts.append({"descripcion": description, "cantidad": quantity})
+        if len(parts) >= 10:
+            break
+    return parts
+
+
+def _diag_store_payload(payload, *, status=None, backup=True):
+    """Inserta o actualiza un reporte manual sin mezclarlo con los de Sheets."""
+    token = str(payload.get("token") or "").strip()
+    if not re.fullmatch(r"[0-9a-f]{32}", token):
+        token = uuid.uuid4().hex
+    report_type = _diag_type(payload.get("report_type"))
+    now = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    with _DIAG_RECORDS_LOCK:
+        records = _diag_read_records()
+        index = next((i for i, row in enumerate(records) if row.get("token") == token), None)
+        previous = records[index] if index is not None else {}
+        report_date = str((payload.get("datos") or {}).get("fecha") or "")
+        year = int(report_date[:4]) if re.fullmatch(r"\d{4}.*", report_date) else date.today().year
+        folio = previous.get("folio") or payload.get("folio") or _diag_next_folio(records, report_type, year)
+        record = {
+            **previous,
+            **payload,
+            "token": token,
+            "folio": folio,
+            "report_type": report_type,
+            "status": status or previous.get("status") or "draft",
+            "created_at": previous.get("created_at") or now,
+            "updated_at": now,
+        }
+        record.setdefault("datos", {})
+        record.setdefault("partes", [])
+        record.setdefault("fotos", previous.get("fotos", []))
+        if record["status"] == "completed":
+            record["completed_at"] = previous.get("completed_at") or now
+        if index is None:
+            records.append(record)
+        else:
+            records[index] = record
+        drive_ok = _diag_write_records(records, backup=backup)
+    record["drive_backup"] = drive_ok
+    return record
+
+
+def _diag_record(token):
+    if not re.fullmatch(r"[0-9a-f]{32}", str(token or "")):
+        return None
+    with _DIAG_RECORDS_LOCK:
+        return next((row for row in _diag_read_records() if row.get("token") == token), None)
+
+
+def _diag_refrigeration_data(payload):
+    data = payload.get("datos", {})
+    parts = payload.get("partes", [])
+    return {
+        "ID_Reporte": payload.get("folio", ""), "Cliente": data.get("cliente", ""),
+        "Direccion": data.get("direccion", ""), "Departamento": data.get("departamento", ""),
+        "Responsable": data.get("responsable") or data.get("atencion", ""),
+        "NombreEquipo": data.get("equipo", ""), "Ubicacion": data.get("ubicacion", ""),
+        "Marca": data.get("marca", ""), "Modelo": data.get("modelo", ""),
+        "NoSerie": data.get("no_serie", ""), "NoInventario": data.get("no_inventario", ""),
+        "NoContrato": data.get("no_contrato", ""), "FechaInicio": data.get("fecha", ""),
+        "FechaFin": data.get("fecha_fin", ""), "Vigencia": data.get("vigencia", ""),
+        "MtoCorrectivo": data.get("trabajo", ""),
+        "PartesUtilizadas": "\n".join(
+            f"{part.get('cantidad')} — {part.get('descripcion')}" if part.get("cantidad") else part.get("descripcion", "")
+            for part in parts if part.get("descripcion")
+        ),
+        "TolPresion": data.get("tol_presion") or "± 5 psi",
+        "TolTemperatura": data.get("tol_temperatura") or "± 1 °C",
+        "TolAmperaje": data.get("tol_amperaje") or "± 1 A",
+        "PresionCto1": data.get("presion_cto1", ""), "PresionCto2": data.get("presion_cto2", ""),
+        "TempCto1": data.get("temperatura_cto1", ""), "TempCto2": data.get("temperatura_cto2", ""),
+        "Amperaje1": data.get("amperaje1", ""), "Amperaje2": data.get("amperaje2", ""),
+        "ObsAmperaje": data.get("obs_amperaje", ""), "ObsElectrico": data.get("obs_electrico", ""),
+        "OBsElectrónico": data.get("obs_electronico", ""), "ObsMecanico": data.get("obs_mecanico", ""),
+        "Notas": data.get("notas") or data.get("observaciones", ""),
+        "TecnicoResponsable": data.get("tecnico_responsable", ""),
+    }
+
+
+def _diag_render(payload, *, show_toolbar, embed_for_pdf):
+    logo_web, logo_fs = _logo_paths()
+    if _diag_type(payload.get("report_type")) == "refrigeracion":
+        photos = [photo.get("fs_uri") if embed_for_pdf else photo.get("web_path")
+                  for photo in payload.get("fotos", []) if isinstance(photo, dict)]
+        return render_template(
+            "reporte_formato.html", datos=_diag_refrigeration_data(payload), fotos=photos,
+            embed_for_pdf=embed_for_pdf, logo_web=logo_web, logo_fs=logo_fs,
+            show_toolbar=show_toolbar, manual_token=payload.get("token"),
+        )
+    return render_template(
+        "reporte_diag_pdf.html", show_toolbar=show_toolbar, embed_for_pdf=embed_for_pdf,
+        token=payload.get("token"), folio=payload.get("folio", ""),
+        datos=payload.get("datos", {}), partes=payload.get("partes", []),
+        total_partes_fmt=_mxn(payload.get("total_partes", 0)), fotos=payload.get("fotos", []),
+        logo_web=logo_web, logo_fs=logo_fs,
+    )
+
 def _diag_paths():
     """Rutas base para subidas y PDFs locales del manual."""
     base_static = Path(current_app.root_path) / "static"
@@ -1615,10 +1832,13 @@ def _diag_clientes_catalogo():
     return sorted(clientes.values(), key=lambda c: c["nombre"].casefold())
 
 def _diag_payload_temporal(token):
-    """Carga una vista previa existente para continuar editandola."""
+    """Carga un reporte durable o, por compatibilidad, una vista previa temporal."""
     token = (token or "").strip()
     if not re.fullmatch(r"[0-9a-f]{32}", token):
         return None
+    stored = _diag_record(token)
+    if stored:
+        return stored
     _, _, tmp_dir = _diag_paths()
     meta_path = tmp_dir / f"{token}.json"
     if not meta_path.exists():
@@ -1635,17 +1855,61 @@ def diag_nuevo():
     hoy = date.today().isoformat()
     token = (request.args.get("token") or "").strip()
     payload = _diag_payload_temporal(token) if token else None
+    report_type = _diag_type((payload or {}).get("report_type") or request.args.get("tipo"))
     if token and not payload:
         flash("La vista previa anterior ya vencio. Inicia nuevamente el reporte.", "warning")
     return render_template(
         "reporte_diag_form.html",
         fecha_hoy=hoy,
         edit_token=token if payload else "",
+        report_type=report_type,
+        report_folio=(payload or {}).get("folio", "Nuevo borrador"),
         form_data=(payload or {}).get("datos", {}),
         form_partes=(payload or {}).get("partes", []),
         form_fotos=(payload or {}).get("fotos", []),
         clientes_catalogo=_diag_clientes_catalogo(),
     )
+
+
+@reportes_bp.post("/reportes/diag/borrador")
+def diag_guardar_borrador():
+    body = request.get_json(silent=True) or {}
+    data = _diag_clean_data(body.get("datos") or {})
+    parts = _diag_clean_parts(body.get("partes") or [])
+    previous = _diag_payload_temporal(body.get("token"))
+    payload = {
+        "token": body.get("token"), "report_type": _diag_type(body.get("report_type")),
+        "datos": data, "partes": parts, "total_partes": 0,
+        "fotos": (previous or {}).get("fotos", []),
+    }
+    record = _diag_store_payload(payload, status="draft")
+    return jsonify({
+        "ok": True, "token": record["token"], "folio": record["folio"],
+        "updated_at": record["updated_at"], "drive_backup": record.get("drive_backup", False),
+    })
+
+
+@reportes_bp.get("/reportes/diag/prev/<token>")
+def diag_prev_guardado(token):
+    payload = _diag_payload_temporal(token)
+    if not payload:
+        flash("No encontré ese reporte o borrador.", "warning")
+        return redirect(url_for("reportes.reportes_inicio"))
+    return _diag_render(payload, show_toolbar=True, embed_for_pdf=False)
+
+
+@reportes_bp.post("/reportes/diag/<token>/eliminar")
+def diag_eliminar(token):
+    if not re.fullmatch(r"[0-9a-f]{32}", str(token or "")):
+        abort(404)
+    with _DIAG_RECORDS_LOCK:
+        records = _diag_read_records()
+        remaining = [row for row in records if row.get("token") != token]
+        if len(remaining) == len(records):
+            abort(404)
+        _diag_write_records(remaining)
+    flash("Borrador eliminado.", "success")
+    return redirect(url_for("reportes.reportes_inicio"))
 
 @reportes_bp.post("/reportes/diag/prev")
 def diag_prev():
@@ -1653,24 +1917,10 @@ def diag_prev():
     edit_token = (request.form.get("edit_token") or "").strip()
     previous_payload = _diag_payload_temporal(edit_token)
     token = edit_token if previous_payload else uuid.uuid4().hex
+    report_type = _diag_type(request.form.get("report_type"))
 
     # ----- Datos del formulario (sin id_reporte) -----
-    datos = {
-        "cliente": (request.form.get("cliente") or "").strip(),
-        "departamento": (request.form.get("departamento") or "").strip(),
-        "atencion": (request.form.get("atencion") or "").strip(),  # solicitante
-        "fecha": (request.form.get("fecha") or date.today().isoformat()),
-        "fecha_fin": (request.form.get("fecha_fin") or "").strip(),
-        "direccion": (request.form.get("direccion") or "").strip(),  # opcional
-        # Campos nuevos
-        "trabajo_solicitado": (request.form.get("trabajo_solicitado") or "").strip(),
-        "tipo_mantenimiento": (request.form.get("tipo_mantenimiento") or "").strip(),
-        "descripcion_falla": (request.form.get("descripcion_falla") or "").strip(),
-        # Campos ya usados
-        "trabajo": (request.form.get("trabajo") or "").strip(),
-        "observaciones": (request.form.get("observaciones") or "").strip(),
-        "notas": (request.form.get("notas") or "").strip(),  # Garantía
-    }
+    datos = _diag_clean_data(request.form)
 
     # ----- Material -----
     partes = []
@@ -1729,28 +1979,18 @@ def diag_prev():
     # ----- Persistir JSON temporal -----
     payload = {
         "token": token,
+        "report_type": report_type,
         "datos": datos,
         "partes": partes,
         "total_partes": total_partes,
         "fotos": fotos_meta,
         "ts": datetime.utcnow().isoformat() + "Z",
     }
+    payload = _diag_store_payload(payload, status="draft")
     (tmp_dir / f"{token}.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
     # Render de vista previa
-    logo_web, logo_fs = _logo_paths()
-    return render_template(
-        "reporte_diag_pdf.html",
-        show_toolbar=True,
-        embed_for_pdf=False,
-        token=token,
-        datos=datos,
-        partes=partes,
-        total_partes_fmt=_mxn(total_partes),
-        fotos=fotos_meta,
-        logo_web=logo_web,
-        logo_fs=logo_fs,
-    )
+    return _diag_render(payload, show_toolbar=True, embed_for_pdf=False)
 
 @reportes_bp.route("/reportes/editar/<id_reporte>", methods=["GET", "POST"], endpoint="reportes_editar")
 def reportes_editar(id_reporte):
@@ -1789,62 +2029,69 @@ def reportes_editar(id_reporte):
 @reportes_bp.get("/reportes/diag/pdf/<token>")
 def diag_pdf(token):
     up_dir, pdf_dir, tmp_dir = _diag_paths()
-    meta_path = tmp_dir / f"{token}.json"
-    if not meta_path.exists():
+    payload = _diag_payload_temporal(token)
+    if not payload:
         flash("No encontré los datos temporales del reporte. Vuelve a generar la vista previa.", "error")
         return redirect(url_for("reportes.diag_nuevo"))
-
-    payload = json.loads(meta_path.read_text(encoding="utf-8"))
     datos = payload.get("datos", {})
-    partes = payload.get("partes", [])
-    total_partes = float(payload.get("total_partes", 0.0))
-    fotos = payload.get("fotos", [])
+    html = _diag_render(payload, show_toolbar=False, embed_for_pdf=True)
+    folio = payload.get("folio") or token[:8].upper()
+    label = "Reporte Refrigeracion" if _diag_type(payload.get("report_type")) == "refrigeracion" else "Reporte de Trabajo"
+    pdf_name = f"{label} - {folio}.pdf"
 
-    logo_web, logo_fs = _logo_paths()
-    html = render_template(
-        "reporte_diag_pdf.html",
-        show_toolbar=False,
-        embed_for_pdf=True,   # usa rutas filesystem para imágenes y logo
-        token=token,
-        datos=datos,
-        partes=partes,
-        total_partes_fmt=_mxn(total_partes),
-        fotos=fotos,
-        logo_web=logo_web,
-        logo_fs=logo_fs,
-    )
-    
-
-    # Nombre de archivo: Cliente + Fecha (sin id)
-    base_cliente = re.sub(r"[^A-Za-z0-9_-]+", "_", (datos.get("cliente") or "Reporte"))
-    base_fecha = re.sub(r"[^0-9\-]", "", (datos.get("fecha") or ""))
-    if not base_fecha:
-        base_fecha = datetime.now().strftime("%Y-%m-%d")
-    pdf_name = f"ReporteTrabajo-{base_cliente}-{base_fecha}.pdf"
-    pdf_path = (pdf_dir / pdf_name).resolve()
-
-    # ¿Descargar (dialogo) o guardar local y avisar?
     force_download = (request.args.get("dl") == "1")
+    try:
+        pdf_bytes = render_pdf_bytes(html, base_url=current_app.root_path, wait_timeout=5)
+    except PdfRendererBusy:
+        flash("Hay otro PDF procesándose. Inténtalo nuevamente en unos segundos.", "warning")
+        return redirect(url_for("reportes.diag_prev_guardado", token=token))
     if force_download:
-        # Genera a memoria y descarga
-        try:
-            pdf_bytes = render_pdf_bytes(html, base_url=current_app.root_path, wait_timeout=5)
-        except PdfRendererBusy:
-            flash("Hay otro PDF procesándose. Inténtalo nuevamente en unos segundos.", "warning")
-            return redirect(url_for("reportes.diag_nuevo"))
         return send_file(io.BytesIO(pdf_bytes),
                          mimetype="application/pdf",
                          as_attachment=True,
                          download_name=pdf_name)
 
-    # Guardar en /static/diag_pdfs y regresar al form
     try:
-        render_pdf_file(html, str(pdf_path), base_url=current_app.root_path, wait_timeout=5)
-    except PdfRendererBusy:
-        flash("Hay otro PDF procesándose. Inténtalo nuevamente en unos segundos.", "warning")
-        return redirect(url_for("reportes.diag_nuevo"))
-    flash(f"PDF generado: {pdf_path}", "success")
-    return redirect(url_for("reportes.diag_nuevo"))
+        if not REPORTES_ROOT_ID:
+            raise RuntimeError("No está configurada la carpeta de reportes en Drive")
+        client_name = _sanitize_name(datos.get("cliente") or "Sin Cliente")
+        client_folder = _ensure_folder(REPORTES_ROOT_ID, client_name)
+        report_folder = _ensure_folder(client_folder, folio)
+        pdf_id = _upsert_pdf(report_folder, pdf_name, pdf_bytes)
+
+        for index, photo in enumerate(payload.get("fotos", []), start=1):
+            if not isinstance(photo, dict):
+                continue
+            local_path = up_dir / token / str(photo.get("filename") or "")
+            if local_path.is_file():
+                photo["drive_id"] = _upsert_bytes(
+                    report_folder, f"Evidencia {index:02d}.jpg", local_path.read_bytes(), "image/jpeg"
+                )
+
+        safe_payload = {key: value for key, value in payload.items() if key != "drive_backup"}
+        _upsert_bytes(
+            report_folder, f"Datos - {folio}.json",
+            json.dumps(safe_payload, ensure_ascii=False, indent=2).encode("utf-8"),
+            "application/json",
+        )
+        payload["pdf_url"] = _file_web_link(pdf_id)
+        payload["folder_url"] = _folder_web_link(report_folder)
+        payload = _diag_store_payload(payload, status="completed")
+        try:
+            _log_pdf_historial(
+                client_name, folio, payload.get("pdf_url"), payload.get("folder_url"),
+                tipo="reporte_refrigeracion" if payload.get("report_type") == "refrigeracion" else "reporte_trabajo",
+            )
+        except Exception:
+            pass
+        flash(f"✅ {folio} finalizado y guardado en Drive.", "success")
+        return redirect(url_for("reportes.reportes_inicio"))
+    except Exception as exc:
+        flash(f"No se pudo guardar en Drive: {type(exc).__name__}: {exc}. Se descargó una copia para no perderla.", "error")
+        return send_file(
+            io.BytesIO(pdf_bytes), mimetype="application/pdf", as_attachment=True,
+            download_name=pdf_name,
+        )
 
 
 

@@ -46,16 +46,35 @@
   .btn{padding:10px 14px;border-radius:12px;border:1px solid rgba(34,197,94,.45);background:rgba(34,197,94,.12);color:#d1fae5;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;white-space:nowrap;transition:.15s}
   .btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(34,197,94,.18)}
   .btn-secondary{border-color:#64748b;background:rgba(100,116,139,.18);color:#e2e8f0}
+  .report-nav{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .report-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .status-pill{padding:6px 9px;border:1px solid var(--border);border-radius:999px;color:var(--muted);font-size:12px}
+  .status-pill.type{color:#bfdbfe;border-color:#3b82f6;background:rgba(59,130,246,.12);font-weight:800}
+  .status-pill.saved{color:#bbf7d0;border-color:#22c55e}
+  .tech-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .measure-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .measure-card{padding:12px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.025)}
+  .measure-card h3{margin:0 0 8px;font-size:14px}.measure-card .row{margin-top:8px}
 
   @media (max-width:900px){
-    .grid-2,.client-picker{grid-template-columns:1fr}
+    .grid-2,.client-picker,.tech-grid,.measure-grid{grid-template-columns:1fr}
+    body{padding:12px}.report-nav{align-items:flex-start;flex-direction:column}
   }
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
 <script src="{{ url_for('static', filename='hsc_theme.js') }}"></script>
+<script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
 </head>
 <body>
   <div class="wrap">
+    <div class="report-nav">
+      <a class="btn btn-secondary" href="{{ url_for('reportes.reportes_inicio') }}" data-leave>← Reportes</a>
+      <div class="report-meta">
+        <span class="status-pill type">{{ 'Refrigeración' if report_type == 'refrigeracion' else 'Trabajo general' }}</span>
+        <span class="status-pill" id="reportFolio">{{ report_folio }}</span>
+        <span class="status-pill" id="autosaveStatus">Sin cambios</span>
+      </div>
+    </div>
     <!-- ENCABEZADO -->
     <div class="card">
       <div class="header">
@@ -67,6 +86,7 @@
       <!-- FORMULARIO -->
       <form method="post" action="{{ url_for('reportes.diag_prev') }}" enctype="multipart/form-data">
         <input type="hidden" name="edit_token" value="{{ edit_token or '' }}">
+        <input type="hidden" name="report_type" value="{{ report_type }}">
         <div class="grid grid-2">
           <!-- Columna izquierda -->
           <div class="grid">
@@ -117,6 +137,24 @@
             </div>
           </div>
         </div>
+
+        {% if report_type == 'refrigeracion' %}
+        <div class="card" style="margin-top:16px">
+          <h2 style="margin:0 0 12px;font-size:18px">Datos del equipo de refrigeración</h2>
+          <div class="tech-grid">
+            <div><label>Equipo *</label><input type="text" name="equipo" value="{{ form_data.get('equipo','') }}" placeholder="Ej. Cámara de conservación" required></div>
+            <div><label>Ubicación</label><input type="text" name="ubicacion" value="{{ form_data.get('ubicacion','') }}" placeholder="Área donde se encuentra"></div>
+            <div><label>Marca</label><input type="text" name="marca" value="{{ form_data.get('marca','') }}"></div>
+            <div><label>Modelo</label><input type="text" name="modelo" value="{{ form_data.get('modelo','') }}"></div>
+            <div><label>Número de serie</label><input type="text" name="no_serie" value="{{ form_data.get('no_serie','') }}" spellcheck="false"></div>
+            <div><label>Número de inventario</label><input type="text" name="no_inventario" value="{{ form_data.get('no_inventario','') }}" spellcheck="false"></div>
+            <div><label>Número de contrato</label><input type="text" name="no_contrato" value="{{ form_data.get('no_contrato','') }}" spellcheck="false"></div>
+            <div><label>Vigencia del contrato</label><input type="text" name="vigencia" value="{{ form_data.get('vigencia','') }}" placeholder="Ej. enero a diciembre de 2026"></div>
+            <div><label>Responsable del área</label><input type="text" name="responsable" value="{{ form_data.get('responsable','') }}"></div>
+            <div><label>Técnico responsable</label><input type="text" name="tecnico_responsable" value="{{ form_data.get('tecnico_responsable','Ing. Héctor Silva Cid') }}"></div>
+          </div>
+        </div>
+        {% endif %}
 
         <!-- BLOQUE DE ESPECIFICACIONES -->
         <div class="card" style="margin-top:16px">
@@ -184,6 +222,35 @@
               <input type="text" name="notas" value="{{ form_data.get('notas','') }}" placeholder="Ej. 30 días sobre mano de obra">
             </div>
           </div>
+
+          {% if report_type == 'refrigeracion' %}
+          <div style="margin-top:16px">
+            <h2 style="font-size:18px;margin:0 0 12px">Lecturas y revisión técnica</h2>
+            <div class="measure-grid">
+              <div class="measure-card">
+                <h3>Presión de gas</h3>
+                <label>Tolerancia</label><input type="text" name="tol_presion" value="{{ form_data.get('tol_presion','± 5 psi') }}">
+                <div class="row"><div class="col"><label>Circuito 1</label><input type="text" name="presion_cto1" value="{{ form_data.get('presion_cto1','') }}"></div><div class="col"><label>Circuito 2</label><input type="text" name="presion_cto2" value="{{ form_data.get('presion_cto2','') }}"></div></div>
+              </div>
+              <div class="measure-card">
+                <h3>Temperatura</h3>
+                <label>Tolerancia</label><input type="text" name="tol_temperatura" value="{{ form_data.get('tol_temperatura','± 1 °C') }}">
+                <div class="row"><div class="col"><label>Circuito 1</label><input type="text" name="temperatura_cto1" value="{{ form_data.get('temperatura_cto1','') }}"></div><div class="col"><label>Circuito 2</label><input type="text" name="temperatura_cto2" value="{{ form_data.get('temperatura_cto2','') }}"></div></div>
+              </div>
+              <div class="measure-card">
+                <h3>Amperaje</h3>
+                <label>Tolerancia</label><input type="text" name="tol_amperaje" value="{{ form_data.get('tol_amperaje','± 1 A') }}">
+                <div class="row"><div class="col"><label>Circuito 1</label><input type="text" name="amperaje1" value="{{ form_data.get('amperaje1','') }}"></div><div class="col"><label>Circuito 2</label><input type="text" name="amperaje2" value="{{ form_data.get('amperaje2','') }}"></div></div>
+                <label>Observaciones</label><input type="text" name="obs_amperaje" value="{{ form_data.get('obs_amperaje','') }}">
+              </div>
+            </div>
+            <div class="tech-grid" style="margin-top:12px">
+              <div><label>Observaciones eléctricas</label><textarea name="obs_electrico">{{ form_data.get('obs_electrico','') }}</textarea></div>
+              <div><label>Observaciones electrónicas</label><textarea name="obs_electronico">{{ form_data.get('obs_electronico','') }}</textarea></div>
+              <div><label>Observaciones mecánicas</label><textarea name="obs_mecanico">{{ form_data.get('obs_mecanico','') }}</textarea></div>
+            </div>
+          </div>
+          {% endif %}
         </div>
 
         <!-- FOTOS (explorador) -->
@@ -198,8 +265,9 @@
         </div>
 
         <div class="actions">
+          <button class="btn btn-secondary" id="saveDraft" type="button">Guardar borrador</button>
           <button class="btn" type="submit">Vista previa del PDF</button>
-          <a class="btn btn-secondary" href="{{ url_for('reportes.reportes_inicio') }}">Cancelar</a>
+          <a class="btn btn-secondary" href="{{ url_for('reportes.reportes_inicio') }}" data-leave>← Volver al panel</a>
         </div>
       </form>
     </div>
@@ -272,6 +340,122 @@
       }
       btn.closest('tr').remove();
     }
+
+    const reportForm = document.querySelector('form[action$="/reportes/diag/prev"]');
+    const tokenField = reportForm.elements.edit_token;
+    const reportType = reportForm.elements.report_type.value;
+    const autosaveStatus = document.getElementById('autosaveStatus');
+    const reportFolio = document.getElementById('reportFolio');
+    let dirty = false;
+    let saveTimer = null;
+    let saving = null;
+
+    const localKey = token => `hsc-report-${token || `new-${reportType}`}`;
+
+    function reportPayload(){
+      const datos = {};
+      [...reportForm.elements].forEach(field => {
+        if(!field.name || ['edit_token','report_type','fotos','reemplazar_fotos','part_cant[]','part_desc[]','part_precio[]'].includes(field.name)) return;
+        if(['button','submit','file'].includes(field.type)) return;
+        datos[field.name] = field.value || '';
+      });
+      const partes = [...document.querySelectorAll('#tbl-material tbody tr')].map(row => ({
+        cantidad: row.querySelector('[name="part_cant[]"]')?.value || '',
+        descripcion: row.querySelector('[name="part_desc[]"]')?.value || '',
+      })).filter(row => row.cantidad || row.descripcion);
+      return {token:tokenField.value || '', report_type:reportType, datos, partes};
+    }
+
+    function saveLocal(){
+      try{
+        localStorage.setItem(localKey(tokenField.value), JSON.stringify(reportPayload()));
+      }catch(_error){}
+    }
+
+    function restoreLocal(){
+      if(tokenField.value) return;
+      try{
+        const cached = JSON.parse(localStorage.getItem(localKey('')) || 'null');
+        if(!cached || cached.report_type !== reportType) return;
+        Object.entries(cached.datos || {}).forEach(([name,value]) => {
+          const field = reportForm.elements.namedItem(name);
+          if(field) field.value = value;
+        });
+        if((cached.partes || []).length){
+          const tbody = document.querySelector('#tbl-material tbody');
+          tbody.innerHTML = '';
+          cached.partes.slice(0, MAX_ROWS).forEach(part => {
+            addRow();
+            const row = tbody.lastElementChild;
+            row.querySelector('[name="part_cant[]"]').value = part.cantidad || '';
+            row.querySelector('[name="part_desc[]"]').value = part.descripcion || '';
+          });
+        }
+        autosaveStatus.textContent = 'Borrador recuperado';
+        autosaveStatus.classList.add('saved');
+        dirty = true;
+      }catch(_error){}
+    }
+
+    async function saveDraft({quiet=false}={}){
+      if(saving) return saving;
+      clearTimeout(saveTimer);
+      saveLocal();
+      autosaveStatus.textContent = 'Guardando…';
+      const oldKey = localKey(tokenField.value);
+      saving = fetch('{{ url_for("reportes.diag_guardar_borrador") }}', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(reportPayload()),
+      }).then(async response => {
+        const result = await response.json();
+        if(!response.ok || !result.ok) throw new Error(result.error || 'No se pudo guardar');
+        tokenField.value = result.token;
+        reportFolio.textContent = result.folio;
+        history.replaceState(null, '', `{{ url_for('reportes.diag_nuevo') }}?token=${encodeURIComponent(result.token)}`);
+        localStorage.removeItem(oldKey);
+        localStorage.setItem(localKey(result.token), JSON.stringify(reportPayload()));
+        autosaveStatus.textContent = result.drive_backup ? 'Guardado en Drive' : 'Guardado en el servidor';
+        autosaveStatus.classList.add('saved');
+        dirty = false;
+        return true;
+      }).catch(error => {
+        autosaveStatus.textContent = 'Guardado en este navegador';
+        autosaveStatus.classList.remove('saved');
+        if(!quiet) alert(`${error.message}. El borrador permanece guardado en este navegador.`);
+        return false;
+      }).finally(() => { saving = null; });
+      return saving;
+    }
+
+    function markDirty(event){
+      if(event.target.type === 'file'){
+        autosaveStatus.textContent = 'Fotos pendientes de vista previa';
+        return;
+      }
+      dirty = true;
+      autosaveStatus.textContent = 'Cambios pendientes';
+      autosaveStatus.classList.remove('saved');
+      saveLocal();
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => saveDraft({quiet:true}), 4500);
+    }
+
+    reportForm.addEventListener('input', markDirty);
+    reportForm.addEventListener('change', markDirty);
+    reportForm.addEventListener('submit', () => { dirty = false; clearTimeout(saveTimer); });
+    document.getElementById('saveDraft').addEventListener('click', () => saveDraft());
+    document.querySelectorAll('[data-leave]').forEach(link => link.addEventListener('click', async event => {
+      if(!dirty) return;
+      event.preventDefault();
+      await saveDraft({quiet:true});
+      location.href = link.href;
+    }));
+    window.addEventListener('beforeunload', event => {
+      if(!dirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    });
+    restoreLocal();
   </script>
 </body>
 </html>

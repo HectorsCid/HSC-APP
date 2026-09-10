@@ -18,7 +18,6 @@ import re
 import threading
 import time
 import unicodedata
-from urllib.parse import quote_plus
 from pathlib import Path
 import io
 import math
@@ -2071,17 +2070,20 @@ def generar_pdf():
     except Exception as e:
         print("⚠️ No se pudo retirar el borrador ya finalizado:", e)
 
-    mensaje = f"Cotización {cot} - {cliente}\nArchivo: {archivo_url}"
-    wa_url = f"https://wa.me/?text={quote_plus(mensaje)}"
-    mailto_url = f"mailto:?subject={quote_plus(f'Cotización {cot} - {cliente}')}&body={quote_plus(mensaje)}"
-
-    return f"""PDF generado y guardado en:<br>{ruta_pdf}<br><br>
-📄 <a href='{archivo_url}' target='_blank'>Abrir PDF en Drive</a><br>
-📂 <a href='{carpeta_url}' target='_blank'>Abrir carpeta en Drive</a><br><br>
-📱 <a href='{wa_url}' target='_blank'>Compartir por WhatsApp</a> &nbsp;|&nbsp;
-✉️ <a href='{mailto_url}'>Enviar por Email</a><br><br>
-<a href='/'>← Volver a esta cotización</a> &nbsp;|&nbsp;
-<a href='{url_for("nueva_cotizacion")}'>＋ Generar nueva cotización</a>"""
+    cliente_seguro = cliente.replace("/", "-").replace("\\", "-")
+    pdf_descarga_url = url_for(
+        "static",
+        filename=f"cotizaciones/{cliente_seguro}/{nombre_archivo}",
+    )
+    return render_template(
+        "cotizacion_generada.html",
+        cliente=cliente,
+        folio=cot,
+        nombre_archivo=nombre_archivo,
+        pdf_descarga_url=pdf_descarga_url,
+        archivo_url=archivo_url,
+        carpeta_url=carpeta_url,
+    )
 
 @app.route('/editar_cliente', methods=['GET', 'POST'])
 def editar_cliente():

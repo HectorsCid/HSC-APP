@@ -44,7 +44,7 @@
     /* Fotos */
     h2{ font-size:14px; margin:12px 0 8px; }
     .photos{ display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
-    .ph{ width:100%; aspect-ratio:3/2; border-radius:10px; overflow:hidden; border:1px solid var(--line); background:#f9fafb; }
+    .ph{ width:100%; height:58mm; border-radius:10px; overflow:hidden; border:1px solid var(--line); background:#f9fafb; }
     .ph img{ width:100%; height:100%; object-fit:cover; display:block; }
     .placeholder{ display:grid; place-items:center; color:#9ca3af; font-size:12px; height:100%; }
 
@@ -68,10 +68,9 @@
     @media print { .actions-bar { display: none !important; } }
 
     /* Altos ajustados para caber en 1 página */
-    .mh-falla{ min-height: 5.5em; max-height: 7.5em; overflow:hidden; }
-    .mh-trabajo{ min-height: 6.5em; max-height: 9em; overflow:hidden; }
-    .mh-obs{ min-height: 5.2em; max-height: 7em; overflow:hidden; }
-    .mh-gar{ min-height: 5.2em; max-height: 7em; overflow:hidden; }
+    .mh-falla{ min-height:5.5em; overflow-wrap:anywhere; }
+    .mh-trabajo{ min-height:6.5em; overflow-wrap:anywhere; }
+    .mh-obs,.mh-gar{ min-height:5.2em; overflow-wrap:anywhere; }
   </style>
 </head>
 <body>
@@ -84,8 +83,10 @@
   <div class="actions-bar">
     <div class="left"><strong>Reporte de trabajo</strong></div>
     <div class="right">
-      <a class="btn" href="{{ url_for('reportes.diag_nuevo', token=token) }}">← Regresar y editar</a>
-      <a class="btn primary" href="{{ url_for('reportes.diag_pdf', token=token) }}?dl=1">Generar PDF</a>
+      <a class="btn" href="{{ url_for('reportes.reportes_inicio') }}">← Panel de reportes</a>
+      <a class="btn" href="{{ url_for('reportes.diag_nuevo', token=token) }}">Editar</a>
+      <a class="btn" href="{{ url_for('reportes.diag_pdf', token=token) }}?dl=1">Descargar PDF</a>
+      <a class="btn primary" href="{{ url_for('reportes.diag_pdf', token=token) }}">Finalizar y guardar</a>
     </div>
   </div>
   {% endif %}
@@ -99,7 +100,7 @@
         <img class="logo" src="{{ logo_web }}" alt="HSC">
       {% endif %}
       <div class="title">
-        <h1>Reporte de trabajo</h1>
+        <h1>Reporte de trabajo · {{ folio }}</h1>
         <div class="sub">{{ _cliente }} · {{ _fecha }}</div>
       </div>
     </div>
