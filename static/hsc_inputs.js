@@ -35,6 +35,22 @@
     }
   }
 
+  function capitalizeSentenceStarts(field){
+    if(field.dataset.hscSpellcheck !== 'active') return;
+    const original = field.value || '';
+    const normalized = original.replace(
+      /(^|[.!?]\s+|\n\s*)([a-záéíóúüñ])/giu,
+      (_, prefix, letter) => prefix + letter.toLocaleUpperCase('es-MX')
+    );
+    if(original === normalized) return;
+    const start = field.selectionStart;
+    const end = field.selectionEnd;
+    field.value = normalized;
+    if(document.activeElement === field && start !== null && end !== null){
+      field.setSelectionRange(start, end);
+    }
+  }
+
   function configureField(field){
     if(!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) return;
 
@@ -46,7 +62,8 @@
       return;
     }
 
-    if(field.hasAttribute('spellcheck')) return;
+    const explicitSpellcheck = (field.getAttribute('spellcheck') || '').toLowerCase();
+    if(explicitSpellcheck === 'false') return;
     const type = (field.type || '').toLowerCase();
     if(field instanceof HTMLInputElement && type !== 'text') return;
     if(NON_WRITING_FIELD.test(fieldIdentity(field))){
@@ -54,8 +71,16 @@
       return;
     }
     field.lang = 'es-MX';
+    field.setAttribute('lang', 'es-MX');
     field.spellcheck = true;
+    field.setAttribute('spellcheck', 'true');
+    field.setAttribute('autocorrect', 'on');
     field.autocapitalize = field instanceof HTMLTextAreaElement ? 'sentences' : 'words';
+    field.setAttribute(
+      'autocapitalize',
+      field instanceof HTMLTextAreaElement ? 'sentences' : 'words'
+    );
+    field.dataset.hscSpellcheck = 'active';
   }
 
   function configureWithin(root){
@@ -68,6 +93,7 @@
     configureWithin(document);
     document.addEventListener('input', event=>{
       if(isRfcField(event.target)) normalizeRfc(event.target);
+      else if(event.target?.dataset?.hscSpellcheck === 'active') capitalizeSentenceStarts(event.target);
     });
     document.addEventListener('blur', event=>{
       if(isRfcField(event.target)) normalizeRfc(event.target, true);
