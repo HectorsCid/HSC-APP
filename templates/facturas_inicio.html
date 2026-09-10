@@ -77,8 +77,8 @@
   html,body{min-width:0;background:var(--bg);color:var(--ink)}
   body{overflow:hidden}
   button,input,select,textarea{font:inherit;color:inherit}
-  .layout{grid-template-columns:212px minmax(0,1fr);height:100vh;min-height:0}
-  .side{padding:18px 14px;background:var(--surface)}
+  .layout{grid-template-columns:212px minmax(0,1fr);height:100vh;height:100dvh;min-height:0;overflow:hidden}
+  .side{height:100vh;height:100dvh;padding:18px 14px;background:var(--surface);overflow-y:auto;overscroll-behavior:contain}
   .side .logo{font-size:1.22rem;font-weight:900;margin:2px 8px 20px}
   .nav{gap:7px}
   .nav .btn{justify-content:flex-start;padding:10px 11px;font-weight:700}
@@ -88,7 +88,8 @@
   .btn-danger{background:var(--danger);color:#fff}
   .btn-mail-pending{background:var(--ok-soft)!important;border-color:color-mix(in srgb,var(--ok) 45%,var(--line))!important;color:#15803d!important}
   html[data-theme="dark"] .btn-mail-pending{color:#86efac!important}
-  .wrap{width:100%;max-width:1500px;min-width:0;padding:17px 20px;overflow:hidden}
+  .wrap{width:100%;max-width:1500px;height:100vh;height:100dvh;min-width:0;min-height:0;padding:17px 20px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-color:#64748b transparent;scrollbar-width:thin}
+  .wrap::-webkit-scrollbar{width:10px}.wrap::-webkit-scrollbar-thumb{background:#64748b;border:2px solid transparent;border-radius:999px;background-clip:padding-box}.wrap::-webkit-scrollbar-track{background:transparent}
   .title{font-size:1.5rem;font-weight:900;letter-spacing:-.025em}
   .pill{margin-top:2px;color:var(--muted)}
   .filters{gap:8px}
@@ -161,11 +162,11 @@
   @media(max-width:850px){
     body{overflow:auto}
     .layout{display:block;height:auto;min-height:100vh}
-    .side{position:sticky;top:0;z-index:8;padding:8px 10px;border-right:0;border-bottom:1px solid var(--line)}
+    .side{position:sticky;top:0;z-index:8;height:auto;padding:8px 10px;border-right:0;border-bottom:1px solid var(--line);overflow:visible}
     .side .logo{display:none}
     .nav{flex-direction:row;overflow-x:auto}
     .nav .btn{justify-content:center;flex:0 0 auto}
-    .wrap{padding:12px 9px;overflow:visible}
+    .wrap{height:auto;padding:12px 9px;overflow:visible}
     .row{align-items:flex-start;flex-direction:column}
     .filters{width:100%;flex-wrap:wrap}
     #q{flex:1;min-width:170px;width:auto}
