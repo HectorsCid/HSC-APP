@@ -1,6 +1,7 @@
 # facturacion_bp.py — versión completa
 from flask import Blueprint, request, jsonify, Response, current_app
 from datetime import datetime, timedelta
+from calendar import monthrange
 from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from base64 import b64decode
@@ -8,12 +9,14 @@ from threading import Lock
 from uuid import uuid4
 from xml.etree import ElementTree as ET
 import hashlib
+import hmac
 import os
 import json
 import re
 import smtplib
 import mimetypes
 import requests
+from zoneinfo import ZoneInfo
 from werkzeug.utils import secure_filename
 
 from cfdi_drive import (
@@ -113,6 +116,13 @@ INDEX = DATA_DIR / "pagos_index.json"
 INVOICE_TEMPLATES = DATA_DIR / "plantillas_factura.json"
 INVOICE_TEMPLATES_DRIVE_FILE = "HSC-plantillas-factura.json"
 _TEMPLATE_LOCK = Lock()
+INVOICE_SCHEDULES = DATA_DIR / "facturas_programadas.json"
+INVOICE_SCHEDULES_DRIVE_FILE = "HSC-facturas-programadas.json"
+PUSH_SUBSCRIPTIONS = DATA_DIR / "notificaciones_dispositivos.json"
+PUSH_SUBSCRIPTIONS_DRIVE_FILE = "HSC-notificaciones-dispositivos.json"
+_SCHEDULE_LOCK = Lock()
+_SCHEDULE_RUN_LOCK = Lock()
+_PUSH_LOCK = Lock()
 STAMP_REQUESTS = DATA_DIR / "solicitudes_timbrado.json"
 STAMP_REQUESTS_DRIVE_FILE = "HSC-solicitudes-timbrado.json"
 
@@ -174,6 +184,149 @@ def _write_invoice_templates(items):
         except Exception as exc:
             current_app.logger.warning("No se pudieron respaldar las plantillas en Drive: %s", exc)
             return False
+
+
+def _read_json_collection(path, drive_name, lock):
+    with lock:
+        if path.exists():
+            try:
+                value = json.loads(path.read_text("utf-8"))
+                if isinstance(value, list):
+                    return value
+            except Exception:
+                pass
+        try:
+            value = load_json_file(drive_name, default=[])
+            value = value if isinstance(value, list) else []
+            path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+            return value
+        except Exception:
+            return []
+
+
+def _write_json_collection(path, drive_name, items, lock):
+    with lock:
+        path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            backup_json_file(drive_name, items)
+            return True
+        except Exception as exc:
+            current_app.logger.warning("No se pudo respaldar %s en Drive: %s", drive_name, exc)
+            return False
+
+
+def _read_invoice_schedules():
+    return _read_json_collection(INVOICE_SCHEDULES, INVOICE_SCHEDULES_DRIVE_FILE, _SCHEDULE_LOCK)
+
+
+def _write_invoice_schedules(items):
+    return _write_json_collection(INVOICE_SCHEDULES, INVOICE_SCHEDULES_DRIVE_FILE, items, _SCHEDULE_LOCK)
+
+
+def _read_push_subscriptions():
+    return _read_json_collection(PUSH_SUBSCRIPTIONS, PUSH_SUBSCRIPTIONS_DRIVE_FILE, _PUSH_LOCK)
+
+
+def _write_push_subscriptions(items):
+    return _write_json_collection(PUSH_SUBSCRIPTIONS, PUSH_SUBSCRIPTIONS_DRIVE_FILE, items, _PUSH_LOCK)
+
+
+def _local_now():
+    return datetime.now(ZoneInfo("America/Mexico_City"))
+
+
+def _next_monthly_run(day, at_time, *, after=None):
+    now = after or _local_now()
+    hour, minute = (int(value) for value in at_time.split(":", 1))
+    year, month = now.year, now.month
+    for _ in range(14):
+        actual_day = min(int(day), monthrange(year, month)[1])
+        candidate = datetime(year, month, actual_day, hour, minute, tzinfo=now.tzinfo)
+        if candidate > now:
+            return candidate
+        month += 1
+        if month == 13:
+            month, year = 1, year + 1
+    raise ValueError("No se pudo calcular la siguiente ejecución.")
+
+
+def _template_invoice_payload(template, schedule, run_key):
+    receiver = template.get("receiver") or {}
+    conditions = template.get("conditions") or {}
+    retentions = template.get("retentions") or {}
+    return {
+        "receptor": {
+            "rfc": str(receiver.get("tax_id") or "").strip().upper(),
+            "nombre": str(receiver.get("name") or "").strip(),
+            "cp": str(receiver.get("zip") or "").strip(),
+            "regimen_fiscal": int(receiver.get("tax_system") or 0),
+            "uso_cfdi": str(receiver.get("cfdi_use") or "G03"),
+            "email": str(receiver.get("email") or "").strip(),
+        },
+        "forma_pago": str(conditions.get("payment_form") or "03"),
+        "metodo_pago": str(conditions.get("payment_method") or "PUE"),
+        "serie": str(conditions.get("serie") or "HSC").strip(),
+        "numero_orden_compra": str(conditions.get("purchase_order") or "").strip(),
+        "alias_factura": str(conditions.get("invoice_alias") or "").strip(),
+        "condiciones": str(conditions.get("notes") or "").strip(),
+        "source_quote_id": "",
+        "quote_folio": "",
+        "cliente_carpeta": str(template.get("client_name") or receiver.get("name") or "").strip(),
+        "request_id": f"schedule-{schedule['id']}-{run_key}",
+        "confirmed": True,
+        "retenciones": {
+            "aplicar": bool(float(retentions.get("isr") or 0) or float(retentions.get("iva") or 0)),
+            "isr": float(retentions.get("isr") or 0),
+            "iva": float(retentions.get("iva") or 0),
+        },
+        "items": [{
+            "codigo": "",
+            "descripcion": str(item.get("description") or "Concepto"),
+            "clave_prod_serv": str(item.get("product_key") or "85121600"),
+            "clave_unidad": str(item.get("unit_key") or "E48"),
+            "precio_unitario": float(item.get("unit_price") or 0),
+            "valor_unitario": float(item.get("unit_price") or 0),
+            "cantidad": float(item.get("quantity") or 1),
+            "tasa_iva": float(item.get("tax_rate") or 0),
+            "descuento": float(item.get("discount") or 0),
+        } for item in (template.get("items") or [])],
+    }
+
+
+def _push_configured():
+    return bool(os.getenv("VAPID_PUBLIC_KEY", "").strip() and os.getenv("VAPID_PRIVATE_KEY", "").strip())
+
+
+def _send_push_notifications(title, body, url="/facturacion?tab=plantillas", tag="hsc-facturas"):
+    subscriptions = _read_push_subscriptions()
+    if not subscriptions or not _push_configured():
+        return {"sent": 0, "configured": _push_configured(), "devices": len(subscriptions)}
+    try:
+        from pywebpush import webpush
+    except ImportError:
+        current_app.logger.error("Falta instalar pywebpush para enviar notificaciones.")
+        return {"sent": 0, "configured": False, "devices": len(subscriptions)}
+    payload = json.dumps({"title": title, "body": body, "url": url, "tag": tag}, ensure_ascii=False)
+    kept, sent = [], 0
+    for item in subscriptions:
+        try:
+            webpush(
+                subscription_info=item.get("subscription") or {},
+                data=payload,
+                vapid_private_key=os.getenv("VAPID_PRIVATE_KEY", "").strip(),
+                vapid_claims={"sub": os.getenv("VAPID_SUBJECT", "mailto:hectors@hscrefrigeracion.com")},
+                ttl=86400,
+            )
+            kept.append(item)
+            sent += 1
+        except Exception as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status not in {404, 410}:
+                kept.append(item)
+                current_app.logger.warning("No se pudo enviar una notificación push: %s", exc)
+    if len(kept) != len(subscriptions):
+        _write_push_subscriptions(kept)
+    return {"sent": sent, "configured": True, "devices": len(subscriptions)}
 
 
 def _stamp_fingerprint(payload):
@@ -1852,6 +2005,237 @@ def api_delete_invoice_template(template_id):
         return jsonify({"ok": False, "error": "La plantilla ya no existe."}), 404
     drive_ok = _write_invoice_templates(kept)
     return jsonify({"ok": True, "drive_backup": drive_ok}), 200
+
+
+def _validated_invoice_schedule(body, previous=None):
+    templates = _read_invoice_templates()
+    template_id = str(body.get("template_id") or (previous or {}).get("template_id") or "").strip()
+    template = next((item for item in templates if str(item.get("id")) == template_id), None)
+    if not template:
+        raise ValueError("Selecciona una plantilla disponible.")
+    name = re.sub(r"\s+", " ", str(body.get("name") or (previous or {}).get("name") or template.get("name") or "")).strip()
+    if len(name) < 2 or len(name) > 80:
+        raise ValueError("Escribe un nombre de 2 a 80 caracteres.")
+    try:
+        day = int(body.get("day", (previous or {}).get("day", 1)))
+    except (TypeError, ValueError):
+        day = 0
+    if day < 1 or day > 31:
+        raise ValueError("El día del mes debe estar entre 1 y 31.")
+    at_time = str(body.get("time") or (previous or {}).get("time") or "09:00").strip()
+    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", at_time):
+        raise ValueError("Escribe una hora válida.")
+    mode = str(body.get("mode") or (previous or {}).get("mode") or "confirm").strip()
+    if mode not in {"reminder", "confirm", "auto_stamp", "auto_stamp_email"}:
+        raise ValueError("Selecciona una modalidad válida.")
+    if mode in {"auto_stamp", "auto_stamp_email"} and (not previous or previous.get("mode") != mode) and body.get("automatic_acknowledged") is not True:
+        raise ValueError("Confirma expresamente que autorizas el timbrado automático.")
+    receiver = template.get("receiver") or {}
+    if mode in {"auto_stamp", "auto_stamp_email"}:
+        required = [receiver.get("tax_id"), receiver.get("name"), receiver.get("zip"), receiver.get("tax_system"), template.get("items")]
+        if not all(required):
+            raise ValueError("Completa los datos fiscales y conceptos de la plantilla antes de automatizar el timbrado.")
+    recipient = str(body.get("recipient", (previous or {}).get("recipient", receiver.get("email") or ""))).strip()
+    cc = str(body.get("cc", (previous or {}).get("cc", ""))).strip()
+    if mode == "auto_stamp_email" and not recipient:
+        raise ValueError("Escribe el correo al que se enviará la factura automática.")
+    now = _local_now()
+    return {
+        "id": str((previous or {}).get("id") or uuid4()),
+        "name": name,
+        "template_id": template_id,
+        "frequency": "monthly",
+        "day": day,
+        "time": at_time,
+        "mode": mode,
+        "recipient": recipient,
+        "cc": cc,
+        "subject": str(body.get("subject", (previous or {}).get("subject", "Factura HSC {folio}"))).strip()[:200],
+        "message": str(body.get("message", (previous or {}).get("message", (
+            "Buen día, estimado cliente. Envío la factura solicitada.\n\n"
+            "De antemano muchas gracias.\n\nQuedo a sus órdenes.\n\n"
+            "Ing. Héctor Silva Cid\n\nCel: 5527605496"
+        )))).strip(),
+        "active": bool(body.get("active", (previous or {}).get("active", True))),
+        "next_run": _next_monthly_run(day, at_time, after=now - timedelta(minutes=1)).isoformat(),
+        "created_at": (previous or {}).get("created_at") or now.isoformat(timespec="seconds"),
+        "updated_at": now.isoformat(timespec="seconds"),
+        "last_run_key": (previous or {}).get("last_run_key", ""),
+        "last_status": (previous or {}).get("last_status", "pending"),
+        "last_error": (previous or {}).get("last_error", ""),
+        "last_invoice_id": (previous or {}).get("last_invoice_id", ""),
+    }
+
+
+@facturacion_bp.get("/invoice-schedules")
+def api_invoice_schedules():
+    templates = {str(row.get("id")): row for row in _read_invoice_templates()}
+    rows = []
+    for row in _read_invoice_schedules():
+        item = dict(row)
+        template = templates.get(str(item.get("template_id"))) or {}
+        item["template_name"] = template.get("name") or "Plantilla eliminada"
+        item["client_name"] = template.get("client_name") or (template.get("receiver") or {}).get("name") or ""
+        rows.append(item)
+    rows.sort(key=lambda item: (not bool(item.get("active")), str(item.get("next_run") or "")))
+    return jsonify({"ok": True, "data": rows, "push_configured": _push_configured()}), 200
+
+
+@facturacion_bp.post("/invoice-schedules")
+def api_save_invoice_schedule():
+    body = request.get_json(silent=True) or {}
+    schedules = _read_invoice_schedules()
+    schedule_id = str(body.get("id") or "").strip()
+    previous = next((row for row in schedules if str(row.get("id")) == schedule_id), None) if schedule_id else None
+    try:
+        schedule = _validated_invoice_schedule(body, previous)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    schedules = [schedule if str(row.get("id")) == schedule["id"] else row for row in schedules]
+    if previous is None:
+        schedules.append(schedule)
+    drive_ok = _write_invoice_schedules(schedules)
+    return jsonify({"ok": True, "schedule": schedule, "drive_backup": drive_ok}), 200
+
+
+@facturacion_bp.delete("/invoice-schedules/<schedule_id>")
+def api_delete_invoice_schedule(schedule_id):
+    schedules = _read_invoice_schedules()
+    kept = [row for row in schedules if str(row.get("id")) != str(schedule_id)]
+    if len(kept) == len(schedules):
+        return jsonify({"ok": False, "error": "La programación ya no existe."}), 404
+    return jsonify({"ok": True, "drive_backup": _write_invoice_schedules(kept)}), 200
+
+
+@facturacion_bp.post("/invoice-schedules/<schedule_id>/complete")
+def api_complete_invoice_schedule(schedule_id):
+    body = request.get_json(silent=True) or {}
+    schedules = _read_invoice_schedules()
+    schedule = next((row for row in schedules if str(row.get("id")) == str(schedule_id)), None)
+    if not schedule:
+        return jsonify({"ok": False, "error": "La programación ya no existe."}), 404
+    schedule["last_status"] = "completed"
+    schedule["last_error"] = ""
+    schedule["last_invoice_id"] = str(body.get("invoice_id") or "")
+    schedule["last_uuid"] = str(body.get("uuid") or "")
+    schedule["confirmed_at"] = _local_now().isoformat(timespec="seconds")
+    return jsonify({"ok": True, "drive_backup": _write_invoice_schedules(schedules)}), 200
+
+
+@facturacion_bp.post("/push/subscribe")
+def api_push_subscribe():
+    body = request.get_json(silent=True) or {}
+    subscription = body.get("subscription") if isinstance(body.get("subscription"), dict) else body
+    endpoint = str(subscription.get("endpoint") or "").strip()
+    keys = subscription.get("keys") if isinstance(subscription.get("keys"), dict) else {}
+    if not endpoint.startswith("https://") or not keys.get("p256dh") or not keys.get("auth"):
+        return jsonify({"ok": False, "error": "La suscripción del dispositivo no es válida."}), 400
+    rows = _read_push_subscriptions()
+    item = {"endpoint": endpoint, "subscription": subscription, "updated_at": _local_now().isoformat(timespec="seconds")}
+    rows = [item if row.get("endpoint") == endpoint else row for row in rows]
+    if not any(row.get("endpoint") == endpoint for row in rows):
+        rows.append(item)
+    return jsonify({"ok": True, "drive_backup": _write_push_subscriptions(rows)}), 200
+
+
+@facturacion_bp.get("/push/config")
+def api_push_config():
+    return jsonify({"ok": True, "enabled": _push_configured(), "public_key": os.getenv("VAPID_PUBLIC_KEY", "").strip()}), 200
+
+
+def _stamp_scheduled_invoice(schedule, template, run_key):
+    payload = _template_invoice_payload(template, schedule, run_key)
+    with current_app.test_request_context("/api/facturar", method="POST", json=payload):
+        response = current_app.make_response(facturar())
+    data = response.get_json(silent=True) or {}
+    if response.status_code >= 400 or not data.get("ok"):
+        raise RuntimeError(str(data.get("error") or "Facturama no confirmó el timbrado."))
+    if schedule.get("mode") == "auto_stamp_email":
+        inv_id = str(data.get("invoice_id") or "")
+        folio = str(data.get("internal_folio") or data.get("uuid") or inv_id)
+        xml = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
+        pdf = _facturama_printable_pdf(xml, inv_id)
+        subject = str(schedule.get("subject") or "Factura HSC {folio}").replace("{folio}", folio).replace("{cliente}", str(template.get("client_name") or ""))
+        delivery = delivery_status("factura", inv_id)
+        if not delivery.get("sent"):
+            mail_result = send_cfdi_email(
+                recipient=schedule.get("recipient") or (template.get("receiver") or {}).get("email") or "",
+                cc=schedule.get("cc") or "", subject=subject, body=schedule.get("message") or "",
+                pdf_bytes=pdf, xml_bytes=xml, folio=folio,
+            )
+            record_email_delivery("factura", inv_id, recipients=mail_result.get("recipients") or [], cc=mail_result.get("cc") or [], folio=folio)
+        data["email_sent"] = True
+    return data
+
+
+@facturacion_bp.post("/invoice-schedules/run")
+def api_run_invoice_schedules():
+    expected = os.getenv("HSC_SCHEDULER_KEY", "").strip()
+    supplied = request.headers.get("X-HSC-Scheduler-Key", "")
+    if len(expected) < 20 or not hmac.compare_digest(expected, supplied):
+        return jsonify({"ok": False, "error": "Ejecución no autorizada."}), 403
+    if not _SCHEDULE_RUN_LOCK.acquire(blocking=False):
+        return jsonify({"ok": False, "error": "Ya se están revisando las facturas programadas."}), 409
+    try:
+        now = _local_now()
+        schedules = _read_invoice_schedules()
+        templates = {str(row.get("id")): row for row in _read_invoice_templates()}
+        processed = []
+        for schedule in schedules:
+            if not schedule.get("active"):
+                continue
+            try:
+                due = datetime.fromisoformat(str(schedule.get("next_run") or ""))
+                if due.tzinfo is None:
+                    due = due.replace(tzinfo=now.tzinfo)
+            except ValueError:
+                due = _next_monthly_run(schedule.get("day", 1), schedule.get("time", "09:00"), after=now - timedelta(days=32))
+            if due > now:
+                continue
+            run_key = f"{due.year:04d}-{due.month:02d}"
+            if schedule.get("last_run_key") == run_key:
+                schedule["next_run"] = _next_monthly_run(schedule.get("day", 1), schedule.get("time", "09:00"), after=due + timedelta(days=1)).isoformat()
+                continue
+            template = templates.get(str(schedule.get("template_id")))
+            schedule["last_run_key"] = run_key
+            schedule["last_run_at"] = now.isoformat(timespec="seconds")
+            schedule["next_run"] = _next_monthly_run(schedule.get("day", 1), schedule.get("time", "09:00"), after=due + timedelta(days=1)).isoformat()
+            schedule["last_error"] = ""
+            if not template:
+                schedule["last_status"] = "error"
+                schedule["last_error"] = "La plantilla fue eliminada."
+            elif schedule.get("mode") in {"reminder", "confirm"}:
+                schedule["last_status"] = "awaiting_confirmation"
+                _send_push_notifications(
+                    "Factura lista para revisar",
+                    f"{schedule.get('name')}: abre HSC para confirmar el timbrado.",
+                    f"/facturas/nueva?template_id={schedule.get('template_id')}&schedule_id={schedule.get('id')}",
+                    f"invoice-schedule-{schedule.get('id')}-{run_key}",
+                )
+            else:
+                try:
+                    result = _stamp_scheduled_invoice(schedule, template, run_key)
+                    schedule["last_status"] = "completed"
+                    schedule["last_invoice_id"] = str(result.get("invoice_id") or "")
+                    schedule["last_uuid"] = str(result.get("uuid") or "")
+                    _send_push_notifications(
+                        "Factura procesada correctamente",
+                        f"{schedule.get('name')} fue timbrada" + (" y enviada por correo." if result.get("email_sent") else "."),
+                        "/facturacion", f"invoice-schedule-{schedule.get('id')}-{run_key}",
+                    )
+                except Exception as exc:
+                    schedule["last_status"] = "error"
+                    schedule["last_error"] = str(exc)[:500]
+                    _send_push_notifications(
+                        "Factura programada requiere atención",
+                        f"No se pudo procesar {schedule.get('name')}. Abre HSC para revisar.",
+                        "/facturacion?tab=plantillas", f"invoice-schedule-error-{schedule.get('id')}-{run_key}",
+                    )
+            processed.append({"id": schedule.get("id"), "status": schedule.get("last_status"), "error": schedule.get("last_error", "")})
+        drive_ok = _write_invoice_schedules(schedules) if processed else True
+        return jsonify({"ok": True, "processed": processed, "drive_backup": drive_ok, "checked_at": now.isoformat()}), 200
+    finally:
+        _SCHEDULE_RUN_LOCK.release()
 
 # ----------------------------------------------------------------------
 # PDF / XML / Cancelación

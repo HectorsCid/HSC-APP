@@ -243,6 +243,11 @@ def _require_app_login():
         or request.path.endswith((".css", ".js", ".ico", ".svg", ".png", ".jpg", ".jpeg", ".webp"))
     ):
         return None
+    if request.path == "/api/invoice-schedules/run":
+        expected = os.environ.get("HSC_SCHEDULER_KEY", "").strip()
+        supplied = request.headers.get("X-HSC-Scheduler-Key", "")
+        if len(expected) >= 20 and hmac.compare_digest(expected, supplied):
+            return None
     password = _app_access_password()
     if current_app.testing and not password:
         return None

@@ -90,6 +90,31 @@
     });
   }
 
+  function decodePushKey(value){
+    const padding = '='.repeat((4 - value.length % 4) % 4);
+    const raw = atob((value + padding).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from([...raw].map(character => character.charCodeAt(0)));
+  }
+
+  async function subscribeForServerNotifications(){
+    if(!registration || !('PushManager' in window) || Notification.permission !== 'granted') return false;
+    const configResponse = await fetch('/api/push/config', {headers:{'Accept':'application/json'}});
+    const config = await configResponse.json();
+    if(!configResponse.ok || !config.enabled || !config.public_key) return false;
+    let subscription = await registration.pushManager.getSubscription();
+    if(!subscription){
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly:true,
+        applicationServerKey:decodePushKey(config.public_key)
+      });
+    }
+    const response = await fetch('/api/push/subscribe', {
+      method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body:JSON.stringify({subscription:subscription.toJSON()})
+    });
+    return response.ok;
+  }
+
   function syncInstallActions(installed){
     document.querySelectorAll('[data-pwa-install]').forEach(button => {
       button.disabled = installed;
@@ -142,7 +167,13 @@
       tag:'hsc-prueba',
       data:{url:'/inicio-app'}
     });
-    updateStatus('Notificación de prueba enviada.');
+    try{
+      const subscribed = await subscribeForServerNotifications();
+      updateStatus(subscribed ? 'Notificaciones y recordatorios activados.' : 'Notificación de prueba enviada. Falta configurar los avisos del servidor.');
+    }catch(error){
+      console.warn('HSC: no se pudo activar el canal de avisos.', error);
+      updateStatus('Notificación de prueba enviada; el canal de recordatorios todavía no está disponible.');
+    }
   }
 
   function bindPanelActions(){
@@ -176,6 +207,9 @@
     try{
       registration = await navigator.serviceWorker.register('/service-worker.js', {scope:'/'});
       bindPanelActions();
+      if('Notification' in window && Notification.permission === 'granted'){
+        subscribeForServerNotifications().catch(error => console.warn('HSC: no se pudo renovar el canal de avisos.', error));
+      }
     }catch(error){
       console.warn('HSC: no se pudo registrar el modo aplicación.', error);
       updateStatus('No se pudo preparar el modo aplicación. Recarga la página e inténtalo otra vez.');

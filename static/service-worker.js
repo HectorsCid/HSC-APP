@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hsc-shell-v8';
+const CACHE_NAME = 'hsc-shell-v9';
 const SAFE_ASSETS = [
   '/static/hsc_theme.css',
   '/static/hsc_theme.js',
@@ -40,14 +40,29 @@ self.addEventListener('fetch', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
+  const targetUrl = event.notification.data?.url || '/inicio-app';
   event.waitUntil(
     self.clients.matchAll({type:'window', includeUncontrolled:true}).then(clients => {
       const openClient = clients.find(client => new URL(client.url).origin === self.location.origin);
       if(openClient){
-        openClient.navigate('/inicio-app');
+        openClient.navigate(targetUrl);
         return openClient.focus();
       }
-      return self.clients.openWindow('/inicio-app');
+      return self.clients.openWindow(targetUrl);
     })
   );
+});
+
+self.addEventListener('push', event => {
+  let payload = {};
+  try{ payload = event.data?.json() || {}; }catch(_){ payload = {body:event.data?.text() || ''}; }
+  event.waitUntil(self.registration.showNotification(payload.title || 'HSC', {
+    body: payload.body || 'Tienes un aviso pendiente.',
+    icon: '/static/img/hsc-app-192.png',
+    badge: '/static/img/hsc-app-192.png',
+    tag: payload.tag || 'hsc-aviso',
+    renotify: true,
+    data: {url: payload.url || '/inicio-app'},
+    actions: [{action:'open', title:'Abrir HSC'}]
+  }));
 });

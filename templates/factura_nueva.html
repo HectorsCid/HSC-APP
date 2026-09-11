@@ -308,6 +308,7 @@
   <script>
     const pageQuoteId = new URLSearchParams(location.search).get('quote_id') || '';
     const pageTemplateId = new URLSearchParams(location.search).get('template_id') || '';
+    const pageScheduleId = new URLSearchParams(location.search).get('schedule_id') || '';
     const stampStorageKey = `hsc-stamp-request:${pageQuoteId || 'manual'}`;
     const navigationType = performance.getEntriesByType('navigation')[0]?.type || 'navigate';
     let stampRequestId = navigationType === 'reload' ? sessionStorage.getItem(stampStorageKey) : '';
@@ -1019,6 +1020,12 @@
             cliente: document.getElementById('cliente').value || pageClientName || document.getElementById('razon').value,
             driveState
           };
+          if(pageScheduleId){
+            fetch(`/api/invoice-schedules/${encodeURIComponent(pageScheduleId)}/complete`, {
+              method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
+              body:JSON.stringify({invoice_id:data.invoice_id||'',uuid:data.uuid||''})
+            }).catch(()=>{});
+          }
           document.getElementById('stampSuccessText').textContent = data.warning
             ? `${data.warning} ¿Quieres enviar el PDF y XML por correo ahora?`
             : 'El PDF y el XML están listos. ¿Quieres enviarlos por correo ahora?';
