@@ -103,6 +103,11 @@
   html[data-theme="dark"] .theme-track{background:#22c55e}
   html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
   .theme-text{font-size:.75rem;white-space:nowrap}
+  .notice-bell{position:relative;display:inline-grid;place-items:center;width:39px;height:39px;flex:0 0 39px;padding:0;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--ink);cursor:pointer;transition:.16s ease}
+  .notice-bell:hover{background:var(--soft);transform:translateY(-1px)}
+  .notice-bell svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  .notice-bell-count{position:absolute;top:-5px;right:-5px;display:none;min-width:19px;height:19px;padding:0 5px;border:2px solid var(--bg);border-radius:999px;background:var(--danger);color:#fff;font-size:.62rem;font-weight:900;line-height:15px;text-align:center}
+  .notice-bell.has-unread .notice-bell-count{display:block}
   .tabs{gap:7px;margin:12px 0 10px}
   .tab{padding:7px 13px;background:var(--surface);font-weight:750}
   .tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
@@ -190,6 +195,7 @@
 </style>
 <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
+<script defer src="{{ url_for('static', filename='notifications.js', v='2') }}"></script>
 </head>
 <body>
 <div class="layout">
@@ -218,6 +224,10 @@
         <input id="q" type="search" placeholder="Buscar receptor, RFC o folio" />
         <label for="mes">Mes</label>
         <select id="mes"></select>
+        <button class="notice-bell" type="button" data-hsc-notices aria-label="Abrir centro de avisos" title="Avisos de facturación">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>
+          <span class="notice-bell-count" data-notice-count aria-hidden="true"></span>
+        </button>
         <button class="theme-toggle" type="button" id="theme-toggle" role="switch" aria-label="Cambiar modo de color">
           <span class="theme-track" aria-hidden="true"><span class="theme-knob"></span></span>
           <span class="theme-text" id="theme-label">Modo</span>
