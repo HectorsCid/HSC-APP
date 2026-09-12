@@ -2,10 +2,16 @@
 
 ## Operaciones: pólizas y rondas (último cambio local, sin publicar)
 
+- Revisión estructural de las 12 pestañas reales y mapa completo Reportes!A1:AL1 documentados en REVISION_MATRIZ_OPERACIONES.md. Sin modificación de Sheets; falta auditoría global de claves/fórmulas y reglas de AppSheet.
+- Evidencias múltiples locales: hasta seis fotos ordenables con miniaturas, eliminación y límites. Pruebas de lógica en test_demo_evidence.cjs (decodificación simulada). Fotos en memoria por equipo/ronda, no respaldadas con borrador de texto. Falta probar carga real en teléfono, persistencia, subida Drive y mapeo validado U:Z antes de conectar.
+- Navegación y permisos maquetados localmente: cuenta propietaria alterna entre técnico/administrador sin salir de Operaciones; pestañas principales reinician el historial y los detalles usan flecha interna. Permisos por técnico para reportes, fallas, altas/edición de equipos, datos de cliente y vínculo matriz. IDs internos inmutables. Falta persistencia y cumplimiento obligatorio en servidor.
+- Conexión inicial de Operaciones a Matriz preparada en sólo lectura y con caché: clientes, equipos, rondas y reportes por ID; omite correos, observaciones y rutas de imagen. Cuenta referencias de fotos sin descargarlas. Falta publicar y verificar con credenciales de Render, revisar duplicados/huérfanos devueltos y limitar datos por usuario cuando existan cuentas reales.
+- Invitación Partner corregida: sólo consulta equipos, reportes terminados y fallas visibles; no comparte permisos de creación del técnico.
+
 - Agenda: retirado interruptor de notificaciones del técnico; queda aviso de configuración por administración. No se pueden impedir bloqueos de notificaciones desde el sistema operativo.
 - Alta de equipos por cantidad (1–100) en maqueta: registros independientes, IDs libres, nombres numerados y datos comunes; series individuales sin duplicarlas en el lote. Probado crear 3 equipos HDI7–HDI9 conservando los 6 existentes. Falta implementación de lote real en matriz con protección de reintentos/concurrencia y permisos.
 
-- Nuevas pantallas en maqueta: agregar desde catálogo o crear cliente, editar nombre/dirección/póliza/vínculo matriz/foto; agregar y editar equipo (tipo, ubicación, marca, modelo, serie, notas y foto), desactivar/reactivar sin quitar reportes. Datos y fotos nuevos sólo en memoria de la pestaña, se pierden al recargar. Sin APIs ni permisos reales implementados.
+- Nuevas pantallas en maqueta: agregar desde catálogo o crear cliente, editar nombre/dirección/póliza/vínculo matriz/foto; agregar y editar equipo (tipo, ubicación, marca, modelo, serie, notas y foto), desactivar/reactivar sin quitar reportes. Datos, permisos y fotos nuevos sólo en memoria de la pestaña, se pierden al recargar. Sin APIs ni permisos reales implementados.
 - Validaciones de ejemplo: nombres normalizados y vínculos matriz duplicados en clientes, serie duplicada dentro del cliente, imágenes JPG/PNG/WebP hasta 5 MB. IDs existentes no editables. Confirmación al abandonar formularios con cambios.
 - Verificado en navegador estrecho: alta de cliente ficticio, alta/edición/desactivación de equipo, R4, conteos por cliente y ocultamiento al quitar póliza. Sintaxis JavaScript y diff correctos. Falta probar carga de foto en dispositivos reales y conectar almacenamiento persistente/permisos antes de uso operativo.
 

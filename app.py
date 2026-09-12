@@ -50,6 +50,7 @@ from smtp_mailer import authorized_to_send, parse_recipients, send_quote_email, 
 from cfdi_drive import delete_pending_document, list_pending_documents, save_pending_document
 from email_tracking import delivery_status, read_email_deliveries, record_email_delivery
 from reportes_bp import reportes_bp, start_auto_report_monitor
+from operaciones_matrix import read_operaciones_matrix
 
 from facturacion_bp import facturacion_bp
 app.register_blueprint(facturacion_bp)
@@ -2640,6 +2641,42 @@ def inicio_app():
 def app_operativa_demo():
     """Maqueta aislada del reemplazo móvil de AppSheet."""
     return render_template('app_operativa_demo.html')
+
+
+_OPERACIONES_MATRIX_CACHE = {"ts": 0.0, "payload": None}
+_OPERACIONES_MATRIX_CACHE_LOCK = threading.Lock()
+_OPERACIONES_MATRIX_TTL = 180.0
+
+
+@app.get('/api/operaciones/bootstrap')
+def api_operaciones_bootstrap():
+    """Lectura mínima de la matriz para construir la app operativa sin modificar Sheets."""
+    now = time.monotonic()
+    refresh = request.args.get("refresh") == "1"
+    with _OPERACIONES_MATRIX_CACHE_LOCK:
+        cached = _OPERACIONES_MATRIX_CACHE["payload"]
+        fresh = cached is not None and now - _OPERACIONES_MATRIX_CACHE["ts"] < _OPERACIONES_MATRIX_TTL
+        if fresh and not refresh:
+            return jsonify({"ok": True, "read_only": True, "cached": True, **cached})
+        try:
+            payload = read_operaciones_matrix(get_sheets_service(timeout=15), SHEET_ID)
+            _OPERACIONES_MATRIX_CACHE.update(ts=now, payload=payload)
+            return jsonify({"ok": True, "read_only": True, "cached": False, **payload})
+        except Exception as exc:
+            current_app.logger.exception("No se pudo leer la matriz de Operaciones: %s", exc)
+            if cached is not None:
+                return jsonify({
+                    "ok": True, "read_only": True, "cached": True, "stale": True,
+                    "warning": "La matriz no respondió; se muestran los últimos datos disponibles.",
+                    **cached,
+                })
+            return jsonify({
+                "ok": False,
+                "read_only": True,
+                "error": "No se pudo leer la Hoja Matriz. Revisa la conexión de Google.",
+            }), 502
+        finally:
+            reset_thread_google_services()
 
 # --- Healthcheck muy ligero para Render ---
 @app.route("/healthz")
