@@ -13,6 +13,7 @@ const context = vm.createContext({$, Map, Set, Number, String, Image:class {
   naturalWidth=100;naturalHeight=100;
   async decode(){if(this.src.includes('bad'))throw Error('invalid');}
 }, URL:{createObjectURL:f=>'blob:'+f.name,revokeObjectURL:()=>{}}, selectedEquipment:'HDI1',selectedRound:'2',
+  indexedDB:undefined,
   draftKey:()=>`${context.selectedEquipment}-R${context.selectedRound}`, escapeHtml:s=>String(s).replaceAll('<','&lt;'),toast:()=>{}});
 vm.runInContext(block,context);
 const file = (name,size=1024,type='image/jpeg')=>({name,size,type,lastModified:1});

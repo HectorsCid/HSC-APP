@@ -59,7 +59,7 @@
 
   <main>
     <section class="view active" data-view="clients">
-      <div class="mode-bar" id="clientsModeBar"><div><b id="activeModeLabel">Modo técnico</b><small id="matrixStatus">Conectando con la Hoja Matriz…</small></div><button class="mini-btn" id="openAdminMode">Activar administrador</button></div>
+      <div class="mode-bar" id="clientsModeBar"><div><b id="activeModeLabel">Modo técnico</b><small id="matrixStatus">Conectando con la Hoja Matriz…</small></div><div class="mode-actions"><button class="mini-btn" id="syncGoogleNow" data-admin-only>Sincronizar Google</button><button class="mini-btn" id="openAdminMode">Activar administrador</button></div></div>
       <div class="stats" id="matrixStats" hidden><div class="stat"><b id="matrixClientCount">0</b><span>Clientes</span></div><div class="stat"><b id="matrixEquipmentCount">0</b><span>Equipos</span></div><div class="stat"><b id="matrixPhotoCount">0</b><span>Fotos referenciadas</span></div></div>
       <div class="search"><span>⌕</span><input id="clientSearch" type="search" placeholder="Buscar cliente, clave o ubicación"></div>
       <div class="section-head"><h2>Clientes</h2><div><span class="count" id="clientCount"></span> <button class="mini-btn" id="openUsers" data-admin-only>Usuarios</button></div></div>
@@ -108,7 +108,7 @@
           <p class="editor-note">La foto sólo se previsualiza en esta sesión; todavía no se sube a Drive.</p>
           <div class="editor-error" id="clientEditorError" role="alert"></div>
         </div></div>
-        <div class="form-actions"><button class="secondary" type="button" data-cancel-editor>Cancelar</button><button class="primary" type="submit">Guardar en maqueta</button></div>
+        <div class="form-actions"><button class="secondary" type="button" data-cancel-editor>Cancelar</button><button class="primary" type="submit">Guardar cliente</button></div>
       </form>
     </section>
     <section class="view editor" data-view="equipmentEditor">
@@ -127,7 +127,7 @@
           <div class="field"><label for="opEquipmentNotes">Notas del equipo</label><textarea id="opEquipmentNotes" maxlength="1000"></textarea></div>
           <div class="editor-error" id="equipmentEditorError" role="alert"></div>
         </div></div>
-        <div class="form-actions"><button class="secondary" type="button" data-cancel-editor>Cancelar</button><button class="primary" type="submit">Guardar en maqueta</button></div>
+        <div class="form-actions"><button class="secondary" type="button" data-cancel-editor>Cancelar</button><button class="primary" type="submit">Guardar equipo</button></div>
       </form>
     </section>
     <section class="view" data-view="report">
@@ -137,7 +137,7 @@
         <details class="form-section"><summary>2. Mediciones</summary><div class="section-body"><div class="field-row"><div class="field"><label>Presión circuito 1 (psi)</label><input inputmode="decimal" name="p1" placeholder="0"></div><div class="field"><label>Presión circuito 2 (psi)</label><input inputmode="decimal" name="p2" placeholder="0"></div></div><div class="field-row"><div class="field"><label>Temperatura circuito 1 (°C)</label><input inputmode="decimal" name="t1" placeholder="0"></div><div class="field"><label>Temperatura circuito 2 (°C)</label><input inputmode="decimal" name="t2" placeholder="0"></div></div><div class="field-row"><div class="field"><label>Amperaje circuito 1 (A)</label><input inputmode="decimal" name="a1" placeholder="0"></div><div class="field"><label>Amperaje circuito 2 (A)</label><input inputmode="decimal" name="a2" placeholder="0"></div></div></div></details>
         <details class="form-section"><summary>3. Revisión del sistema</summary><div class="section-body"><div class="field"><label>Observaciones eléctricas</label><textarea name="electrico" placeholder="Describe lo revisado o agrega varios puntos"></textarea></div><div class="field"><label>Observaciones electrónicas</label><textarea name="electronico"></textarea></div><div class="field"><label>Observaciones mecánicas</label><textarea name="mecanico"></textarea></div></div></details>
         <details class="form-section"><summary>4. Correctivo y partes</summary><div class="section-body"><div class="field"><label>Rutina de mantenimiento correctivo</label><textarea name="correctivo"></textarea></div><div class="field"><label>Partes utilizadas</label><textarea name="partes"></textarea></div><div class="field"><label>Observaciones y recomendaciones</label><textarea name="notas"></textarea></div></div></details>
-        <details class="form-section"><summary>5. Evidencia y cierre</summary><div class="section-body"><div class="field"><label for="reportEvidence">Agregar evidencias · selecciona varias fotografías</label><input id="reportEvidence" type="file" multiple accept="image/jpeg,image/png,image/webp"><p class="editor-note">Hasta 6 fotos, máximo 15 MB por foto y 60 MB en total. El orden mostrado corresponde a Foto1–Foto6. Puedes moverlas o quitarlas antes de guardar.</p><p class="editor-note">Maqueta: las fotos permanecen sólo en esta pestaña, incluso al guardar un borrador. Se pierden al recargar; todavía no se suben a Drive ni a la matriz.</p><p id="evidenceStatus" aria-live="polite" class="editor-note">0 de 6 fotos</p><div id="evidenceError" role="alert" class="editor-error"></div><div id="evidenceList" class="equipment-list"></div></div><div class="field"><label>Nombre de quien revisa</label><input name="revisor"></div><button class="secondary wide" type="button">✎ Agregar firma</button></div></details>
+        <details class="form-section"><summary>5. Evidencia y cierre</summary><div class="section-body"><div class="field"><label for="reportEvidence">Agregar evidencias · selecciona varias fotografías</label><input id="reportEvidence" type="file" multiple accept="image/jpeg,image/png,image/webp"><p class="editor-note">Hasta 6 fotos, máximo 15 MB por foto y 60 MB en total. El orden mostrado corresponde a Foto1–Foto6. Puedes moverlas o quitarlas antes de guardar.</p><p class="editor-note">El texto se guarda en la base y las fotos quedan resguardadas sin conexión en este dispositivo. Al conectar el almacenamiento permanente se enviarán al servidor y después a Drive.</p><p id="evidenceStatus" aria-live="polite" class="editor-note">0 de 6 fotos</p><div id="evidenceError" role="alert" class="editor-error"></div><div id="evidenceList" class="equipment-list"></div></div><div class="field"><label>Nombre de quien revisa</label><input name="revisor"></div><button class="secondary wide" type="button">✎ Agregar firma</button></div></details>
         <div class="form-actions"><button class="secondary" type="button" id="saveDraft">Guardar borrador</button><button class="primary" type="submit">Finalizar reporte</button></div>
       </form>
     </section>
@@ -267,10 +267,10 @@
     if(!Array.isArray(payload.clients)||!payload.clients.length)return false;
     clients.splice(0,clients.length,...payload.clients.map(client=>[client.name,client.id,'']));
     for(const key of Object.keys(clientMeta))delete clientMeta[key];
-    for(const client of payload.clients)clientMeta[client.id]={policy:true,matrixId:client.id,address:client.address||'',photo:client.photo_url||'',photoAvailable:Boolean(client.has_photo),selectedRound:client.selected_round||''};
+    for(const client of payload.clients)clientMeta[client.id]={policy:client.policy_active!==false,matrixId:client.matrix_id||client.id,address:client.address||'',photo:client.photo_url||'',photoAvailable:Boolean(client.has_photo),selectedRound:client.selected_round||''};
     equipment.splice(0,equipment.length,...payload.equipment.map(item=>[item.id,item.name,item.brand||'',false]));
     for(const key of Object.keys(equipmentMeta))delete equipmentMeta[key];
-    for(const item of payload.equipment)equipmentMeta[item.id]={client:item.client_id,active:String(item.status||'').toLowerCase()!=='inactivo',type:'Refrigeración',location:item.location||'',department:item.department||'',model:item.model||'',serial:item.serial||'',notes:'',photo:item.photo_url||'',photoAvailable:Boolean(item.has_photo)};
+    for(const item of payload.equipment)equipmentMeta[item.id]={client:item.client_id,active:String(item.status||'').toLowerCase()!=='inactivo',type:item.equipment_type||'Refrigeración',location:item.location||'',department:item.department||'',model:item.model||'',serial:item.serial||'',notes:item.notes||'',photo:item.photo_url||'',photoAvailable:Boolean(item.has_photo)};
     matrixReports=Array.isArray(payload.reports)?payload.reports:[];
     for(const round of ['1','2','3','4']){
       const completed=matrixReports.filter(report=>report.round===round&&report.completed).map(report=>report.equipment_id).filter(Boolean);
@@ -283,21 +283,24 @@
     selectedEquipment=equipment.find(item=>equipmentMeta[item[0]]?.client===selectedClient)?.[0]||equipment[0]?.[0]||'';
     matrixLoaded=true;
     const stats=payload.stats||{},photoCount=(stats.client_photos||0)+(stats.equipment_photos||0)+(stats.evidence_photos||0);
-    $('#matrixStatus').textContent=`Matriz conectada en lectura · ${payload.cached?'caché':'actualizada'}`;
-    $('#operationsNoticeText').textContent='Clientes, equipos, reportes y miniaturas se consultan desde la Hoja Matriz. Las capturas nuevas aún permanecen como borradores locales.';
+    const databaseSource=payload.source==='database';
+    $('#matrixStatus').textContent=databaseSource?`Base operativa conectada · ${payload.cached?'caché':'actualizada'}`:`Matriz conectada en lectura · ${payload.cached?'caché':'actualizada'}`;
+    $('#operationsNoticeText').textContent=databaseSource?'Clientes, equipos y reportes se consultan desde la base operativa. Google queda reservado para sincronización y archivos. Las capturas nuevas aún permanecen como borradores locales.':'Clientes, equipos, reportes y miniaturas se consultan desde la Hoja Matriz. Las capturas nuevas aún permanecen como borradores locales.';
     $('#matrixStats').hidden=false;$('#matrixClientCount').textContent=stats.clients||clients.length;$('#matrixEquipmentCount').textContent=stats.equipment||equipment.length;$('#matrixPhotoCount').textContent=photoCount;
     $('#inviteClientSelect').innerHTML=clients.map(client=>`<option value="${escapeHtml(client[1])}">${escapeHtml(client[0])}</option>`).join('');
     renderClients();refreshRound();return true;
   }
-  async function loadMatrixData(){
+  async function loadMatrixData(refresh=false){
     try{
-      const response=await fetch('/api/operaciones/bootstrap',{headers:{Accept:'application/json'}}),payload=await response.json();
+      const response=await fetch(`/api/operaciones/bootstrap${refresh?'?refresh=1':''}`,{headers:{Accept:'application/json'}}),payload=await response.json();
       if(!response.ok||!payload.ok||!applyMatrixBootstrap(payload))throw Error(payload.error||'La matriz no devolvió clientes.');
       if(payload.warning)$('#matrixStatus').textContent=payload.warning;
+      if(refresh)toast('Datos actualizados desde Google');
     }catch(error){$('#matrixStatus').textContent='Datos de ejemplo · la matriz no está disponible en esta computadora';$('#operationsNoticeText').textContent='Vista local con datos de ejemplo. No guarda reportes reales, no crea cuentas ni envía avisos.';console.warn('Operaciones matrix preview:',error);}
   }
   const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
   function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2300)}
+  async function operationsPost(url,body){const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)});let payload={};try{payload=await response.json()}catch(_){}if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudo guardar.');return payload;}
   function navMode(mode){const set=(el,view,icon,label)=>{el.dataset.nav=view;el.querySelector('span').textContent=icon;el.querySelector('em').textContent=label};if(mode==='partner'){set($('#navOne'),'partner','⌂','Inicio');set($('#navTwo'),'partnerEquipment','❄','Equipos');set($('#navThree'),'partnerFaults','⚠','Fallas')}else if(mode==='admin'){set($('#navOne'),'users','♙','Usuarios');set($('#navTwo'),'clients','▤','Clientes');set($('#navThree'),'profile','◎','Cuenta')}else{set($('#navOne'),'agenda','▦','Agenda');set($('#navTwo'),'clients','♙','Clientes');set($('#navThree'),'profile','◎','Perfil')}}
   function can(permission){return account.isOwner&&currentMode==='admin'||Boolean(activePermissions[permission]);}
   function applyAccess(){
@@ -308,6 +311,7 @@
     $('#profileModeText').textContent=currentMode==='admin'?'Ahora estás usando las herramientas de administración':'Ahora estás usando la app como técnico';
     $$('[data-switch-mode]').forEach(button=>button.classList.toggle('active',button.dataset.switchMode===currentMode));
   }
+  $('#syncGoogleNow').onclick=async()=>{const button=$('#syncGoogleNow');button.disabled=true;button.textContent='Sincronizando…';try{await loadMatrixData(true)}finally{button.disabled=false;button.textContent='Sincronizar Google'}};
   function showView(name,push=true){if(name===current){$('#backBtn').hidden=historyStack.length<=1;applyAccess();return;}if(push)historyStack.push(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=historyStack.length<=1;navMode(currentMode);$('.bottom-nav').style.display=name==='inviteAccept'?'none':'grid';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();scrollTo({top:0,behavior:'smooth'});}
   function goBack(){if(historyStack.length<=1)return;historyStack.pop();showView(historyStack.at(-1),false)}
   function openRoot(name){historyStack=[name];showView(name,false);}
@@ -409,15 +413,18 @@
     technicianPermissions.carlos={...permissionDraft};toast('Permisos guardados sólo en esta maqueta');goBack();
   };
   $$('[data-round-select]').forEach(select=>select.onchange=()=>{selectedRound=select.value;refreshRound();});
-  const draftKey=()=>`hsc-report-demo-${selectedEquipment}-R${selectedRound}`;
-  $('#newReport').onclick=()=>{
+  const draftKey=()=>`hsc-report-demo-${selectedEquipment}-R${selectedRound}`;let activeDraftId='';
+  function fillReportFields(values){for(const [name,value] of Object.entries(values||{})){const field=$('#reportForm').elements.namedItem(name);if(field)field.value=value??'';}}
+  $('#newReport').onclick=async()=>{
     const e=equipment.find(row=>row[0]===selectedEquipment),form=$('#reportForm');form.reset();
     const fixed=[...form.querySelectorAll('input[readonly]')];fixed[0].value=clientName(equipmentMeta[e[0]].client);fixed[1].value=e[0];fixed[2].value=`R${selectedRound}`;
     $('[data-view="report"] .form-intro span').textContent=`${clientName(equipmentMeta[e[0]].client)} · ${e[0]} · ${e[1]} · R${selectedRound}`;
-    try{const draft=JSON.parse(localStorage.getItem(draftKey())||'{}');for(const [name,value] of Object.entries(draft)){const field=form.elements.namedItem(name);if(field)field.value=value;}}catch(_){}
+    activeDraftId='';try{fillReportFields(JSON.parse(localStorage.getItem(draftKey())||'{}'))}catch(_){}
     showView('report');
+    try{const response=await fetch(`/api/operaciones/reports/draft?equipment_id=${encodeURIComponent(selectedEquipment)}&round=${encodeURIComponent(selectedRound)}`,{headers:{Accept:'application/json'}}),payload=await response.json();if(response.ok&&payload.ok&&payload.draft){activeDraftId=payload.draft.id;fillReportFields(payload.draft.payload);toast('Borrador recuperado de la base')}}catch(_){}
   };
-  $('#saveDraft').onclick=()=>{try{localStorage.setItem(draftKey(),JSON.stringify(Object.fromEntries(new FormData($('#reportForm')))));toast(`Borrador local guardado · ${selectedEquipment} · R${selectedRound}`);}catch(_){toast('No se pudo guardar el borrador en este dispositivo');}};
+  $('#saveDraft').onclick=async()=>{const data=Object.fromEntries(new FormData($('#reportForm'))),button=$('#saveDraft');try{localStorage.setItem(draftKey(),JSON.stringify(data))}catch(_){}button.disabled=true;try{const result=await operationsPost('/api/operaciones/reports/draft',{id:activeDraftId,client_id:equipmentMeta[selectedEquipment].client,equipment_id:selectedEquipment,round:selectedRound,report_type:'refrigeration',payload:data});activeDraftId=result.draft.id;toast(`Borrador guardado en la base · ${selectedEquipment} · R${selectedRound}`)}catch(error){toast(`Borrador conservado en este dispositivo · ${error.message}`)}finally{button.disabled=false}};
+  $('#reportForm').onsubmit=event=>{event.preventDefault();toast('Para finalizar falta conectar el guardado permanente de fotografías. El borrador se conserva.')};
   // Edición exclusivamente en memoria: no hay API ni escritura en la matriz.
   let editingClient=null,editingEquipment=null,clientPhoto='',equipmentPhoto='',editorDirty=false;
   const normalizedName=value=>value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').toLowerCase();
@@ -450,15 +457,17 @@
   $('#catalogClient').onchange=()=>{const id=$('#catalogClient').value;fillClientEditor(id&&id!=='__new'?id:null);editorDirty=true;};
   $('#addOperationalClient').onclick=()=>openClientEditor();$('#editOperationalClient').onclick=()=>openClientEditor(true);
   $('#catalogScope').onclick=()=>{showCatalog=!showCatalog;renderClients();};
-  $('#clientEditorForm').onsubmit=event=>{
+  $('#clientEditorForm').onsubmit=async event=>{
     event.preventDefault();const error=$('#clientEditorError'),name=$('#opClientName').value.trim(),matrixId=$('#opMatrixId').value.trim().toUpperCase();
     if(!$('#catalogChoice').hidden&&!$('#catalogClient').value){error.textContent='Selecciona un cliente del catálogo o la opción Crear cliente nuevo.';return;}
     if(!name){error.textContent='Escribe el nombre del cliente.';return;}
     if(clients.some(c=>c[1]!==editingClient&&normalizedName(c[0])===normalizedName(name))){error.textContent='Ese cliente ya existe. Selecciónalo en el catálogo para evitar duplicarlo.';return;}
     if(matrixId&&Object.entries(clientMeta).some(([id,m])=>id!==editingClient&&m.matrixId.toUpperCase()===matrixId)){error.textContent='Esa clave de matriz ya está vinculada a otro cliente de ejemplo.';return;}
-    const id=editingClient||nextClientId();if(editingClient)clients.find(c=>c[1]===id)[0]=name;else clients.push([name,id,'0 equipos']);
-    clientMeta[id]={policy:$('#opClientPolicy').checked,matrixId,address:$('#opClientAddress').value.trim(),photo:clientPhoto};
-    editorDirty=false;selectedClient=id;renderClients();refreshRound();showView('client');historyStack=['clients','client'];toast('Cliente actualizado sólo en esta maqueta');
+    const id=editingClient||nextClientId(),submit=event.submitter;submit.disabled=true;error.textContent='';
+    try{
+      await operationsPost('/api/operaciones/clients',{id,name,matrix_id:matrixId,address:$('#opClientAddress').value.trim(),policy_active:$('#opClientPolicy').checked,selected_round:clientMeta[editingClient]?.selectedRound||''});
+      editorDirty=false;await loadMatrixData();selectedClient=id;refreshRound();showView('client');historyStack=['clients','client'];toast('Cliente guardado · sincronización con Google pendiente');
+    }catch(saveError){error.textContent=saveError.message}finally{submit.disabled=false}
   };
   function openEquipmentEditor(edit=false){
     editingEquipment=edit?selectedEquipment:null;const row=equipment.find(e=>e[0]===editingEquipment),meta=equipmentMeta[editingEquipment];
@@ -470,17 +479,17 @@
     [...$('#equipmentEditorForm').elements].forEach(field=>{if(field.id!=='opEquipmentId')field.disabled=Boolean(edit)&&!can('editEquipment')});showView('equipmentEditor');
   }
   $('#addOperationalEquipment').onclick=()=>openEquipmentEditor();$('#editOperationalEquipment').onclick=()=>openEquipmentEditor(true);
-  $('#equipmentEditorForm').onsubmit=event=>{
+  $('#equipmentEditorForm').onsubmit=async event=>{
     event.preventDefault();const name=$('#opEquipmentName').value.trim(),count=editingEquipment?1:Number($('#opEquipmentQuantity').value),serial=count>1?'':$('#opEquipmentSerial').value.trim(),error=$('#equipmentEditorError');
     if(!Number.isInteger(count)||count<1||count>100){error.textContent='Indica una cantidad entera entre 1 y 100.';return;}
     if(!name){error.textContent='Escribe el nombre o descripción del equipo.';return;}
     if(serial&&Object.entries(equipmentMeta).some(([id,m])=>id!==editingEquipment&&m.client===selectedClient&&m.serial.toLowerCase()===serial.toLowerCase())){error.textContent='Ya existe un equipo con ese número de serie para este cliente.';return;}
-    const ids=editingEquipment?[editingEquipment]:batchEquipmentIds(count),brand=$('#opEquipmentBrand').value.trim();
-    for(const [index,id] of ids.entries()){
-      if(editingEquipment){const row=equipment.find(e=>e[0]===id);row[1]=name;row[2]=brand;}else equipment.push([id,count>1?`${name} ${index+1}`:name,brand,false]);
-      equipmentMeta[id]={client:selectedClient,active:$('#opEquipmentActive').checked,type:$('#opEquipmentType').value,location:$('#opEquipmentLocation').value.trim(),model:$('#opEquipmentModel').value.trim(),serial,notes:$('#opEquipmentNotes').value.trim(),photo:equipmentPhoto};
-    }
-    editorDirty=false;selectedEquipment=ids[0];renderClients();refreshRound();showView(count>1?'client':'equipment');historyStack=count>1?['clients','client']:['clients','client','equipment'];toast(`${count} equipo(s) guardado(s) sólo en esta maqueta`);
+    const ids=editingEquipment?[editingEquipment]:batchEquipmentIds(count),brand=$('#opEquipmentBrand').value.trim(),submit=event.submitter;
+    const items=ids.map((id,index)=>({id,client_id:selectedClient,name:count>1?`${name} ${index+1}`:name,brand,model:$('#opEquipmentModel').value.trim(),serial,active:$('#opEquipmentActive').checked,location:$('#opEquipmentLocation').value.trim(),equipment_type:$('#opEquipmentType').value,notes:$('#opEquipmentNotes').value.trim()}));
+    submit.disabled=true;error.textContent='';
+    try{
+      await operationsPost('/api/operaciones/equipment',{items});editorDirty=false;await loadMatrixData();selectedEquipment=ids[0];refreshRound();showView(count>1?'client':'equipment');historyStack=count>1?['clients','client']:['clients','client','equipment'];toast(`${count} equipo(s) guardado(s) · sincronización con Google pendiente`);
+    }catch(saveError){error.textContent=saveError.message}finally{submit.disabled=false}
   };
   $('#toggleOperationalEquipment').onclick=()=>{const meta=equipmentMeta[selectedEquipment];if(meta.active&&!confirm('¿Desactivar este equipo en la maqueta? Sus reportes se conservan.'))return;meta.active=!meta.active;refreshRound();toast(meta.active?'Equipo reactivado en maqueta':'Equipo desactivado; historial conservado');};
   $('#taskStart').onclick=()=>{selectedClient='HDI';selectedRound='2';selectedEquipment='HDI3';refreshRound();showView('equipment');};
@@ -504,10 +513,13 @@
   $('#backBtn').onclick=()=>{if(['clientEditor','equipmentEditor'].includes(current)&&editorDirty){if(!confirm('¿Salir sin guardar estos cambios de la maqueta?'))return;editorDirty=false;}goBack();};
   $$('[data-cancel-editor]').forEach(b=>b.onclick=()=>$('#backBtn').click());
   window.addEventListener('beforeunload',event=>{if(editorDirty){event.preventDefault();event.returnValue='';}});
-  const reportEvidenceByKey=new Map();let evidenceBusy=false;
+  const reportEvidenceByKey=new Map(),loadedEvidenceKeys=new Set();let evidenceBusy=false;
+  function openEvidenceDb(){if(typeof indexedDB==='undefined')return Promise.resolve(null);return new Promise((resolve,reject)=>{const request=indexedDB.open('hsc-operaciones-offline',1);request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains('evidence')){const store=db.createObjectStore('evidence',{keyPath:'key'});store.createIndex('draft','draft',{unique:false})}};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})}
+  async function persistEvidence(){const db=await openEvidenceDb();if(!db)return false;const draft=draftKey(),photos=evidenceForReport();await new Promise((resolve,reject)=>{const transaction=db.transaction('evidence','readwrite'),store=transaction.objectStore('evidence'),index=store.index('draft'),cursor=index.openCursor(IDBKeyRange.only(draft));cursor.onsuccess=()=>{const item=cursor.result;if(item){item.delete();item.continue()}else photos.forEach((photo,position)=>store.put({key:`${draft}:${position}`,draft,position,name:photo.file.name,type:photo.file.type,size:photo.file.size,lastModified:photo.file.lastModified,blob:photo.file}))};transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error)});db.close();return true}
+  async function restoreEvidence(){const key=draftKey();if(loadedEvidenceKeys.has(key))return;loadedEvidenceKeys.add(key);const db=await openEvidenceDb();if(!db)return;const records=await new Promise((resolve,reject)=>{const request=db.transaction('evidence').objectStore('evidence').index('draft').getAll(IDBKeyRange.only(key));request.onsuccess=()=>resolve(request.result||[]);request.onerror=()=>reject(request.error)});db.close();if(!records.length)return;const restored=records.sort((a,b)=>a.position-b.position).map(record=>{const file=new File([record.blob],record.name,{type:record.type,lastModified:record.lastModified});return {file,url:URL.createObjectURL(file)}});reportEvidenceByKey.set(key,restored);renderEvidence()}
   function evidenceForReport(){const key=draftKey();if(!reportEvidenceByKey.has(key))reportEvidenceByKey.set(key,[]);return reportEvidenceByKey.get(key);}
-  function renderEvidence(){const photos=evidenceForReport();$('#evidenceStatus').textContent=`${photos.length} de 6 fotos · ${selectedEquipment} · R${selectedRound}`;$('#evidenceList').innerHTML=photos.map((p,i)=>`<article class="form-section" style="padding:10px;margin:0;min-width:0"><img src="${escapeHtml(p.url)}" alt="Evidencia ${i+1}" style="width:100%;height:130px;object-fit:contain;border-radius:10px"><b>Foto${i+1}</b><p class="editor-note" style="overflow-wrap:anywhere">${escapeHtml(p.file.name)}</p><div class="management-bar"><button class="mini-btn" type="button" data-evidence-action="up" data-index="${i}" ${i===0?'disabled':''} aria-label="Mover Foto${i+1} antes">←</button><button class="mini-btn" type="button" data-evidence-action="down" data-index="${i}" ${i===photos.length-1?'disabled':''} aria-label="Mover Foto${i+1} después">→</button><button class="mini-btn" type="button" data-evidence-action="remove" data-index="${i}">Quitar Foto${i+1}</button></div></article>`).join('');}
-  $('#evidenceList').onclick=event=>{const button=event.target.closest('[data-evidence-action]');if(!button||evidenceBusy)return;const photos=evidenceForReport(),i=Number(button.dataset.index),action=button.dataset.evidenceAction;if(action==='remove'){URL.revokeObjectURL(photos[i].url);photos.splice(i,1);}else{const j=i+(action==='up'?-1:1);if(j>=0&&j<photos.length)[photos[i],photos[j]]=[photos[j],photos[i]];}renderEvidence();};
+  function renderEvidence(){const photos=evidenceForReport();$('#evidenceStatus').textContent=`${photos.length} de 6 fotos · ${selectedEquipment} · R${selectedRound}${photos.length?' · guardadas en este dispositivo':''}`;$('#evidenceList').innerHTML=photos.map((p,i)=>`<article class="form-section" style="padding:10px;margin:0;min-width:0"><img src="${escapeHtml(p.url)}" alt="Evidencia ${i+1}" style="width:100%;height:130px;object-fit:contain;border-radius:10px"><b>Foto${i+1}</b><p class="editor-note" style="overflow-wrap:anywhere">${escapeHtml(p.file.name)}</p><div class="management-bar"><button class="mini-btn" type="button" data-evidence-action="up" data-index="${i}" ${i===0?'disabled':''} aria-label="Mover Foto${i+1} antes">←</button><button class="mini-btn" type="button" data-evidence-action="down" data-index="${i}" ${i===photos.length-1?'disabled':''} aria-label="Mover Foto${i+1} después">→</button><button class="mini-btn" type="button" data-evidence-action="remove" data-index="${i}">Quitar Foto${i+1}</button></div></article>`).join('');}
+  $('#evidenceList').onclick=async event=>{const button=event.target.closest('[data-evidence-action]');if(!button||evidenceBusy)return;const photos=evidenceForReport(),i=Number(button.dataset.index),action=button.dataset.evidenceAction;if(action==='remove'){URL.revokeObjectURL(photos[i].url);photos.splice(i,1);}else{const j=i+(action==='up'?-1:1);if(j>=0&&j<photos.length)[photos[i],photos[j]]=[photos[j],photos[i]];}renderEvidence();try{await persistEvidence()}catch(_){$('#evidenceError').textContent='El cambio se conserva abierto, pero el dispositivo no pudo actualizar su respaldo.'}};
   $('#reportEvidence').onchange=async event=>{
     const input=event.target,files=[...input.files],key=draftKey(),photos=evidenceForReport(),error=$('#evidenceError');input.value='';error.textContent='';if(!files.length||evidenceBusy)return;
     if(photos.length+files.length>6){error.textContent=`Quedan ${6-photos.length} espacios. No se agregó ninguna foto de esta selección.`;return;}
@@ -515,12 +527,14 @@
     if([...photos.map(p=>p.file),...files].reduce((n,f)=>n+f.size,0)>60*1024*1024){error.textContent='Las evidencias superan 60 MB en total. Selecciona fotos más pequeñas.';return;}
     const fingerprints=new Set(photos.map(p=>`${p.file.name}:${p.file.size}:${p.file.lastModified}`));for(const f of files){const stamp=`${f.name}:${f.size}:${f.lastModified}`;if(fingerprints.has(stamp)){error.textContent='Hay una foto repetida. Revisa la selección; no se agregó el lote.';return;}fingerprints.add(stamp);}
     evidenceBusy=true;input.disabled=true;const prepared=[];
-    try{for(const file of files){const url=URL.createObjectURL(file);prepared.push({file,url});const img=new Image();img.src=url;await img.decode();if(img.naturalWidth*img.naturalHeight>25000000)throw Error('La imagen supera 25 megapíxeles.');}photos.push(...prepared);if(key===draftKey())renderEvidence();}
-    catch(_){prepared.forEach(p=>URL.revokeObjectURL(p.url));if(key===draftKey())error.textContent='No se pudo leer una imagen o supera 25 megapíxeles. No se agregó ninguna del lote.';}
+    try{for(const file of files){const url=URL.createObjectURL(file);prepared.push({file,url});const img=new Image();img.src=url;await img.decode();if(img.naturalWidth*img.naturalHeight>25000000)throw Error('La imagen supera 25 megapíxeles.');}}
+    catch(_){prepared.forEach(p=>URL.revokeObjectURL(p.url));if(key===draftKey())error.textContent='No se pudo leer una imagen o supera 25 megapíxeles. No se agregó ninguna del lote.';evidenceBusy=false;input.disabled=false;return;}
+    photos.push(...prepared);if(key===draftKey())renderEvidence();
+    try{await persistEvidence()}catch(_){if(key===draftKey())error.textContent='Las fotos siguen abiertas, pero el dispositivo no pudo guardar su respaldo sin conexión.';}
     finally{evidenceBusy=false;input.disabled=false;}
   };
-  const openReportWithEvidence=$('#newReport').onclick;$('#newReport').onclick=()=>{openReportWithEvidence();$('#evidenceError').textContent='';renderEvidence();};
-  const saveTextDraft=$('#saveDraft').onclick;$('#saveDraft').onclick=()=>{saveTextDraft();if(evidenceForReport().length)toast('Texto guardado; las fotos sólo permanecen en esta pestaña');};
+  const openReportWithEvidence=$('#newReport').onclick;$('#newReport').onclick=async()=>{await openReportWithEvidence();$('#evidenceError').textContent='';try{await restoreEvidence()}catch(_){$('#evidenceError').textContent='No se pudo recuperar el respaldo de fotos de este dispositivo.';}renderEvidence();};
+  const saveTextDraft=$('#saveDraft').onclick;$('#saveDraft').onclick=()=>{saveTextDraft();if(evidenceForReport().length)toast('Borrador y fotos conservados en este dispositivo');};
   $('#inviteClientSelect').innerHTML=clients.map(client=>`<option value="${escapeHtml(client[1])}">${escapeHtml(client[0])}</option>`).join('');
   renderClients();refreshRound();applyAccess();if(typeof fetch==='function')loadMatrixData();
 </script>

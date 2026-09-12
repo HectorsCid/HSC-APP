@@ -51,6 +51,7 @@ from cfdi_drive import delete_pending_document, list_pending_documents, save_pen
 from email_tracking import delivery_status, read_email_deliveries, record_email_delivery
 from reportes_bp import reportes_bp, serve_drive_image_ref_fast, start_auto_report_monitor
 from operaciones_matrix import read_operaciones_matrix
+from operaciones_store import OperationsStore
 
 from facturacion_bp import facturacion_bp
 app.register_blueprint(facturacion_bp)
@@ -180,6 +181,12 @@ IS_RENDER = bool(os.environ.get('RENDER') or
                  os.environ.get('RENDER_SERVICE_ID') or
                  os.environ.get('RENDER_EXTERNAL_HOSTNAME'))
 AUTO_SYNC_FROM_DRIVE = True  # si no quieres en local, pon False
+
+# La app local usa SQLite para desarrollar sin costo. Render sólo activa la
+# base al recibir OPERACIONES_DATABASE_URL, evitando confiar en su disco efímero.
+OPERACIONES_STORE = OperationsStore.from_environment(
+    is_render=IS_RENDER, project_root=Path(__file__).resolve().parent
+)
 
 app.static_folder = "static"
 app.template_folder = "templates"
@@ -2643,7 +2650,7 @@ def app_operativa_demo():
     return render_template('app_operativa_demo.html')
 
 
-_OPERACIONES_MATRIX_CACHE = {"ts": 0.0, "payload": None}
+_OPERACIONES_MATRIX_CACHE = {"ts": 0.0, "payload": None, "source": None}
 _OPERACIONES_MATRIX_CACHE_LOCK = threading.Lock()
 _OPERACIONES_MATRIX_TTL = 180.0
 _OPERACIONES_MEDIA_REFS = {}
@@ -2670,26 +2677,44 @@ def _prepare_operaciones_payload(payload):
 
 @app.get('/api/operaciones/bootstrap')
 def api_operaciones_bootstrap():
-    """Lectura mínima de la matriz para construir la app operativa sin modificar Sheets."""
+    """Lee primero la base operativa; Sheets sólo alimenta la carga inicial/refresco."""
     now = time.monotonic()
     refresh = request.args.get("refresh") == "1"
     with _OPERACIONES_MATRIX_CACHE_LOCK:
         cached = _OPERACIONES_MATRIX_CACHE["payload"]
         fresh = cached is not None and now - _OPERACIONES_MATRIX_CACHE["ts"] < _OPERACIONES_MATRIX_TTL
         if fresh and not refresh:
-            return jsonify({"ok": True, "read_only": True, "cached": True, **cached})
+            return jsonify({
+                "ok": True, "read_only": not OPERACIONES_STORE.enabled, "cached": True,
+                "source": _OPERACIONES_MATRIX_CACHE.get("source") or "memory", **cached,
+            })
         try:
+            if OPERACIONES_STORE.enabled and OPERACIONES_STORE.has_data() and not refresh:
+                payload = _prepare_operaciones_payload(OPERACIONES_STORE.snapshot())
+                _OPERACIONES_MATRIX_CACHE.update(ts=now, payload=payload, source="database")
+                return jsonify({
+                    "ok": True, "read_only": False, "cached": False,
+                    "source": "database", **payload,
+                })
             payload = read_operaciones_matrix(
                 get_sheets_service(timeout=15), SHEET_ID, include_media_refs=True
             )
+            if OPERACIONES_STORE.enabled:
+                OPERACIONES_STORE.import_matrix_snapshot(payload)
+                payload = OPERACIONES_STORE.snapshot()
             payload = _prepare_operaciones_payload(payload)
-            _OPERACIONES_MATRIX_CACHE.update(ts=now, payload=payload)
-            return jsonify({"ok": True, "read_only": True, "cached": False, **payload})
+            source = "database" if OPERACIONES_STORE.enabled else "sheets"
+            _OPERACIONES_MATRIX_CACHE.update(ts=now, payload=payload, source=source)
+            return jsonify({
+                "ok": True, "read_only": not OPERACIONES_STORE.enabled, "cached": False,
+                "source": source, **payload,
+            })
         except Exception as exc:
             current_app.logger.exception("No se pudo leer la matriz de Operaciones: %s", exc)
             if cached is not None:
                 return jsonify({
                     "ok": True, "read_only": True, "cached": True, "stale": True,
+                    "source": _OPERACIONES_MATRIX_CACHE.get("source") or "memory",
                     "warning": "La matriz no respondió; se muestran los últimos datos disponibles.",
                     **cached,
                 })
@@ -2700,6 +2725,94 @@ def api_operaciones_bootstrap():
             }), 502
         finally:
             reset_thread_google_services()
+
+
+@app.get('/api/operaciones/storage-status')
+def api_operaciones_storage_status():
+    """Diagnóstico sin secretos para confirmar la transición a PostgreSQL."""
+    try:
+        return jsonify({"ok": True, **OPERACIONES_STORE.status()})
+    except Exception as exc:
+        current_app.logger.exception("No se pudo consultar la base operativa: %s", exc)
+        return jsonify({"ok": False, "enabled": OPERACIONES_STORE.enabled,
+                        "error": "La base operativa no está disponible."}), 503
+
+
+def _invalidate_operations_cache():
+    with _OPERACIONES_MATRIX_CACHE_LOCK:
+        _OPERACIONES_MATRIX_CACHE.update(ts=0.0, payload=None, source=None)
+
+
+@app.post('/api/operaciones/clients')
+def api_operaciones_save_client():
+    """Guarda en la base; la escritura a Sheets queda en la cola de salida."""
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({
+            "ok": False, "code": "storage_not_configured",
+            "error": "La base operativa todavía no está conectada en Render.",
+        }), 503
+    payload = request.get_json(silent=True) or {}
+    try:
+        client = OPERACIONES_STORE.save_client(payload)
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "client": client, "sync_status": "pending"})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("No se pudo guardar el cliente operativo: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudo guardar el cliente."}), 500
+
+
+@app.post('/api/operaciones/equipment')
+def api_operaciones_save_equipment():
+    """Guarda un lote de equipos de forma transaccional."""
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({
+            "ok": False, "code": "storage_not_configured",
+            "error": "La base operativa todavía no está conectada en Render.",
+        }), 503
+    payload = request.get_json(silent=True) or {}
+    try:
+        equipment = OPERACIONES_STORE.save_equipment(payload.get("items"))
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "equipment": equipment, "sync_status": "pending"})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("No se pudieron guardar los equipos operativos: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudieron guardar los equipos."}), 500
+
+
+@app.get('/api/operaciones/reports/draft')
+def api_operaciones_get_report_draft():
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": True, "configured": False, "draft": None})
+    try:
+        draft = OPERACIONES_STORE.get_report_draft(
+            request.args.get("equipment_id"), request.args.get("round")
+        )
+        return jsonify({"ok": True, "configured": True, "draft": draft})
+    except Exception as exc:
+        current_app.logger.exception("No se pudo leer el borrador operativo: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudo recuperar el borrador."}), 500
+
+
+@app.post('/api/operaciones/reports/draft')
+def api_operaciones_save_report_draft():
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({
+            "ok": False, "code": "storage_not_configured",
+            "error": "La base operativa todavía no está conectada en Render.",
+        }), 503
+    try:
+        draft = OPERACIONES_STORE.save_report_draft(request.get_json(silent=True) or {})
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "draft": draft, "sync_status": "local_only"})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("No se pudo guardar el borrador operativo: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudo guardar el borrador."}), 500
 
 
 @app.get('/api/operaciones/photo/<kind>/<path:record_id>')

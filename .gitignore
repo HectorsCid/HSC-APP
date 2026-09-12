@@ -23,6 +23,8 @@ clientes.json
 datos.json
 folios.json
 partidas.json
+data/*.sqlite3
+data/*.sqlite3-*
 
 # --- PDFs generados ---
 cotizaciones/

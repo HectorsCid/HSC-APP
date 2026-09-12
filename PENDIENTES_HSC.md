@@ -62,3 +62,17 @@
 - Primera migración: reportes de trabajo y refrigeración con borradores, fotos y firmas.
 - Después: cuentas creadas por HSC, permisos por técnico y modo sin conexión.
 - Cancelar AppSheet únicamente después de una prueba paralela estable.
+
+# Transición de Operaciones a base robusta
+
+- [x] Esquema inicial para clientes, equipos, reportes, evidencias y cola de sincronización.
+- [x] Desarrollo local sin costo mediante SQLite; PostgreSQL se activa sólo con `OPERACIONES_DATABASE_URL`.
+- [x] Importación transaccional desde la Hoja Matriz conservando IDs.
+- [x] Lectura desde base después de la primera importación, sin consultar Google en cada apertura.
+- [ ] Crear PostgreSQL administrado en Render cuando se apruebe el cargo aproximado de USD 6.25/mes.
+- [ ] Importar y validar UVM en Render antes de habilitar escrituras.
+- [x] Guardar altas de clientes/equipos y borradores de texto en la base operativa.
+- [x] Conservar evidencias sin conexión en el dispositivo, separadas por equipo y ronda.
+- [ ] Finalizar reportes reales en PostgreSQL después de conectar almacenamiento de evidencias.
+- [ ] Crear trabajador de salida para subir PDF/evidencias a Drive y actualizar Sheets por lotes.
+- [ ] Incorporar miniaturas persistentes y caché offline en el teléfono.
