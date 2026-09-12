@@ -184,7 +184,8 @@ class OperationsStore:
         stamp = _now()
         clients = [(
             _text(item.get("id")), _text(item.get("name")) or _text(item.get("id")),
-            _text(item.get("address")), _text(item.get("id")), _text(item.get("selected_round")), 1,
+            _text(item.get("address")), _text(item.get("id")), _text(item.get("selected_round")),
+            int(item.get("policy_active", True) is not False),
             int(bool(item.get("has_photo"))), _text(item.get("_photo_ref")), "sheets",
             json.dumps(item.get("_raw") or {}, ensure_ascii=False), stamp,
         ) for item in payload.get("clients", []) if _text(item.get("id"))]

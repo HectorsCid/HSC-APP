@@ -57,6 +57,19 @@ def test_reimport_updates_without_duplicating(tmp_path):
     assert result["clients"][0]["name"] == "UVM Campus Querétaro"
 
 
+def test_import_keeps_legacy_placeholder_out_of_active_policies(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    payload = _payload()
+    payload["clients"].append({
+        "id": "IHPJ", "name": "Cliente pendiente de vincular (IHPJ)",
+        "policy_active": False, "has_photo": False,
+    })
+    store.import_matrix_snapshot(payload)
+
+    placeholder = next(item for item in store.snapshot()["clients"] if item["id"] == "IHPJ")
+    assert placeholder["policy_active"] is False
+
+
 def test_sync_queue_is_idempotent(tmp_path):
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
     store.queue_sync("report", "UVMQ1_R 2", "drive", "upload_pdf", {"version": 1})

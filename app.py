@@ -2753,6 +2753,7 @@ def api_operaciones_bootstrap():
                 include_raw=OPERACIONES_STORE.enabled,
             )
             if OPERACIONES_STORE.enabled:
+                payload = _complete_legacy_operations_relations(payload)
                 OPERACIONES_STORE.import_matrix_snapshot(payload)
                 payload = OPERACIONES_STORE.snapshot()
             payload = _prepare_operaciones_payload(payload)
@@ -2797,12 +2798,86 @@ def api_operaciones_storage_status():
 
 
 def _operations_migration_checks(stats):
-    problem_keys = (
-        "orphan_equipment", "orphan_reports", "duplicate_clients",
-        "duplicate_equipment", "duplicate_reports",
-    )
+    # Las relaciones huérfanas heredadas se preservan con fichas provisionales.
+    # Los IDs duplicados sí son ambiguos y por eso bloquean la migración.
+    problem_keys = ("duplicate_clients", "duplicate_equipment", "duplicate_reports")
     problems = {key: int(stats.get(key) or 0) for key in problem_keys if int(stats.get(key) or 0)}
     return {"ready": not problems, "problems": problems}
+
+
+def _complete_legacy_operations_relations(payload):
+    """Conserva filas huérfanas sin adivinar ni perder su relación histórica."""
+    clients = payload.setdefault("clients", [])
+    equipment = payload.setdefault("equipment", [])
+    reports = payload.setdefault("reports", [])
+    client_ids = {str(item.get("id") or "").strip() for item in clients}
+    equipment_ids = {str(item.get("id") or "").strip() for item in equipment}
+    equipment_clients = {
+        str(item.get("id") or "").strip(): str(item.get("client_id") or "").strip()
+        for item in equipment if str(item.get("id") or "").strip()
+    }
+    placeholder_clients = []
+    placeholder_equipment = []
+
+    required_client_ids = {
+        str(item.get("client_id") or "").strip()
+        for item in [*equipment, *reports]
+        if str(item.get("client_id") or "").strip()
+    }
+    for client_id in sorted(required_client_ids - client_ids):
+        clients.append({
+            "id": client_id,
+            "name": f"Cliente pendiente de vincular ({client_id})",
+            "address": "", "selected_round": "", "policy_active": False,
+            "has_photo": False,
+            "_raw": {"ID_Cliente": client_id, "Migracion": "Registro provisional"},
+        })
+        placeholder_clients.append(client_id)
+        client_ids.add(client_id)
+
+    unassigned_client_id = "LEGACY_UNASSIGNED"
+    for report in reports:
+        equipment_id = str(report.get("equipment_id") or "").strip()
+        if equipment_id in equipment_clients and not str(report.get("client_id") or "").strip():
+            report["client_id"] = equipment_clients[equipment_id]
+        if not equipment_id or equipment_id in equipment_ids:
+            continue
+        client_id = str(report.get("client_id") or "").strip()
+        if not client_id:
+            client_id = unassigned_client_id
+            report["client_id"] = client_id
+        if client_id not in client_ids:
+            clients.append({
+                "id": client_id,
+                "name": f"Cliente pendiente de vincular ({client_id})",
+                "address": "", "selected_round": "", "policy_active": False,
+                "has_photo": False,
+                "_raw": {"ID_Cliente": client_id, "Migracion": "Registro provisional"},
+            })
+            placeholder_clients.append(client_id)
+            client_ids.add(client_id)
+        equipment.append({
+            "id": equipment_id, "client_id": client_id,
+            "name": f"Equipo pendiente de vincular ({equipment_id})",
+            "brand": "", "model": "", "serial": "", "status": "Inactivo",
+            "location": "", "department": "", "equipment_type": "", "notes": "",
+            "has_photo": False,
+            "_raw": {"ID_Equipo": equipment_id, "Migracion": "Registro provisional"},
+        })
+        placeholder_equipment.append(equipment_id)
+        equipment_ids.add(equipment_id)
+
+    stats = payload.setdefault("stats", {})
+    stats.update(
+        clients=len(clients), equipment=len(equipment), reports=len(reports),
+        orphan_equipment=0, orphan_reports=0,
+        legacy_placeholder_clients=len(placeholder_clients),
+        legacy_placeholder_equipment=len(placeholder_equipment),
+    )
+    payload["legacy_placeholders"] = {
+        "clients": placeholder_clients, "equipment": placeholder_equipment,
+    }
+    return payload
 
 
 @app.get('/api/operaciones/migration-preview')
@@ -2847,9 +2922,10 @@ def api_operaciones_migrate():
         if not checks["ready"]:
             return jsonify({
                 "ok": False, "code": "matrix_integrity",
-                "error": "La matriz tiene IDs duplicados o relaciones incompletas; no se modificó la base.",
+                "error": "La matriz tiene IDs duplicados; no se modificó la base.",
                 "stats": source.get("stats") or {}, **checks,
             }), 409
+        source = _complete_legacy_operations_relations(source)
         imported = OPERACIONES_STORE.import_matrix_snapshot(source)
         stored = OPERACIONES_STORE.snapshot()
         source_stats = source.get("stats") or {}
@@ -2862,9 +2938,16 @@ def api_operaciones_migrate():
         complete = all(item["source"] == item["database"] for item in verification.values())
         if complete:
             _invalidate_operations_cache()
+            current_app.logger.info(
+                "Migracion operativa completa: clientes=%s equipos=%s reportes=%s evidencias=%s provisionales=%s",
+                stored_stats.get("clients"), stored_stats.get("equipment"),
+                stored_stats.get("reports"), stored_stats.get("evidence_photos"),
+                source.get("legacy_placeholders"),
+            )
         return jsonify({
             "ok": complete, "complete": complete, "imported": imported,
             "verification": verification,
+            "legacy_placeholders": source.get("legacy_placeholders") or {},
             "error": None if complete else "Los conteos no coinciden; la migración requiere revisión.",
         }), 200 if complete else 409
     except Exception as exc:
