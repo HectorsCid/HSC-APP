@@ -239,15 +239,31 @@
   const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const clientName=id=>clients.find(c=>c[1]===id)?.[0]||id;
   const photoMarkup=(url,fallback)=>url?`<span data-photo-fallback>${escapeHtml(fallback)}</span><img data-photo-src="${escapeHtml(url)}" alt="">`:escapeHtml(fallback);
-  let photoQueue=Promise.resolve();
+  const pendingPhotos=[];
+  const PHOTO_CONCURRENCY=4;
+  let activePhotoLoads=0;
+  function pumpPhotoQueue(){
+    while(activePhotoLoads<PHOTO_CONCURRENCY&&pendingPhotos.length){
+      const img=pendingPhotos.shift();
+      if(!img?.isConnected)continue;
+      activePhotoLoads++;
+      let completed=false;
+      let timer;
+      const finish=usable=>{
+        if(completed)return;completed=true;clearTimeout(timer);
+        if(usable){img.classList.add('loaded');img.previousElementSibling?.setAttribute('hidden','')}
+        else img.remove();
+        activePhotoLoads--;pumpPhotoQueue();
+      };
+      img.onload=()=>finish(img.naturalWidth>1&&img.naturalHeight>1);
+      img.onerror=()=>finish(false);
+      timer=setTimeout(()=>{img.removeAttribute('src');finish(false)},11000);
+      img.src=img.dataset.photoSrc;
+    }
+  }
   function queuePhoto(img){
     if(!img||img.dataset.queued)return;img.dataset.queued='1';
-    photoQueue=photoQueue.then(()=>new Promise(resolve=>{
-      if(!img.isConnected)return resolve();
-      const source=img.dataset.photoSrc,finish=usable=>{clearTimeout(timer);if(usable){img.classList.add('loaded');img.previousElementSibling?.setAttribute('hidden','')}else img.remove();resolve()};
-      img.onload=()=>finish(img.naturalWidth>1&&img.naturalHeight>1);img.onerror=()=>finish(false);
-      const timer=setTimeout(()=>{img.src='';finish(false)},11000);img.src=source;
-    }));
+    pendingPhotos.push(img);pumpPhotoQueue();
   }
   const photoObserver='IntersectionObserver' in window?new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){photoObserver.unobserve(entry.target);queuePhoto(entry.target)}}),{rootMargin:'180px'}):null;
   function hydratePhotos(root=document,immediateLimit=0){root.querySelectorAll('img[data-photo-src]:not([data-queued])').forEach((img,index)=>index<immediateLimit?queuePhoto(img):photoObserver?photoObserver.observe(img):queuePhoto(img));}

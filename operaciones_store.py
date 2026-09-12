@@ -17,7 +17,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 
 def _now():
@@ -80,6 +80,7 @@ class OperationsStore:
     def initialize(self):
         if not self.enabled or self._initialized:
             return
+        blob_type = "BYTEA" if self.dialect == "postgres" else "BLOB"
         statements = [
             """CREATE TABLE IF NOT EXISTS operations_clients (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '',
@@ -125,6 +126,13 @@ class OperationsStore:
             )""",
             """CREATE TABLE IF NOT EXISTS operations_meta (
                 key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""",
+            f"""CREATE TABLE IF NOT EXISTS operations_media_cache (
+                kind TEXT NOT NULL, record_id TEXT NOT NULL, source_ref TEXT NOT NULL,
+                content {blob_type} NOT NULL, mime_type TEXT NOT NULL DEFAULT 'image/webp',
+                width INTEGER NOT NULL DEFAULT 0, height INTEGER NOT NULL DEFAULT 0,
+                byte_size INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
+                PRIMARY KEY(kind, record_id)
             )""",
             "CREATE INDEX IF NOT EXISTS idx_operations_equipment_client ON operations_equipment(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_equipment ON operations_reports(equipment_id)",
@@ -275,6 +283,7 @@ class OperationsStore:
             ).fetchall()
             meta_rows = conn.execute("SELECT key,value FROM operations_meta").fetchall()
             pending = conn.execute("SELECT COUNT(*) FROM operations_sync_outbox WHERE status!='synced'").fetchone()[0]
+            cached_thumbnails = conn.execute("SELECT COUNT(*) FROM operations_media_cache").fetchone()[0]
         result_clients = [{
             "id": row[0], "name": row[1], "address": row[2], "matrix_id": row[3],
             "selected_round": row[4], "policy_active": bool(row[5]),
@@ -304,6 +313,7 @@ class OperationsStore:
                 "orphan_reports": sum(bool(item["equipment_id"]) and item["equipment_id"] not in equipment_ids for item in result_reports),
                 "duplicate_clients": 0, "duplicate_equipment": 0, "duplicate_reports": 0,
                 "pending_sync": pending,
+                "cached_thumbnails": cached_thumbnails,
             },
             "meta": dict(meta_rows),
         }
@@ -318,6 +328,50 @@ class OperationsStore:
             "has_data": bool(snapshot["clients"]), "stats": snapshot["stats"],
             "last_matrix_import": snapshot.get("meta", {}).get("last_matrix_import"),
         }
+
+    def get_media_ref(self, kind, record_id):
+        """Obtiene la referencia original sin depender del caché en memoria del proceso."""
+        self.initialize()
+        table = "operations_clients" if kind == "client" else "operations_equipment"
+        p = self.placeholder
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT photo_ref FROM {table} WHERE id={p}", (_text(record_id),)
+            ).fetchone()
+        return _text(row[0]) if row else ""
+
+    def get_cached_thumbnail(self, kind, record_id, source_ref):
+        """Devuelve una miniatura sólo si corresponde a la foto original actual."""
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT content,mime_type,width,height FROM operations_media_cache "
+                f"WHERE kind={p} AND record_id={p} AND source_ref={p}",
+                (_text(kind), _text(record_id), _text(source_ref)),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "content": bytes(row[0]), "mime_type": row[1],
+            "width": int(row[2] or 0), "height": int(row[3] or 0),
+        }
+
+    def save_cached_thumbnail(self, kind, record_id, source_ref, content, mime_type, width, height):
+        """Guarda una versión ligera; cambiar la referencia reemplaza el caché anterior."""
+        self.initialize()
+        p = self.placeholder
+        binary = bytes(content)
+        with self.connection() as conn:
+            conn.execute(
+                f"INSERT INTO operations_media_cache"
+                f"(kind,record_id,source_ref,content,mime_type,width,height,byte_size,updated_at) "
+                f"VALUES ({','.join([p] * 9)}) ON CONFLICT(kind,record_id) DO UPDATE SET "
+                "source_ref=excluded.source_ref,content=excluded.content,mime_type=excluded.mime_type,"
+                "width=excluded.width,height=excluded.height,byte_size=excluded.byte_size,updated_at=excluded.updated_at",
+                (_text(kind), _text(record_id), _text(source_ref), binary, _text(mime_type),
+                 int(width or 0), int(height or 0), len(binary), _now()),
+            )
 
     def save_client(self, item):
         """Crea o edita un cliente sin cambiar su ID interno."""

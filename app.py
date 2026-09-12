@@ -20,6 +20,7 @@ import time
 import unicodedata
 from pathlib import Path
 import io
+import hashlib
 import math
 import uuid
 import csv
@@ -2673,7 +2674,8 @@ def _prepare_operaciones_payload(payload):
                 continue
             media_refs[(kind, record_id)] = photo_ref
             item["photo_url"] = url_for(
-                "api_operaciones_photo", kind=kind, record_id=record_id
+                "api_operaciones_photo", kind=kind, record_id=record_id,
+                v=hashlib.sha1(photo_ref.encode("utf-8")).hexdigest()[:10],
             )
     for collection in ("clients", "equipment", "reports"):
         for item in payload.get(collection, []):
@@ -3048,7 +3050,7 @@ def api_operaciones_save_report_draft():
 
 @app.get('/api/operaciones/photo/<kind>/<path:record_id>')
 def api_operaciones_photo(kind, record_id):
-    """Sirve la foto de cliente o equipo sin exponer su referencia de Drive."""
+    """Sirve una miniatura persistente sin exponer la referencia de Drive."""
     if kind not in {"client", "equipment"}:
         abort(404)
     if _operations_role() == "client":
@@ -3064,10 +3066,50 @@ def api_operaciones_photo(kind, record_id):
         if not allowed:
             abort(404)
     photo_ref = _OPERACIONES_MEDIA_REFS.get((kind, record_id))
+    if not photo_ref and OPERACIONES_STORE.enabled:
+        photo_ref = OPERACIONES_STORE.get_media_ref(kind, record_id)
     if not photo_ref:
         abort(404)
-    response = make_response(serve_drive_image_ref_fast(photo_ref))
-    response.headers["Cache-Control"] = "private, max-age=3600"
+
+    cached = None
+    if OPERACIONES_STORE.enabled:
+        try:
+            cached = OPERACIONES_STORE.get_cached_thumbnail(kind, record_id, photo_ref)
+        except Exception as exc:
+            current_app.logger.warning("No se pudo consultar miniatura %s/%s: %s", kind, record_id, exc)
+    if cached:
+        response = send_file(io.BytesIO(cached["content"]), mimetype=cached["mime_type"])
+        response.headers["X-HSC-Thumbnail"] = "cache"
+    else:
+        original_response = make_response(serve_drive_image_ref_fast(photo_ref))
+        original_response.direct_passthrough = False
+        original_bytes = original_response.get_data()
+        try:
+            from PIL import Image, ImageOps
+            with Image.open(io.BytesIO(original_bytes)) as image:
+                image = ImageOps.exif_transpose(image)
+                image.thumbnail((360, 360), Image.Resampling.LANCZOS)
+                if image.mode not in {"RGB", "RGBA"}:
+                    image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+                output = io.BytesIO()
+                image.save(output, format="WEBP", quality=78, method=4)
+                thumbnail = output.getvalue()
+                width, height = image.size
+            # No guardar la imagen transparente de respaldo cuando Drive falló.
+            if width > 1 and height > 1 and OPERACIONES_STORE.enabled:
+                try:
+                    OPERACIONES_STORE.save_cached_thumbnail(
+                        kind, record_id, photo_ref, thumbnail, "image/webp", width, height
+                    )
+                except Exception as exc:
+                    current_app.logger.warning("No se pudo guardar miniatura %s/%s: %s", kind, record_id, exc)
+            response = send_file(io.BytesIO(thumbnail), mimetype="image/webp")
+            response.headers["X-HSC-Thumbnail"] = "generated"
+        except Exception as exc:
+            current_app.logger.warning("No se pudo optimizar foto %s/%s: %s", kind, record_id, exc)
+            response = original_response
+            response.headers["X-HSC-Thumbnail"] = "original"
+    response.headers["Cache-Control"] = "private, max-age=2592000, immutable"
     return response
 
 # --- Healthcheck muy ligero para Render ---

@@ -111,3 +111,20 @@ def test_report_draft_is_durable_and_does_not_queue_google(tmp_path):
     assert store.get_report_draft("UVMQ1", "3")["payload"]["p1"] == "125"
     assert store.get_report_draft("UVMQ1", "2") is None
     assert store.pending_sync() == []
+
+
+def test_thumbnail_cache_is_persistent_and_invalidates_when_photo_changes(tmp_path):
+    database = tmp_path / "operations.sqlite3"
+    store = OperationsStore(local_path=database)
+    store.import_matrix_snapshot(_payload())
+    store.save_cached_thumbnail(
+        "client", "UVMQ", "Clientes_Images/uvm.jpg", b"miniatura-v1", "image/webp", 240, 180
+    )
+
+    reopened = OperationsStore(local_path=database)
+    cached = reopened.get_cached_thumbnail("client", "UVMQ", "Clientes_Images/uvm.jpg")
+    assert cached["content"] == b"miniatura-v1"
+    assert (cached["width"], cached["height"]) == (240, 180)
+    assert reopened.get_cached_thumbnail("client", "UVMQ", "Clientes_Images/nueva.jpg") is None
+    assert reopened.get_media_ref("client", "UVMQ") == "Clientes_Images/uvm.jpg"
+    assert reopened.snapshot()["stats"]["cached_thumbnails"] == 1
