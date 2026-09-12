@@ -2631,6 +2631,12 @@ def inicio_app():
     # Los semáforos consultan /health una sola vez desde el navegador.
     return render_template('inicio_app.html', IS_RENDER=IS_RENDER, health=None)
 
+
+@app.route('/app-operativa-demo')
+def app_operativa_demo():
+    """Maqueta aislada del reemplazo móvil de AppSheet."""
+    return render_template('app_operativa_demo.html')
+
 # --- Healthcheck muy ligero para Render ---
 @app.route("/healthz")
 def healthz():
