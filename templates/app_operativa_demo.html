@@ -89,8 +89,8 @@
     <section class="view" data-view="equipment">
       <div class="field" style="margin-bottom:12px"><label for="equipmentRound">Consultar ronda</label><select id="equipmentRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div>
       <article class="equipment-hero"><div class="equipment-photo">❄</div><div><div class="eyebrow">HDI1</div><h2>Fábrica de hielo grande</h2><p class="card-sub">Monitowac · Holiday Inn Diamante</p><span class="tag" id="equipmentStatus">Realizado en R2</span></div></article>
-      <div class="actions"><button class="primary" id="newReport" data-permission="createReports">＋ Nuevo reporte</button><button class="danger" id="criticalFault" data-permission="reportFaults">⚠ Falla grave</button></div>
-      <div class="management-bar"><button class="secondary" id="editOperationalEquipment" data-permission="editEquipment">Editar equipo</button><button class="secondary" id="toggleOperationalEquipment" data-permission="editEquipment">Desactivar equipo</button></div>
+      <div class="actions"><button class="primary" id="newReport" data-permission="createReports" data-tech-only>＋ Nuevo reporte</button><button class="danger" id="criticalFault" data-permission="reportFaults">⚠ Reportar falla</button></div>
+      <div class="management-bar" data-tech-only><button class="secondary" id="editOperationalEquipment" data-permission="editEquipment">Editar equipo</button><button class="secondary" id="toggleOperationalEquipment" data-permission="editEquipment">Desactivar equipo</button></div>
       <div class="section-head"><h2>Reportes de esta ronda</h2><span class="count" id="equipmentReportCount"></span></div>
       <div class="report-list bounded-list" id="equipmentReportList"></div>
     </section>
@@ -335,6 +335,7 @@
     document.body.dataset.activeMode=currentMode;
     $$('[data-admin-only]').forEach(el=>el.dataset.roleHidden=currentMode==='admin'?'false':'true');
     $$('[data-permission]').forEach(el=>el.dataset.roleHidden=can(el.dataset.permission)?'false':'true');
+    $$('[data-tech-only]').forEach(el=>el.dataset.roleHidden=currentMode==='partner'?'true':'false');
     $('#clientsModeBar').hidden=true;$('#partnerClientChooser').hidden=!account.isOwner||currentMode!=='partner';$('#activeModeLabel').textContent=currentMode==='admin'?'Modo administrador':'Modo técnico';
     $('#openAdminMode').textContent=currentMode==='admin'?'Ver usuarios':'Activar administrador';
     $('#profileModeText').textContent=currentMode==='admin'?'Ahora estás usando las herramientas de administración':'Ahora estás usando la app como técnico';
@@ -373,10 +374,10 @@
     else if(appKind==='auto'&&account.isOwner&&['tech','admin','partner'].includes(state.mode))currentMode=state.mode;
     else if(account.isOwner&&['tech','admin'].includes(state.mode))currentMode=state.mode;
     else currentMode='tech';
-    const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','partnerReports','partnerFaults','reportView']:['clients','client','equipment','report','reportView','agenda','profile'];
+    const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','equipment','partnerReports','partnerFaults','reportView']:['clients','client','equipment','report','reportView','agenda','profile'];
     if(currentMode==='admin')allowedRoots.push('users','userPermissions','clientEditor','equipmentEditor');
     const target=allowedRoots.includes(state.view)?state.view:(currentMode==='partner'?'partner':'clients');
-    const paths={client:['clients','client'],equipment:['clients','client','equipment'],report:['clients','client','equipment','report'],agenda:['clients','agenda'],profile:['clients','profile'],task:['clients','agenda','task'],userPermissions:['users','userPermissions'],clientEditor:['clients','clientEditor'],equipmentEditor:['clients','client','equipmentEditor'],partnerEquipment:['partner','partnerEquipment'],partnerReports:['partner','partnerReports'],partnerFaults:['partner','partnerFaults'],reportView:currentMode==='partner'?['partner','partnerReports','reportView']:['clients','client','equipment','reportView']};
+    const paths={client:['clients','client'],equipment:currentMode==='partner'?['partner','partnerEquipment','equipment']:['clients','client','equipment'],report:['clients','client','equipment','report'],agenda:['clients','agenda'],profile:['clients','profile'],task:['clients','agenda','task'],userPermissions:['users','userPermissions'],clientEditor:['clients','clientEditor'],equipmentEditor:['clients','client','equipmentEditor'],partnerEquipment:['partner','partnerEquipment'],partnerReports:['partner','partnerReports'],partnerFaults:['partner','partnerFaults'],reportView:currentMode==='partner'?['partner','partnerReports','reportView']:['clients','client','equipment','reportView']};
     historyStack=paths[target]||[target];current='__restore__';refreshRound();
     if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=paths.reportView;initializeBrowserNavigation();return;}}
     showView(target,false);
@@ -531,8 +532,9 @@
     $('#partnerClientLogo').innerHTML=photoMarkup(meta.photo,selectedClient.slice(0,2));hydratePhotos($('#partnerClientLogo'),1);
     $('#partnerRound').textContent=`R${selectedRound}`;$('#partnerEquipmentCount').textContent=total;$('#partnerCompletedCount').textContent=completed;$('#partnerPendingCount').textContent=pending;
     $('#partnerProgress').style.width=`${percent}%`;$('#partnerProgressDetail').textContent=total?`${completed} de ${total} equipos atendidos`:'Sin equipos registrados';$('#partnerProgressPercent').textContent=`${percent}%`;
-    const equipmentMarkup=rows.map(item=>{const itemMeta=equipmentMeta[item[0]],done=Boolean(reportForEquipment(item[0])?.completed);return `<article class="equipment-card"><span class="equipment-photo">${photoMarkup(itemMeta.photo,'❄')}</span><span class="card-copy"><span class="card-title">${escapeHtml(item[1])}</span><span class="card-sub">${escapeHtml(item[0])}${itemMeta.location?` · ${escapeHtml(itemMeta.location)}`:''}</span></span><span class="status-dot ${done?'done':''}" title="${done?'Realizado':'Pendiente'}"></span></article>`}).join('')||'<div class="empty">Este cliente no tiene equipos activos.</div>';
+    const equipmentMarkup=rows.map(item=>{const itemMeta=equipmentMeta[item[0]],done=Boolean(reportForEquipment(item[0])?.completed);return `<button type="button" class="equipment-card" data-partner-equipment="${escapeHtml(item[0])}"><span class="equipment-photo">${photoMarkup(itemMeta.photo,'❄')}</span><span class="card-copy"><span class="card-title">${escapeHtml(item[1])}</span><span class="card-sub">${escapeHtml(item[0])}${itemMeta.location?` · ${escapeHtml(itemMeta.location)}`:''}</span></span><span class="status-dot ${done?'done':''}" title="${done?'Realizado':'Pendiente'}"></span><span class="chevron" aria-hidden="true">›</span></button>`}).join('')||'<div class="empty">Este cliente no tiene equipos activos.</div>';
     $('#partnerEquipmentPreview').innerHTML=equipmentMarkup;$('#partnerEquipmentFull').innerHTML=equipmentMarkup;$('#partnerEquipmentTotal').textContent=`${total} registrado${total===1?'':'s'}`;hydratePhotos($('#partnerEquipmentPreview'),5);hydratePhotos($('#partnerEquipmentFull'),5);
+    $$('[data-partner-equipment]').forEach(button=>button.onclick=()=>{selectedEquipment=button.dataset.partnerEquipment;selectedClient=equipmentMeta[selectedEquipment].client;refreshRound();showView('equipment');});
     const reportsMarkup=reportCards(reportedRows);$('#partnerReportPreview').innerHTML=reportsMarkup;$('#partnerReportsFull').innerHTML=reportsMarkup;$('#partnerReportsRound').textContent=`Ronda R${selectedRound}`;
     renderPartnerFaults();
     bindRoundReports();
