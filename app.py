@@ -320,13 +320,13 @@ def _operations_manifest(app_kind):
         else "Agenda, clientes, equipos y reportes para técnicos HSC."
     )
     response = jsonify({
-        "id": f"/{slug}",
+        "id": f"/{slug}/",
         "name": name,
         "short_name": name,
         "description": description,
         "lang": "es-MX",
-        "start_url": f"/{slug}?origen=app",
-        "scope": "/",
+        "start_url": f"/{slug}/?origen=app",
+        "scope": f"/{slug}/",
         "display": "standalone",
         "display_override": ["window-controls-overlay", "standalone"],
         "orientation": "any",
@@ -2722,13 +2722,13 @@ def app_operativa_demo():
     return _render_operations_app()
 
 
-@app.route('/hsc-tecnico')
+@app.route('/hsc-tecnico/')
 def hsc_tecnico():
     """Entrada instalable independiente para personal técnico."""
     return _render_operations_app("technician")
 
 
-@app.route('/hsc-partner')
+@app.route('/hsc-partner/')
 def hsc_partner():
     """Entrada instalable independiente para clientes y vista Partner del administrador."""
     return _render_operations_app("partner")
@@ -2756,7 +2756,7 @@ def _prepare_operaciones_payload(payload):
                 "api_operaciones_photo", kind=kind, record_id=record_id,
                 v=hashlib.sha1(photo_ref.encode("utf-8")).hexdigest()[:10],
             )
-    for collection in ("clients", "equipment", "reports"):
+    for collection in ("clients", "equipment", "reports", "faults"):
         for item in payload.get(collection, []):
             item.pop("_raw", None)
             item.pop("_evidence_refs", None)
@@ -2793,8 +2793,10 @@ def _scope_operaciones_payload(payload):
     equipment_ids = {item.get("id") for item in equipment}
     reports = [item for item in payload.get("reports", [])
                if item.get("client_id") == client_id or item.get("equipment_id") in equipment_ids]
+    faults = [item for item in payload.get("faults", [])
+              if item.get("client_id") == client_id or item.get("equipment_id") in equipment_ids]
     scoped = dict(payload)
-    scoped.update(clients=clients, equipment=equipment, reports=reports)
+    scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults)
     scoped["stats"] = {
         "clients": len(clients), "equipment": len(equipment), "reports": len(reports),
         "client_photos": sum(bool(item.get("has_photo")) for item in clients),
@@ -2802,6 +2804,7 @@ def _scope_operaciones_payload(payload):
         "evidence_photos": sum(int(item.get("photo_count") or 0) for item in reports),
         "orphan_equipment": 0, "orphan_reports": 0,
         "duplicate_clients": 0, "duplicate_equipment": 0, "duplicate_reports": 0,
+        "faults": len(faults), "duplicate_faults": 0,
     }
     return scoped
 
@@ -2849,13 +2852,17 @@ def api_operaciones_bootstrap():
             })
         try:
             if OPERACIONES_STORE.enabled and OPERACIONES_STORE.has_data() and not refresh:
-                payload = _prepare_operaciones_payload(OPERACIONES_STORE.snapshot())
-                _OPERACIONES_MATRIX_CACHE.update(ts=now, payload=payload, source="database")
-                visible = _scope_operaciones_payload(payload)
-                return jsonify({
-                    "ok": True, "read_only": False, "cached": False,
-                    "source": "database", **visible,
-                })
+                database_snapshot = OPERACIONES_STORE.snapshot()
+                # La primera ejecución del esquema con fallas debe importar esa pestaña
+                # una sola vez; después la app vuelve a leer exclusivamente PostgreSQL.
+                if database_snapshot.get("meta", {}).get("faults_matrix_import"):
+                    payload = _prepare_operaciones_payload(database_snapshot)
+                    _OPERACIONES_MATRIX_CACHE.update(ts=now, payload=payload, source="database")
+                    visible = _scope_operaciones_payload(payload)
+                    return jsonify({
+                        "ok": True, "read_only": False, "cached": False,
+                        "source": "database", **visible,
+                    })
             payload = read_operaciones_matrix(
                 get_sheets_service(timeout=15), SHEET_ID, include_media_refs=True,
                 include_raw=OPERACIONES_STORE.enabled,
@@ -3198,6 +3205,32 @@ def api_operaciones_save_report_draft():
     except Exception as exc:
         current_app.logger.exception("No se pudo guardar el borrador operativo: %s", exc)
         return jsonify({"ok": False, "error": "No se pudo guardar el borrador."}), 500
+
+
+@app.post('/api/operaciones/faults')
+def api_operaciones_save_fault():
+    denied = _operations_forbidden("admin", "technician", "client")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({
+            "ok": False, "code": "storage_not_configured",
+            "error": "La base operativa todavía no está conectada en Render.",
+        }), 503
+    body = request.get_json(silent=True) or {}
+    if _operations_role() == "client":
+        assigned_id = str(session.get("hsc_client_id") or "").strip()
+        if not assigned_id or str(body.get("client_id") or "").strip() != assigned_id:
+            return jsonify({"ok": False, "error": "Sólo puedes reportar fallas de tu empresa."}), 403
+    try:
+        fault = OPERACIONES_STORE.save_fault(body)
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "fault": fault, "sync_status": "pending"}), 201
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("No se pudo registrar la falla operativa: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudo registrar la falla."}), 500
 
 
 def _serve_operations_thumbnail(kind, record_id, photo_ref):

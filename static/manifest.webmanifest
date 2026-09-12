@@ -1,7 +1,7 @@
 {
-  "id": "/inicio-app",
-  "name": "HSC Mantenimiento Industrial",
-  "short_name": "HSC",
+  "id": "/hsc-panel",
+  "name": "HSC Panel",
+  "short_name": "HSC Panel",
   "description": "Cotizaciones, facturación y reportes de servicio HSC.",
   "lang": "es-MX",
   "start_url": "/inicio-app?origen=app",

@@ -1,9 +1,9 @@
 <link rel="manifest" href="{{ pwa_manifest_url|default(url_for('pwa_manifest')) }}">
 <meta name="theme-color" content="#0f2f5f">
-<meta name="application-name" content="{{ pwa_name|default('HSC') }}">
+<meta name="application-name" content="{{ pwa_name|default('HSC Panel') }}">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="{{ pwa_name|default('HSC') }}">
+<meta name="apple-mobile-web-app-title" content="{{ pwa_name|default('HSC Panel') }}">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/hsc-app-192.png') }}">
 <script defer src="{{ url_for('static', filename='pwa.js', v='9') }}"></script>
 <script defer src="{{ url_for('static', filename='notifications.js', v='1') }}"></script>

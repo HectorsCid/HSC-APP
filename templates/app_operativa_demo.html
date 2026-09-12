@@ -199,7 +199,7 @@
         <article class="round-panel partner-summary"><div class="section-head"><div><div class="eyebrow">Ronda actual</div><h2>Avance del servicio</h2></div><strong id="partnerRound">R2</strong></div><div class="stats"><div class="stat"><b id="partnerEquipmentCount">0</b><span>Equipos</span></div><div class="stat"><b id="partnerCompletedCount">0</b><span>Atendidos</span></div><div class="stat"><b id="partnerPendingCount">0</b><span>Pendientes</span></div></div><div class="progress"><i id="partnerProgress" style="width:0"></i></div><div class="progress-label"><span id="partnerProgressDetail">Sin equipos registrados</span><b id="partnerProgressPercent">0%</b></div></article>
         <section class="workspace-panel partner-equipment-panel"><div class="section-head"><h2>Lista de equipos</h2><button class="mini-btn" data-partner-action="equipment">Ver todos</button></div><div class="equipment-list bounded-list" id="partnerEquipmentPreview"></div></section>
         <section class="workspace-panel partner-reports-panel"><div class="section-head"><h2>Reportes</h2><button class="mini-btn" data-partner-action="reports">Ver todos</button></div><div class="report-list bounded-list" id="partnerReportPreview"></div></section>
-        <section class="workspace-panel partner-faults-panel"><div class="section-head"><h2>Fallas detectadas</h2><button class="mini-btn" data-partner-action="faults">Ver</button></div><div class="empty">Las fallas vinculadas aparecerán aquí.</div></section>
+        <section class="workspace-panel partner-faults-panel"><div class="section-head"><h2>Fallas detectadas</h2><button class="mini-btn" data-partner-action="faults">Ver</button></div><div class="user-list" id="partnerFaultPreview"></div></section>
       </div>
     </section>
 
@@ -212,7 +212,7 @@
     </section>
 
     <section class="view" data-view="partnerFaults">
-      <div class="section-head"><h2>Fallas reportadas</h2><span class="count">Seguimiento HSC</span></div><div class="empty">Todavía no hay fallas vinculadas disponibles para este cliente.</div>
+      <div class="section-head"><h2>Fallas reportadas</h2><span class="count" id="partnerFaultCount">Seguimiento HSC</span></div><div class="user-list" id="partnerFaultFull"></div>
     </section>
 
     <section class="view" data-view="inviteAccept"><div class="accept-wrap"><div class="accept-logo">HSC</div><article class="accept-card"><div class="eyebrow" style="text-align:center">Invitación segura</div><h2>Bienvenido a HSC Partner</h2><p>Héctor Silva Cid te invitó a consultar la información de Visscher Caravelle.</p><div class="scope"><b>Tu acceso incluye</b><span>Equipos, reportes de servicio, documentos y fallas reportadas.</span></div><div class="field"><label>Nombre</label><input value="María Nieves"></div><div class="field" style="margin-top:12px"><label>Crear contraseña</label><input type="password" placeholder="Mínimo 8 caracteres"></div><div class="field" style="margin-top:12px"><label>Confirmar contraseña</label><input type="password"></div><button class="primary wide" style="margin-top:16px" id="acceptInvite">Aceptar e instalar HSC Partner</button><button class="secondary wide" style="margin-top:9px" id="cancelAccept">Ahora no</button></article></div></section>
@@ -221,7 +221,7 @@
   <nav class="bottom-nav"><button class="nav-btn" id="navOne" data-nav="agenda"><span>▦</span><em>Agenda</em></button><button class="nav-btn active" id="navTwo" data-nav="clients"><span>♙</span><em>Clientes</em></button><button class="nav-btn" id="navThree" data-nav="profile"><span>◎</span><em>Perfil</em></button></nav>
 </div>
 
-<div class="modal" id="faultModal"><div class="sheet"><div class="eyebrow">HSC Partner</div><h2>Reportar falla grave</h2><p>Se agregará a “Fallas reportadas” del cliente y podrá generar una notificación.</p><div class="field"><label>Descripción de la falla</label><textarea id="faultText" placeholder="Describe qué sucede y qué atención requiere"></textarea></div><div class="field" style="margin-top:12px"><label>Prioridad</label><select><option>Alta</option><option>Requiere paro inmediato</option><option>Programar revisión</option></select></div><button class="secondary wide" style="margin-top:12px" type="button">＋ Agregar fotografías</button><div class="sheet-actions"><button class="secondary" id="closeFault">Cancelar</button><button class="danger" id="sendFault">Reportar falla</button></div></div></div>
+<div class="modal" id="faultModal"><div class="sheet"><div class="eyebrow">HSC Partner</div><h2>Reportar falla grave</h2><p>Se agregará a “Fallas reportadas” del cliente y podrá generar una notificación.</p><div class="field"><label for="faultEquipment">Equipo relacionado</label><select id="faultEquipment"></select></div><div class="field" style="margin-top:12px"><label>Descripción de la falla</label><textarea id="faultText" placeholder="Describe qué sucede y qué atención requiere"></textarea></div><div class="field" style="margin-top:12px"><label for="faultPriority">Prioridad</label><select id="faultPriority"><option>Alta</option><option>Requiere paro inmediato</option><option>Programar revisión</option></select></div><button class="secondary wide" style="margin-top:12px" type="button">＋ Agregar fotografías</button><div class="sheet-actions"><button class="secondary" id="closeFault">Cancelar</button><button class="danger" id="sendFault">Reportar falla</button></div></div></div>
 <div class="modal" id="taskModal"><div class="sheet"><div class="eyebrow">Agenda HSC</div><h2>Agregar pendiente</h2><p>Programa una actividad y asígnala a un técnico.</p><div class="field"><label>Actividad</label><input id="taskTitle" placeholder="Ej. Realizar ronda R2"></div><div class="field-row" style="margin-top:12px"><div class="field"><label>Fecha</label><input type="date" value="2026-09-11"></div><div class="field"><label>Hora</label><input type="time" value="09:00"></div></div><div class="field" style="margin-top:12px"><label>Cliente</label><select><option>Holiday Inn Diamante</option><option>Travers Tool</option><option>Visscher Caravelle</option></select></div><div class="field" style="margin-top:12px"><label>Técnico responsable</label><select><option>Carlos</option><option>Héctor Silva Cid</option><option>Sin asignar</option></select></div><div class="sheet-actions"><button class="secondary" id="closeTask">Cancelar</button><button class="primary" id="saveTask">Guardar pendiente</button></div></div></div>
 <div class="modal" id="inviteModal"><div class="sheet"><div id="inviteForm"><div class="eyebrow">Nuevo acceso</div><h2>Enviar invitación</h2><p>El enlace será personal, temporal y se podrá usar una sola vez.</p><div class="role-choice"><button class="role-card active" data-role-choice="tech"><b>HSC Técnico</b><span>Agenda, equipos y reportes asignados</span></button><button class="role-card" data-role-choice="client"><b>HSC Partner</b><span>Consulta la información de su empresa</span></button></div><div class="field-row" style="margin-top:12px"><div class="field"><label>Nombre</label><input id="inviteName" placeholder="Nombre de la persona"></div><div class="field"><label>Teléfono</label><input inputmode="tel" placeholder="10 dígitos"></div></div><div class="field" style="margin-top:12px"><label>Correo</label><input type="email" placeholder="correo@empresa.com"></div><div class="field" id="inviteClientField" style="margin-top:12px;display:none"><label>Cliente relacionado</label><select id="inviteClientSelect"></select></div><div class="field" id="inviteTechPermissions" style="margin-top:12px"><label>Permisos del técnico</label><div class="permission-list"><label class="permission"><input type="checkbox" checked> Consultar equipos</label><label class="permission"><input type="checkbox" checked> Consultar y crear reportes</label><label class="permission"><input type="checkbox" checked> Reportar fallas graves</label><label class="permission"><input type="checkbox"> Cambiar entre vistas con los tres puntos</label></div></div><div class="field" id="inviteClientPermissions" style="margin-top:12px;display:none"><label>Permisos del cliente</label><div class="permission-list"><label class="permission"><input type="checkbox" checked disabled> Consultar sus equipos</label><label class="permission"><input type="checkbox" checked disabled> Consultar reportes terminados</label><label class="permission"><input type="checkbox" checked disabled> Consultar fallas visibles</label><label class="permission"><input type="checkbox"> Cambiar entre vistas con los tres puntos</label></div><p class="editor-note">HSC Partner no puede crear, modificar ni finalizar reportes. El cambio de vistas sólo se habilita si tú lo autorizas.</p></div><div class="sheet-actions"><button class="secondary" id="closeInvite">Cancelar</button><button class="primary" id="createInvite">Generar enlace</button></div></div><div id="inviteShare" hidden><div class="eyebrow">Invitación preparada</div><h2 id="shareTitle">Invitar a HSC Técnico</h2><p>La invitación vence en 48 horas y dejará de funcionar después de aceptarse.</p><div class="share-link">https://hsc.app/invitacion/7K3M-HSC</div><div class="share-grid"><button id="shareWhatsApp">WhatsApp</button><button id="shareEmail">Correo</button><button id="copyInvite">Copiar enlace</button></div><button class="primary wide" style="margin-top:14px" id="finishInvite">Listo</button></div></div></div>
 <div class="modal" id="appMenu"><div class="sheet"><div class="eyebrow">HSC Operaciones</div><h2>Cambiar modo</h2><p>Tu cuenta puede trabajar como técnico y abrir la administración sin salir de esta app.</p><div class="app-menu"><button class="app-option" data-switch-mode="tech"><span class="app-badge">T</span><span><strong>Usar como técnico</strong><span>Agenda, clientes, equipos y reportes</span></span></button><button class="app-option admin" data-switch-mode="admin"><span class="app-badge">A</span><span><strong>Activar administrador</strong><span>Usuarios, permisos y configuración</span></span></button><button class="app-option partner" data-app-view="partner"><span class="app-badge">P</span><span><strong>Vista HSC Partner</strong><span>Demostración para el cliente</span></span></button><button class="app-option partner" data-app-view="inviteAccept"><span class="app-badge">↗</span><span><strong>Aceptar invitación</strong><span>Vista del enlace que recibe el usuario</span></span></button></div><button class="secondary wide" style="margin-top:12px" id="closeAppMenu">Cerrar</button></div></div>
@@ -240,7 +240,7 @@
   let activePermissions={createReports:true,reportFaults:true,addClients:false,addEquipment:true,editEquipment:true,editClientData:false,editIds:false,switchViews:false};
   let selectedRound='2', selectedEquipment='HDI1';
   let selectedClient='HDI',showCatalog=false,clientOrderMode=false;
-  let matrixReports=[],matrixLoaded=false;
+  let matrixReports=[],matrixFaults=[],matrixLoaded=false;
   const clientMeta=Object.fromEntries(clients.map((c,index)=>[c[1],{policy:true,matrixId:c[1],sortOrder:index+1,address:c[1]==='HDI'?'Anillo Vial Fray Junípero Serra 1500-A, Arboledas, Querétaro':'',photo:''}]));
   clients.push(['Cliente sin póliza · ejemplo','DEMO','0 equipos']);
   clientMeta.DEMO={policy:false,matrixId:'',address:'',photo:''};
@@ -299,6 +299,7 @@
     for(const key of Object.keys(equipmentMeta))delete equipmentMeta[key];
     for(const item of payload.equipment)equipmentMeta[item.id]={client:item.client_id,active:String(item.status||'').toLowerCase()!=='inactivo',type:item.equipment_type||'Refrigeración',location:item.location||'',department:item.department||'',model:item.model||'',serial:item.serial||'',notes:item.notes||'',photo:item.photo_url||'',photoAvailable:Boolean(item.has_photo)};
     matrixReports=Array.isArray(payload.reports)?payload.reports:[];
+    matrixFaults=Array.isArray(payload.faults)?payload.faults:[];
     for(const round of ['1','2','3','4']){
       const completed=matrixReports.filter(report=>report.round===round&&report.completed).map(report=>report.equipment_id).filter(Boolean);
       demoRounds[round].done=[...new Set(completed)];
@@ -464,6 +465,30 @@
       if(report?.id){try{const response=await fetch(`/api/operaciones/reports/${encodeURIComponent(report.id)}`,{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error();applyReportMeasurements(set,payload.report.payload);renderReportEvidence(payload.report.evidence,payload.report.photo_count)}catch(_){applyReportMeasurements(set,{});renderReportEvidence([],report.photo_count)}}
     });
   }
+  function faultCards(rows){
+    if(!rows.length)return '<div class="empty">No hay fallas reportadas para este cliente.</div>';
+    return rows.map(fault=>{
+      const equipmentRow=equipment.find(item=>item[0]===fault.equipment_id);
+      const status=String(fault.status||'Reportada');
+      const resolved=/resuelt|cerrad|atendid|terminad/i.test(status);
+      return `<article class="fault-card ${resolved?'resolved':''}"><div class="fault-top"><h3>${escapeHtml(fault.description||'Falla reportada')}</h3><span class="fault-status">${escapeHtml(status)}</span></div><p>${escapeHtml(equipmentRow?.[1]||fault.equipment_id||'Equipo sin identificar')}${fault.reported_at?` · ${escapeHtml(fault.reported_at)}`:''}</p><small class="count">${escapeHtml(fault.priority||'Alta')}</small></article>`;
+    }).join('');
+  }
+  function renderPartnerFaults(){
+    const rows=matrixFaults.filter(fault=>fault.client_id===selectedClient||equipmentMeta[fault.equipment_id]?.client===selectedClient);
+    const markup=faultCards(rows);
+    $('#partnerFaultPreview').innerHTML=faultCards(rows.slice(0,2));
+    $('#partnerFaultFull').innerHTML=markup;
+    $('#partnerFaultCount').textContent=`${rows.length} registrada${rows.length===1?'':'s'}`;
+  }
+  function openFaultForm(){
+    const rows=equipment.filter(item=>equipmentMeta[item[0]]?.client===selectedClient&&equipmentMeta[item[0]].active).sort(byEquipmentId);
+    $('#faultEquipment').innerHTML=rows.map(item=>`<option value="${escapeHtml(item[0])}">${escapeHtml(item[0])} · ${escapeHtml(item[1])}</option>`).join('');
+    const preferred=rows.some(item=>item[0]===selectedEquipment)?selectedEquipment:rows[0]?.[0]||'';
+    $('#faultEquipment').value=preferred;
+    $('#faultModal p').textContent=`${clientName(selectedClient)} · Selecciona el equipo y describe la falla.`;
+    $('#faultModal').classList.add('open');
+  }
   function renderPartnerDashboard(){
     if(!clients.length||!clientMeta[selectedClient])return;
     const meta=clientMeta[selectedClient];
@@ -483,6 +508,7 @@
     const equipmentMarkup=rows.map(item=>{const itemMeta=equipmentMeta[item[0]],done=Boolean(reportForEquipment(item[0])?.completed);return `<article class="equipment-card"><span class="equipment-photo">${photoMarkup(itemMeta.photo,'❄')}</span><span class="card-copy"><span class="card-title">${escapeHtml(item[1])}</span><span class="card-sub">${escapeHtml(item[0])}${itemMeta.location?` · ${escapeHtml(itemMeta.location)}`:''}</span></span><span class="status-dot ${done?'done':''}" title="${done?'Realizado':'Pendiente'}"></span></article>`}).join('')||'<div class="empty">Este cliente no tiene equipos activos.</div>';
     $('#partnerEquipmentPreview').innerHTML=equipmentMarkup;$('#partnerEquipmentFull').innerHTML=equipmentMarkup;$('#partnerEquipmentTotal').textContent=`${total} registrado${total===1?'':'s'}`;hydratePhotos($('#partnerEquipmentPreview'),5);hydratePhotos($('#partnerEquipmentFull'),5);
     const reportsMarkup=reportCards(reportedRows);$('#partnerReportPreview').innerHTML=reportsMarkup;$('#partnerReportsFull').innerHTML=reportsMarkup;$('#partnerReportsRound').textContent=`Ronda R${selectedRound}`;
+    renderPartnerFaults();
     bindRoundReports();
   }
   function refreshRound(){
@@ -496,16 +522,26 @@
   $('#partnerClientSelect').onchange=event=>{if(!account.isOwner)return;selectedClient=event.target.value;selectedRound=clientMeta[selectedClient]?.selectedRound||'2';selectedEquipment=equipment.find(item=>equipmentMeta[item[0]]?.client===selectedClient)?.[0]||'';refreshRound();saveOperationalNavigation();};
   $('#partnerRoundAction').onclick=()=>{$('#partnerRoundPicker').hidden=!$('#partnerRoundPicker').hidden;};
   $('#partnerRoundSelect').onchange=event=>{selectedRound=event.target.value;refreshRound();saveOperationalNavigation();};
-  $('#partnerFaultAction').onclick=()=>{$('#faultModal p').textContent=`${clientName(selectedClient)} · Describe la falla que deseas reportar.`;$('#faultModal').classList.add('open');};
+  $('#partnerFaultAction').onclick=openFaultForm;
   $('#saveDraft').onclick=()=>{localStorage.setItem('hsc-report-demo',JSON.stringify(Object.fromEntries(new FormData($('#reportForm')))));toast('Borrador guardado en este dispositivo')};$('#reportForm').onsubmit=e=>{e.preventDefault();if(!confirm('¿Finalizar este reporte y marcar el equipo como realizado?'))return;localStorage.removeItem('hsc-report-demo');toast('Reporte finalizado · equipo marcado en verde');setTimeout(()=>showView('equipment'),700)};
   const saved=localStorage.getItem('hsc-report-demo');if(saved){try{const d=JSON.parse(saved);Object.entries(d).forEach(([k,v])=>{const f=$(`[name="${k}"]`);if(f)f.value=v})}catch(_){}}
-  // La maqueta publicada sólo permite recorrer el diseño, sin efectos externos.
+  // Invitaciones y agenda siguen en demostración; las fallas ya usan la base operativa.
   $('#shareWhatsApp').onclick=$('#shareEmail').onclick=$('#copyInvite').onclick=()=>toast('Vista de prueba: todavía no se generan ni envían invitaciones');
   document.querySelector('.share-link').textContent='Enlace de ejemplo · no válido para crear cuentas';
   document.querySelector('#inviteShare p').textContent='Así se verá el enlace cuando conectemos las invitaciones reales.';
   $('#finishInvite').onclick=()=>{$('#inviteModal').classList.remove('open');toast('Vista de invitación cerrada; no se guardó ningún acceso')};
   $('#acceptInvite').onclick=()=>{currentMode='partner';toast('Vista de prueba: no se creó ninguna cuenta');setTimeout(()=>showView('partner'),700)};
-  $('#sendFault').onclick=()=>{if(!$('#faultText').value.trim()){toast('Describe la falla para probar el formulario');return}$('#faultModal').classList.remove('open');toast('Simulación: no se envió la falla a HSC Partner')};
+  $('#sendFault').onclick=async()=>{
+    const description=$('#faultText').value.trim(),equipmentId=$('#faultEquipment').value;
+    if(!equipmentId){toast('Selecciona el equipo relacionado');return}
+    if(!description){toast('Describe la falla antes de reportarla');return}
+    const button=$('#sendFault');button.disabled=true;button.textContent='Guardando…';
+    try{
+      await operationsPost('/api/operaciones/faults',{client_id:selectedClient,equipment_id:equipmentId,description,priority:$('#faultPriority').value});
+      $('#faultText').value='';$('#faultModal').classList.remove('open');await loadMatrixData();renderPartnerFaults();toast('Falla registrada y vinculada al equipo');
+    }catch(error){toast(error.message||'No se pudo registrar la falla')}
+    finally{button.disabled=false;button.textContent='Reportar falla'}
+  };
   $('#saveTask').onclick=()=>{$('#taskModal').classList.remove('open');toast('Simulación: no se guardó una tarea real')};
   $('#taskComplete').onclick=()=>toast('Simulación: no se modificó la agenda real');
   $('#reportForm').onsubmit=e=>{e.preventDefault();toast('Vista de prueba: el reporte aún no se guarda en la matriz');setTimeout(()=>showView('equipment'),700)};
@@ -604,7 +640,7 @@
   };
   $('#toggleOperationalEquipment').onclick=()=>{const meta=equipmentMeta[selectedEquipment];if(meta.active&&!confirm('¿Desactivar este equipo en la maqueta? Sus reportes se conservan.'))return;meta.active=!meta.active;refreshRound();toast(meta.active?'Equipo reactivado en maqueta':'Equipo desactivado; historial conservado');};
   $('#taskStart').onclick=()=>{selectedClient='HDI';selectedRound='2';selectedEquipment='HDI3';refreshRound();showView('equipment');};
-  $('#criticalFault').onclick=()=>{const row=equipment.find(e=>e[0]===selectedEquipment);$('#faultModal p').textContent=`Prueba: ${clientName(equipmentMeta[row[0]].client)} · ${row[0]} · ${row[1]}. No se enviará a HSC Partner.`;$('#faultModal').classList.add('open');};
+  $('#criticalFault').onclick=()=>{selectedClient=equipmentMeta[selectedEquipment]?.client||selectedClient;openFaultForm();};
   for(const kind of ['Client','Equipment']){
     $(`#op${kind}Photo`).onchange=async event=>{
       const file=event.target.files[0];if(!file)return;

@@ -119,3 +119,22 @@ def test_appsheet_legacy_report_headers_are_understood():
     assert report["end"] == "2026-09-11"
     assert report["completed"] is True
     assert report["_evidence_refs"][0] == "evidencia.jpg"
+
+
+def test_fault_sheet_is_imported_and_related_by_ids():
+    rows = [
+        {"range": "Equipos!A1:ZZ", "values": [
+            ["ID_Equipo", "ID_Cliente", "NombreEquipo"],
+            ["UVMQ1", "UVMQ", "Equipo UVM"],
+        ]},
+        {"range": "'Fallas reportadas'!A1:ZZ", "values": [
+            ["ID_Falla", "ID_Equipo", "Descripción de la falla", "Prioridad", "Estado", "Fecha"],
+            ["F-1", "UVMQ1", "Temperatura alta", "Alta", "En revisión", "2026-09-12"],
+        ]},
+    ]
+
+    fault = build_operaciones_bootstrap(rows)["faults"][0]
+    assert fault["id"] == "F-1"
+    assert fault["client_id"] == "UVMQ"
+    assert fault["equipment_id"] == "UVMQ1"
+    assert fault["description"] == "Temperatura alta"

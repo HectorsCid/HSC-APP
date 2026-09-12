@@ -15,6 +15,9 @@ def _payload():
                      "completed": True, "photo_count": 3,
                      "_raw": {"PresionCto1": "120", "DatoNuevo": "conservado"},
                      "_evidence_refs": ["foto-1.jpg", "", "foto-3.jpg", "foto-4.jpg", "", ""]}],
+        "faults": [{"id": "F-UVM-1", "client_id": "UVMQ", "equipment_id": "UVMQ1",
+                    "report_id": "UVMQ1_R 2", "description": "Temperatura alta",
+                    "priority": "Alta", "status": "Reportada", "reported_at": "2026-09-12"}],
     }
 
 
@@ -23,12 +26,13 @@ def test_matrix_snapshot_round_trip_uses_ids_and_evidence_rows(tmp_path):
     counts = store.import_matrix_snapshot(_payload())
     result = store.snapshot()
 
-    assert counts == {"clients": 1, "equipment": 1, "reports": 1}
+    assert counts == {"clients": 1, "equipment": 1, "reports": 1, "faults": 1}
     assert result["clients"][0]["id"] == "UVMQ"
     assert result["clients"][0]["_photo_ref"] == "Clientes_Images/uvm.jpg"
     assert result["equipment"][0]["client_id"] == "UVMQ"
     assert result["reports"][0]["equipment_id"] == "UVMQ1"
     assert result["reports"][0]["photo_count"] == 3
+    assert result["faults"][0]["equipment_id"] == "UVMQ1"
     assert result["stats"]["evidence_photos"] == 3
     assert result["stats"]["pending_sync"] == 0
 
@@ -154,3 +158,15 @@ def test_report_detail_is_loaded_on_demand(tmp_path):
     assert report["photo_count"] == 3
     assert [item["position"] for item in report["evidence"]] == [1, 3, 4]
     assert store.get_report_evidence_ref("UVMQ1_R 2", 3)["photo_ref"] == "foto-3.jpg"
+
+
+def test_partner_fault_is_linked_to_existing_equipment(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+    fault = store.save_fault({"client_id": "UVMQ", "equipment_id": "UVMQ1",
+                              "description": "No enfría", "priority": "Alta"})
+
+    assert fault["client_id"] == "UVMQ"
+    assert fault["equipment_id"] == "UVMQ1"
+    assert fault["status"] == "Reportada"
+    assert any(item["entity_type"] == "fault" for item in store.pending_sync())

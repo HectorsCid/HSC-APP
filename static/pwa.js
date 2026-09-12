@@ -209,7 +209,10 @@
     });
 
     try{
-      registration = await navigator.serviceWorker.register('/service-worker.js', {scope:'/'});
+      const workerScope = location.pathname.startsWith('/hsc-partner/')
+        ? '/hsc-partner/'
+        : location.pathname.startsWith('/hsc-tecnico/') ? '/hsc-tecnico/' : '/';
+      registration = await navigator.serviceWorker.register('/service-worker.js', {scope:workerScope});
       bindPanelActions();
       if('Notification' in window && Notification.permission === 'granted'){
         subscribeForServerNotifications().catch(error => console.warn('HSC: no se pudo renovar el canal de avisos.', error));

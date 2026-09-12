@@ -151,12 +151,58 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
             report["_raw"] = dict(row)
         reports.append(report)
 
+    equipment_client = {item["id"]: item["client_id"] for item in equipment}
+    report_links = {item["id"]: item for item in reports}
+    faults = []
+    duplicate_faults = 0
+    seen_faults = set()
+    fault_rows = []
+    fault_sheet_count = 0
+    for title, rows in by_title.items():
+        if "falla" in _header_key(title):
+            fault_sheet_count += 1
+            fault_rows.extend(rows)
+    for position, row in enumerate(fault_rows, start=1):
+        equipment_id = _text(_pick(row, "ID_Equipo", "ID Equipo", "Equipo"))
+        report_id = _text(_pick(row, "ID_Reporte", "ID Reporte", "Reporte"))
+        linked_report = report_links.get(report_id, {})
+        client_id = _text(_pick(row, "ID_Cliente", "ID Cliente", "Cliente"))
+        client_id = client_id or equipment_client.get(equipment_id, "") or linked_report.get("client_id", "")
+        equipment_id = equipment_id or linked_report.get("equipment_id", "")
+        fault_id = _text(_pick(row, "ID_Falla", "ID Falla", "Folio", "ID"))
+        fault_id = fault_id or f"FALLA-{client_id or 'SINCLIENTE'}-{position}"
+        if fault_id in seen_faults:
+            duplicate_faults += 1
+            continue
+        seen_faults.add(fault_id)
+        description = _text(_pick(
+            row, "DescripcionFalla", "Descripción de la falla", "Descripcion de la falla",
+            "Falla", "Detalle", "Observaciones", "Reporte de falla",
+        ))
+        # No importar renglones vacíos o auxiliares de AppSheet.
+        if not any((client_id, equipment_id, report_id, description)):
+            continue
+        fault = {
+            "id": fault_id,
+            "client_id": client_id,
+            "equipment_id": equipment_id,
+            "report_id": report_id,
+            "description": description or "Falla reportada",
+            "priority": _text(_pick(row, "Prioridad", "Gravedad", "Nivel")) or "Alta",
+            "status": _text(_pick(row, "Estatus", "Estado", "Status")) or "Reportada",
+            "reported_at": _text(_pick(row, "FechaReporte", "Fecha de reporte", "Fecha", "FechaHora")),
+        }
+        if include_raw:
+            fault["_raw"] = dict(row)
+        faults.append(fault)
+
     client_ids = {item["id"] for item in clients}
     equipment_ids = {item["id"] for item in equipment}
     return {
         "clients": clients,
         "equipment": equipment,
         "reports": reports,
+        "faults": faults,
         "stats": {
             "clients": len(clients),
             "equipment": len(equipment),
@@ -172,14 +218,32 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
             "duplicate_clients": duplicate_clients,
             "duplicate_equipment": duplicate_equipment,
             "duplicate_reports": duplicate_reports,
+            "faults": len(faults),
+            "duplicate_faults": duplicate_faults,
+            "fault_sheets": fault_sheet_count,
         },
     }
 
 
 def read_operaciones_matrix(service, spreadsheet_id, *, include_media_refs=False, include_raw=False):
+    ranges = list(MATRIX_RANGES)
+    try:
+        metadata = service.spreadsheets().get(
+            spreadsheetId=spreadsheet_id,
+            fields="sheets.properties.title",
+        ).execute()
+        fault_titles = []
+        for sheet in metadata.get("sheets") or []:
+            title = _text((sheet.get("properties") or {}).get("title"))
+            if title and "falla" in _header_key(title):
+                fault_titles.append(title)
+        ranges.extend(f"'{title}'!A1:ZZ" for title in fault_titles)
+    except Exception:
+        # La lectura principal sigue disponible aunque la cuenta no permita metadatos.
+        pass
     response = service.spreadsheets().values().batchGet(
         spreadsheetId=spreadsheet_id,
-        ranges=MATRIX_RANGES,
+        ranges=ranges,
         majorDimension="ROWS",
     ).execute()
     return build_operaciones_bootstrap(

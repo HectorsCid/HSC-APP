@@ -17,7 +17,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "5"
+SCHEMA_VERSION = "6"
 
 
 def _now():
@@ -118,6 +118,14 @@ class OperationsStore:
                 UNIQUE(report_id, position),
                 FOREIGN KEY(report_id) REFERENCES operations_reports(id)
             )""",
+            """CREATE TABLE IF NOT EXISTS operations_faults (
+                id TEXT PRIMARY KEY, client_id TEXT NOT NULL DEFAULT '',
+                equipment_id TEXT NOT NULL DEFAULT '', report_id TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '', priority TEXT NOT NULL DEFAULT 'Alta',
+                status TEXT NOT NULL DEFAULT 'Reportada', reported_at TEXT NOT NULL DEFAULT '',
+                source TEXT NOT NULL DEFAULT 'sheets', raw_json TEXT NOT NULL DEFAULT '{}',
+                sync_status TEXT NOT NULL DEFAULT 'synced', updated_at TEXT NOT NULL
+            )""",
             """CREATE TABLE IF NOT EXISTS operations_sync_outbox (
                 id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
                 destination TEXT NOT NULL, action TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}',
@@ -138,6 +146,8 @@ class OperationsStore:
             "CREATE INDEX IF NOT EXISTS idx_operations_equipment_client ON operations_equipment(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_equipment ON operations_reports(equipment_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_client ON operations_reports(client_id)",
+            "CREATE INDEX IF NOT EXISTS idx_operations_faults_client ON operations_faults(client_id)",
+            "CREATE INDEX IF NOT EXISTS idx_operations_faults_equipment ON operations_faults(equipment_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_outbox_status ON operations_sync_outbox(status)",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_clients_matrix_id ON operations_clients(matrix_id) WHERE matrix_id <> ''",
         ]
@@ -217,6 +227,13 @@ class OperationsStore:
             "completed" if item.get("completed") else "imported",
             "synced", stamp,
         ) for item in payload.get("reports", []) if _text(item.get("id"))]
+        faults = [(
+            _text(item.get("id")), _text(item.get("client_id")), _text(item.get("equipment_id")),
+            _text(item.get("report_id")), _text(item.get("description")),
+            _text(item.get("priority")) or "Alta", _text(item.get("status")) or "Reportada",
+            _text(item.get("reported_at")), "sheets",
+            json.dumps(item.get("_raw") or {}, ensure_ascii=False), "synced", stamp,
+        ) for item in payload.get("faults", []) if _text(item.get("id"))]
         with self.connection() as conn:
             self._upsert_many(conn, "operations_clients",
                 ["id","name","address","matrix_id","selected_round","policy_active","has_photo","photo_ref","source","raw_json","updated_at"], clients,
@@ -230,6 +247,10 @@ class OperationsStore:
                 ["id","equipment_id","client_id","round_number","start_at","end_at","completed","source","matrix_id","report_type","payload_json","state","sync_status","updated_at"], reports,
                 ["equipment_id","client_id","round_number","start_at","end_at","completed","source","matrix_id","report_type","payload_json","state","sync_status","updated_at"],
                 update_where="operations_reports.source='sheets'")
+            self._upsert_many(conn, "operations_faults",
+                ["id","client_id","equipment_id","report_id","description","priority","status","reported_at","source","raw_json","sync_status","updated_at"], faults,
+                ["client_id","equipment_id","report_id","description","priority","status","reported_at","source","raw_json","sync_status","updated_at"],
+                update_where="operations_faults.source='sheets'")
             # La matriz conserva Foto1..Foto6; se materializan como filas para la app.
             for item in payload.get("reports", []):
                 report_id = _text(item.get("id"))
@@ -259,7 +280,9 @@ class OperationsStore:
                         (evidence_id, report_id, position, _text(storage_ref), "synced", stamp),
                     )
             self._upsert_meta(conn, "last_matrix_import", stamp)
-        return {"clients": len(clients), "equipment": len(equipment), "reports": len(reports)}
+            if int((payload.get("stats") or {}).get("fault_sheets") or 0) > 0:
+                self._upsert_meta(conn, "faults_matrix_import", stamp)
+        return {"clients": len(clients), "equipment": len(equipment), "reports": len(reports), "faults": len(faults)}
 
     def has_data(self):
         if not self.enabled:
@@ -284,6 +307,10 @@ class OperationsStore:
                 "(SELECT COUNT(*) FROM operations_evidence e WHERE e.report_id=r.id) "
                 "FROM operations_reports r ORDER BY r.start_at,r.id"
             ).fetchall()
+            faults = conn.execute(
+                "SELECT id,client_id,equipment_id,report_id,description,priority,status,reported_at,source,sync_status "
+                "FROM operations_faults ORDER BY reported_at DESC,id DESC"
+            ).fetchall()
             meta_rows = conn.execute("SELECT key,value FROM operations_meta").fetchall()
             pending = conn.execute("SELECT COUNT(*) FROM operations_sync_outbox WHERE status!='synced'").fetchone()[0]
             cached_thumbnails = conn.execute("SELECT COUNT(*) FROM operations_media_cache").fetchone()[0]
@@ -303,10 +330,16 @@ class OperationsStore:
             "start": row[4], "end": row[5], "completed": bool(row[6]), "matrix_id": row[7],
             "report_type": row[8], "state": row[9], "sync_status": row[10], "photo_count": row[11],
         } for row in reports]
+        result_faults = [{
+            "id": row[0], "client_id": row[1], "equipment_id": row[2], "report_id": row[3],
+            "description": row[4], "priority": row[5], "status": row[6], "reported_at": row[7],
+            "source": row[8], "sync_status": row[9],
+        } for row in faults]
         client_ids = {item["id"] for item in result_clients}
         equipment_ids = {item["id"] for item in result_equipment}
         return {
             "clients": result_clients, "equipment": result_equipment, "reports": result_reports,
+            "faults": result_faults,
             "stats": {
                 "clients": len(result_clients), "equipment": len(result_equipment), "reports": len(result_reports),
                 "client_photos": sum(item["has_photo"] for item in result_clients),
@@ -317,6 +350,7 @@ class OperationsStore:
                 "duplicate_clients": 0, "duplicate_equipment": 0, "duplicate_reports": 0,
                 "pending_sync": pending,
                 "cached_thumbnails": cached_thumbnails,
+                "faults": len(result_faults),
             },
             "meta": dict(meta_rows),
         }
@@ -511,6 +545,34 @@ class OperationsStore:
                  json.dumps(payload, ensure_ascii=False), "draft", "local_only", stamp),
             )
         return self.get_report_draft(equipment_id, round_number)
+
+    def save_fault(self, item):
+        """Registra una falla vinculada obligatoriamente con cliente y equipo."""
+        self.initialize()
+        client_id = _text(item.get("client_id"))
+        equipment_id = _text(item.get("equipment_id"))
+        description = _text(item.get("description"))
+        if not client_id or not equipment_id or not description:
+            raise ValueError("Cliente, equipo y descripción son obligatorios.")
+        equipment = next((row for row in self.snapshot()["equipment"] if row["id"] == equipment_id), None)
+        if not equipment or equipment["client_id"] != client_id:
+            raise ValueError("El equipo no pertenece al cliente seleccionado.")
+        fault_id = _text(item.get("id")) or f"FALLA_{uuid.uuid4().hex[:16].upper()}"
+        stamp = _now()
+        reported_at = _text(item.get("reported_at")) or stamp
+        p = self.placeholder
+        with self.connection() as conn:
+            conn.execute(
+                f"INSERT INTO operations_faults(id,client_id,equipment_id,report_id,description,priority,status,reported_at,source,raw_json,sync_status,updated_at) "
+                f"VALUES ({','.join([p] * 12)})",
+                (fault_id, client_id, equipment_id, _text(item.get("report_id")), description,
+                 _text(item.get("priority")) or "Alta", "Reportada", reported_at,
+                 "app", "{}", "pending", stamp),
+            )
+        self.queue_sync("fault", fault_id, "sheets", "upsert", {
+            "client_id": client_id, "equipment_id": equipment_id,
+        })
+        return next(row for row in self.snapshot()["faults"] if row["id"] == fault_id)
 
     def get_report_draft(self, equipment_id, round_number):
         self.initialize()
