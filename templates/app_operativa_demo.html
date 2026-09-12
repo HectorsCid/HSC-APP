@@ -314,7 +314,7 @@
     const stats=payload.stats||{};
     const databaseSource=payload.source==='database';
     $('#matrixStatus').textContent=databaseSource?`Base operativa conectada · ${payload.cached?'caché':'actualizada'}`:`Matriz conectada en lectura · ${payload.cached?'caché':'actualizada'}`;
-    $('#operationsNoticeText').textContent=databaseSource?'Clientes, equipos y reportes se consultan desde la base operativa. Google queda reservado para sincronización y archivos. Las capturas nuevas aún permanecen como borradores locales.':'Clientes, equipos, reportes y miniaturas se consultan desde la Hoja Matriz. Las capturas nuevas aún permanecen como borradores locales.';
+    $('#operationsNoticeText').textContent=databaseSource?'Clientes, equipos y reportes se consultan desde la base operativa. Mientras editas, las fotos quedan seguras en el dispositivo; al finalizar se guardan en Drive.':'Clientes, equipos, reportes y miniaturas se consultan desde la Hoja Matriz. Mientras editas, las fotos quedan seguras en el dispositivo.';
     $('#inviteClientSelect').innerHTML=clients.map(client=>`<option value="${escapeHtml(client[1])}">${escapeHtml(client[0])}</option>`).join('');
     $('#partnerClientSelect').innerHTML=clients.map(client=>`<option value="${escapeHtml(client[1])}">${escapeHtml(client[0])}</option>`).join('');
     renderClients();refreshRound();restoreOperationalNavigation();return true;
