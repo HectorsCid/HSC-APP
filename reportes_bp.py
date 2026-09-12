@@ -646,27 +646,67 @@ def _normalize_relpath(p: str) -> str:
     return p
 
 def _resolve_path_to_id(path_str: str):
-    if not REPORTES_ROOT_ID:
-        return None
     cached = _cache_get_path_id(path_str)
     if cached:
         return cached
     parts = [s for s in _normalize_relpath(path_str).split("/") if s]
-    parent = REPORTES_ROOT_ID
-    for i, part in enumerate(parts):
-        is_last = (i == len(parts) - 1)
-        mime_filter = "" if is_last else " and mimeType='application/vnd.google-apps.folder'"
-        safe = part.replace("'", "\\'")
-        q = "name='{}' and '{}' in parents and trashed=false{}".format(safe, parent, mime_filter)
-        res = _drive_img_call(lambda drive, q=q: drive.files().list(
-            q=q, spaces='drive', fields='files(id,name,mimeType)', pageSize=50
+    if not parts:
+        return None
+
+    def walk(parent, remaining):
+        current = parent
+        for index, part in enumerate(remaining):
+            is_last = index == len(remaining) - 1
+            mime_filter = "" if is_last else " and mimeType='application/vnd.google-apps.folder'"
+            safe = part.replace("'", "\\'")
+            q = "name='{}' and '{}' in parents and trashed=false{}".format(
+                safe, current, mime_filter
+            )
+            result = _drive_img_call(lambda drive, q=q: drive.files().list(
+                q=q, spaces="drive", fields="files(id,name,mimeType)", pageSize=10
+            ).execute())
+            files = result.get("files", [])
+            if not files:
+                return None
+            current = files[0]["id"]
+        return current
+
+    # Los reportes viven bajo 04. Reportes; las fotos de AppSheet suelen vivir
+    # junto a la Hoja Matriz en carpetas como Clientes_Images/ y Equipos_Images/.
+    roots = []
+    if REPORTES_ROOT_ID:
+        roots.append(REPORTES_ROOT_ID)
+    try:
+        sheet_meta = _drive_img_call(lambda drive: drive.files().get(
+            fileId=SHEET_ID, fields="parents"
         ).execute())
-        files = res.get('files', [])
-        if not files:
-            return None
-        parent = files[0]['id']
-    _cache_set_path_id(path_str, parent)
-    return parent
+        roots.extend(sheet_meta.get("parents") or [])
+    except Exception:
+        pass
+
+    for root in dict.fromkeys(filter(None, roots)):
+        resolved = walk(root, parts)
+        if resolved:
+            _cache_set_path_id(path_str, resolved)
+            return resolved
+
+    # Respaldo para apps antiguas cuya carpeta de imágenes no comparte padre
+    # directo con la hoja. Se limita a carpetas y después se recorre por ID.
+    if len(parts) > 1:
+        safe_folder = parts[0].replace("'", "\\'")
+        q = (
+            "name='{}' and mimeType='application/vnd.google-apps.folder' "
+            "and trashed=false"
+        ).format(safe_folder)
+        result = _drive_img_call(lambda drive: drive.files().list(
+            q=q, spaces="drive", fields="files(id,name)", pageSize=10
+        ).execute())
+        for folder in result.get("files", []):
+            resolved = walk(folder["id"], parts[1:])
+            if resolved:
+                _cache_set_path_id(path_str, resolved)
+                return resolved
+    return None
 
 def _photo_data_uri(photo_ref: str) -> str | None:
     """Descarga una foto de Drive y la devuelve incrustada para WeasyPrint."""
@@ -704,25 +744,18 @@ def _pdf_photos(data: dict) -> list[str]:
         photos.append(embedded)
     return photos
 
-@reportes_bp.route("/reportes/imgproxy", endpoint="reportes_imgproxy")
-def reportes_imgproxy():
-    """
-    Devuelve bytes de imagen desde Drive.
-    - Si falla cualquier cosa, devuelve un PNG transparente 1x1 (no 302).
-    - Soporta IDs directos y ruta relativa bajo REPORTES_ROOT_ID.
-    - Usa caché en memoria para reducir llamadas y estabilizar en Windows.
-    """
-    # PNG transparente 1x1 (para fallback)
-    TRANSPARENT_PNG = (
-        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
-        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\x0bIDATx\x9cc``\x00\x00\x00\x02\x00\x01"
-        b"\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
-    )
+_TRANSPARENT_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\x0bIDATx\x9cc``\x00\x00\x00\x02\x00\x01"
+    b"\xe2!\xbc3\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 
-    url = (request.args.get("url") or "").strip()
+
+def serve_drive_image_ref(photo_ref: str):
+    """Sirve una referencia de imagen de Drive usando la caché compartida."""
+    url = (photo_ref or "").strip()
     if not url:
-        return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
-
+        return send_file(io.BytesIO(_TRANSPARENT_PNG), mimetype="image/png")
     try:
         # 1) ¿Es un ID de archivo de Drive en la URL?
         file_id = _extract_drive_id(url)
@@ -735,7 +768,7 @@ def reportes_imgproxy():
 
         if not file_id:
             # No pudimos resolver nada -> PNG transparente
-            return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
+            return send_file(io.BytesIO(_TRANSPARENT_PNG), mimetype="image/png")
 
         # Atajo (shortcuts) -> resolver target real
         file_id = _resolve_shortcut(file_id)
@@ -765,7 +798,18 @@ def reportes_imgproxy():
 
     except Exception:
         # Falla silenciosa -> imagen transparente (evitar redirects/timeouts)
-        return send_file(io.BytesIO(TRANSPARENT_PNG), mimetype="image/png")
+        return send_file(io.BytesIO(_TRANSPARENT_PNG), mimetype="image/png")
+
+
+@reportes_bp.route("/reportes/imgproxy", endpoint="reportes_imgproxy")
+def reportes_imgproxy():
+    """
+    Devuelve bytes de imagen desde Drive.
+    - Si falla cualquier cosa, devuelve un PNG transparente 1x1 (no 302).
+    - Soporta IDs directos y ruta relativa bajo REPORTES_ROOT_ID.
+    - Usa caché en memoria para reducir llamadas y estabilizar en Windows.
+    """
+    return serve_drive_image_ref(request.args.get("url") or "")
 
 # ----------------------------------------------------------------------
 # Drive helpers (guardar PDF)

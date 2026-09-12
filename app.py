@@ -49,7 +49,7 @@ from werkzeug.utils import safe_join, secure_filename
 from smtp_mailer import authorized_to_send, parse_recipients, send_quote_email, smtp_config, trusted_device_token
 from cfdi_drive import delete_pending_document, list_pending_documents, save_pending_document
 from email_tracking import delivery_status, read_email_deliveries, record_email_delivery
-from reportes_bp import reportes_bp, start_auto_report_monitor
+from reportes_bp import reportes_bp, serve_drive_image_ref, start_auto_report_monitor
 from operaciones_matrix import read_operaciones_matrix
 
 from facturacion_bp import facturacion_bp
@@ -2646,6 +2646,26 @@ def app_operativa_demo():
 _OPERACIONES_MATRIX_CACHE = {"ts": 0.0, "payload": None}
 _OPERACIONES_MATRIX_CACHE_LOCK = threading.Lock()
 _OPERACIONES_MATRIX_TTL = 180.0
+_OPERACIONES_MEDIA_REFS = {}
+
+
+def _prepare_operaciones_payload(payload):
+    """Oculta las rutas de Drive y publica sólo URLs internas por ID."""
+    media_refs = {}
+    for collection, kind in (("clients", "client"), ("equipment", "equipment")):
+        for item in payload.get(collection, []):
+            photo_ref = str(item.pop("_photo_ref", "") or "").strip()
+            if not photo_ref:
+                continue
+            record_id = str(item.get("id") or "").strip()
+            if not record_id:
+                continue
+            media_refs[(kind, record_id)] = photo_ref
+            item["photo_url"] = url_for(
+                "api_operaciones_photo", kind=kind, record_id=record_id
+            )
+    _OPERACIONES_MEDIA_REFS.update(media_refs)
+    return payload
 
 
 @app.get('/api/operaciones/bootstrap')
@@ -2659,7 +2679,10 @@ def api_operaciones_bootstrap():
         if fresh and not refresh:
             return jsonify({"ok": True, "read_only": True, "cached": True, **cached})
         try:
-            payload = read_operaciones_matrix(get_sheets_service(timeout=15), SHEET_ID)
+            payload = read_operaciones_matrix(
+                get_sheets_service(timeout=15), SHEET_ID, include_media_refs=True
+            )
+            payload = _prepare_operaciones_payload(payload)
             _OPERACIONES_MATRIX_CACHE.update(ts=now, payload=payload)
             return jsonify({"ok": True, "read_only": True, "cached": False, **payload})
         except Exception as exc:
@@ -2677,6 +2700,19 @@ def api_operaciones_bootstrap():
             }), 502
         finally:
             reset_thread_google_services()
+
+
+@app.get('/api/operaciones/photo/<kind>/<path:record_id>')
+def api_operaciones_photo(kind, record_id):
+    """Sirve la foto de cliente o equipo sin exponer su referencia de Drive."""
+    if kind not in {"client", "equipment"}:
+        abort(404)
+    photo_ref = _OPERACIONES_MEDIA_REFS.get((kind, record_id))
+    if not photo_ref:
+        abort(404)
+    response = make_response(serve_drive_image_ref(photo_ref))
+    response.headers["Cache-Control"] = "private, max-age=3600"
+    return response
 
 # --- Healthcheck muy ligero para Render ---
 @app.route("/healthz")

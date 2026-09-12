@@ -56,3 +56,23 @@ def test_read_operaciones_matrix_is_batch_get_only():
         "ranges": MATRIX_RANGES,
         "majorDimension": "ROWS",
     }
+
+
+def test_media_references_are_opt_in_and_remain_private():
+    rows = [
+        {"range": "Clientes!A1:H3", "values": [
+            ["ID_Cliente", "NombreCliente", "Foto"],
+            ["UVMQ", "UVM Queretaro", "Clientes_Images/uvm.jpg"],
+        ]},
+        {"range": "Equipos!A1:N3", "values": [
+            ["ID_Equipo", "ID_Cliente", "NombreEquipo", "Foto"],
+            ["UVMQ1", "UVMQ", "Equipo UVM", "Equipos_Images/uvm1.jpg"],
+        ]},
+    ]
+    public_payload = build_operaciones_bootstrap(rows)
+    private_payload = build_operaciones_bootstrap(rows, include_media_refs=True)
+
+    assert "_photo_ref" not in public_payload["clients"][0]
+    assert "_photo_ref" not in public_payload["equipment"][0]
+    assert private_payload["clients"][0]["_photo_ref"] == "Clientes_Images/uvm.jpg"
+    assert private_payload["equipment"][0]["_photo_ref"] == "Equipos_Images/uvm1.jpg"

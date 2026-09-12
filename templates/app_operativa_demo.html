@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>HSC Operaciones · Demostración</title>
+  <title>HSC Operaciones</title>
   <style>
     :root{
       --bg:#07101f;--surface:#101c2f;--surface-2:#15243a;--line:#273a55;
@@ -48,7 +48,7 @@
   </style>
 </head>
 <body>
-<aside style="padding:12px 18px;background:#17334f;color:#e1efff;text-align:center;font:14px/1.5 system-ui" role="note"><strong>Vista de prueba · HSC Operaciones</strong><br>Datos de ejemplo. No guarda reportes reales, no crea cuentas ni envía avisos a clientes. Los borradores sólo quedan en este dispositivo.<br><a href="/reportes" style="color:#a8d5ff">Volver a Reportes HSC</a></aside>
+<aside id="operationsNotice" style="padding:12px 18px;background:#17334f;color:#e1efff;text-align:center;font:14px/1.5 system-ui" role="note"><strong>HSC Operaciones · etapa de conexión</strong><br><span id="operationsNoticeText">Cargando clientes, equipos y reportes desde la Hoja Matriz…</span><br><a href="/reportes" style="color:#a8d5ff">Volver a Reportes HSC</a></aside>
 <div class="app">
   <header class="topbar">
     <button class="back" id="backBtn" hidden aria-label="Regresar">←</button>
@@ -63,9 +63,9 @@
       <div class="stats" id="matrixStats" hidden><div class="stat"><b id="matrixClientCount">0</b><span>Clientes</span></div><div class="stat"><b id="matrixEquipmentCount">0</b><span>Equipos</span></div><div class="stat"><b id="matrixPhotoCount">0</b><span>Fotos referenciadas</span></div></div>
       <div class="search"><span>⌕</span><input id="clientSearch" type="search" placeholder="Buscar cliente, clave o ubicación"></div>
       <div class="section-head"><h2>Clientes</h2><div><span class="count" id="clientCount"></span> <button class="mini-btn" id="openUsers" data-admin-only>Usuarios</button></div></div>
-      <div class="management-bar"><button class="primary" id="addOperationalClient" data-permission="addClients">＋ Agregar cliente</button><button class="secondary" id="catalogScope">Ver catálogo de ejemplo</button></div>
+      <div class="management-bar"><button class="primary" id="addOperationalClient" data-permission="addClients">＋ Agregar cliente</button><button class="secondary" id="catalogScope">Ver catálogo completo</button></div>
       <div class="client-list" id="clientList"></div>
-      <p class="editor-note">Vista administrativa de prueba: las altas y ediciones sólo duran mientras esta página permanezca abierta.</p>
+      <p class="editor-note" id="persistenceNotice">Las altas y ediciones todavía son borradores locales; la consulta de la matriz ya es real.</p>
     </section>
 
     <section class="view" data-view="client">
@@ -73,7 +73,7 @@
         <div class="hero-top"><div class="hero-logo">HI</div><div><h2>Holiday Inn Diamante</h2><p>HDI · Santiago de Querétaro</p></div></div>
         <div class="address"><span>⌖</span><span>Anillo Vial Fray Junípero Serra 1500-A, Arboledas, 76140 Santiago de Querétaro, Qro.</span></div>
         <div class="field" style="margin-top:16px"><label for="clientRound">Consultar ronda</label><select id="clientRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div>
-        <div class="stats"><div class="stat"><b id="roundLabel">R2</b><span>Ronda consultada</span></div><div class="stat"><b id="roundReports">3</b><span>Reportes de ejemplo</span></div><div class="stat"><b id="roundEquipment">6</b><span>Equipos de ejemplo</span></div></div>
+        <div class="stats"><div class="stat"><b id="roundLabel">R2</b><span>Ronda consultada</span></div><div class="stat"><b id="roundReports">3</b><span>Reportes</span></div><div class="stat"><b id="roundEquipment">6</b><span>Equipos</span></div></div>
         <div class="progress"><i id="roundProgress"></i></div><div class="progress-label"><span>Avance de la ronda</span><b id="roundProgressText"></b></div>
       </article>
       <div class="management-bar"><button class="secondary" id="editOperationalClient" data-permission="editClientData">Editar cliente</button><button class="primary" id="addOperationalEquipment" data-permission="addEquipment">＋ Agregar equipo</button></div>
@@ -255,10 +255,10 @@
     if(!Array.isArray(payload.clients)||!payload.clients.length)return false;
     clients.splice(0,clients.length,...payload.clients.map(client=>[client.name,client.id,'']));
     for(const key of Object.keys(clientMeta))delete clientMeta[key];
-    for(const client of payload.clients)clientMeta[client.id]={policy:true,matrixId:client.id,address:client.address||'',photo:'',photoAvailable:Boolean(client.has_photo),selectedRound:client.selected_round||''};
+    for(const client of payload.clients)clientMeta[client.id]={policy:true,matrixId:client.id,address:client.address||'',photo:client.photo_url||'',photoAvailable:Boolean(client.has_photo),selectedRound:client.selected_round||''};
     equipment.splice(0,equipment.length,...payload.equipment.map(item=>[item.id,item.name,item.brand||'',false]));
     for(const key of Object.keys(equipmentMeta))delete equipmentMeta[key];
-    for(const item of payload.equipment)equipmentMeta[item.id]={client:item.client_id,active:String(item.status||'').toLowerCase()!=='inactivo',type:'Refrigeración',location:item.location||'',department:item.department||'',model:item.model||'',serial:item.serial||'',notes:'',photo:'',photoAvailable:Boolean(item.has_photo)};
+    for(const item of payload.equipment)equipmentMeta[item.id]={client:item.client_id,active:String(item.status||'').toLowerCase()!=='inactivo',type:'Refrigeración',location:item.location||'',department:item.department||'',model:item.model||'',serial:item.serial||'',notes:'',photo:item.photo_url||'',photoAvailable:Boolean(item.has_photo)};
     matrixReports=Array.isArray(payload.reports)?payload.reports:[];
     for(const round of ['1','2','3','4']){
       const completed=matrixReports.filter(report=>report.round===round&&report.completed).map(report=>report.equipment_id).filter(Boolean);
@@ -272,6 +272,7 @@
     matrixLoaded=true;
     const stats=payload.stats||{},photoCount=(stats.client_photos||0)+(stats.equipment_photos||0)+(stats.evidence_photos||0);
     $('#matrixStatus').textContent=`Matriz conectada en lectura · ${payload.cached?'caché':'actualizada'}`;
+    $('#operationsNoticeText').textContent='Clientes, equipos, reportes y miniaturas se consultan desde la Hoja Matriz. Las capturas nuevas aún permanecen como borradores locales.';
     $('#matrixStats').hidden=false;$('#matrixClientCount').textContent=stats.clients||clients.length;$('#matrixEquipmentCount').textContent=stats.equipment||equipment.length;$('#matrixPhotoCount').textContent=photoCount;
     $('#inviteClientSelect').innerHTML=clients.map(client=>`<option value="${escapeHtml(client[1])}">${escapeHtml(client[0])}</option>`).join('');
     renderClients();refreshRound();return true;
@@ -281,7 +282,7 @@
       const response=await fetch('/api/operaciones/bootstrap',{headers:{Accept:'application/json'}}),payload=await response.json();
       if(!response.ok||!payload.ok||!applyMatrixBootstrap(payload))throw Error(payload.error||'La matriz no devolvió clientes.');
       if(payload.warning)$('#matrixStatus').textContent=payload.warning;
-    }catch(error){$('#matrixStatus').textContent='Datos de ejemplo · la matriz no está disponible en esta computadora';console.warn('Operaciones matrix preview:',error);}
+    }catch(error){$('#matrixStatus').textContent='Datos de ejemplo · la matriz no está disponible en esta computadora';$('#operationsNoticeText').textContent='Vista local con datos de ejemplo. No guarda reportes reales, no crea cuentas ni envía avisos.';console.warn('Operaciones matrix preview:',error);}
   }
   const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
   function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2300)}
@@ -302,7 +303,7 @@
   function renderClients(filter=$('#clientSearch').value){
     const q=filter.trim().toLowerCase(),rows=clients.filter(c=>(showCatalog||clientMeta[c[1]].policy)&&`${c[0]} ${c[1]} ${clientMeta[c[1]].address}`.toLowerCase().includes(q));
     $('#clientCount').textContent=`${rows.length} ${showCatalog?'en catálogo':'con póliza'}`;
-    $('#catalogScope').textContent=showCatalog?'Ver sólo clientes con póliza':'Ver catálogo de ejemplo';
+    $('#catalogScope').textContent=showCatalog?'Ver sólo clientes con póliza':'Ver catálogo completo';
     $('#clientList').innerHTML=rows.map(c=>`<button class="client-card" data-client="${escapeHtml(c[1])}"><span class="client-logo">${photoMarkup(clientMeta[c[1]].photo,c[1].slice(0,2))}</span><span class="card-copy"><span class="card-title">${escapeHtml(c[0])}</span><span class="card-sub">${escapeHtml(c[1])} · ${equipment.filter(e=>equipmentMeta[e[0]].client===c[1]).length} equipos${clientMeta[c[1]].photoAvailable?' · Foto registrada':''} · ${clientMeta[c[1]].policy?'Con póliza':'Sin póliza'}</span></span><span class="chevron">›</span></button>`).join('')||'<div class="empty">No hay clientes que coincidan.</div>';
     $$('[data-client]').forEach(b=>b.onclick=()=>openClient(b.dataset.client));
   }

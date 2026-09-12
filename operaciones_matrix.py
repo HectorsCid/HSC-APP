@@ -34,7 +34,7 @@ def _records(rows):
     return records
 
 
-def build_operaciones_bootstrap(value_ranges):
+def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False):
     """Convierte batchGet de Sheets en datos mínimos para la app móvil."""
     by_title = {}
     for item in value_ranges or []:
@@ -53,13 +53,16 @@ def build_operaciones_bootstrap(value_ranges):
             continue
         seen_clients.add(client_id)
         photo = _text(row.get("Foto"))
-        clients.append({
+        client = {
             "id": client_id,
             "name": _text(row.get("NombreCliente")) or client_id,
             "address": _text(row.get("Direccion")),
             "selected_round": _round_number(row.get("RondaSeleccionadaCliente")),
             "has_photo": bool(photo),
-        })
+        }
+        if include_media_refs and photo:
+            client["_photo_ref"] = photo
+        clients.append(client)
 
     equipment = []
     duplicate_equipment = 0
@@ -74,7 +77,7 @@ def build_operaciones_bootstrap(value_ranges):
             continue
         seen_equipment.add(equipment_id)
         photo = _text(row.get("Foto"))
-        equipment.append({
+        item = {
             "id": equipment_id,
             "client_id": client_id,
             "name": _text(row.get("NombreEquipo")) or equipment_id,
@@ -85,7 +88,10 @@ def build_operaciones_bootstrap(value_ranges):
             "location": _text(row.get("Ubicacion")),
             "department": _text(row.get("Departamento")),
             "has_photo": bool(photo),
-        })
+        }
+        if include_media_refs and photo:
+            item["_photo_ref"] = photo
+        equipment.append(item)
 
     reports = []
     duplicate_reports = 0
@@ -139,10 +145,12 @@ def build_operaciones_bootstrap(value_ranges):
     }
 
 
-def read_operaciones_matrix(service, spreadsheet_id):
+def read_operaciones_matrix(service, spreadsheet_id, *, include_media_refs=False):
     response = service.spreadsheets().values().batchGet(
         spreadsheetId=spreadsheet_id,
         ranges=MATRIX_RANGES,
         majorDimension="ROWS",
     ).execute()
-    return build_operaciones_bootstrap(response.get("valueRanges") or [])
+    return build_operaciones_bootstrap(
+        response.get("valueRanges") or [], include_media_refs=include_media_refs
+    )
