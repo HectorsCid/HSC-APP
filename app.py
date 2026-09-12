@@ -3233,6 +3233,45 @@ def api_operaciones_save_fault():
         return jsonify({"ok": False, "error": "No se pudo registrar la falla."}), 500
 
 
+@app.post('/api/operaciones/faults/<path:fault_id>/resolve')
+def api_operaciones_resolve_fault(fault_id):
+    """Cierra una falla visible, limitada a la empresa asignada al cliente."""
+    denied = _operations_forbidden("admin", "technician", "client")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({
+            "ok": False, "code": "storage_not_configured",
+            "error": "La base operativa todavía no está conectada en Render.",
+        }), 503
+    body = request.get_json(silent=True) or {}
+    try:
+        current_fault = next(
+            (item for item in OPERACIONES_STORE.snapshot()["faults"] if item["id"] == fault_id), None
+        )
+        if not current_fault:
+            abort(404)
+        role = _operations_role()
+        if role == "client":
+            assigned_id = str(session.get("hsc_client_id") or "").strip()
+            if not assigned_id or current_fault.get("client_id") != assigned_id:
+                abort(404)
+        actor = {"admin": "Administrador HSC", "technician": "Técnico HSC", "client": "Cliente"}.get(role, "HSC")
+        fault = OPERACIONES_STORE.resolve_fault(
+            fault_id, resolved_by=actor,
+            resolution_notes=str(body.get("resolution_notes") or "").strip(),
+        )
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "fault": fault, "sync_status": "pending"})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        if getattr(exc, "code", None) == 404:
+            raise
+        current_app.logger.exception("No se pudo cerrar la falla operativa %s: %s", fault_id, exc)
+        return jsonify({"ok": False, "error": "No se pudo marcar la falla como atendida."}), 500
+
+
 def _serve_operations_thumbnail(kind, record_id, photo_ref):
     cached = None
     if OPERACIONES_STORE.enabled:

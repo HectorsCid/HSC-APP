@@ -2,6 +2,8 @@
 
 ## Operaciones: pólizas y rondas (último cambio local, sin publicar)
 
+- Fallas Partner: ya se pueden abrir y marcar como atendidas, con fecha, tipo de usuario y observaciones de cierre; el cambio queda en la base operativa y en cola para sincronizar con Sheets. Falta publicar y validar el cierre con una falla de prueba en Render.
+
 - Revisión estructural de las 12 pestañas reales y mapa completo Reportes!A1:AL1 documentados en REVISION_MATRIZ_OPERACIONES.md. Sin modificación de Sheets; falta auditoría global de claves/fórmulas y reglas de AppSheet.
 - Evidencias múltiples locales: hasta seis fotos ordenables con miniaturas, eliminación y límites. Pruebas de lógica en test_demo_evidence.cjs (decodificación simulada). Fotos en memoria por equipo/ronda, no respaldadas con borrador de texto. Falta probar carga real en teléfono, persistencia, subida Drive y mapeo validado U:Z antes de conectar.
 - Navegación y permisos maquetados localmente: cuenta propietaria alterna entre técnico/administrador sin salir de Operaciones; pestañas principales reinician el historial y los detalles usan flecha interna. Permisos por técnico para reportes, fallas, altas/edición de equipos, datos de cliente y vínculo matriz. IDs internos inmutables. Falta persistencia y cumplimiento obligatorio en servidor.

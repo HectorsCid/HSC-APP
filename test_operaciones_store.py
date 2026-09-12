@@ -170,3 +170,21 @@ def test_partner_fault_is_linked_to_existing_equipment(tmp_path):
     assert fault["equipment_id"] == "UVMQ1"
     assert fault["status"] == "Reportada"
     assert any(item["entity_type"] == "fault" for item in store.pending_sync())
+
+
+def test_partner_fault_can_be_marked_as_attended(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+
+    fault = store.resolve_fault(
+        "F-UVM-1", resolved_by="Cliente", resolution_notes="Se ajustó el control.",
+    )
+
+    assert fault["status"] == "Atendida"
+    assert fault["resolved_at"]
+    assert fault["resolved_by"] == "Cliente"
+    assert fault["resolution_notes"] == "Se ajustó el control."
+    queued = [item for item in store.pending_sync() if item["entity_type"] == "fault"]
+    assert queued[-1]["payload"]["status"] == "Atendida"
+    store.import_matrix_snapshot(_payload())
+    assert store.snapshot()["faults"][0]["status"] == "Atendida"

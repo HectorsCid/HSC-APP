@@ -191,6 +191,9 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
             "priority": _text(_pick(row, "Prioridad", "Gravedad", "Nivel")) or "Alta",
             "status": _text(_pick(row, "Estatus", "Estado", "Status")) or "Reportada",
             "reported_at": _text(_pick(row, "FechaReporte", "Fecha de reporte", "Fecha", "FechaHora")),
+            "resolved_at": _text(_pick(row, "FechaAtendida", "Fecha atendida", "Fecha de atención", "FechaResolucion")),
+            "resolved_by": _text(_pick(row, "AtendidaPor", "Atendida por", "Responsable", "Resuelto por")),
+            "resolution_notes": _text(_pick(row, "Solucion", "Solución", "Trabajo realizado", "Observaciones de cierre")),
         }
         if include_raw:
             fault["_raw"] = dict(row)

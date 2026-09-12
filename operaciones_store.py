@@ -17,7 +17,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "6"
+SCHEMA_VERSION = "7"
 
 
 def _now():
@@ -123,6 +123,8 @@ class OperationsStore:
                 equipment_id TEXT NOT NULL DEFAULT '', report_id TEXT NOT NULL DEFAULT '',
                 description TEXT NOT NULL DEFAULT '', priority TEXT NOT NULL DEFAULT 'Alta',
                 status TEXT NOT NULL DEFAULT 'Reportada', reported_at TEXT NOT NULL DEFAULT '',
+                resolved_at TEXT NOT NULL DEFAULT '', resolved_by TEXT NOT NULL DEFAULT '',
+                resolution_notes TEXT NOT NULL DEFAULT '',
                 source TEXT NOT NULL DEFAULT 'sheets', raw_json TEXT NOT NULL DEFAULT '{}',
                 sync_status TEXT NOT NULL DEFAULT 'synced', updated_at TEXT NOT NULL
             )""",
@@ -157,6 +159,9 @@ class OperationsStore:
             self._ensure_column(conn, "operations_clients", "raw_json", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_column(conn, "operations_clients", "sort_order", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "operations_equipment", "raw_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(conn, "operations_faults", "resolved_at", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "operations_faults", "resolved_by", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "operations_faults", "resolution_notes", "TEXT NOT NULL DEFAULT ''")
             self._upsert_meta(conn, "schema_version", SCHEMA_VERSION)
         self._initialized = True
 
@@ -231,7 +236,8 @@ class OperationsStore:
             _text(item.get("id")), _text(item.get("client_id")), _text(item.get("equipment_id")),
             _text(item.get("report_id")), _text(item.get("description")),
             _text(item.get("priority")) or "Alta", _text(item.get("status")) or "Reportada",
-            _text(item.get("reported_at")), "sheets",
+            _text(item.get("reported_at")), _text(item.get("resolved_at")),
+            _text(item.get("resolved_by")), _text(item.get("resolution_notes")), "sheets",
             json.dumps(item.get("_raw") or {}, ensure_ascii=False), "synced", stamp,
         ) for item in payload.get("faults", []) if _text(item.get("id"))]
         with self.connection() as conn:
@@ -248,8 +254,8 @@ class OperationsStore:
                 ["equipment_id","client_id","round_number","start_at","end_at","completed","source","matrix_id","report_type","payload_json","state","sync_status","updated_at"],
                 update_where="operations_reports.source='sheets'")
             self._upsert_many(conn, "operations_faults",
-                ["id","client_id","equipment_id","report_id","description","priority","status","reported_at","source","raw_json","sync_status","updated_at"], faults,
-                ["client_id","equipment_id","report_id","description","priority","status","reported_at","source","raw_json","sync_status","updated_at"],
+                ["id","client_id","equipment_id","report_id","description","priority","status","reported_at","resolved_at","resolved_by","resolution_notes","source","raw_json","sync_status","updated_at"], faults,
+                ["client_id","equipment_id","report_id","description","priority","status","reported_at","resolved_at","resolved_by","resolution_notes","source","raw_json","sync_status","updated_at"],
                 update_where="operations_faults.source='sheets'")
             # La matriz conserva Foto1..Foto6; se materializan como filas para la app.
             for item in payload.get("reports", []):
@@ -308,7 +314,7 @@ class OperationsStore:
                 "FROM operations_reports r ORDER BY r.start_at,r.id"
             ).fetchall()
             faults = conn.execute(
-                "SELECT id,client_id,equipment_id,report_id,description,priority,status,reported_at,source,sync_status "
+                "SELECT id,client_id,equipment_id,report_id,description,priority,status,reported_at,resolved_at,resolved_by,resolution_notes,source,sync_status "
                 "FROM operations_faults ORDER BY reported_at DESC,id DESC"
             ).fetchall()
             meta_rows = conn.execute("SELECT key,value FROM operations_meta").fetchall()
@@ -333,7 +339,8 @@ class OperationsStore:
         result_faults = [{
             "id": row[0], "client_id": row[1], "equipment_id": row[2], "report_id": row[3],
             "description": row[4], "priority": row[5], "status": row[6], "reported_at": row[7],
-            "source": row[8], "sync_status": row[9],
+            "resolved_at": row[8], "resolved_by": row[9], "resolution_notes": row[10],
+            "source": row[11], "sync_status": row[12],
         } for row in faults]
         client_ids = {item["id"] for item in result_clients}
         equipment_ids = {item["id"] for item in result_equipment}
@@ -571,6 +578,32 @@ class OperationsStore:
             )
         self.queue_sync("fault", fault_id, "sheets", "upsert", {
             "client_id": client_id, "equipment_id": equipment_id,
+        })
+        return next(row for row in self.snapshot()["faults"] if row["id"] == fault_id)
+
+    def resolve_fault(self, fault_id, *, resolved_by="", resolution_notes=""):
+        """Marca una falla como atendida y conserva el cierre para auditoría."""
+        self.initialize()
+        fault_id = _text(fault_id)
+        if not fault_id:
+            raise ValueError("La falla es obligatoria.")
+        stamp = _now()
+        p = self.placeholder
+        with self.connection() as conn:
+            found = conn.execute(
+                f"SELECT id,client_id,equipment_id FROM operations_faults WHERE id={p}", (fault_id,)
+            ).fetchone()
+            if not found:
+                return None
+            conn.execute(
+                f"UPDATE operations_faults SET status={p},resolved_at={p},resolved_by={p},"
+                f"resolution_notes={p},source='app',sync_status='pending',updated_at={p} WHERE id={p}",
+                ("Atendida", stamp, _text(resolved_by), _text(resolution_notes), stamp, fault_id),
+            )
+        self.queue_sync("fault", fault_id, "sheets", "upsert", {
+            "client_id": found[1], "equipment_id": found[2],
+            "status": "Atendida", "resolved_at": stamp,
+            "resolved_by": _text(resolved_by), "resolution_notes": _text(resolution_notes),
         })
         return next(row for row in self.snapshot()["faults"] if row["id"] == fault_id)
 
