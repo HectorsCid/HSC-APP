@@ -345,10 +345,20 @@
   }
   $('#syncGoogleNow').onclick=async()=>{const button=$('#syncGoogleNow');button.disabled=true;button.textContent='Sincronizando…';try{await loadMatrixData(true)}finally{button.disabled=false;button.textContent='Sincronizar Google'}};
   const navigationStorageKey=`hsc-operaciones-navigation-${appKind}`;
+  let browserHistoryReady=false,handlingHistoryPop=false;
   function saveOperationalNavigation(){if(!matrixLoaded)return;try{localStorage.setItem(navigationStorageKey,JSON.stringify({view:current,client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode}))}catch(_){}}
-  function showView(name,push=true){if(name===current){$('#backBtn').hidden=historyStack.length<=1;applyAccess();saveOperationalNavigation();return;}if(push)historyStack.push(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=historyStack.length<=1;navMode(currentMode);$('.bottom-nav').hidden=currentMode==='partner'||name==='inviteAccept';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();saveOperationalNavigation();scrollTo({top:0,behavior:'smooth'});}
-  function goBack(){if(historyStack.length<=1)return;historyStack.pop();showView(historyStack.at(-1),false)}
-  function openRoot(name){historyStack=[name];showView(name,false);}
+  function browserNavigationState(guard=false){return {hscOperations:true,guard,view:current,stack:[...historyStack],client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode};}
+  function writeBrowserNavigation(replace=false,guard=false){if(!browserHistoryReady)return;window.history[replace?'replaceState':'pushState'](browserNavigationState(guard),'',location.href);}
+  function initializeBrowserNavigation(){
+    if(browserHistoryReady)return;
+    browserHistoryReady=true;
+    window.history.replaceState(browserNavigationState(true),'',location.href);
+    window.history.pushState(browserNavigationState(false),'',location.href);
+    $('#backBtn').hidden=false;
+  }
+  function showView(name,push=true){if(name===current){$('#backBtn').hidden=false;applyAccess();saveOperationalNavigation();return;}if(push)historyStack.push(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=false;navMode(currentMode);$('.bottom-nav').hidden=currentMode==='partner'||name==='inviteAccept';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();saveOperationalNavigation();if(push&&!handlingHistoryPop)writeBrowserNavigation();scrollTo({top:0,behavior:'smooth'});}
+  function goBack(){if(browserHistoryReady){window.history.back();return;}if(historyStack.length<=1)return;historyStack.pop();showView(historyStack.at(-1),false)}
+  function openRoot(name){if(name===current)return;historyStack=[name];showView(name,false);writeBrowserNavigation();}
   function switchMode(mode){if(!account.isOwner&&mode==='admin'){toast('Esta cuenta no tiene acceso de administrador');return;}if(!account.isOwner&&!can('switchViews')){toast('El administrador no habilitó el cambio de vistas');return;}currentMode=mode;$('#appMenu').classList.remove('open');openRoot(mode==='admin'?'users':mode==='partner'?'partner':'clients');toast(mode==='admin'?'Modo administrador activado':mode==='partner'?'Vista Partner activada':'Modo técnico activado');}
   function restoreOperationalNavigation(){
     let state={};try{state=JSON.parse(localStorage.getItem(navigationStorageKey)||'{}')}catch(_){}
@@ -363,12 +373,25 @@
     const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','partnerReports','partnerFaults','reportView']:['clients','client','equipment','report','reportView','agenda','profile'];
     if(currentMode==='admin')allowedRoots.push('users','userPermissions','clientEditor','equipmentEditor');
     const target=allowedRoots.includes(state.view)?state.view:(currentMode==='partner'?'partner':'clients');
-    const paths={client:['clients','client'],equipment:['clients','client','equipment'],report:['clients','client','equipment','report'],reportView:currentMode==='partner'?['partner','partnerReports','reportView']:['clients','client','equipment','reportView']};
+    const paths={client:['clients','client'],equipment:['clients','client','equipment'],report:['clients','client','equipment','report'],agenda:['clients','agenda'],profile:['clients','profile'],task:['clients','agenda','task'],userPermissions:['users','userPermissions'],clientEditor:['clients','clientEditor'],equipmentEditor:['clients','client','equipmentEditor'],partnerEquipment:['partner','partnerEquipment'],partnerReports:['partner','partnerReports'],partnerFaults:['partner','partnerFaults'],reportView:currentMode==='partner'?['partner','partnerReports','reportView']:['clients','client','equipment','reportView']};
     historyStack=paths[target]||[target];current='__restore__';refreshRound();
-    if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=paths.reportView;return;}}
+    if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=paths.reportView;initializeBrowserNavigation();return;}}
     showView(target,false);
     if(target==='report')setTimeout(()=>$('#newReport').click(),0);
+    initializeBrowserNavigation();
   }
+  window.addEventListener('popstate',event=>{
+    const state=event.state;
+    if(!state?.hscOperations||state.guard){writeBrowserNavigation();return;}
+    if(['clientEditor','equipmentEditor'].includes(current)&&editorDirty&&!confirm('¿Salir sin guardar estos cambios de la maqueta?')){window.history.forward();return;}
+    editorDirty=false;handlingHistoryPop=true;
+    if(state.client&&clientMeta[state.client])selectedClient=state.client;
+    if(state.equipment&&equipmentMeta[state.equipment])selectedEquipment=state.equipment;
+    if(['1','2','3','4'].includes(String(state.round)))selectedRound=String(state.round);
+    if(['tech','admin','partner'].includes(state.mode))currentMode=state.mode;
+    historyStack=Array.isArray(state.stack)&&state.stack.length?state.stack:[state.view];
+    current='__history__';refreshRound();showView(state.view||historyStack.at(-1),false);handlingHistoryPop=false;
+  });
   function renderClients(filter=$('#clientSearch').value){
     const q=filter.trim().toLowerCase(),rows=clients.filter(c=>(showCatalog||clientMeta[c[1]].policy)&&`${c[0]} ${c[1]} ${clientMeta[c[1]].address}`.toLowerCase().includes(q));
     $('#clientCount').textContent=`${rows.length} ${showCatalog?'en catálogo':'con póliza'}`;
@@ -683,7 +706,7 @@
   const openReportWithEvidence=$('#newReport').onclick;$('#newReport').onclick=async()=>{await openReportWithEvidence();$('#evidenceError').textContent='';try{await restoreEvidence()}catch(_){$('#evidenceError').textContent='No se pudo recuperar el respaldo de fotos de este dispositivo.';}renderEvidence();};
   const saveTextDraft=$('#saveDraft').onclick;$('#saveDraft').onclick=()=>{saveTextDraft();if(evidenceForReport().length)toast('Borrador y fotos conservados en este dispositivo');};
   $('#inviteClientSelect').innerHTML=clients.map(client=>`<option value="${escapeHtml(client[1])}">${escapeHtml(client[0])}</option>`).join('');
-  renderClients();refreshRound();applyAccess();if(typeof fetch==='function')loadMatrixData();
+  renderClients();refreshRound();applyAccess();if(typeof fetch==='function')loadMatrixData().finally(initializeBrowserNavigation);else initializeBrowserNavigation();
 </script>
 </body>
 </html>
