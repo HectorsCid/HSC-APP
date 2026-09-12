@@ -43,6 +43,16 @@ assert.match(html, /class="partner-dashboard"/);
 assert.match(html, /<nav class="bottom-nav">[\s\S]*>Agenda<[\s\S]*>Clientes<[\s\S]*>Perfil</);
 assert.match(html, /body\[data-active-mode="partner"\] \.bottom-nav\{display:none!important\}/);
 assert.match(script, /document\.body\.dataset\.activeMode=currentMode/);
+assert.match(html, /id="clientsModeBar" hidden/);
+assert.match(html, /id="partnerClientChooser" hidden/);
+assert.match(html, /id="partnerClientSelect"/);
+assert.match(script, /function renderPartnerDashboard\(\)/);
+assert.match(script, /\$\('#partnerClientSelect'\)\.onchange/);
+assert.match(html, /id="partnerPdfButton"/);
+assert.match(html, /id="partnerRoundAction"/);
+assert.match(html, /id="partnerFaultAction"/);
+assert.match(html, /class="partner-client-data"[\s\S]*>Nombre<[\s\S]*id="partnerClientName"[\s\S]*>Dirección<[\s\S]*id="partnerClientAddress"/);
+assert.doesNotMatch(html, /<b>Equipos<\/b><\/button><button class="quick-card" data-partner-action="reports"/);
 assert.doesNotMatch(html, />Guardar en maqueta</);
 assert.doesNotMatch(script, /location\.(href|assign)|history\.back/);
 

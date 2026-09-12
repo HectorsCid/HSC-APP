@@ -1181,6 +1181,30 @@ def _folder_web_link(folder_id: str) -> str | None:
     except Exception:
         return None
 
+
+def find_client_reports_folder_url(client_name: str) -> str | None:
+    """Localiza sin crear la carpeta de PDF de un cliente en 04. Reportes."""
+    safe_client = _sanitize_name(client_name)
+
+    def find_folder(parent_id: str, name: str):
+        safe_name = _sanitize_name(name).replace("'", "\\'")
+        query = (
+            "name='{}' and '{}' in parents and "
+            "mimeType='application/vnd.google-apps.folder' and trashed=false"
+        ).format(safe_name, parent_id)
+        return _drive_files_call(lambda drive: drive.files().list(
+            q=query, spaces="drive", fields="files(id,name)", pageSize=1,
+        ).execute()).get("files", [])
+
+    if not REPORTES_ROOT_ID:
+        return None
+    clients = find_folder(REPORTES_ROOT_ID, safe_client)
+    if not clients:
+        return None
+    client_id = clients[0]["id"]
+    reports = find_folder(client_id, "Reportes")
+    return _folder_web_link(reports[0]["id"] if reports else client_id)
+
 def _generate_and_store_report_pdf(id_reporte: str):
     """Invocación interna del generador; no simula un navegador sin sesión.
 

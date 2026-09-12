@@ -50,7 +50,12 @@ from werkzeug.utils import safe_join, secure_filename
 from smtp_mailer import authorized_to_send, parse_recipients, send_quote_email, smtp_config, trusted_device_token
 from cfdi_drive import delete_pending_document, list_pending_documents, save_pending_document
 from email_tracking import delivery_status, read_email_deliveries, record_email_delivery
-from reportes_bp import reportes_bp, serve_drive_image_ref_fast, start_auto_report_monitor
+from reportes_bp import (
+    reportes_bp,
+    serve_drive_image_ref_fast,
+    start_auto_report_monitor,
+    find_client_reports_folder_url,
+)
 from operaciones_matrix import read_operaciones_matrix
 from operaciones_store import OperationsStore
 
@@ -2730,6 +2735,33 @@ def _scope_operaciones_payload(payload):
         "duplicate_clients": 0, "duplicate_equipment": 0, "duplicate_reports": 0,
     }
     return scoped
+
+
+@app.get('/api/operaciones/clients/<path:client_id>/reports-folder')
+def api_operaciones_client_reports_folder(client_id):
+    """Abre la carpeta existente de PDF sin crear ni modificar datos en Drive."""
+    forbidden = _operations_forbidden("admin", "technician", "client")
+    if forbidden:
+        return forbidden
+    requested_id = str(client_id or "").strip()
+    if _operations_role() == "client":
+        assigned_id = str(session.get("hsc_client_id") or "").strip()
+        if not assigned_id or requested_id != assigned_id:
+            return jsonify({"ok": False, "error": "Este cliente no pertenece a tu cuenta."}), 403
+    clients = OPERACIONES_STORE.snapshot().get("clients", []) if OPERACIONES_STORE.enabled else []
+    if not clients:
+        clients = (_OPERACIONES_MATRIX_CACHE.get("payload") or {}).get("clients", [])
+    client = next((item for item in clients if str(item.get("id") or "").strip() == requested_id), None)
+    if not client:
+        return jsonify({"ok": False, "error": "No se encontró el cliente."}), 404
+    try:
+        folder_url = find_client_reports_folder_url(client.get("name") or requested_id)
+    except Exception as exc:
+        current_app.logger.warning("No se pudo localizar la carpeta de reportes de %s: %s", requested_id, exc)
+        folder_url = None
+    if not folder_url:
+        return jsonify({"ok": False, "error": "Este cliente todavía no tiene una carpeta de reportes PDF."}), 404
+    return redirect(folder_url)
 
 
 @app.get('/api/operaciones/bootstrap')
