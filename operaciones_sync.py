@@ -205,7 +205,12 @@ def _write_plan(service, spreadsheet_id, plan):
         for column, _, value in initial:
             row[column] = value
         result = api.append(
-            spreadsheetId=spreadsheet_id, range=f"{quoted}!A:{_column_name(len(row)-1)}",
+            # La matriz contiene formulas y columnas auxiliares a la derecha.
+            # Si se entrega todo ese ancho, Sheets puede detectar la "tabla"
+            # desde una columna posterior y desplazar la fila nueva. Anclar el
+            # append en A:A conserva el ancho del body, pero obliga a que la
+            # primera celda sea siempre la columna A.
+            spreadsheetId=spreadsheet_id, range=f"{quoted}!A:A",
             valueInputOption="USER_ENTERED", insertDataOption="INSERT_ROWS", body={"values": [row]},
         ).execute()
         updated_range = _text((result.get("updates") or {}).get("updatedRange"))

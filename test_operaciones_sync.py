@@ -38,7 +38,7 @@ class _Values:
         row = list(kwargs["body"]["values"][0])
         self.fake.sheets[title]["rows"].append(row)
         row_number = len(self.fake.sheets[title]["rows"]) + 1
-        self.fake.writes.append(("append", title, row_number, row))
+        self.fake.writes.append(("append", title, row_number, row, kwargs["range"]))
         return _Request({"updates": {"updatedRange": f"'{title}'!A{row_number}:AL{row_number}"}})
 
     def batchUpdate(self, **kwargs):
@@ -123,6 +123,7 @@ def test_report_is_appended_then_completed_in_a_separate_request(tmp_path):
     assert row[REPORT_HEADERS.index("Foto1")] == "drive-foto-1"
     assert row[REPORT_HEADERS.index("Foto2")] == "drive-foto-2"
     assert row[REPORT_HEADERS.index("Realizado")] == ""
+    assert append[4] == "'Reportes'!A:A"
     assert fake.writes[-1][0] == "update"
     assert fake.writes[-1][2] == [[True]]
     assert store.pending_sync() == []
