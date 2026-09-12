@@ -73,6 +73,9 @@
 - [ ] Importar y validar UVM en Render antes de habilitar escrituras.
 - [x] Guardar altas de clientes/equipos y borradores de texto en la base operativa.
 - [x] Conservar evidencias sin conexión en el dispositivo, separadas por equipo y ronda.
+- [x] Preparar migración integral de Clientes, Equipos y Reportes hasta columna ZZ, conservando IDs, columnas adicionales y posiciones Foto1-Foto6.
+- [x] Bloquear la migración si existen IDs duplicados o relaciones huérfanas y comparar los conteos contra la base.
+- [x] Proteger en servidor las escrituras operativas por rol: administrador o técnico según la acción; cliente en consulta restringida.
 - [ ] Finalizar reportes reales en PostgreSQL después de conectar almacenamiento de evidencias.
 - [ ] Crear trabajador de salida para subir PDF/evidencias a Drive y actualizar Sheets por lotes.
 - [ ] Incorporar miniaturas persistentes y caché offline en el teléfono.

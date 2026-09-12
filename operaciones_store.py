@@ -17,7 +17,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 
 def _now():
@@ -86,7 +86,8 @@ class OperationsStore:
                 matrix_id TEXT NOT NULL DEFAULT '',
                 selected_round TEXT NOT NULL DEFAULT '', policy_active INTEGER NOT NULL DEFAULT 1,
                 has_photo INTEGER NOT NULL DEFAULT 0, photo_ref TEXT NOT NULL DEFAULT '',
-                source TEXT NOT NULL DEFAULT 'sheets', updated_at TEXT NOT NULL
+                source TEXT NOT NULL DEFAULT 'sheets', raw_json TEXT NOT NULL DEFAULT '{}',
+                updated_at TEXT NOT NULL
             )""",
             """CREATE TABLE IF NOT EXISTS operations_equipment (
                 id TEXT PRIMARY KEY, client_id TEXT NOT NULL, name TEXT NOT NULL,
@@ -95,7 +96,8 @@ class OperationsStore:
                 location TEXT NOT NULL DEFAULT '', department TEXT NOT NULL DEFAULT '',
                 equipment_type TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
                 has_photo INTEGER NOT NULL DEFAULT 0, photo_ref TEXT NOT NULL DEFAULT '',
-                source TEXT NOT NULL DEFAULT 'sheets', updated_at TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'sheets', raw_json TEXT NOT NULL DEFAULT '{}',
+                updated_at TEXT NOT NULL,
                 FOREIGN KEY(client_id) REFERENCES operations_clients(id)
             )""",
             """CREATE TABLE IF NOT EXISTS operations_reports (
@@ -133,8 +135,23 @@ class OperationsStore:
         with self.connection() as conn:
             for statement in statements:
                 conn.execute(statement)
+            self._ensure_column(conn, "operations_clients", "raw_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(conn, "operations_equipment", "raw_json", "TEXT NOT NULL DEFAULT '{}'")
             self._upsert_meta(conn, "schema_version", SCHEMA_VERSION)
         self._initialized = True
+
+    def _ensure_column(self, conn, table, column, definition):
+        """Actualiza bases locales existentes sin depender de un ORM."""
+        if self.dialect == "postgres":
+            p = self.placeholder
+            found = conn.execute(
+                f"SELECT 1 FROM information_schema.columns WHERE table_name={p} AND column_name={p}",
+                (table, column),
+            ).fetchone()
+        else:
+            found = next((row for row in conn.execute(f"PRAGMA table_info({table})") if row[1] == column), None)
+        if not found:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def _upsert_meta(self, conn, key, value):
         p = self.placeholder
@@ -168,7 +185,8 @@ class OperationsStore:
         clients = [(
             _text(item.get("id")), _text(item.get("name")) or _text(item.get("id")),
             _text(item.get("address")), _text(item.get("id")), _text(item.get("selected_round")), 1,
-            int(bool(item.get("has_photo"))), _text(item.get("_photo_ref")), "sheets", stamp,
+            int(bool(item.get("has_photo"))), _text(item.get("_photo_ref")), "sheets",
+            json.dumps(item.get("_raw") or {}, ensure_ascii=False), stamp,
         ) for item in payload.get("clients", []) if _text(item.get("id"))]
         equipment = [(
             _text(item.get("id")), _text(item.get("client_id")),
@@ -176,33 +194,37 @@ class OperationsStore:
             _text(item.get("model")), _text(item.get("serial")), _text(item.get("status")),
             _text(item.get("location")), _text(item.get("department")),
             _text(item.get("equipment_type")), _text(item.get("notes")),
-            int(bool(item.get("has_photo"))), _text(item.get("_photo_ref")), "sheets", stamp,
+            int(bool(item.get("has_photo"))), _text(item.get("_photo_ref")), "sheets",
+            json.dumps(item.get("_raw") or {}, ensure_ascii=False), stamp,
         ) for item in payload.get("equipment", [])
           if _text(item.get("id")) and _text(item.get("client_id"))]
         reports = [(
             _text(item.get("id")), _text(item.get("equipment_id")), _text(item.get("client_id")),
             _text(item.get("round")), _text(item.get("start")), _text(item.get("end")),
             int(bool(item.get("completed"))), "sheets", _text(item.get("id")),
-            "refrigeration", "{}", "completed" if item.get("completed") else "imported",
+            "refrigeration", json.dumps(item.get("_raw") or {}, ensure_ascii=False),
+            "completed" if item.get("completed") else "imported",
             "synced", stamp,
         ) for item in payload.get("reports", []) if _text(item.get("id"))]
         with self.connection() as conn:
             self._upsert_many(conn, "operations_clients",
-                ["id","name","address","matrix_id","selected_round","policy_active","has_photo","photo_ref","source","updated_at"], clients,
-                ["name","address","matrix_id","selected_round","has_photo","photo_ref","source","updated_at"],
+                ["id","name","address","matrix_id","selected_round","policy_active","has_photo","photo_ref","source","raw_json","updated_at"], clients,
+                ["name","address","matrix_id","selected_round","has_photo","photo_ref","source","raw_json","updated_at"],
                 update_where="operations_clients.source='sheets'")
             self._upsert_many(conn, "operations_equipment",
-                ["id","client_id","name","brand","model","serial","status","location","department","equipment_type","notes","has_photo","photo_ref","source","updated_at"], equipment,
-                ["client_id","name","brand","model","serial","status","location","department","equipment_type","notes","has_photo","photo_ref","source","updated_at"],
+                ["id","client_id","name","brand","model","serial","status","location","department","equipment_type","notes","has_photo","photo_ref","source","raw_json","updated_at"], equipment,
+                ["client_id","name","brand","model","serial","status","location","department","equipment_type","notes","has_photo","photo_ref","source","raw_json","updated_at"],
                 update_where="operations_equipment.source='sheets'")
             self._upsert_many(conn, "operations_reports",
                 ["id","equipment_id","client_id","round_number","start_at","end_at","completed","source","matrix_id","report_type","payload_json","state","sync_status","updated_at"], reports,
-                ["equipment_id","client_id","round_number","start_at","end_at","completed","source","matrix_id","report_type","state","sync_status","updated_at"],
+                ["equipment_id","client_id","round_number","start_at","end_at","completed","source","matrix_id","report_type","payload_json","state","sync_status","updated_at"],
                 update_where="operations_reports.source='sheets'")
             # La matriz conserva Foto1..Foto6; se materializan como filas para la app.
             for item in payload.get("reports", []):
                 report_id = _text(item.get("id"))
-                photo_count = int(item.get("photo_count") or 0)
+                evidence_refs = list(item.get("_evidence_refs") or [])[:6]
+                if not evidence_refs:
+                    evidence_refs = [""] * int(item.get("photo_count") or 0)
                 p = self.placeholder
                 source_row = conn.execute(
                     f"SELECT source FROM operations_reports WHERE id={p}", (report_id,)
@@ -214,13 +236,16 @@ class OperationsStore:
                     f"DELETE FROM operations_evidence WHERE report_id={p} AND id LIKE {p}",
                     (report_id, f"{report_id}:foto:%"),
                 )
-                for position in range(1, photo_count + 1):
+                for position, storage_ref in enumerate(evidence_refs, start=1):
+                    if item.get("_evidence_refs") is not None and not _text(storage_ref):
+                        continue
                     evidence_id = f"{report_id}:foto:{position}"
                     conn.execute(
-                        f"INSERT INTO operations_evidence(id,report_id,position,sync_status,updated_at) "
-                        f"VALUES ({p},{p},{p},{p},{p}) ON CONFLICT(id) DO UPDATE SET "
-                        "position=excluded.position,sync_status=excluded.sync_status,updated_at=excluded.updated_at",
-                        (evidence_id, report_id, position, "synced", stamp),
+                        f"INSERT INTO operations_evidence(id,report_id,position,storage_ref,sync_status,updated_at) "
+                        f"VALUES ({p},{p},{p},{p},{p},{p}) ON CONFLICT(id) DO UPDATE SET "
+                        "position=excluded.position,storage_ref=excluded.storage_ref,"
+                        "sync_status=excluded.sync_status,updated_at=excluded.updated_at",
+                        (evidence_id, report_id, position, _text(storage_ref), "synced", stamp),
                     )
             self._upsert_meta(conn, "last_matrix_import", stamp)
         return {"clients": len(clients), "equipment": len(equipment), "reports": len(reports)}
@@ -312,13 +337,13 @@ class OperationsStore:
         p = self.placeholder
         with self.connection() as conn:
             conn.execute(
-                f"INSERT INTO operations_clients(id,name,address,matrix_id,selected_round,policy_active,has_photo,photo_ref,source,updated_at) "
-                f"VALUES ({','.join([p] * 10)}) ON CONFLICT(id) DO UPDATE SET "
+                f"INSERT INTO operations_clients(id,name,address,matrix_id,selected_round,policy_active,has_photo,photo_ref,source,raw_json,updated_at) "
+                f"VALUES ({','.join([p] * 11)}) ON CONFLICT(id) DO UPDATE SET "
                 "name=excluded.name,address=excluded.address,matrix_id=excluded.matrix_id,"
                 "selected_round=excluded.selected_round,policy_active=excluded.policy_active,source='app',updated_at=excluded.updated_at",
                 (client_id, name, _text(item.get("address")), matrix_id,
                  _text(item.get("selected_round")), int(bool(item.get("policy_active", True))),
-                 0, "", "app", stamp),
+                 0, "", "app", "{}", stamp),
             )
         self.queue_sync("client", client_id, "sheets", "upsert", {"matrix_id": matrix_id})
         return next(client for client in self.snapshot()["clients"] if client["id"] == client_id)
@@ -351,11 +376,11 @@ class OperationsStore:
                 "Activo" if item.get("active", True) else "Inactivo",
                 _text(item.get("location")), _text(item.get("department")),
                 _text(item.get("equipment_type")), _text(item.get("notes")),
-                0, "", "app", stamp,
+                0, "", "app", "{}", stamp,
             ))
         with self.connection() as conn:
             self._upsert_many(conn, "operations_equipment",
-                ["id","client_id","name","brand","model","serial","status","location","department","equipment_type","notes","has_photo","photo_ref","source","updated_at"],
+                ["id","client_id","name","brand","model","serial","status","location","department","equipment_type","notes","has_photo","photo_ref","source","raw_json","updated_at"],
                 prepared,
                 ["client_id","name","brand","model","serial","status","location","department","equipment_type","notes","source","updated_at"])
         for equipment_id in request_ids:

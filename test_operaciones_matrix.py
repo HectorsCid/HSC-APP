@@ -56,6 +56,7 @@ def test_read_operaciones_matrix_is_batch_get_only():
         "ranges": MATRIX_RANGES,
         "majorDimension": "ROWS",
     }
+    assert MATRIX_RANGES == ["Clientes!A1:ZZ", "Equipos!A1:ZZ", "Reportes!A1:ZZ"]
 
 
 def test_media_references_are_opt_in_and_remain_private():
@@ -76,3 +77,29 @@ def test_media_references_are_opt_in_and_remain_private():
     assert "_photo_ref" not in public_payload["equipment"][0]
     assert private_payload["clients"][0]["_photo_ref"] == "Clientes_Images/uvm.jpg"
     assert private_payload["equipment"][0]["_photo_ref"] == "Equipos_Images/uvm1.jpg"
+
+
+def test_full_import_keeps_every_column_and_real_evidence_positions():
+    rows = [
+        {"range": "Clientes!A1:ZZ", "values": [
+            ["ID_Cliente", "NombreCliente", "CorreoAutorizado", "DatoNuevo"],
+            ["UVMQ", "UVM Queretaro", "privado@example.com", "se conserva"],
+        ]},
+        {"range": "Equipos!A1:ZZ", "values": [
+            ["ID_Equipo", "ID_Cliente", "NombreEquipo", "NoContrato"],
+            ["UVMQ1", "UVMQ", "Equipo UVM", "POL-2026"],
+        ]},
+        {"range": "Reportes!A1:ZZ", "values": [
+            ["ID_Reporte", "ID_Equipo", "ID_Cliente", "Foto1", "Foto2", "Foto3", "LecturaExtra"],
+            ["UVMQ1_R 2", "UVMQ1", "UVMQ", "uno.jpg", "", "tres.jpg", "42"],
+        ]},
+    ]
+    result = build_operaciones_bootstrap(
+        rows, include_media_refs=True, include_raw=True
+    )
+
+    assert result["clients"][0]["_raw"]["CorreoAutorizado"] == "privado@example.com"
+    assert result["clients"][0]["_raw"]["DatoNuevo"] == "se conserva"
+    assert result["equipment"][0]["_raw"]["NoContrato"] == "POL-2026"
+    assert result["reports"][0]["_raw"]["LecturaExtra"] == "42"
+    assert result["reports"][0]["_evidence_refs"][:3] == ["uno.jpg", "", "tres.jpg"]

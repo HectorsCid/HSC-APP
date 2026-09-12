@@ -5,7 +5,9 @@ from __future__ import annotations
 import re
 
 
-MATRIX_RANGES = ["Clientes!A1:H", "Equipos!A1:N", "Reportes!A1:AL"]
+# Se leen columnas abiertas para no truncar datos nuevos agregados a la matriz.
+# Sheets sólo devuelve las celdas realmente ocupadas, no las 702 columnas completas.
+MATRIX_RANGES = ["Clientes!A1:ZZ", "Equipos!A1:ZZ", "Reportes!A1:ZZ"]
 
 
 def _text(value):
@@ -34,7 +36,7 @@ def _records(rows):
     return records
 
 
-def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False):
+def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, include_raw=False):
     """Convierte batchGet de Sheets en datos mínimos para la app móvil."""
     by_title = {}
     for item in value_ranges or []:
@@ -62,6 +64,8 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False):
         }
         if include_media_refs and photo:
             client["_photo_ref"] = photo
+        if include_raw:
+            client["_raw"] = dict(row)
         clients.append(client)
 
     equipment = []
@@ -91,6 +95,8 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False):
         }
         if include_media_refs and photo:
             item["_photo_ref"] = photo
+        if include_raw:
+            item["_raw"] = dict(row)
         equipment.append(item)
 
     reports = []
@@ -107,9 +113,10 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False):
             duplicate_reports += 1
             continue
         seen_reports.add(report_id)
-        photo_count = sum(bool(_text(row.get(f"Foto{index}"))) for index in range(1, 7))
+        evidence_refs = [_text(row.get(f"Foto{index}")) for index in range(1, 7)]
+        photo_count = sum(bool(value) for value in evidence_refs)
         evidence_count += photo_count
-        reports.append({
+        report = {
             "id": report_id,
             "equipment_id": equipment_id,
             "client_id": client_id,
@@ -118,7 +125,12 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False):
             "end": _text(row.get("FechaFin")),
             "completed": _truthy(row.get("Realizado")),
             "photo_count": photo_count,
-        })
+        }
+        if include_media_refs:
+            report["_evidence_refs"] = evidence_refs
+        if include_raw:
+            report["_raw"] = dict(row)
+        reports.append(report)
 
     client_ids = {item["id"] for item in clients}
     equipment_ids = {item["id"] for item in equipment}
@@ -145,12 +157,13 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False):
     }
 
 
-def read_operaciones_matrix(service, spreadsheet_id, *, include_media_refs=False):
+def read_operaciones_matrix(service, spreadsheet_id, *, include_media_refs=False, include_raw=False):
     response = service.spreadsheets().values().batchGet(
         spreadsheetId=spreadsheet_id,
         ranges=MATRIX_RANGES,
         majorDimension="ROWS",
     ).execute()
     return build_operaciones_bootstrap(
-        response.get("valueRanges") or [], include_media_refs=include_media_refs
+        response.get("valueRanges") or [], include_media_refs=include_media_refs,
+        include_raw=include_raw,
     )

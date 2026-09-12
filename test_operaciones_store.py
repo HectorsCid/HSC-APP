@@ -12,7 +12,9 @@ def _payload():
                        "_photo_ref": "Equipos_Images/uvmq1.jpg"}],
         "reports": [{"id": "UVMQ1_R 2", "equipment_id": "UVMQ1", "client_id": "UVMQ",
                      "round": "2", "start": "2026-09-12", "end": "2026-09-12",
-                     "completed": True, "photo_count": 3}],
+                     "completed": True, "photo_count": 3,
+                     "_raw": {"PresionCto1": "120", "DatoNuevo": "conservado"},
+                     "_evidence_refs": ["foto-1.jpg", "", "foto-3.jpg", "foto-4.jpg", "", ""]}],
     }
 
 
@@ -29,6 +31,16 @@ def test_matrix_snapshot_round_trip_uses_ids_and_evidence_rows(tmp_path):
     assert result["reports"][0]["photo_count"] == 3
     assert result["stats"]["evidence_photos"] == 3
     assert result["stats"]["pending_sync"] == 0
+
+    with store.connection() as conn:
+        evidence = conn.execute(
+            "SELECT position,storage_ref FROM operations_evidence ORDER BY position"
+        ).fetchall()
+        report_raw = conn.execute(
+            "SELECT payload_json FROM operations_reports WHERE id=?", ("UVMQ1_R 2",)
+        ).fetchone()[0]
+    assert evidence == [(1, "foto-1.jpg"), (3, "foto-3.jpg"), (4, "foto-4.jpg")]
+    assert '"DatoNuevo": "conservado"' in report_raw
 
 
 def test_reimport_updates_without_duplicating(tmp_path):

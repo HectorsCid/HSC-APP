@@ -230,6 +230,10 @@ def acceso():
             session.clear()
             session.permanent = True
             session["hsc_authenticated"] = True
+            # La contraseña general actual pertenece al propietario. Los accesos
+            # de técnico/cliente se crearán después mediante invitaciones.
+            session["hsc_role"] = "admin"
+            session["hsc_user_id"] = "owner"
             return redirect(next_path)
         error = "La contraseña no es correcta. Intenta nuevamente."
     return render_template("acceso.html", error=error, next_path=next_path, configured=bool(password))
@@ -2671,8 +2675,54 @@ def _prepare_operaciones_payload(payload):
             item["photo_url"] = url_for(
                 "api_operaciones_photo", kind=kind, record_id=record_id
             )
+    for collection in ("clients", "equipment", "reports"):
+        for item in payload.get(collection, []):
+            item.pop("_raw", None)
+            item.pop("_evidence_refs", None)
     _OPERACIONES_MEDIA_REFS.update(media_refs)
     return payload
+
+
+def _operations_role():
+    role = str(session.get("hsc_role") or "").strip().lower()
+    if role in {"admin", "technician", "client"}:
+        return role
+    # Mantiene como administrador las sesiones del propietario abiertas antes
+    # de introducir roles; no concede acceso a una sesión no autenticada.
+    return "admin" if session.get("hsc_authenticated") is True else ""
+
+
+def _operations_forbidden(*allowed):
+    role = _operations_role()
+    if role in allowed:
+        return None
+    return jsonify({
+        "ok": False, "code": "forbidden", "role": role or None,
+        "error": "Tu cuenta no tiene permiso para realizar esta acción.",
+    }), 403
+
+
+def _scope_operaciones_payload(payload):
+    """Un cliente sólo recibe los registros vinculados con su propia empresa."""
+    if _operations_role() != "client":
+        return payload
+    client_id = str(session.get("hsc_client_id") or "").strip()
+    clients = [item for item in payload.get("clients", []) if item.get("id") == client_id]
+    equipment = [item for item in payload.get("equipment", []) if item.get("client_id") == client_id]
+    equipment_ids = {item.get("id") for item in equipment}
+    reports = [item for item in payload.get("reports", [])
+               if item.get("client_id") == client_id or item.get("equipment_id") in equipment_ids]
+    scoped = dict(payload)
+    scoped.update(clients=clients, equipment=equipment, reports=reports)
+    scoped["stats"] = {
+        "clients": len(clients), "equipment": len(equipment), "reports": len(reports),
+        "client_photos": sum(bool(item.get("has_photo")) for item in clients),
+        "equipment_photos": sum(bool(item.get("has_photo")) for item in equipment),
+        "evidence_photos": sum(int(item.get("photo_count") or 0) for item in reports),
+        "orphan_equipment": 0, "orphan_reports": 0,
+        "duplicate_clients": 0, "duplicate_equipment": 0, "duplicate_reports": 0,
+    }
+    return scoped
 
 
 @app.get('/api/operaciones/bootstrap')
@@ -2684,20 +2734,23 @@ def api_operaciones_bootstrap():
         cached = _OPERACIONES_MATRIX_CACHE["payload"]
         fresh = cached is not None and now - _OPERACIONES_MATRIX_CACHE["ts"] < _OPERACIONES_MATRIX_TTL
         if fresh and not refresh:
+            visible = _scope_operaciones_payload(cached)
             return jsonify({
                 "ok": True, "read_only": not OPERACIONES_STORE.enabled, "cached": True,
-                "source": _OPERACIONES_MATRIX_CACHE.get("source") or "memory", **cached,
+                "source": _OPERACIONES_MATRIX_CACHE.get("source") or "memory", **visible,
             })
         try:
             if OPERACIONES_STORE.enabled and OPERACIONES_STORE.has_data() and not refresh:
                 payload = _prepare_operaciones_payload(OPERACIONES_STORE.snapshot())
                 _OPERACIONES_MATRIX_CACHE.update(ts=now, payload=payload, source="database")
+                visible = _scope_operaciones_payload(payload)
                 return jsonify({
                     "ok": True, "read_only": False, "cached": False,
-                    "source": "database", **payload,
+                    "source": "database", **visible,
                 })
             payload = read_operaciones_matrix(
-                get_sheets_service(timeout=15), SHEET_ID, include_media_refs=True
+                get_sheets_service(timeout=15), SHEET_ID, include_media_refs=True,
+                include_raw=OPERACIONES_STORE.enabled,
             )
             if OPERACIONES_STORE.enabled:
                 OPERACIONES_STORE.import_matrix_snapshot(payload)
@@ -2705,18 +2758,20 @@ def api_operaciones_bootstrap():
             payload = _prepare_operaciones_payload(payload)
             source = "database" if OPERACIONES_STORE.enabled else "sheets"
             _OPERACIONES_MATRIX_CACHE.update(ts=now, payload=payload, source=source)
+            visible = _scope_operaciones_payload(payload)
             return jsonify({
                 "ok": True, "read_only": not OPERACIONES_STORE.enabled, "cached": False,
-                "source": source, **payload,
+                "source": source, **visible,
             })
         except Exception as exc:
             current_app.logger.exception("No se pudo leer la matriz de Operaciones: %s", exc)
             if cached is not None:
+                visible = _scope_operaciones_payload(cached)
                 return jsonify({
                     "ok": True, "read_only": True, "cached": True, "stale": True,
                     "source": _OPERACIONES_MATRIX_CACHE.get("source") or "memory",
                     "warning": "La matriz no respondió; se muestran los últimos datos disponibles.",
-                    **cached,
+                    **visible,
                 })
             return jsonify({
                 "ok": False,
@@ -2730,12 +2785,93 @@ def api_operaciones_bootstrap():
 @app.get('/api/operaciones/storage-status')
 def api_operaciones_storage_status():
     """Diagnóstico sin secretos para confirmar la transición a PostgreSQL."""
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
     try:
         return jsonify({"ok": True, **OPERACIONES_STORE.status()})
     except Exception as exc:
         current_app.logger.exception("No se pudo consultar la base operativa: %s", exc)
         return jsonify({"ok": False, "enabled": OPERACIONES_STORE.enabled,
                         "error": "La base operativa no está disponible."}), 503
+
+
+def _operations_migration_checks(stats):
+    problem_keys = (
+        "orphan_equipment", "orphan_reports", "duplicate_clients",
+        "duplicate_equipment", "duplicate_reports",
+    )
+    problems = {key: int(stats.get(key) or 0) for key in problem_keys if int(stats.get(key) or 0)}
+    return {"ready": not problems, "problems": problems}
+
+
+@app.get('/api/operaciones/migration-preview')
+def api_operaciones_migration_preview():
+    """Cuenta toda la matriz sin modificar la base."""
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    try:
+        payload = read_operaciones_matrix(
+            get_sheets_service(timeout=20), SHEET_ID,
+            include_media_refs=True, include_raw=True,
+        )
+        return jsonify({
+            "ok": True, "source": "sheets", "stats": payload.get("stats") or {},
+            **_operations_migration_checks(payload.get("stats") or {}),
+        })
+    except Exception as exc:
+        current_app.logger.exception("No se pudo revisar la migración operativa: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudo revisar la Hoja Matriz."}), 502
+    finally:
+        reset_thread_google_services()
+
+
+@app.post('/api/operaciones/migrate')
+def api_operaciones_migrate():
+    """Importación completa, transaccional y verificable de la Hoja Matriz."""
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({
+            "ok": False, "code": "storage_not_configured",
+            "error": "Conecta la base operativa antes de iniciar la migración.",
+        }), 503
+    try:
+        source = read_operaciones_matrix(
+            get_sheets_service(timeout=30), SHEET_ID,
+            include_media_refs=True, include_raw=True,
+        )
+        checks = _operations_migration_checks(source.get("stats") or {})
+        if not checks["ready"]:
+            return jsonify({
+                "ok": False, "code": "matrix_integrity",
+                "error": "La matriz tiene IDs duplicados o relaciones incompletas; no se modificó la base.",
+                "stats": source.get("stats") or {}, **checks,
+            }), 409
+        imported = OPERACIONES_STORE.import_matrix_snapshot(source)
+        stored = OPERACIONES_STORE.snapshot()
+        source_stats = source.get("stats") or {}
+        stored_stats = stored.get("stats") or {}
+        verify_keys = ("clients", "equipment", "reports", "evidence_photos")
+        verification = {
+            key: {"source": int(source_stats.get(key) or 0), "database": int(stored_stats.get(key) or 0)}
+            for key in verify_keys
+        }
+        complete = all(item["source"] == item["database"] for item in verification.values())
+        if complete:
+            _invalidate_operations_cache()
+        return jsonify({
+            "ok": complete, "complete": complete, "imported": imported,
+            "verification": verification,
+            "error": None if complete else "Los conteos no coinciden; la migración requiere revisión.",
+        }), 200 if complete else 409
+    except Exception as exc:
+        current_app.logger.exception("No se pudo migrar la matriz operativa: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudo completar la migración."}), 500
+    finally:
+        reset_thread_google_services()
 
 
 def _invalidate_operations_cache():
@@ -2746,6 +2882,9 @@ def _invalidate_operations_cache():
 @app.post('/api/operaciones/clients')
 def api_operaciones_save_client():
     """Guarda en la base; la escritura a Sheets queda en la cola de salida."""
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
     if not OPERACIONES_STORE.enabled:
         return jsonify({
             "ok": False, "code": "storage_not_configured",
@@ -2766,6 +2905,9 @@ def api_operaciones_save_client():
 @app.post('/api/operaciones/equipment')
 def api_operaciones_save_equipment():
     """Guarda un lote de equipos de forma transaccional."""
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
     if not OPERACIONES_STORE.enabled:
         return jsonify({
             "ok": False, "code": "storage_not_configured",
@@ -2785,6 +2927,9 @@ def api_operaciones_save_equipment():
 
 @app.get('/api/operaciones/reports/draft')
 def api_operaciones_get_report_draft():
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
     if not OPERACIONES_STORE.enabled:
         return jsonify({"ok": True, "configured": False, "draft": None})
     try:
@@ -2799,6 +2944,9 @@ def api_operaciones_get_report_draft():
 
 @app.post('/api/operaciones/reports/draft')
 def api_operaciones_save_report_draft():
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
     if not OPERACIONES_STORE.enabled:
         return jsonify({
             "ok": False, "code": "storage_not_configured",
@@ -2820,6 +2968,18 @@ def api_operaciones_photo(kind, record_id):
     """Sirve la foto de cliente o equipo sin exponer su referencia de Drive."""
     if kind not in {"client", "equipment"}:
         abort(404)
+    if _operations_role() == "client":
+        client_id = str(session.get("hsc_client_id") or "").strip()
+        if kind == "client":
+            allowed = record_id == client_id
+        else:
+            cached = _OPERACIONES_MATRIX_CACHE.get("payload") or {}
+            allowed = any(
+                item.get("id") == record_id and item.get("client_id") == client_id
+                for item in cached.get("equipment", [])
+            )
+        if not allowed:
+            abort(404)
     photo_ref = _OPERACIONES_MEDIA_REFS.get((kind, record_id))
     if not photo_ref:
         abort(404)
