@@ -49,7 +49,7 @@ from werkzeug.utils import safe_join, secure_filename
 from smtp_mailer import authorized_to_send, parse_recipients, send_quote_email, smtp_config, trusted_device_token
 from cfdi_drive import delete_pending_document, list_pending_documents, save_pending_document
 from email_tracking import delivery_status, read_email_deliveries, record_email_delivery
-from reportes_bp import reportes_bp, serve_drive_image_ref, start_auto_report_monitor
+from reportes_bp import reportes_bp, serve_drive_image_ref_fast, start_auto_report_monitor
 from operaciones_matrix import read_operaciones_matrix
 
 from facturacion_bp import facturacion_bp
@@ -2710,7 +2710,7 @@ def api_operaciones_photo(kind, record_id):
     photo_ref = _OPERACIONES_MEDIA_REFS.get((kind, record_id))
     if not photo_ref:
         abort(404)
-    response = make_response(serve_drive_image_ref(photo_ref))
+    response = make_response(serve_drive_image_ref_fast(photo_ref))
     response.headers["Cache-Control"] = "private, max-age=3600"
     return response
 

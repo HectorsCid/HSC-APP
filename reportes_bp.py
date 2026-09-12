@@ -189,6 +189,8 @@ def _sheets_call(operation, **retry_kwargs):
 
 
 def _drive_img_call(operation, **retry_kwargs):
+    if getattr(_drive_img_services, "fast_mode", False):
+        retry_kwargs.setdefault("retries", 0)
     return _retry(lambda: operation(_drive_service_for_imgs()), **retry_kwargs)
 
 
@@ -488,10 +490,12 @@ _IMG_CACHE_LOCK = threading.RLock()
 _IMG_PATH_ID_CACHE_MAX = 1000
 
 def _drive_service_for_imgs():
-    service = getattr(_drive_img_services, "drive", None)
+    fast_mode = bool(getattr(_drive_img_services, "fast_mode", False))
+    attribute = "drive_fast" if fast_mode else "drive"
+    service = getattr(_drive_img_services, attribute, None)
     if service is None:
-        service = get_drive_service_user()
-        _drive_img_services.drive = service
+        service = get_drive_service_user(timeout=5 if fast_mode else None)
+        setattr(_drive_img_services, attribute, service)
     return service
 
 
@@ -671,6 +675,27 @@ def _resolve_path_to_id(path_str: str):
             current = files[0]["id"]
         return current
 
+    def folders_named(name):
+        safe_folder = name.replace("'", "\\'")
+        q = (
+            "name='{}' and mimeType='application/vnd.google-apps.folder' "
+            "and trashed=false"
+        ).format(safe_folder)
+        result = _drive_img_call(lambda drive: drive.files().list(
+            q=q, spaces="drive", fields="files(id,name)", pageSize=10
+        ).execute())
+        return result.get("files", [])
+
+    # AppSheet guarda rutas relativas como Clientes_Images/archivo.jpg. Ir
+    # directo a esa carpeta evita recorrer raíces ajenas para cada miniatura.
+    if len(parts) > 1 and parts[0].casefold().endswith("_images"):
+        for folder in folders_named(parts[0]):
+            resolved = walk(folder["id"], parts[1:])
+            if resolved:
+                _cache_set_path_id(path_str, resolved)
+                return resolved
+        return None
+
     # Los reportes viven bajo 04. Reportes; las fotos de AppSheet suelen vivir
     # junto a la Hoja Matriz en carpetas como Clientes_Images/ y Equipos_Images/.
     roots = []
@@ -693,15 +718,7 @@ def _resolve_path_to_id(path_str: str):
     # Respaldo para apps antiguas cuya carpeta de imágenes no comparte padre
     # directo con la hoja. Se limita a carpetas y después se recorre por ID.
     if len(parts) > 1:
-        safe_folder = parts[0].replace("'", "\\'")
-        q = (
-            "name='{}' and mimeType='application/vnd.google-apps.folder' "
-            "and trashed=false"
-        ).format(safe_folder)
-        result = _drive_img_call(lambda drive: drive.files().list(
-            q=q, spaces="drive", fields="files(id,name)", pageSize=10
-        ).execute())
-        for folder in result.get("files", []):
+        for folder in folders_named(parts[0]):
             resolved = walk(folder["id"], parts[1:])
             if resolved:
                 _cache_set_path_id(path_str, resolved)
@@ -799,6 +816,16 @@ def serve_drive_image_ref(photo_ref: str):
     except Exception:
         # Falla silenciosa -> imagen transparente (evitar redirects/timeouts)
         return send_file(io.BytesIO(_TRANSPARENT_PNG), mimetype="image/png")
+
+
+def serve_drive_image_ref_fast(photo_ref: str):
+    """Variante para miniaturas web: cinco segundos y sin reintentos largos."""
+    previous_fast_mode = bool(getattr(_drive_img_services, "fast_mode", False))
+    _drive_img_services.fast_mode = True
+    try:
+        return serve_drive_image_ref(photo_ref)
+    finally:
+        _drive_img_services.fast_mode = previous_fast_mode
 
 
 @reportes_bp.route("/reportes/imgproxy", endpoint="reportes_imgproxy")

@@ -238,7 +238,19 @@
   const equipmentMeta=Object.fromEntries(equipment.map(e=>[e[0],{client:'HDI',active:true,type:'Refrigeración',location:'',model:'',serial:'',notes:'',photo:''}]));
   const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const clientName=id=>clients.find(c=>c[1]===id)?.[0]||id;
-  const photoMarkup=(url,fallback)=>url?`<img src="${escapeHtml(url)}" alt="">`:escapeHtml(fallback);
+  const photoMarkup=(url,fallback)=>url?`<span data-photo-fallback>${escapeHtml(fallback)}</span><img data-photo-src="${escapeHtml(url)}" alt="" hidden>`:escapeHtml(fallback);
+  let photoQueue=Promise.resolve();
+  function queuePhoto(img){
+    if(!img||img.dataset.queued)return;img.dataset.queued='1';
+    photoQueue=photoQueue.then(()=>new Promise(resolve=>{
+      if(!img.isConnected)return resolve();
+      const source=img.dataset.photoSrc,finish=usable=>{clearTimeout(timer);if(usable){img.hidden=false;img.previousElementSibling?.setAttribute('hidden','')}else img.remove();resolve()};
+      img.onload=()=>finish(img.naturalWidth>1&&img.naturalHeight>1);img.onerror=()=>finish(false);
+      const timer=setTimeout(()=>{img.src='';finish(false)},11000);img.src=source;
+    }));
+  }
+  const photoObserver='IntersectionObserver' in window?new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){photoObserver.unobserve(entry.target);queuePhoto(entry.target)}}),{rootMargin:'180px'}):null;
+  function hydratePhotos(root=document){root.querySelectorAll('img[data-photo-src]:not([data-queued])').forEach(img=>photoObserver?photoObserver.observe(img):queuePhoto(img));}
   views.clientEditor=['Administración · prueba','Cliente'];views.equipmentEditor=['Administración · prueba','Equipo'];
   // Datos ilustrativos: la ronda consultada no modifica la ronda operativa real.
   const demoRounds={
@@ -305,10 +317,11 @@
     $('#clientCount').textContent=`${rows.length} ${showCatalog?'en catálogo':'con póliza'}`;
     $('#catalogScope').textContent=showCatalog?'Ver sólo clientes con póliza':'Ver catálogo completo';
     $('#clientList').innerHTML=rows.map(c=>`<button class="client-card" data-client="${escapeHtml(c[1])}"><span class="client-logo">${photoMarkup(clientMeta[c[1]].photo,c[1].slice(0,2))}</span><span class="card-copy"><span class="card-title">${escapeHtml(c[0])}</span><span class="card-sub">${escapeHtml(c[1])} · ${equipment.filter(e=>equipmentMeta[e[0]].client===c[1]).length} equipos${clientMeta[c[1]].photoAvailable?' · Foto registrada':''} · ${clientMeta[c[1]].policy?'Con póliza':'Sin póliza'}</span></span><span class="chevron">›</span></button>`).join('')||'<div class="empty">No hay clientes que coincidan.</div>';
+    hydratePhotos($('#clientList'));
     $$('[data-client]').forEach(b=>b.onclick=()=>openClient(b.dataset.client));
   }
   function openClient(id){selectedClient=id;equipmentFilter='all';$$('#equipmentFilters .chip').forEach(b=>b.classList.toggle('active',b.dataset.filter==='all'));refreshRound();showView('client');}
-  function renderClientDetail(){const meta=clientMeta[selectedClient],hero=$('[data-view="client"] .hero');hero.querySelector('h2').textContent=clientName(selectedClient);hero.querySelector('p').textContent=`${selectedClient} · ${meta.policy?'Póliza activa':'Sin póliza · sólo catálogo'}`;hero.querySelector('.hero-logo').innerHTML=photoMarkup(meta.photo,selectedClient.slice(0,2));hero.querySelector('.address span:last-child').textContent=meta.address||'Dirección por completar';views.client[1]=clientName(selectedClient);if(current==='client')$('#screenTitle').textContent=clientName(selectedClient);}
+  function renderClientDetail(){const meta=clientMeta[selectedClient],hero=$('[data-view="client"] .hero');hero.querySelector('h2').textContent=clientName(selectedClient);hero.querySelector('p').textContent=`${selectedClient} · ${meta.policy?'Póliza activa':'Sin póliza · sólo catálogo'}`;hero.querySelector('.hero-logo').innerHTML=photoMarkup(meta.photo,selectedClient.slice(0,2));hydratePhotos(hero);hero.querySelector('.address span:last-child').textContent=meta.address||'Dirección por completar';views.client[1]=clientName(selectedClient);if(current==='client')$('#screenTitle').textContent=clientName(selectedClient);}
   function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<button class="equipment-card" data-equipment="${escapeHtml(e[0])}"><span class="equipment-photo">${photoMarkup(meta.photo,'❄')}</span><span class="card-copy"><span class="card-title">${escapeHtml(e[1])}</span><span class="card-sub">${escapeHtml(e[0])} · ${escapeHtml(e[2])}${meta.photoAvailable?' · Foto registrada':''}${meta.active?'':' · Inactivo'}</span></span><span class="status-dot ${!meta.active?'off':e[3]?'done':''}" title="${!meta.active?'Inactivo':e[3]?'Realizado':'Pendiente'}"></span><span class="chevron">›</span></button>`}
   function reportCards(rows){return rows.map(e=>{const report=reportForEquipment(e[0]);return `<button type="button" class="equipment-card" data-round-report="${escapeHtml(e[0])}"><span class="report-icon">▤</span><span class="card-copy"><span class="card-title">${escapeHtml(report?.id||`${e[0]}_R${selectedRound}`)}</span><span class="card-sub">${escapeHtml(e[1])} · ${escapeHtml(report?.end||report?.start||demoRounds[selectedRound].date)}${report?.photo_count?` · ${report.photo_count} fotos`:''}</span></span><span class="chevron">›</span></button>`}).join('')||'<div class="empty">Todavía no hay reportes en esta ronda.</div>';}
   function renderEquipment(){
@@ -317,6 +330,7 @@
     const active=all.filter(e=>equipmentMeta[e[0]].active),completed=active.filter(e=>e[3]).length;
     const rows=all.filter(e=>equipmentFilter==='all'||(equipmentMeta[e[0]].active&&(equipmentFilter==='done'?e[3]:!e[3])));
     $('#equipmentList').innerHTML=rows.map(equipmentCard).join('')||'<div class="empty">No hay equipos con este estado en la ronda seleccionada.</div>';
+    hydratePhotos($('#equipmentList'));
     // La agenda conserva R2; consultar un histórico no reprograma tareas.
     const pending=equipment.filter(e=>!e[3]&&equipmentMeta[e[0]].active&&equipmentMeta[e[0]].client==='HDI'&&clientMeta.HDI.policy);
     $('#pendingList').innerHTML=pending.map(equipmentCard).join('');
@@ -340,6 +354,7 @@
     hero.querySelector('.eyebrow').textContent=e[0];hero.querySelector('h2').textContent=e[1];
     const meta=equipmentMeta[e[0]];
     hero.querySelector('.equipment-photo').innerHTML=photoMarkup(meta.photo,'❄');
+    hydratePhotos(hero);
     hero.querySelector('.card-sub').textContent=[e[2],meta.model,meta.serial&&`Serie: ${meta.serial}`,meta.location,clientName(meta.client)].filter(Boolean).join(' · ');
     $('#equipmentStatus').textContent=`${done?'Realizado':'Pendiente'} en R${selectedRound}`;
     $('#equipmentStatus').style.color=done?'#61e5a7':'#ff9da2';
