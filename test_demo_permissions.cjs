@@ -15,6 +15,8 @@ assert.match(html, /function openRoot\(name\)/);
 assert.match(html, /function initializeBrowserNavigation\(\)/);
 assert.match(html, /window\.history\.pushState/);
 assert.match(html, /window\.history\.replaceState/);
+assert.match(html, /url\.hash=guard\?'hsc-proteccion'/);
+assert.match(html, /for\(let index=1;index<restoredStack\.length;index\+\+\)/);
 assert.match(html, /addEventListener\('popstate'/);
 assert.match(html, /partnerFaults:\['partner','partnerFaults'\]/);
 assert.match(html, /\$\('#backBtn'\)\.hidden=false/);

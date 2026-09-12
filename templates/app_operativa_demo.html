@@ -347,13 +347,16 @@
   const navigationStorageKey=`hsc-operaciones-navigation-${appKind}`;
   let browserHistoryReady=false,handlingHistoryPop=false;
   function saveOperationalNavigation(){if(!matrixLoaded)return;try{localStorage.setItem(navigationStorageKey,JSON.stringify({view:current,client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode}))}catch(_){}}
-  function browserNavigationState(guard=false){return {hscOperations:true,guard,view:current,stack:[...historyStack],client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode};}
-  function writeBrowserNavigation(replace=false,guard=false){if(!browserHistoryReady)return;window.history[replace?'replaceState':'pushState'](browserNavigationState(guard),'',location.href);}
+  function browserNavigationState(guard=false,view=current,stack=historyStack){return {hscOperations:true,guard,view,stack:[...stack],client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode};}
+  function browserNavigationUrl(view=current,guard=false){const url=new URL(location.href);url.hash=guard?'hsc-proteccion':`hsc-${view}`;return `${url.pathname}${url.search}${url.hash}`;}
+  function writeBrowserNavigation(replace=false,guard=false,view=current,stack=historyStack){if(!browserHistoryReady)return;const state=browserNavigationState(guard,view,stack),url=browserNavigationUrl(view,guard);if(replace)window.history.replaceState(state,'',url);else window.history.pushState(state,'',url);}
   function initializeBrowserNavigation(){
     if(browserHistoryReady)return;
     browserHistoryReady=true;
-    window.history.replaceState(browserNavigationState(true),'',location.href);
-    window.history.pushState(browserNavigationState(false),'',location.href);
+    const restoredStack=historyStack.length?[...historyStack]:[current],root=restoredStack[0];
+    writeBrowserNavigation(true,true,root,[root]);
+    writeBrowserNavigation(false,false,root,[root]);
+    for(let index=1;index<restoredStack.length;index++)writeBrowserNavigation(false,false,restoredStack[index],restoredStack.slice(0,index+1));
     $('#backBtn').hidden=false;
   }
   function showView(name,push=true){if(name===current){$('#backBtn').hidden=false;applyAccess();saveOperationalNavigation();return;}if(push)historyStack.push(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=false;navMode(currentMode);$('.bottom-nav').hidden=currentMode==='partner'||name==='inviteAccept';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();saveOperationalNavigation();if(push&&!handlingHistoryPop)writeBrowserNavigation();scrollTo({top:0,behavior:'smooth'});}
