@@ -21,5 +21,7 @@ services:
         value: "0"
       - key: OPERACIONES_SYNC_RETRY_SECONDS
         value: "120"
+      - key: OPERACIONES_SYNC_CLIENT_ALLOWLIST
+        value: "UVMQ"
       - key: FLASK_SECRET_KEY
         generateValue: true

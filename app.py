@@ -204,6 +204,11 @@ _OPERACIONES_SYNC_LAST_ATTEMPT = 0.0
 OPERACIONES_SYNC_RETRY_SECONDS = max(
     60.0, float(os.environ.get("OPERACIONES_SYNC_RETRY_SECONDS", "120"))
 )
+OPERACIONES_SYNC_CLIENT_ALLOWLIST = {
+    value.strip().upper()
+    for value in os.environ.get("OPERACIONES_SYNC_CLIENT_ALLOWLIST", "UVMQ").split(",")
+    if value.strip()
+}
 
 app.static_folder = "static"
 app.template_folder = "templates"
@@ -3093,6 +3098,7 @@ def _operations_sync_worker(app_obj):
         with app_obj.app_context():
             result = sync_operations_outbox(
                 OPERACIONES_STORE, get_sheets_write_service(timeout=30), SHEET_ID, limit=25,
+                allowed_client_ids=OPERACIONES_SYNC_CLIENT_ALLOWLIST,
             )
             if result.get("failed"):
                 current_app.logger.warning("Sincronización operativa con errores: %s", result)
@@ -3144,6 +3150,7 @@ def api_operaciones_sync_status():
     pending = OPERACIONES_STORE.pending_sync(50)
     return jsonify({
         "ok": True, "automatic_enabled": OPERACIONES_SHEETS_SYNC_ENABLED,
+        "pilot_clients": sorted(OPERACIONES_SYNC_CLIENT_ALLOWLIST),
         "pending": len(pending),
         "items": [{
             "entity_type": item["entity_type"], "entity_id": item["entity_id"],
@@ -3172,6 +3179,7 @@ def api_operaciones_sync():
         result = sync_operations_outbox(
             OPERACIONES_STORE, service, SHEET_ID,
             limit=max(1, min(int(body.get("limit") or 25), 100)), dry_run=dry_run,
+            allowed_client_ids=OPERACIONES_SYNC_CLIENT_ALLOWLIST,
         )
         if not dry_run:
             _invalidate_operations_cache()

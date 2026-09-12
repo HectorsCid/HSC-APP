@@ -111,6 +111,23 @@ def _entity_snapshot(store, operation):
     raise ValueError(f"Tipo de salida no compatible: {entity_type}.")
 
 
+def _operation_client_id(store, operation):
+    """Devuelve el cliente interno sin depender del nombre visible."""
+    snapshot = store.snapshot()
+    entity_type, entity_id = operation["entity_type"], operation["entity_id"]
+    if entity_type == "client":
+        return entity_id
+    if entity_type == "equipment":
+        item = next((row for row in snapshot.get("equipment", []) if row["id"] == entity_id), None)
+    elif entity_type == "report":
+        item = store.get_report_detail(entity_id)
+    elif entity_type == "fault":
+        item = next((row for row in snapshot.get("faults", []) if row["id"] == entity_id), None)
+    else:
+        item = None
+    return _text((item or {}).get("client_id"))
+
+
 def _get_sheet_titles(service, spreadsheet_id):
     response = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id, fields="sheets.properties.title",
@@ -216,14 +233,26 @@ def _write_plan(service, spreadsheet_id, plan):
     return row_number
 
 
-def sync_operations_outbox(store, service, spreadsheet_id, *, limit=25, dry_run=False, max_attempts=6):
+def sync_operations_outbox(
+    store, service, spreadsheet_id, *, limit=25, dry_run=False, max_attempts=6,
+    allowed_client_ids=None,
+):
     """Procesa la cola; en dry-run sólo lee y devuelve el plan."""
-    operations = [
+    candidates = [
         row for row in store.pending_sync(limit)
         if row.get("destination") == "sheets"
         and (dry_run or int(row.get("attempts") or 0) < int(max_attempts))
     ]
-    result = {"dry_run": bool(dry_run), "pending": len(operations), "synced": 0, "failed": 0, "items": []}
+    allowed = {_text(value).upper() for value in (allowed_client_ids or []) if _text(value)}
+    operations = [
+        row for row in candidates
+        if not allowed or _operation_client_id(store, row).upper() in allowed
+    ]
+    result = {
+        "dry_run": bool(dry_run), "pending": len(operations),
+        "skipped_by_pilot": len(candidates) - len(operations),
+        "synced": 0, "failed": 0, "items": [],
+    }
     if not operations:
         return result
     titles = _get_sheet_titles(service, spreadsheet_id)

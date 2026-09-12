@@ -140,3 +140,18 @@ def test_failed_completion_stays_queued_for_idempotent_retry(tmp_path):
     assert second["synced"] == 1
     assert store.pending_sync() == []
     assert sum(write[0] == "append" for write in fake.writes) == 1
+
+
+def test_pilot_allowlist_leaves_other_clients_queued(tmp_path):
+    store, report_id = _store_with_report(tmp_path)
+    store.save_client({"id": "OTRO", "name": "Cliente no piloto", "address": ""})
+    fake = FakeSheets()
+
+    result = sync_operations_outbox(
+        store, fake, "sheet-id", dry_run=True, allowed_client_ids={"UVMQ"},
+    )
+
+    assert result["pending"] == 1
+    assert result["skipped_by_pilot"] == 1
+    assert result["items"][0]["entity_id"] == report_id
+    assert len(store.pending_sync()) == 2
