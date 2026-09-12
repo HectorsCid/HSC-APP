@@ -3,6 +3,7 @@
 
   let installPrompt = null;
   let registration = null;
+  const appName = document.querySelector('meta[name="application-name"]')?.content || 'HSC';
   const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
 
@@ -39,7 +40,7 @@
       modal = document.createElement('div');
       modal.id = 'hscPwaHelp';
       modal.className = 'hsc-pwa-backdrop';
-      modal.innerHTML = '<div class="hsc-pwa-card" role="dialog" aria-modal="true" aria-labelledby="hscPwaTitle"><h2 id="hscPwaTitle">Instalar HSC</h2><p>En iPhone la instalación se termina desde Safari:</p><ol><li>Toca el botón <strong>Compartir</strong>.</li><li>Elige <strong>Agregar a pantalla de inicio</strong>.</li><li>Confirma con <strong>Agregar</strong>.</li></ol><button class="hsc-pwa-close" type="button">Entendido</button></div>';
+      modal.innerHTML = `<div class="hsc-pwa-card" role="dialog" aria-modal="true" aria-labelledby="hscPwaTitle"><h2 id="hscPwaTitle">Instalar ${appName}</h2><p>En iPhone la instalación se termina desde Safari:</p><ol><li>Toca el botón <strong>Compartir</strong>.</li><li>Elige <strong>Agregar a pantalla de inicio</strong>.</li><li>Confirma con <strong>Agregar</strong>.</li></ol><button class="hsc-pwa-close" type="button">Entendido</button></div>`;
       document.body.appendChild(modal);
       modal.querySelector('button').addEventListener('click', () => modal.classList.remove('show'));
       modal.addEventListener('click', event => { if(event.target === modal) modal.classList.remove('show'); });
@@ -54,7 +55,7 @@
     button.id = 'hscInstallApp';
     button.type = 'button';
     button.className = 'hsc-pwa-install';
-    button.innerHTML = '<span aria-hidden="true">⬇</span> Instalar HSC';
+    button.innerHTML = `<span aria-hidden="true">⬇</span> Instalar ${appName}`;
     button.addEventListener('click', requestInstall);
     document.body.appendChild(button);
     return button;
@@ -117,21 +118,22 @@
 
   function syncInstallActions(installed){
     document.querySelectorAll('[data-pwa-install]').forEach(button => {
+      const installLabel = button.dataset.installLabel || `Instalar ${appName}`;
       button.disabled = installed;
-      button.textContent = installed ? '✓ Instalada' : '⬇ Instalar';
-      button.title = installed ? 'HSC ya está instalada' : 'Instalar HSC en este dispositivo';
+      button.textContent = installed ? `✓ ${appName} instalada` : `⬇ ${installLabel}`;
+      button.title = installed ? `${appName} ya está instalada` : `Instalar ${appName} en este dispositivo`;
     });
   }
 
   async function requestInstall(){
     if(isStandalone()){
-      updateStatus('HSC ya está instalada en este dispositivo.');
+      updateStatus(`${appName} ya está instalada en este dispositivo.`);
       return;
     }
     if(installPrompt){
       installPrompt.prompt();
       const choice = await installPrompt.userChoice;
-      if(choice.outcome === 'accepted') updateStatus('Instalación aceptada. HSC aparecerá entre tus aplicaciones.');
+      if(choice.outcome === 'accepted') updateStatus(`Instalación aceptada. ${appName} aparecerá entre tus aplicaciones.`);
       installPrompt = null;
       document.querySelectorAll('#hscInstallApp,[data-pwa-install]').forEach(button => button.classList.remove('show'));
       return;
@@ -141,7 +143,7 @@
       updateStatus('En iPhone usa Compartir y después Agregar a pantalla de inicio.');
       return;
     }
-    updateStatus('Abre el menú de Chrome y elige Instalar HSC o Agregar a pantalla de inicio.');
+    updateStatus(`Abre el menú de Chrome y elige Instalar ${appName} o Agregar a pantalla de inicio.`);
   }
 
   async function testNotification(){
@@ -151,7 +153,7 @@
     }
     if(isIos && !isStandalone()){
       iosHelp();
-      updateStatus('En iPhone primero instala HSC y después activa las notificaciones desde la app.');
+      updateStatus(`En iPhone primero instala ${appName} y después activa las notificaciones desde la app.`);
       return;
     }
     const permission = await Notification.requestPermission();
@@ -180,14 +182,16 @@
     document.querySelectorAll('[data-pwa-install]').forEach(button => button.addEventListener('click', requestInstall));
     document.querySelectorAll('[data-pwa-notify]').forEach(button => button.addEventListener('click', testNotification));
     syncInstallActions(isStandalone());
-    if(isStandalone()) updateStatus('HSC está instalada. Ya puedes probar los avisos.');
-    else if('Notification' in window && Notification.permission === 'granted') updateStatus('Notificaciones autorizadas; falta instalar HSC.');
+    if(isStandalone()) updateStatus(`${appName} está instalada. Ya puedes probar los avisos.`);
+    else if('Notification' in window && Notification.permission === 'granted') updateStatus(`Notificaciones autorizadas; falta instalar ${appName}.`);
   }
 
   async function mount(){
     addStyles();
-    polishTitles();
-    mountDesktopHistory();
+    if(!document.body.dataset.operationsShell){
+      polishTitles();
+      mountDesktopHistory();
+    }
     const hasInlineInstall = Boolean(document.querySelector('[data-pwa-install]'));
     const button = hasInlineInstall ? null : installButton();
     if(button && isIos && !isStandalone()) button.classList.add('show');
@@ -196,7 +200,7 @@
       event.preventDefault();
       installPrompt = event;
       if(button && !isStandalone()) button.classList.add('show');
-      updateStatus('HSC está lista para instalarse en este dispositivo.');
+      updateStatus(`${appName} está lista para instalarse en este dispositivo.`);
     });
     window.addEventListener('appinstalled', () => {
       installPrompt = null;

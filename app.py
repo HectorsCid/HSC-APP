@@ -254,7 +254,10 @@ def cerrar_sesion():
 @app.before_request
 def _require_app_login():
     endpoint = request.endpoint or ""
-    if endpoint in {"acceso", "healthz", "health", "health_check", "ping_root", "pwa_manifest", "pwa_service_worker"}:
+    if endpoint in {
+        "acceso", "healthz", "health", "health_check", "ping_root",
+        "pwa_manifest", "pwa_technician_manifest", "pwa_partner_manifest", "pwa_service_worker",
+    }:
         return None
     if endpoint == "static" and (
         request.path.startswith("/static/img/")
@@ -305,6 +308,49 @@ def pwa_manifest():
     response.headers["Content-Type"] = "application/manifest+json"
     response.headers["Cache-Control"] = "public, max-age=3600"
     return response
+
+
+def _operations_manifest(app_kind):
+    is_partner = app_kind == "partner"
+    slug = "hsc-partner" if is_partner else "hsc-tecnico"
+    name = "HSC Partner" if is_partner else "HSC Técnico"
+    description = (
+        "Consulta de equipos, reportes y fallas para clientes HSC."
+        if is_partner
+        else "Agenda, clientes, equipos y reportes para técnicos HSC."
+    )
+    response = jsonify({
+        "id": f"/{slug}",
+        "name": name,
+        "short_name": name,
+        "description": description,
+        "lang": "es-MX",
+        "start_url": f"/{slug}?origen=app",
+        "scope": "/",
+        "display": "standalone",
+        "display_override": ["window-controls-overlay", "standalone"],
+        "orientation": "any",
+        "background_color": "#07101f",
+        "theme_color": "#0f2f5f",
+        "categories": ["business", "productivity", "utilities"],
+        "icons": [
+            {"src": "/static/img/hsc-app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+            {"src": "/static/img/hsc-app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+        ],
+    })
+    response.headers["Content-Type"] = "application/manifest+json"
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+@app.get("/manifest-hsc-tecnico.webmanifest")
+def pwa_technician_manifest():
+    return _operations_manifest("technician")
+
+
+@app.get("/manifest-hsc-partner.webmanifest")
+def pwa_partner_manifest():
+    return _operations_manifest("partner")
 
 
 @app.get("/service-worker.js")
@@ -2654,15 +2700,38 @@ def inicio_app():
     return render_template('inicio_app.html', IS_RENDER=IS_RENDER, health=None)
 
 
-@app.route('/app-operativa-demo')
-def app_operativa_demo():
-    """Maqueta aislada del reemplazo móvil de AppSheet."""
+def _render_operations_app(app_kind=None):
     role = _operations_role()
+    if app_kind not in {"technician", "partner"}:
+        app_kind = "partner" if role == "client" else "auto"
+    app_name = "HSC Partner" if app_kind == "partner" else "HSC Técnico"
+    manifest_endpoint = "pwa_partner_manifest" if app_kind == "partner" else "pwa_technician_manifest"
     return render_template(
         'app_operativa_demo.html',
         operations_role=role or "technician",
         operations_is_owner=role == "admin",
+        operations_app_kind=app_kind,
+        operations_app_name=app_name,
+        operations_manifest_url=url_for(manifest_endpoint),
     )
+
+
+@app.route('/app-operativa-demo')
+def app_operativa_demo():
+    """Vista compatible de la aplicación operativa."""
+    return _render_operations_app()
+
+
+@app.route('/hsc-tecnico')
+def hsc_tecnico():
+    """Entrada instalable independiente para personal técnico."""
+    return _render_operations_app("technician")
+
+
+@app.route('/hsc-partner')
+def hsc_partner():
+    """Entrada instalable independiente para clientes y vista Partner del administrador."""
+    return _render_operations_app("partner")
 
 
 _OPERACIONES_MATRIX_CACHE = {"ts": 0.0, "payload": None, "source": None}

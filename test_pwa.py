@@ -36,6 +36,29 @@ class PwaTests(unittest.TestCase):
         self.assertIn("/static/pwa.js", html)
         self.assertIn("apple-mobile-web-app-capable", html)
 
+    def test_operations_apps_have_independent_manifests(self):
+        technician = self.client.get("/manifest-hsc-tecnico.webmanifest")
+        partner = self.client.get("/manifest-hsc-partner.webmanifest")
+        self.assertEqual(technician.status_code, 200)
+        self.assertEqual(partner.status_code, 200)
+        technician_manifest = technician.get_json()
+        partner_manifest = partner.get_json()
+        self.assertEqual(technician_manifest["id"], "/hsc-tecnico")
+        self.assertEqual(technician_manifest["start_url"], "/hsc-tecnico?origen=app")
+        self.assertEqual(partner_manifest["id"], "/hsc-partner")
+        self.assertEqual(partner_manifest["start_url"], "/hsc-partner?origen=app")
+        self.assertNotEqual(technician_manifest["id"], partner_manifest["id"])
+
+    def test_operations_apps_expose_their_own_install_identity(self):
+        technician = self.client.get("/hsc-tecnico").get_data(as_text=True)
+        partner = self.client.get("/hsc-partner").get_data(as_text=True)
+        self.assertIn('/manifest-hsc-tecnico.webmanifest', technician)
+        self.assertIn('data-app-kind="technician"', technician)
+        self.assertIn('Instalar HSC Técnico', technician)
+        self.assertIn('/manifest-hsc-partner.webmanifest', partner)
+        self.assertIn('data-app-kind="partner"', partner)
+        self.assertIn('Instalar HSC Partner', partner)
+
 
 if __name__ == "__main__":
     unittest.main()

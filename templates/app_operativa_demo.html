@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>HSC Operaciones</title>
+  <title>{{ operations_app_name|default('HSC Operaciones') }}</title>
+  {% with pwa_manifest_url=operations_manifest_url, pwa_name=operations_app_name %}{% include '_pwa_head.html' %}{% endwith %}
   <style>
     :root{
       --bg:#07101f;--surface:#101c2f;--surface-2:#15243a;--line:#273a55;
@@ -49,10 +50,11 @@
     @media(min-width:760px){body{padding:28px}.app{min-height:calc(100dvh - 56px);border:1px solid var(--line);border-radius:28px;overflow:hidden;box-shadow:var(--shadow)}main{padding:26px 30px 115px}.client-list:not(.reordering){grid-template-columns:repeat(2,1fr)}.bounded-list{max-height:390px}.bottom-nav{bottom:28px;width:min(calc(100% - 56px),1180px);border:1px solid var(--line);border-radius:0 0 28px 28px}.modal{place-items:center}.sheet{border-radius:24px}}
     @media(min-width:980px){.partner-dashboard{grid-template-columns:minmax(220px,.78fr) minmax(280px,1fr) minmax(330px,1.15fr);grid-template-areas:'identity summary equipment' 'identity reports equipment' 'identity reports faults';align-items:start}.partner-identity{grid-area:identity;position:sticky;top:96px}.partner-summary{grid-area:summary}.partner-equipment-panel{grid-area:equipment}.partner-reports-panel{grid-area:reports}.partner-faults-panel{grid-area:faults}.partner-equipment-panel .bounded-list{max-height:560px}.partner-reports-panel .bounded-list{max-height:310px}.partner-equipment-panel .equipment-list{grid-template-columns:1fr}}
     .editor{max-width:720px;margin:auto}.editor .section-body{padding-top:16px}.editor-note{color:var(--muted);font-size:.82rem;line-height:1.5}.photo-picker{display:flex;gap:16px;align-items:center;flex-wrap:wrap}.photo-preview{width:88px;height:88px;border:1px solid var(--line);border-radius:18px;display:grid;place-items:center;overflow:hidden;background:var(--surface-2)}.photo-preview img,.client-logo img,.hero-logo img,.equipment-photo img{width:100%;height:100%;object-fit:cover}.client-logo img[data-photo-src],.hero-logo img[data-photo-src],.equipment-photo img[data-photo-src]{position:absolute;inset:0;opacity:0;transition:opacity .18s ease}.client-logo img[data-photo-src].loaded,.hero-logo img[data-photo-src].loaded,.equipment-photo img[data-photo-src].loaded{opacity:1}.hero-logo{position:relative;overflow:hidden}.editor-error{color:#ffb9bd;padding:10px 0}.check-row{display:flex;align-items:center;gap:10px;font-size:.9rem}.check-row input{width:20px;height:20px;accent-color:var(--brand)}.management-bar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.mode-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding:13px 14px;border:1px solid #31527d;border-radius:17px;background:rgba(47,134,255,.08)}.mode-bar b{display:block}.mode-bar small{display:block;margin-top:3px;color:var(--muted)}.mode-actions{display:flex;gap:7px;flex-wrap:wrap}.mode-actions button.active{border-color:var(--brand);background:rgba(47,134,255,.18);color:#dfeeff}.permission-copy{min-width:0;flex:1}.permission-copy b{display:block;font-size:.86rem}.permission-copy small{display:block;margin-top:3px;color:var(--muted);font-size:.72rem}.permission.danger-zone{border-color:rgba(255,184,76,.32)}.locked-field{opacity:.62}.locked-field label::after{content:' · protegido';color:#ffd08a}.editor [hidden],[data-role-hidden="true"]{display:none!important}.mini-btn:disabled,.primary:disabled,.secondary:disabled{opacity:.45;cursor:not-allowed}@media(max-width:420px){.field-row{grid-template-columns:1fr}.hero h2{overflow-wrap:anywhere}.section-head,.mode-bar{align-items:start;flex-wrap:wrap}}
+    .install-strip{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;padding:12px 14px;border:1px solid #31527d;border-radius:17px;background:rgba(47,134,255,.08)}.install-strip b{display:block}.install-strip small{display:block;margin-top:3px;color:var(--muted)}.install-strip .secondary{white-space:nowrap}@media(display-mode:standalone){.install-strip{display:none}}@media(max-width:520px){.install-strip{align-items:stretch;flex-direction:column}.install-strip .secondary{width:100%}}
     [hidden]{display:none!important}.user-card[type="button"]{width:100%;color:var(--text);text-align:left;cursor:pointer}
   </style>
 </head>
-<body data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}">
+<body data-operations-shell="true" data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-app-kind="{{ operations_app_kind|default('technician') }}">
 <aside id="operationsNotice" style="padding:12px 18px;background:#17334f;color:#e1efff;text-align:center;font:14px/1.5 system-ui" role="note"><strong>HSC Operaciones · etapa de conexión</strong><br><span id="operationsNoticeText">Cargando clientes, equipos y reportes desde la Hoja Matriz…</span><br><a href="/reportes" style="color:#a8d5ff">Volver a Reportes HSC</a></aside>
 <div class="app">
   <header class="topbar">
@@ -64,6 +66,10 @@
   </header>
 
   <main>
+    <div class="install-strip">
+      <div><b>{{ operations_app_name|default('HSC Técnico') }}</b><small data-pwa-status>Instala esta versión para abrirla como una aplicación independiente.</small></div>
+      <button class="secondary" type="button" data-pwa-install data-install-label="Instalar {{ operations_app_name|default('HSC Técnico') }}">⬇ Instalar</button>
+    </div>
     <section class="view active" data-view="clients">
       <div class="mode-bar" id="clientsModeBar" hidden><div><b id="activeModeLabel">Modo técnico</b><small id="matrixStatus">Conectando con la Hoja Matriz…</small></div><div class="mode-actions"><button class="mini-btn" id="syncGoogleNow" data-admin-only>Sincronizar Google</button><button class="mini-btn" id="openAdminMode">Activar administrador</button></div></div>
       <div class="search"><span>⌕</span><input id="clientSearch" type="search" placeholder="Buscar cliente, clave o ubicación"></div>
@@ -226,7 +232,9 @@
   const equipment=[['HDI1','Fábrica de hielo grande','Monitowac',true],['HDI2','Restaurante','Cámara de conservación',true],['HDI3','Lobby','Unidad paquete',false],['HDI4','Lavandería','Extractor',false],['HDI5','Cocina','Cámara de congelación',true],['HDI6','Salón Diamante','Minisplit',false]];
   const views={clients:['HSC Técnico','Clientes'],client:['Cliente','Holiday Inn Diamante'],equipment:['Equipo','Fábrica de hielo grande'],report:['Reporte','Nuevo reporte'],agenda:['HSC Técnico','Agenda'],users:['Administración','Usuarios'],userPermissions:['Administración','Permisos'],task:['Agenda','Detalle de tarea'],reportView:['Reporte','HDI1_R2'],profile:['HSC','Mi cuenta'],partner:['HSC Partner','Inicio'],partnerEquipment:['HSC Partner','Equipos'],partnerReports:['HSC Partner','Reportes'],partnerFaults:['HSC Partner','Fallas reportadas'],inviteAccept:['Acceso','Aceptar invitación']};
   const serverRole=document.body.dataset.operationsRole||'technician';
-  let historyStack=[serverRole==='client'?'partner':'clients'], current=historyStack[0], currentMode=serverRole==='client'?'partner':'tech', equipmentFilter='all';
+  const appKind=document.body.dataset.appKind||'technician';
+  const startsInPartner=appKind==='partner'||serverRole==='client';
+  let historyStack=[startsInPartner?'partner':'clients'], current=historyStack[0], currentMode=startsInPartner?'partner':'tech', equipmentFilter='all';
   const account={id:'owner',name:'Héctor Silva Cid',isOwner:document.body.dataset.operationsOwner==='true'};
   const technicianPermissions={carlos:{createReports:true,reportFaults:true,addClients:false,addEquipment:true,editEquipment:true,editClientData:false,editIds:false,switchViews:false}};
   let activePermissions={createReports:true,reportFaults:true,addClients:false,addEquipment:true,editEquipment:true,editClientData:false,editIds:false,switchViews:false};
@@ -335,18 +343,22 @@
     $$('[data-switch-mode]').forEach(button=>button.classList.toggle('active',button.dataset.switchMode===currentMode));
   }
   $('#syncGoogleNow').onclick=async()=>{const button=$('#syncGoogleNow');button.disabled=true;button.textContent='Sincronizando…';try{await loadMatrixData(true)}finally{button.disabled=false;button.textContent='Sincronizar Google'}};
-  function saveOperationalNavigation(){if(!matrixLoaded)return;try{localStorage.setItem('hsc-operaciones-navigation',JSON.stringify({view:current,client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode}))}catch(_){}}
+  const navigationStorageKey=`hsc-operaciones-navigation-${appKind}`;
+  function saveOperationalNavigation(){if(!matrixLoaded)return;try{localStorage.setItem(navigationStorageKey,JSON.stringify({view:current,client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode}))}catch(_){}}
   function showView(name,push=true){if(name===current){$('#backBtn').hidden=historyStack.length<=1;applyAccess();saveOperationalNavigation();return;}if(push)historyStack.push(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=historyStack.length<=1;navMode(currentMode);$('.bottom-nav').hidden=currentMode==='partner'||name==='inviteAccept';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();saveOperationalNavigation();scrollTo({top:0,behavior:'smooth'});}
   function goBack(){if(historyStack.length<=1)return;historyStack.pop();showView(historyStack.at(-1),false)}
   function openRoot(name){historyStack=[name];showView(name,false);}
   function switchMode(mode){if(!account.isOwner&&mode==='admin'){toast('Esta cuenta no tiene acceso de administrador');return;}if(!account.isOwner&&!can('switchViews')){toast('El administrador no habilitó el cambio de vistas');return;}currentMode=mode;$('#appMenu').classList.remove('open');openRoot(mode==='admin'?'users':mode==='partner'?'partner':'clients');toast(mode==='admin'?'Modo administrador activado':mode==='partner'?'Vista Partner activada':'Modo técnico activado');}
   function restoreOperationalNavigation(){
-    let state={};try{state=JSON.parse(localStorage.getItem('hsc-operaciones-navigation')||'{}')}catch(_){}
+    let state={};try{state=JSON.parse(localStorage.getItem(navigationStorageKey)||'{}')}catch(_){}
     if(state.client&&clientMeta[state.client])selectedClient=state.client;
     if(state.equipment&&equipmentMeta[state.equipment]){selectedEquipment=state.equipment;selectedClient=equipmentMeta[state.equipment].client;}
     if(['1','2','3','4'].includes(String(state.round)))selectedRound=String(state.round);
-    if(account.isOwner&&['tech','admin','partner'].includes(state.mode))currentMode=state.mode;
+    if(appKind==='partner')currentMode='partner';
     else if(serverRole==='client')currentMode='partner';
+    else if(appKind==='auto'&&account.isOwner&&['tech','admin','partner'].includes(state.mode))currentMode=state.mode;
+    else if(account.isOwner&&['tech','admin'].includes(state.mode))currentMode=state.mode;
+    else currentMode='tech';
     const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','partnerReports','partnerFaults','reportView']:['clients','client','equipment','report','reportView','agenda','profile'];
     if(currentMode==='admin')allowedRoots.push('users','userPermissions','clientEditor','equipmentEditor');
     const target=allowedRoots.includes(state.view)?state.view:(currentMode==='partner'?'partner':'clients');
