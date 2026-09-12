@@ -152,3 +152,5 @@ def test_report_detail_is_loaded_on_demand(tmp_path):
     assert report["client_id"] == "UVMQ"
     assert report["payload"]["PresionCto1"] == "120"
     assert report["photo_count"] == 3
+    assert [item["position"] for item in report["evidence"]] == [1, 3, 4]
+    assert store.get_report_evidence_ref("UVMQ1_R 2", 3)["photo_ref"] == "foto-3.jpg"

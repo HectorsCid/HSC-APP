@@ -3063,6 +3063,13 @@ def api_operaciones_report_detail(report_id):
             abort(404)
         if _operations_role() == "client" and report.get("client_id") != str(session.get("hsc_client_id") or "").strip():
             abort(404)
+        for evidence in report.get("evidence", []):
+            evidence["url"] = url_for(
+                "api_operaciones_report_evidence", report_id=report_id,
+                position=evidence["position"],
+            )
+            evidence.pop("storage_ref", None)
+            evidence.pop("drive_ref", None)
         return jsonify({"ok": True, "report": report})
     except Exception as exc:
         if getattr(exc, "code", None) == 404:
@@ -3092,29 +3099,7 @@ def api_operaciones_save_report_draft():
         return jsonify({"ok": False, "error": "No se pudo guardar el borrador."}), 500
 
 
-@app.get('/api/operaciones/photo/<kind>/<path:record_id>')
-def api_operaciones_photo(kind, record_id):
-    """Sirve una miniatura persistente sin exponer la referencia de Drive."""
-    if kind not in {"client", "equipment"}:
-        abort(404)
-    if _operations_role() == "client":
-        client_id = str(session.get("hsc_client_id") or "").strip()
-        if kind == "client":
-            allowed = record_id == client_id
-        else:
-            cached = _OPERACIONES_MATRIX_CACHE.get("payload") or {}
-            allowed = any(
-                item.get("id") == record_id and item.get("client_id") == client_id
-                for item in cached.get("equipment", [])
-            )
-        if not allowed:
-            abort(404)
-    photo_ref = _OPERACIONES_MEDIA_REFS.get((kind, record_id))
-    if not photo_ref and OPERACIONES_STORE.enabled:
-        photo_ref = OPERACIONES_STORE.get_media_ref(kind, record_id)
-    if not photo_ref:
-        abort(404)
-
+def _serve_operations_thumbnail(kind, record_id, photo_ref):
     cached = None
     if OPERACIONES_STORE.enabled:
         try:
@@ -3155,6 +3140,44 @@ def api_operaciones_photo(kind, record_id):
             response.headers["X-HSC-Thumbnail"] = "original"
     response.headers["Cache-Control"] = "private, max-age=2592000, immutable"
     return response
+
+
+@app.get('/api/operaciones/photo/<kind>/<path:record_id>')
+def api_operaciones_photo(kind, record_id):
+    """Sirve una miniatura persistente sin exponer la referencia de Drive."""
+    if kind not in {"client", "equipment"}:
+        abort(404)
+    if _operations_role() == "client":
+        client_id = str(session.get("hsc_client_id") or "").strip()
+        if kind == "client":
+            allowed = record_id == client_id
+        else:
+            cached = _OPERACIONES_MATRIX_CACHE.get("payload") or {}
+            allowed = any(
+                item.get("id") == record_id and item.get("client_id") == client_id
+                for item in cached.get("equipment", [])
+            )
+        if not allowed:
+            abort(404)
+    photo_ref = _OPERACIONES_MEDIA_REFS.get((kind, record_id))
+    if not photo_ref and OPERACIONES_STORE.enabled:
+        photo_ref = OPERACIONES_STORE.get_media_ref(kind, record_id)
+    if not photo_ref:
+        abort(404)
+    return _serve_operations_thumbnail(kind, record_id, photo_ref)
+
+
+@app.get('/api/operaciones/reports/<path:report_id>/evidence/<int:position>')
+def api_operaciones_report_evidence(report_id, position):
+    denied = _operations_forbidden("admin", "technician", "client")
+    if denied:
+        return denied
+    evidence = OPERACIONES_STORE.get_report_evidence_ref(report_id, position) if OPERACIONES_STORE.enabled else None
+    if not evidence or not evidence.get("photo_ref"):
+        abort(404)
+    if _operations_role() == "client" and evidence.get("client_id") != str(session.get("hsc_client_id") or "").strip():
+        abort(404)
+    return _serve_operations_thumbnail("evidence", f"{report_id}:{position}", evidence["photo_ref"])
 
 # --- Healthcheck muy ligero para Render ---
 @app.route("/healthz")

@@ -27,6 +27,10 @@ assert.match(html, /id="orderClients"/);
 assert.match(html, /hsc-operaciones-navigation/);
 assert.doesNotMatch(html, />Compartir PDF</);
 assert.doesNotMatch(html, />Descargar PDF</);
+assert.doesNotMatch(html, />Antes</);
+assert.doesNotMatch(html, />Después</);
+assert.match(html, /id="reportEvidencePreview"/);
+assert.match(html, /class="client-dashboard"/);
 assert.doesNotMatch(html, />Guardar en maqueta</);
 assert.doesNotMatch(script, /location\.(href|assign)|history\.back/);
 

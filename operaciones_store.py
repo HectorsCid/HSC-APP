@@ -540,6 +540,10 @@ class OperationsStore:
                 f"(SELECT COUNT(*) FROM operations_evidence e WHERE e.report_id=r.id) "
                 f"FROM operations_reports r WHERE r.id={p}", (_text(report_id),)
             ).fetchone()
+            evidence_rows = conn.execute(
+                f"SELECT position,storage_ref,drive_ref FROM operations_evidence "
+                f"WHERE report_id={p} ORDER BY position", (_text(report_id),)
+            ).fetchall() if row else []
         if not row:
             return None
         try:
@@ -550,7 +554,22 @@ class OperationsStore:
             "id": row[0], "client_id": row[1], "equipment_id": row[2], "round": row[3],
             "start": row[4], "end": row[5], "completed": bool(row[6]), "report_type": row[7],
             "payload": payload, "state": row[9], "sync_status": row[10], "photo_count": int(row[11] or 0),
+            "evidence": [{"position": int(item[0]), "storage_ref": _text(item[1]),
+                          "drive_ref": _text(item[2])} for item in evidence_rows],
         }
+
+    def get_report_evidence_ref(self, report_id, position):
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT r.client_id,e.storage_ref,e.drive_ref FROM operations_evidence e "
+                f"JOIN operations_reports r ON r.id=e.report_id WHERE e.report_id={p} AND e.position={p}",
+                (_text(report_id), int(position)),
+            ).fetchone()
+        if not row:
+            return None
+        return {"client_id": row[0], "photo_ref": _text(row[2]) or _text(row[1])}
 
     def queue_sync(self, entity_type, entity_id, destination, action, payload=None):
         """Encola una operación idempotente hacia Drive o Sheets."""
