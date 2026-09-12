@@ -1478,6 +1478,7 @@ def nuevo_cliente():
 
         with _CLIENTES_DATA_LOCK:
             clientes_predefinidos[nombre] = {
+                "tiene_poliza": request.form.get('tiene_poliza') == '1',
                 "atencion": atencion,
                 "contactos": contactos,
                 "direccion": direccion,
@@ -2169,6 +2170,9 @@ def editar_cliente():
 
         # Merge con lo existente para no perder campos previos
         merged = dict(datos)
+        # Formularios antiguos no deben desactivar una póliza por omitir el campo.
+        if request.form.get('poliza_present') == '1':
+            merged['tiene_poliza'] = request.form.get('tiene_poliza') == '1'
         merged.update({
             "atencion": atencion,
             "contactos": contactos,

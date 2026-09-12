@@ -1,5 +1,21 @@
 # Pendientes acordados — revisión 11/09/2026
 
+## Operaciones: pólizas y rondas (último cambio local, sin publicar)
+
+- Agenda: retirado interruptor de notificaciones del técnico; queda aviso de configuración por administración. No se pueden impedir bloqueos de notificaciones desde el sistema operativo.
+- Alta de equipos por cantidad (1–100) en maqueta: registros independientes, IDs libres, nombres numerados y datos comunes; series individuales sin duplicarlas en el lote. Probado crear 3 equipos HDI7–HDI9 conservando los 6 existentes. Falta implementación de lote real en matriz con protección de reintentos/concurrencia y permisos.
+
+- Nuevas pantallas en maqueta: agregar desde catálogo o crear cliente, editar nombre/dirección/póliza/vínculo matriz/foto; agregar y editar equipo (tipo, ubicación, marca, modelo, serie, notas y foto), desactivar/reactivar sin quitar reportes. Datos y fotos nuevos sólo en memoria de la pestaña, se pierden al recargar. Sin APIs ni permisos reales implementados.
+- Validaciones de ejemplo: nombres normalizados y vínculos matriz duplicados en clientes, serie duplicada dentro del cliente, imágenes JPG/PNG/WebP hasta 5 MB. IDs existentes no editables. Confirmación al abandonar formularios con cambios.
+- Verificado en navegador estrecho: alta de cliente ficticio, alta/edición/desactivación de equipo, R4, conteos por cliente y ocultamiento al quitar póliza. Sintaxis JavaScript y diff correctos. Falta probar carga de foto en dispositivos reales y conectar almacenamiento persistente/permisos antes de uso operativo.
+
+- Maqueta con selector Ronda 1 a 4 en cliente y equipo; avance, historial y borradores por ronda.
+- Agregar/Editar cliente incluye `tiene_poliza`, booleano guardado en el catálogo único existente. Por defecto desmarcado; no inferir póliza de facturas ni de aparecer en AppSheet.
+- Al conectar Operaciones con datos reales, filtrar en servidor por `tiene_poliza is True` y por los permisos del técnico. No duplicar catálogo ni exponer datos fiscales/contactos innecesarios.
+- Desactivar póliza oculta al cliente de la lista operativa sin borrar equipos ni reportes; no concede ni revoca cuentas automáticamente.
+- Falta enlazar por identificador estable con los equipos/reportes de la matriz y aplicar ese filtro real; la maqueta sigue usando ejemplos aislados.
+- Publicación previa confirmada: mejoras generales y maqueta aislada en Render, commit `7edd9da`. Las menciones anteriores a pendiente de publicación más abajo corresponden al estado previo; siguen pendientes las verificaciones reales indicadas.
+
 ## Prioridad: aplicación general (cambios locales, sin publicar)
 
 - Reportes: causa confirmada en Render para `UDA38_R 1`, 11/09 a las 13:18:31 CST y otras revisiones: `Generación manual interna falló: HTTP 302`. El monitor usaba `test_client()` sin sesión y era redirigido al acceso. Corregido mediante invocación interna del generador, sin abrir las rutas públicas. También se corrige el límite que contaba borradores y el estado de cola con errores. Falta publicar y verificar PDF real y registro HistorialPDF.

@@ -43,6 +43,7 @@
     .document{padding:22px;border:1px solid var(--line);border-radius:22px;background:#edf4fc;color:#12223a;box-shadow:var(--shadow)}.doc-head{display:flex;justify-content:space-between;gap:16px;padding-bottom:15px;border-bottom:2px solid #287ce9}.doc-logo{color:#0f5cac;font-size:1.4rem;font-weight:950}.doc-title{text-align:right}.doc-title b{display:block;font-size:1.05rem}.doc-title span{font-size:.72rem;color:#53657b}.doc-body{display:grid;gap:12px;margin-top:16px}.doc-row{display:flex;justify-content:space-between;gap:20px;padding-bottom:8px;border-bottom:1px solid #d0ddeb;font-size:.77rem}.doc-note{min-height:80px;padding:12px;border-radius:12px;background:#dfeaf6;font-size:.76rem}.signature-box{display:grid;place-items:center;min-height:150px;border:1px dashed #55708f;border-radius:16px;background:#0b1628;color:var(--muted);cursor:pointer}
     .accept-wrap{max-width:520px;margin:auto}.accept-logo{display:grid;place-items:center;width:72px;height:72px;margin:12px auto 18px;border-radius:22px;background:linear-gradient(145deg,#2281fb,#0757bd);font-size:1.25rem;font-weight:900}.accept-card{padding:20px;border:1px solid var(--line);border-radius:24px;background:var(--surface);box-shadow:var(--shadow)}.accept-card h2{margin:0;text-align:center}.accept-card>p{text-align:center;color:var(--muted);font-size:.84rem}.scope{margin:15px 0;padding:13px;border:1px solid var(--line);border-radius:15px;background:#0b1628}.scope b{display:block}.scope span{display:block;margin-top:4px;color:var(--muted);font-size:.75rem}.profile-card{text-align:center;padding:24px;border:1px solid var(--line);border-radius:22px;background:var(--surface)}.profile-avatar{display:grid;place-items:center;width:82px;height:82px;margin:auto;border-radius:24px;background:linear-gradient(145deg,#2a7be0,#15477f);font-size:1.35rem;font-weight:900}.profile-card h2{margin:12px 0 4px}.profile-card p{margin:0;color:var(--muted)}.nav-btn em{font-style:normal;font-size:.72rem}
     @media(min-width:760px){body{padding:28px}.app{min-height:calc(100dvh - 56px);border:1px solid var(--line);border-radius:28px;overflow:hidden;box-shadow:var(--shadow)}main{padding:26px 30px 115px}.client-list,.equipment-list{grid-template-columns:repeat(2,1fr)}.bottom-nav{bottom:28px;width:min(calc(100% - 56px),1180px);border:1px solid var(--line);border-radius:0 0 28px 28px}.modal{place-items:center}.sheet{border-radius:24px}}
+    .editor{max-width:720px;margin:auto}.editor .section-body{padding-top:16px}.editor-note{color:var(--muted);font-size:.82rem;line-height:1.5}.photo-picker{display:flex;gap:16px;align-items:center;flex-wrap:wrap}.photo-preview{width:88px;height:88px;border:1px solid var(--line);border-radius:18px;display:grid;place-items:center;overflow:hidden;background:var(--surface-2)}.photo-preview img,.client-logo img,.hero-logo img,.equipment-photo img{width:100%;height:100%;object-fit:cover}.hero-logo{overflow:hidden}.editor-error{color:#ffb9bd;padding:10px 0}.check-row{display:flex;align-items:center;gap:10px;font-size:.9rem}.check-row input{width:20px;height:20px;accent-color:var(--brand)}.management-bar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.editor [hidden]{display:none!important}.mini-btn:disabled,.primary:disabled{opacity:.45;cursor:not-allowed}@media(max-width:420px){.field-row{grid-template-columns:1fr}.hero h2{overflow-wrap:anywhere}.section-head{align-items:start;flex-wrap:wrap}}
   </style>
 </head>
 <body>
@@ -59,30 +60,73 @@
     <section class="view active" data-view="clients">
       <div class="search"><span>⌕</span><input id="clientSearch" type="search" placeholder="Buscar cliente, clave o ubicación"></div>
       <div class="section-head"><h2>Clientes</h2><div><span class="count" id="clientCount"></span> <button class="mini-btn" id="openUsers">Usuarios</button></div></div>
+      <div class="management-bar"><button class="primary" id="addOperationalClient">＋ Agregar cliente</button><button class="secondary" id="catalogScope">Ver catálogo de ejemplo</button></div>
       <div class="client-list" id="clientList"></div>
+      <p class="editor-note">Vista administrativa de prueba: las altas y ediciones sólo duran mientras esta página permanezca abierta.</p>
     </section>
 
     <section class="view" data-view="client">
       <article class="hero">
         <div class="hero-top"><div class="hero-logo">HI</div><div><h2>Holiday Inn Diamante</h2><p>HDI · Santiago de Querétaro</p></div></div>
         <div class="address"><span>⌖</span><span>Anillo Vial Fray Junípero Serra 1500-A, Arboledas, 76140 Santiago de Querétaro, Qro.</span></div>
-        <div class="stats"><div class="stat"><b>R2</b><span>Ronda actual</span></div><div class="stat"><b>38</b><span>Reportes</span></div><div class="stat"><b>43</b><span>Equipos</span></div></div>
-        <div class="progress"><i></i></div><div class="progress-label"><span>Avance de la ronda</span><b>37 de 43</b></div>
+        <div class="field" style="margin-top:16px"><label for="clientRound">Consultar ronda</label><select id="clientRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div>
+        <div class="stats"><div class="stat"><b id="roundLabel">R2</b><span>Ronda consultada</span></div><div class="stat"><b id="roundReports">3</b><span>Reportes de ejemplo</span></div><div class="stat"><b id="roundEquipment">6</b><span>Equipos de ejemplo</span></div></div>
+        <div class="progress"><i id="roundProgress"></i></div><div class="progress-label"><span>Avance de la ronda</span><b id="roundProgressText"></b></div>
       </article>
-      <div class="section-head"><h2>Equipos</h2><span class="count">6 pendientes</span></div>
+      <div class="management-bar"><button class="secondary" id="editOperationalClient">Editar cliente</button><button class="primary" id="addOperationalEquipment">＋ Agregar equipo</button></div>
+      <div class="section-head"><h2>Equipos</h2><span class="count" id="roundPending"></span></div>
       <div class="filters" id="equipmentFilters"><button class="chip active" data-filter="all">Todos</button><button class="chip" data-filter="pending">Pendientes</button><button class="chip" data-filter="done">Realizados</button></div>
       <div class="equipment-list" id="equipmentList" style="margin-top:10px"></div>
-      <div class="section-head"><h2>Reportes recientes</h2><span class="count">38 en total</span></div>
-      <div class="report-list"><article class="report-card"><div class="report-icon">▤</div><div class="card-copy"><div class="card-title">HDI16_R2</div><div class="card-sub">Lobby · mantenimiento preventivo</div></div><div class="report-meta">11 sep 2026<br>Finalizado</div></article><article class="report-card"><div class="report-icon">▤</div><div class="card-copy"><div class="card-title">HDI44_R2</div><div class="card-sub">Cocina · revisión general</div></div><div class="report-meta">10 sep 2026<br>Finalizado</div></article></div>
+      <div class="section-head"><h2>Reportes de la ronda</h2><span class="count" id="roundReportCount"></span></div>
+      <div class="report-list" id="roundReportList"></div>
     </section>
 
     <section class="view" data-view="equipment">
+      <div class="field" style="margin-bottom:12px"><label for="equipmentRound">Consultar ronda</label><select id="equipmentRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div>
       <article class="equipment-hero"><div class="equipment-photo">❄</div><div><div class="eyebrow">HDI1</div><h2>Fábrica de hielo grande</h2><p class="card-sub">Monitowac · Holiday Inn Diamante</p><span class="tag" id="equipmentStatus">Realizado en R2</span></div></article>
       <div class="actions"><button class="primary" id="newReport">＋ Nuevo reporte</button><button class="danger" id="criticalFault">⚠ Falla grave</button></div>
-      <div class="section-head"><h2>Historial del equipo</h2><span class="count">1 reporte</span></div>
-      <div class="report-list"><article class="report-card"><div class="report-icon">▤</div><div class="card-copy"><div class="card-title">HDI1_R2</div><div class="card-sub">Reporte de refrigeración</div></div><div class="report-meta">11 sep 2026<br>Ver reporte ›</div></article></div>
+      <div class="management-bar"><button class="secondary" id="editOperationalEquipment">Editar equipo</button><button class="secondary" id="toggleOperationalEquipment">Desactivar equipo</button></div>
+      <div class="section-head"><h2>Reportes de esta ronda</h2><span class="count" id="equipmentReportCount"></span></div>
+      <div class="report-list" id="equipmentReportList"></div>
     </section>
 
+    <section class="view editor" data-view="clientEditor">
+      <div class="form-intro"><b id="clientEditorTitle">Agregar cliente a Operaciones</b><span>Usa el catálogo general. Sólo crea un cliente cuando todavía no exista.</span></div>
+      <form id="clientEditorForm">
+        <div class="form-section"><div class="section-body">
+          <div class="field" id="catalogChoice"><label for="catalogClient">Cliente del catálogo de ejemplo</label><select id="catalogClient"><option value="">Selecciona un cliente</option><option value="__new">＋ Crear cliente nuevo</option></select></div>
+          <div class="field"><label for="opClientName">Nombre del cliente</label><input id="opClientName" required maxlength="100" autocomplete="organization"></div>
+          <div class="field-row"><div class="field"><label for="opClientId">Identificador (no cambia)</label><input id="opClientId" readonly></div><div class="field"><label for="opMatrixId">ID del cliente en la matriz (opcional)</label><input id="opMatrixId" maxlength="40" placeholder="Ej. HDI" autocapitalize="characters"></div></div>
+          <p class="editor-note">El vínculo con la matriz se validará al conectarla. Escribir una clave aquí no modifica ninguna hoja.</p>
+          <div class="field"><label for="opClientAddress">Dirección</label><textarea id="opClientAddress" maxlength="500"></textarea></div>
+          <label class="check-row"><input id="opClientPolicy" type="checkbox" checked> Tiene póliza de mantenimiento</label>
+          <p class="editor-note">Sin póliza queda en el catálogo, pero no en la lista de técnicos. Su historial se conserva.</p>
+          <div class="photo-picker"><div class="photo-preview" id="opClientPhotoPreview">Foto</div><div class="field"><label for="opClientPhoto">Foto o logotipo · máximo 5 MB</label><input id="opClientPhoto" type="file" accept="image/jpeg,image/png,image/webp"><button class="mini-btn" id="removeClientPhoto" type="button">Quitar foto</button></div></div>
+          <p class="editor-note">La foto sólo se previsualiza en esta sesión; todavía no se sube a Drive.</p>
+          <div class="editor-error" id="clientEditorError" role="alert"></div>
+        </div></div>
+        <div class="form-actions"><button class="secondary" type="button" data-cancel-editor>Cancelar</button><button class="primary" type="submit">Guardar en maqueta</button></div>
+      </form>
+    </section>
+    <section class="view editor" data-view="equipmentEditor">
+      <div class="form-intro"><b id="equipmentEditorTitle">Agregar equipo</b><span id="equipmentEditorClient"></span></div>
+      <form id="equipmentEditorForm">
+        <div class="form-section"><div class="section-body">
+          <div class="field-row"><div class="field"><label for="opEquipmentId">Identificador (automático)</label><input id="opEquipmentId" readonly></div><div class="field"><label for="opEquipmentType">Tipo de equipo</label><select id="opEquipmentType"><option>Refrigeración</option><option>Aire acondicionado</option><option>Chiller</option><option>Ventilación</option><option>Otro</option></select></div></div>
+          <div class="field" id="equipmentQuantityField"><label for="opEquipmentQuantity">Cantidad de equipos</label><input id="opEquipmentQuantity" type="number" min="1" max="100" step="1" value="1" required inputmode="numeric"><p class="editor-note" id="equipmentBatchPreview" aria-live="polite"></p></div>
+          <div class="field"><label for="opEquipmentName">Nombre o descripción</label><input id="opEquipmentName" required maxlength="100" placeholder="Ej. Cámara de cocina"></div>
+          <div class="field"><label for="opEquipmentLocation">Ubicación dentro del cliente</label><input id="opEquipmentLocation" maxlength="150" placeholder="Ej. Cocina · planta baja"></div>
+          <div class="field-row"><div class="field"><label for="opEquipmentBrand">Marca</label><input id="opEquipmentBrand" maxlength="80"></div><div class="field"><label for="opEquipmentModel">Modelo</label><input id="opEquipmentModel" maxlength="80"></div></div>
+          <div class="field"><label for="opEquipmentSerial">Número de serie</label><input id="opEquipmentSerial" maxlength="100"></div>
+          <label class="check-row"><input id="opEquipmentActive" type="checkbox" checked> Equipo activo</label>
+          <p class="editor-note">Desactivarlo lo excluye del avance operativo, pero conserva los reportes de cada ronda.</p>
+          <div class="photo-picker"><div class="photo-preview" id="opEquipmentPhotoPreview">❄</div><div class="field"><label for="opEquipmentPhoto">Foto del equipo · máximo 5 MB</label><input id="opEquipmentPhoto" type="file" accept="image/jpeg,image/png,image/webp"><button class="mini-btn" id="removeEquipmentPhoto" type="button">Quitar foto</button></div></div>
+          <div class="field"><label for="opEquipmentNotes">Notas del equipo</label><textarea id="opEquipmentNotes" maxlength="1000"></textarea></div>
+          <div class="editor-error" id="equipmentEditorError" role="alert"></div>
+        </div></div>
+        <div class="form-actions"><button class="secondary" type="button" data-cancel-editor>Cancelar</button><button class="primary" type="submit">Guardar en maqueta</button></div>
+      </form>
+    </section>
     <section class="view" data-view="report">
       <div class="form-intro"><b>Nuevo reporte de refrigeración</b><span>Holiday Inn Diamante · HDI1 · Fábrica de hielo grande</span></div>
       <form id="reportForm">
@@ -98,7 +142,7 @@
     <section class="view" data-view="agenda">
       <div class="agenda-date"><div><div class="eyebrow">Agenda del técnico</div><h2>Viernes, 11 de septiembre</h2><p>4 tareas · 1 de prioridad alta</p></div><div class="agenda-actions"><button class="mini-btn" id="openTask">＋</button><button class="mini-btn" title="Vista mensual">▦</button></div></div>
       <div class="calendar-strip"><button class="day"><span>Lun</span><b>7</b></button><button class="day"><span>Mar</span><b>8</b><i></i></button><button class="day"><span>Mié</span><b>9</b></button><button class="day"><span>Jue</span><b>10</b><i></i></button><button class="day today"><span>Hoy</span><b>11</b><i></i></button><button class="day"><span>Sáb</span><b>12</b></button><button class="day"><span>Dom</span><b>13</b></button></div>
-      <div class="reminder"><div class="reminder-icon">♢</div><div class="reminder-copy"><b>Resumen “Tareas para hoy”</b><span>Notificación mensual o en los días que programes trabajo</span></div><button class="switch" id="reminderSwitch" aria-label="Activar recordatorio"></button></div>
+      <div class="reminder"><div class="reminder-icon">♢</div><div class="reminder-copy"><b>Resumen “Tareas para hoy”</b><span>Los avisos se configurarán por administración. Vista de prueba: todavía no se envían.</span></div></div>
       <div class="section-head"><h2>Para hoy</h2><span class="count">Ordenadas por hora</span></div>
       <div class="task-list"><article class="task-card"><div class="task-time">08:30<small>VISITA</small></div><div><div class="task-title">Ronda R2 · Holiday Inn</div><div class="task-sub">6 equipos pendientes · Técnico: Carlos</div></div><i class="priority high"></i></article><article class="task-card"><div class="task-time">11:00<small>REPORTE</small></div><div><div class="task-title">Revisar HDI3 · Lobby</div><div class="task-sub">Unidad paquete · Holiday Inn Diamante</div></div><i class="priority"></i></article><article class="task-card"><div class="task-time">14:30<small>FALLA</small></div><div><div class="task-title">Seguimiento de falla grave</div><div class="task-sub">Travers Tool · Cámara de refrigeración</div></div><i class="priority high"></i></article><article class="task-card"><div class="task-time">16:00<small>OTRO</small></div><div><div class="task-title">Entregar reporte firmado</div><div class="task-sub">Visscher Caravelle · Administración</div></div><i class="priority"></i></article></div>
       <div class="section-head"><h2>Pendientes de R2</h2><span class="count">6 equipos</span></div><div class="equipment-list" id="pendingList"></div>
@@ -165,23 +209,99 @@
   const equipment=[['HDI1','Fábrica de hielo grande','Monitowac',true],['HDI2','Restaurante','Cámara de conservación',true],['HDI3','Lobby','Unidad paquete',false],['HDI4','Lavandería','Extractor',false],['HDI5','Cocina','Cámara de congelación',true],['HDI6','Salón Diamante','Minisplit',false]];
   const views={clients:['HSC Técnico','Clientes'],client:['Cliente','Holiday Inn Diamante'],equipment:['Equipo','Fábrica de hielo grande'],report:['Reporte','Nuevo reporte'],agenda:['HSC Técnico','Agenda'],users:['Administración','Usuarios'],task:['Agenda','Detalle de tarea'],reportView:['Reporte','HDI1_R2'],profile:['HSC Técnico','Mi perfil'],partner:['HSC Partner','Inicio'],partnerEquipment:['HSC Partner','Equipos'],partnerReports:['HSC Partner','Reportes'],partnerFaults:['HSC Partner','Fallas reportadas'],inviteAccept:['Acceso','Aceptar invitación']};
   let historyStack=['clients'], current='clients', currentMode='tech', equipmentFilter='all';
+  let selectedRound='2', selectedEquipment='HDI1';
+  let selectedClient='HDI',showCatalog=false;
+  const clientMeta=Object.fromEntries(clients.map(c=>[c[1],{policy:true,matrixId:c[1],address:c[1]==='HDI'?'Anillo Vial Fray Junípero Serra 1500-A, Arboledas, Querétaro':'',photo:''}]));
+  clients.push(['Cliente sin póliza · ejemplo','DEMO','0 equipos']);
+  clientMeta.DEMO={policy:false,matrixId:'',address:'',photo:''};
+  const equipmentMeta=Object.fromEntries(equipment.map(e=>[e[0],{client:'HDI',active:true,type:'Refrigeración',location:'',model:'',serial:'',notes:'',photo:''}]));
+  const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const clientName=id=>clients.find(c=>c[1]===id)?.[0]||id;
+  const photoMarkup=(url,fallback)=>url?`<img src="${escapeHtml(url)}" alt="">`:escapeHtml(fallback);
+  views.clientEditor=['Administración · prueba','Cliente'];views.equipmentEditor=['Administración · prueba','Equipo'];
+  // Datos ilustrativos: la ronda consultada no modifica la ronda operativa real.
+  const demoRounds={
+    '1':{done:equipment.map(e=>e[0]),date:'15 mayo 2026'},
+    '2':{done:equipment.filter(e=>e[3]).map(e=>e[0]),date:'11 septiembre 2026'},
+    '3':{done:[],date:''},
+    '4':{done:[],date:''}
+  };
   const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
   function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2300)}
   function navMode(mode){const set=(el,view,icon,label)=>{el.dataset.nav=view;el.querySelector('span').textContent=icon;el.querySelector('em').textContent=label};if(mode==='partner'){set($('#navOne'),'partner','⌂','Inicio');set($('#navTwo'),'partnerEquipment','❄','Equipos');set($('#navThree'),'partnerFaults','⚠','Fallas')}else{set($('#navOne'),'agenda','▦','Agenda');set($('#navTwo'),'clients','♙','Clientes');set($('#navThree'),'profile','◎','Perfil')}}
   function showView(name,push=true){if(name===current)return;if(push)historyStack.push(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=['clients','agenda','partner','users'].includes(name);if(['partner','partnerEquipment','partnerReports','partnerFaults'].includes(name))currentMode='partner';if(['clients','client','equipment','report','agenda','task','profile'].includes(name))currentMode='tech';navMode(currentMode==='partner'?'partner':'tech');$('.bottom-nav').style.display=['users','inviteAccept'].includes(name)?'none':'grid';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report')&&b.dataset.nav==='clients'));scrollTo({top:0,behavior:'smooth'});}
   function goBack(){if(historyStack.length>1)historyStack.pop();showView(historyStack.at(-1),false)}
-  function renderClients(filter=''){const q=filter.trim().toLowerCase();const rows=clients.filter(c=>c.join(' ').toLowerCase().includes(q));$('#clientCount').textContent=`${rows.length} visibles`;$('#clientList').innerHTML=rows.map(c=>`<button class="client-card" data-client="${c[1]}"><span class="client-logo">${c[1].slice(0,2)}</span><span class="card-copy"><span class="card-title">${c[0]}</span><span class="card-sub">${c[1]} · ${c[2]}</span></span><span class="chevron">›</span></button>`).join('')||'<div class="empty">No encontramos clientes con esa búsqueda.</div>';$$('[data-client]').forEach(b=>b.onclick=()=>showView('client'))}
-  function equipmentCard(e){return `<button class="equipment-card" data-equipment="${e[0]}"><span class="equipment-photo">❄</span><span class="card-copy"><span class="card-title">${e[1]}</span><span class="card-sub">${e[0]} · ${e[2]}</span></span><span class="status-dot ${e[3]?'done':''}" title="${e[3]?'Realizado':'Pendiente'}"></span><span class="chevron">›</span></button>`}
-  function renderEquipment(){let rows=equipment;if(equipmentFilter==='done')rows=rows.filter(e=>e[3]);if(equipmentFilter==='pending')rows=rows.filter(e=>!e[3]);$('#equipmentList').innerHTML=rows.map(equipmentCard).join('');$('#pendingList').innerHTML=equipment.filter(e=>!e[3]).map(equipmentCard).join('');$('#taskEquipment').innerHTML=equipment.filter(e=>!e[3]).slice(0,3).map(equipmentCard).join('');$$('[data-equipment]').forEach(b=>b.onclick=()=>showView('equipment'))}
+  function renderClients(filter=$('#clientSearch').value){
+    const q=filter.trim().toLowerCase(),rows=clients.filter(c=>(showCatalog||clientMeta[c[1]].policy)&&`${c[0]} ${c[1]} ${clientMeta[c[1]].address}`.toLowerCase().includes(q));
+    $('#clientCount').textContent=`${rows.length} ${showCatalog?'en catálogo':'con póliza'}`;
+    $('#catalogScope').textContent=showCatalog?'Ver sólo clientes con póliza':'Ver catálogo de ejemplo';
+    $('#clientList').innerHTML=rows.map(c=>`<button class="client-card" data-client="${escapeHtml(c[1])}"><span class="client-logo">${photoMarkup(clientMeta[c[1]].photo,c[1].slice(0,2))}</span><span class="card-copy"><span class="card-title">${escapeHtml(c[0])}</span><span class="card-sub">${escapeHtml(c[1])} · ${equipment.filter(e=>equipmentMeta[e[0]].client===c[1]).length} equipos de ejemplo · ${clientMeta[c[1]].policy?'Con póliza':'Sin póliza'}</span></span><span class="chevron">›</span></button>`).join('')||'<div class="empty">No hay clientes que coincidan.</div>';
+    $$('[data-client]').forEach(b=>b.onclick=()=>openClient(b.dataset.client));
+  }
+  function openClient(id){selectedClient=id;equipmentFilter='all';$$('#equipmentFilters .chip').forEach(b=>b.classList.toggle('active',b.dataset.filter==='all'));refreshRound();showView('client');}
+  function renderClientDetail(){const meta=clientMeta[selectedClient],hero=$('[data-view="client"] .hero');hero.querySelector('h2').textContent=clientName(selectedClient);hero.querySelector('p').textContent=`${selectedClient} · ${meta.policy?'Póliza activa':'Sin póliza · sólo catálogo'}`;hero.querySelector('.hero-logo').innerHTML=photoMarkup(meta.photo,selectedClient.slice(0,2));hero.querySelector('.address span:last-child').textContent=meta.address||'Dirección por completar';views.client[1]=clientName(selectedClient);if(current==='client')$('#screenTitle').textContent=clientName(selectedClient);}
+  function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<button class="equipment-card" data-equipment="${escapeHtml(e[0])}"><span class="equipment-photo">${photoMarkup(meta.photo,'❄')}</span><span class="card-copy"><span class="card-title">${escapeHtml(e[1])}</span><span class="card-sub">${escapeHtml(e[0])} · ${escapeHtml(e[2])}${meta.active?'':' · Inactivo'}</span></span><span class="status-dot ${!meta.active?'off':e[3]?'done':''}" title="${!meta.active?'Inactivo':e[3]?'Realizado':'Pendiente'}"></span><span class="chevron">›</span></button>`}
+  function reportCards(rows){return rows.map(e=>`<button type="button" class="equipment-card" data-round-report="${escapeHtml(e[0])}"><span class="report-icon">▤</span><span class="card-copy"><span class="card-title">${escapeHtml(e[0])}_R${selectedRound}</span><span class="card-sub">${escapeHtml(e[1])} · ${demoRounds[selectedRound].date}</span></span><span class="chevron">›</span></button>`).join('')||'<div class="empty">Todavía no hay reportes en esta ronda.</div>';}
+  function renderEquipment(){
+    renderClientDetail();
+    const round=demoRounds[selectedRound],all=equipment.filter(e=>equipmentMeta[e[0]].client===selectedClient).map(e=>[e[0],e[1],e[2],round.done.includes(e[0])]);
+    const active=all.filter(e=>equipmentMeta[e[0]].active),completed=active.filter(e=>e[3]).length;
+    const rows=all.filter(e=>equipmentFilter==='all'||(equipmentMeta[e[0]].active&&(equipmentFilter==='done'?e[3]:!e[3])));
+    $('#equipmentList').innerHTML=rows.map(equipmentCard).join('')||'<div class="empty">No hay equipos con este estado en la ronda seleccionada.</div>';
+    // La agenda conserva R2; consultar un histórico no reprograma tareas.
+    const pending=equipment.filter(e=>!e[3]&&equipmentMeta[e[0]].active&&equipmentMeta[e[0]].client==='HDI'&&clientMeta.HDI.policy);
+    $('#pendingList').innerHTML=pending.map(equipmentCard).join('');
+    $('#taskEquipment').innerHTML=pending.slice(0,3).map(equipmentCard).join('');
+    $('#roundLabel').textContent=`R${selectedRound}`;$('#roundReports').textContent=all.filter(e=>e[3]).length;
+    $('#roundEquipment').textContent=active.length;$('#roundPending').textContent=`${active.length-completed} pendientes · ${all.length-active.length} inactivos`;
+    $('#roundProgress').style.width=`${active.length?completed/active.length*100:0}%`;
+    $('#roundProgressText').textContent=`${completed} de ${active.length} activos`;
+    $('#roundReportCount').textContent=`R${selectedRound} · ${all.filter(e=>e[3]).length} reportes`;
+    $('#roundReportList').innerHTML=reportCards(all.filter(e=>e[3]));
+    renderEquipmentDetail();
+    $$('[data-equipment]').forEach(b=>b.onclick=()=>{
+      if(b.closest('#pendingList,#taskEquipment'))selectedRound='2';
+      selectedEquipment=b.dataset.equipment;selectedClient=equipmentMeta[selectedEquipment].client;refreshRound();showView('equipment');
+    });
+    bindRoundReports();
+  }
+  function renderEquipmentDetail(){
+    const e=equipment.find(row=>row[0]===selectedEquipment),done=demoRounds[selectedRound].done.includes(e[0]);
+    const hero=$('[data-view="equipment"] .equipment-hero');
+    hero.querySelector('.eyebrow').textContent=e[0];hero.querySelector('h2').textContent=e[1];
+    const meta=equipmentMeta[e[0]];
+    hero.querySelector('.equipment-photo').innerHTML=photoMarkup(meta.photo,'❄');
+    hero.querySelector('.card-sub').textContent=[e[2],meta.model,meta.serial&&`Serie: ${meta.serial}`,meta.location,clientName(meta.client)].filter(Boolean).join(' · ');
+    $('#equipmentStatus').textContent=`${done?'Realizado':'Pendiente'} en R${selectedRound}`;
+    $('#equipmentStatus').style.color=done?'#61e5a7':'#ff9da2';
+    if(!meta.active){$('#equipmentStatus').textContent='Equipo inactivo · historial conservado';$('#equipmentStatus').style.color='#9fb0c7';}
+    $('#toggleOperationalEquipment').textContent=meta.active?'Desactivar equipo':'Reactivar equipo';
+    $('#newReport').disabled=!meta.active||!clientMeta[meta.client].policy;
+    $('#equipmentReportCount').textContent=done?'1 reporte':'0 reportes';
+    $('#equipmentReportList').innerHTML=reportCards(done?[e]:[]);
+    views.equipment[1]=e[1];if(current==='equipment')$('#screenTitle').textContent=e[1];
+  }
+  function bindRoundReports(){
+    $$('[data-round-report]').forEach(button=>button.onclick=()=>{
+      const e=equipment.find(row=>row[0]===button.dataset.roundReport),view=$('[data-view="reportView"]');
+      view.querySelector('.doc-title b').textContent=`Reporte ${e[0]}_R${selectedRound}`;
+      view.querySelector('.doc-title span').textContent=demoRounds[selectedRound].date;
+      view.querySelectorAll('.doc-row span')[1].textContent=`${e[0]} · ${e[1]}`;
+      view.querySelectorAll('.doc-row span')[0].textContent=clientName(equipmentMeta[e[0]].client);
+      views.reportView[1]=`${e[0]}_R${selectedRound}`;showView('reportView');
+    });
+  }
+  function refreshRound(){
+    $$('[data-round-select]').forEach(select=>select.value=selectedRound);renderEquipment();
+  }
   $('#clientSearch').oninput=e=>renderClients(e.target.value);$('#backBtn').onclick=goBack;$('#newReport').onclick=()=>showView('report');$('#criticalFault').onclick=()=>$('#faultModal').classList.add('open');$('#closeFault').onclick=()=>$('#faultModal').classList.remove('open');$('#sendFault').onclick=()=>{if(!$('#faultText').value.trim()){toast('Describe la falla antes de reportarla');return}$('#faultModal').classList.remove('open');toast('Falla agregada a HSC Partner')};
-  $('#openTask').onclick=()=>$('#taskModal').classList.add('open');$('#closeTask').onclick=()=>$('#taskModal').classList.remove('open');$('#saveTask').onclick=()=>{if(!$('#taskTitle').value.trim()){toast('Escribe la actividad pendiente');return}$('#taskModal').classList.remove('open');toast('Pendiente agregado a la agenda')};$('#reminderSwitch').onclick=async()=>{const button=$('#reminderSwitch');if(!('Notification' in window)){toast('Este navegador no admite notificaciones');return}if(Notification.permission!=='granted'){const permission=await Notification.requestPermission();if(permission!=='granted'){toast('No se activaron las notificaciones');return}}button.classList.add('on');new Notification('HSC Técnico',{body:'Tareas para hoy: tienes 4 actividades programadas.'});toast('Recordatorio de tareas activado')};
+  $('#openTask').onclick=()=>$('#taskModal').classList.add('open');$('#closeTask').onclick=()=>$('#taskModal').classList.remove('open');$('#saveTask').onclick=()=>{if(!$('#taskTitle').value.trim()){toast('Escribe la actividad pendiente');return}$('#taskModal').classList.remove('open');toast('Pendiente agregado a la agenda')};
   let inviteRole='tech';function openInvite(role='tech'){inviteRole=role;$('#inviteForm').hidden=false;$('#inviteShare').hidden=true;$('#inviteModal').classList.add('open');$$('[data-role-choice]').forEach(b=>b.classList.toggle('active',b.dataset.roleChoice===role));$('#inviteClientField').style.display=role==='client'?'block':'none'}$('#openUsers').onclick=()=>{currentMode='admin';showView('users')};$$('[data-invite-role]').forEach(b=>b.onclick=()=>openInvite(b.dataset.inviteRole));$$('[data-role-choice]').forEach(b=>b.onclick=()=>{inviteRole=b.dataset.roleChoice;$$('[data-role-choice]').forEach(x=>x.classList.toggle('active',x===b));$('#inviteClientField').style.display=inviteRole==='client'?'block':'none'});$('#closeInvite').onclick=()=>$('#inviteModal').classList.remove('open');$('#createInvite').onclick=()=>{if(!$('#inviteName').value.trim()){toast('Escribe el nombre de la persona');return}$('#inviteForm').hidden=true;$('#inviteShare').hidden=false;$('#shareTitle').textContent=inviteRole==='client'?'Invitar a HSC Partner':'Invitar a HSC Técnico'};$('#shareWhatsApp').onclick=()=>toast('Se abrirá WhatsApp con el mensaje preparado');$('#shareEmail').onclick=()=>toast('Se enviará mediante el correo configurado');$('#copyInvite').onclick=async()=>{try{await navigator.clipboard.writeText('https://hsc.app/invitacion/7K3M-HSC')}catch(_){}toast('Enlace copiado')};$('#finishInvite').onclick=()=>{$('#inviteModal').classList.remove('open');toast('Invitación guardada como pendiente')};
   $('#searchToggle').onclick=()=>$('#appMenu').classList.add('open');$('#closeAppMenu').onclick=()=>$('#appMenu').classList.remove('open');$$('[data-app-view]').forEach(b=>b.onclick=()=>{$('#appMenu').classList.remove('open');currentMode=b.dataset.appView==='partner'?'partner':b.dataset.appView==='users'||b.dataset.appView==='inviteAccept'?'admin':'tech';historyStack=[b.dataset.appView];showView(b.dataset.appView,false)});$$('.task-card').slice(0,4).forEach(b=>{b.style.cursor='pointer';b.onclick=()=>showView('task')});$('#taskStart').onclick=()=>showView('equipment');$('#taskComplete').onclick=()=>toast('Tarea marcada como terminada');$$('[data-open-report]').forEach(b=>b.onclick=()=>showView('reportView'));$$('[data-partner-action]').forEach(b=>b.onclick=()=>{const action=b.dataset.partnerAction;if(action==='faults')showView('partnerFaults');else if(action==='reports')showView('partnerReports');else showView('partnerEquipment')});$('#acceptInvite').onclick=()=>{currentMode='partner';toast('Cuenta creada · HSC Partner listo para instalar');setTimeout(()=>showView('partner'),700)};$('#cancelAccept').onclick=()=>{currentMode='admin';showView('users')};
   $$('#equipmentFilters .chip').forEach(b=>b.onclick=()=>{equipmentFilter=b.dataset.filter;$$('#equipmentFilters .chip').forEach(x=>x.classList.toggle('active',x===b));renderEquipment()});$$('.nav-btn').forEach(b=>b.onclick=()=>showView(b.dataset.nav));
   $('#saveDraft').onclick=()=>{localStorage.setItem('hsc-report-demo',JSON.stringify(Object.fromEntries(new FormData($('#reportForm')))));toast('Borrador guardado en este dispositivo')};$('#reportForm').onsubmit=e=>{e.preventDefault();if(!confirm('¿Finalizar este reporte y marcar el equipo como realizado?'))return;localStorage.removeItem('hsc-report-demo');toast('Reporte finalizado · equipo marcado en verde');setTimeout(()=>showView('equipment'),700)};
   const saved=localStorage.getItem('hsc-report-demo');if(saved){try{const d=JSON.parse(saved);Object.entries(d).forEach(([k,v])=>{const f=$(`[name="${k}"]`);if(f)f.value=v})}catch(_){}}
   // La maqueta publicada sólo permite recorrer el diseño, sin efectos externos.
-  $('#reminderSwitch').onclick=()=>{const button=$('#reminderSwitch');button.classList.toggle('on');toast('Simulación: aquí se configurará el aviso de tareas')};
   $('#shareWhatsApp').onclick=$('#shareEmail').onclick=$('#copyInvite').onclick=()=>toast('Vista de prueba: todavía no se generan ni envían invitaciones');
   document.querySelector('.share-link').textContent='Enlace de ejemplo · no válido para crear cuentas';
   document.querySelector('#inviteShare p').textContent='Así se verá el enlace cuando conectemos las invitaciones reales.';
@@ -192,7 +312,95 @@
   $('#taskComplete').onclick=()=>toast('Simulación: no se modificó la agenda real');
   $('#reportForm').onsubmit=e=>{e.preventDefault();toast('Vista de prueba: el reporte aún no se guarda en la matriz');setTimeout(()=>showView('equipment'),700)};
   document.querySelectorAll('input[type="password"]').forEach(input=>{input.disabled=true;input.placeholder='No escribas contraseñas reales en la maqueta';});
-  renderClients();renderEquipment();
+  $$('[data-round-select]').forEach(select=>select.onchange=()=>{selectedRound=select.value;refreshRound();});
+  const draftKey=()=>`hsc-report-demo-${selectedEquipment}-R${selectedRound}`;
+  $('#newReport').onclick=()=>{
+    const e=equipment.find(row=>row[0]===selectedEquipment),form=$('#reportForm');form.reset();
+    const fixed=[...form.querySelectorAll('input[readonly]')];fixed[0].value=clientName(equipmentMeta[e[0]].client);fixed[1].value=e[0];fixed[2].value=`R${selectedRound}`;
+    $('[data-view="report"] .form-intro span').textContent=`${clientName(equipmentMeta[e[0]].client)} · ${e[0]} · ${e[1]} · R${selectedRound}`;
+    try{const draft=JSON.parse(localStorage.getItem(draftKey())||'{}');for(const [name,value] of Object.entries(draft)){const field=form.elements.namedItem(name);if(field)field.value=value;}}catch(_){}
+    showView('report');
+  };
+  $('#saveDraft').onclick=()=>{try{localStorage.setItem(draftKey(),JSON.stringify(Object.fromEntries(new FormData($('#reportForm')))));toast(`Borrador local guardado · ${selectedEquipment} · R${selectedRound}`);}catch(_){toast('No se pudo guardar el borrador en este dispositivo');}};
+  // Edición exclusivamente en memoria: no hay API ni escritura en la matriz.
+  let editingClient=null,editingEquipment=null,clientPhoto='',equipmentPhoto='',editorDirty=false;
+  const normalizedName=value=>value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').toLowerCase();
+  function nextClientId(){let n=clients.length+1;while(clients.some(c=>c[1]===`C${n}`))n++;return `C${n}`;}
+  function nextEquipmentId(){let n=1;while(equipment.some(e=>e[0]===`${selectedClient}${n}`))n++;return `${selectedClient}${n}`;}
+  function batchEquipmentIds(count){const used=new Set(equipment.map(e=>e[0])),ids=[];let n=1;while(ids.length<count){const id=`${selectedClient}${n++}`;if(!used.has(id)){ids.push(id);used.add(id);}}return ids;}
+  function updateBatchPreview(){const count=Number($('#opEquipmentQuantity').value),valid=Number.isInteger(count)&&count>=1&&count<=100;const ids=valid?batchEquipmentIds(count):[];$('#equipmentBatchPreview').textContent=valid?`${count} registro(s) de ejemplo: ${ids.slice(0,5).join(', ')}${count>5?'…':''}. Comparten los datos generales; después podrás editar cada equipo. Las series se capturan individualmente. No se escribe en la matriz.`:'Indica una cantidad entera entre 1 y 100.';$('#opEquipmentSerial').disabled=!editingEquipment&&count>1;}
+  $('#opEquipmentQuantity').oninput=updateBatchPreview;
+  function previewPhoto(kind,url){$(`#op${kind}PhotoPreview`).innerHTML=photoMarkup(url,kind==='Client'?'Foto':'❄');}
+  function fillClientEditor(id){
+    editingClient=id;const row=clients.find(c=>c[1]===id),meta=clientMeta[id];
+    $('#opClientName').value=row?.[0]||'';$('#opClientId').value=id||nextClientId();
+    $('#opMatrixId').value=meta?.matrixId||'';$('#opClientAddress').value=meta?.address||'';
+    $('#opClientPolicy').checked=meta?.policy??true;clientPhoto=meta?.photo||'';
+    $('#opClientPhoto').value='';previewPhoto('Client',clientPhoto);$('#clientEditorError').textContent='';
+  }
+  function openClientEditor(edit=false){
+    $('#clientEditorForm').reset();$('#catalogChoice').hidden=edit;
+    $('#catalogClient').innerHTML='<option value="">Selecciona un cliente</option><option value="__new">＋ Crear cliente nuevo</option>'+clients.map(c=>`<option value="${escapeHtml(c[1])}">${escapeHtml(c[0])}${clientMeta[c[1]].policy?' · ya tiene póliza':''}</option>`).join('');
+    fillClientEditor(edit?selectedClient:null);$('#clientEditorTitle').textContent=edit?'Editar cliente':'Agregar cliente a Operaciones';
+    editorDirty=false;showView('clientEditor');
+  }
+  $('#catalogClient').onchange=()=>{const id=$('#catalogClient').value;fillClientEditor(id&&id!=='__new'?id:null);editorDirty=true;};
+  $('#addOperationalClient').onclick=()=>openClientEditor();$('#editOperationalClient').onclick=()=>openClientEditor(true);
+  $('#catalogScope').onclick=()=>{showCatalog=!showCatalog;renderClients();};
+  $('#clientEditorForm').onsubmit=event=>{
+    event.preventDefault();const error=$('#clientEditorError'),name=$('#opClientName').value.trim(),matrixId=$('#opMatrixId').value.trim().toUpperCase();
+    if(!$('#catalogChoice').hidden&&!$('#catalogClient').value){error.textContent='Selecciona un cliente del catálogo o la opción Crear cliente nuevo.';return;}
+    if(!name){error.textContent='Escribe el nombre del cliente.';return;}
+    if(clients.some(c=>c[1]!==editingClient&&normalizedName(c[0])===normalizedName(name))){error.textContent='Ese cliente ya existe. Selecciónalo en el catálogo para evitar duplicarlo.';return;}
+    if(matrixId&&Object.entries(clientMeta).some(([id,m])=>id!==editingClient&&m.matrixId.toUpperCase()===matrixId)){error.textContent='Esa clave de matriz ya está vinculada a otro cliente de ejemplo.';return;}
+    const id=editingClient||nextClientId();if(editingClient)clients.find(c=>c[1]===id)[0]=name;else clients.push([name,id,'0 equipos']);
+    clientMeta[id]={policy:$('#opClientPolicy').checked,matrixId,address:$('#opClientAddress').value.trim(),photo:clientPhoto};
+    editorDirty=false;selectedClient=id;renderClients();refreshRound();showView('client');historyStack=['clients','client'];toast('Cliente actualizado sólo en esta maqueta');
+  };
+  function openEquipmentEditor(edit=false){
+    editingEquipment=edit?selectedEquipment:null;const row=equipment.find(e=>e[0]===editingEquipment),meta=equipmentMeta[editingEquipment];
+    $('#equipmentEditorForm').reset();$('#equipmentEditorTitle').textContent=edit?'Editar equipo':'Agregar equipo';$('#equipmentEditorClient').textContent=clientName(selectedClient);
+    const values={Id:row?.[0]||nextEquipmentId(),Name:row?.[1]||'',Brand:row?.[2]||'',Type:meta?.type||'Refrigeración',Location:meta?.location||'',Model:meta?.model||'',Serial:meta?.serial||'',Notes:meta?.notes||''};
+    for(const [key,value] of Object.entries(values))$(`#opEquipment${key}`).value=value;
+    $('#equipmentQuantityField').hidden=edit;$('#opEquipmentQuantity').value='1';updateBatchPreview();
+    $('#opEquipmentActive').checked=meta?.active??true;equipmentPhoto=meta?.photo||'';previewPhoto('Equipment',equipmentPhoto);$('#equipmentEditorError').textContent='';editorDirty=false;showView('equipmentEditor');
+  }
+  $('#addOperationalEquipment').onclick=()=>openEquipmentEditor();$('#editOperationalEquipment').onclick=()=>openEquipmentEditor(true);
+  $('#equipmentEditorForm').onsubmit=event=>{
+    event.preventDefault();const name=$('#opEquipmentName').value.trim(),count=editingEquipment?1:Number($('#opEquipmentQuantity').value),serial=count>1?'':$('#opEquipmentSerial').value.trim(),error=$('#equipmentEditorError');
+    if(!Number.isInteger(count)||count<1||count>100){error.textContent='Indica una cantidad entera entre 1 y 100.';return;}
+    if(!name){error.textContent='Escribe el nombre o descripción del equipo.';return;}
+    if(serial&&Object.entries(equipmentMeta).some(([id,m])=>id!==editingEquipment&&m.client===selectedClient&&m.serial.toLowerCase()===serial.toLowerCase())){error.textContent='Ya existe un equipo con ese número de serie para este cliente.';return;}
+    const ids=editingEquipment?[editingEquipment]:batchEquipmentIds(count),brand=$('#opEquipmentBrand').value.trim();
+    for(const [index,id] of ids.entries()){
+      if(editingEquipment){const row=equipment.find(e=>e[0]===id);row[1]=name;row[2]=brand;}else equipment.push([id,count>1?`${name} ${index+1}`:name,brand,false]);
+      equipmentMeta[id]={client:selectedClient,active:$('#opEquipmentActive').checked,type:$('#opEquipmentType').value,location:$('#opEquipmentLocation').value.trim(),model:$('#opEquipmentModel').value.trim(),serial,notes:$('#opEquipmentNotes').value.trim(),photo:equipmentPhoto};
+    }
+    editorDirty=false;selectedEquipment=ids[0];renderClients();refreshRound();showView(count>1?'client':'equipment');historyStack=count>1?['clients','client']:['clients','client','equipment'];toast(`${count} equipo(s) guardado(s) sólo en esta maqueta`);
+  };
+  $('#toggleOperationalEquipment').onclick=()=>{const meta=equipmentMeta[selectedEquipment];if(meta.active&&!confirm('¿Desactivar este equipo en la maqueta? Sus reportes se conservan.'))return;meta.active=!meta.active;refreshRound();toast(meta.active?'Equipo reactivado en maqueta':'Equipo desactivado; historial conservado');};
+  $('#taskStart').onclick=()=>{selectedClient='HDI';selectedRound='2';selectedEquipment='HDI3';refreshRound();showView('equipment');};
+  $('#criticalFault').onclick=()=>{const row=equipment.find(e=>e[0]===selectedEquipment);$('#faultModal p').textContent=`Prueba: ${clientName(equipmentMeta[row[0]].client)} · ${row[0]} · ${row[1]}. No se enviará a HSC Partner.`;$('#faultModal').classList.add('open');};
+  for(const kind of ['Client','Equipment']){
+    $(`#op${kind}Photo`).onchange=async event=>{
+      const file=event.target.files[0];if(!file)return;
+      const error=$(`#${kind==='Client'?'client':'equipment'}EditorError`);
+      if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024){error.textContent='Selecciona una imagen JPG, PNG o WebP de máximo 5 MB.';event.target.value='';return;}
+      const url=URL.createObjectURL(file),probe=new Image();probe.src=url;
+      try{await probe.decode();}catch(_){URL.revokeObjectURL(url);error.textContent='No se pudo leer esa imagen.';event.target.value='';return;}
+      if(event.target.files[0]!==file){URL.revokeObjectURL(url);return;}
+      if(kind==='Client')clientPhoto=url;else equipmentPhoto=url;
+      error.textContent='';editorDirty=true;previewPhoto(kind,url);
+    };
+    $(`#remove${kind}Photo`).onclick=()=>{if(kind==='Client')clientPhoto='';else equipmentPhoto='';$(`#op${kind}Photo`).value='';previewPhoto(kind,'');editorDirty=true;};
+  }
+  $('#clientEditorForm').oninput=$('#equipmentEditorForm').oninput=()=>{editorDirty=true;};
+  const originalShowView=showView;
+  showView=function(name,push=true){if(name!==current&&['clientEditor','equipmentEditor'].includes(current)&&editorDirty){if(!confirm('¿Salir sin guardar estos cambios de la maqueta?'))return;editorDirty=false;}return originalShowView(name,push);};
+  $('#backBtn').onclick=()=>{if(['clientEditor','equipmentEditor'].includes(current)&&editorDirty){if(!confirm('¿Salir sin guardar estos cambios de la maqueta?'))return;editorDirty=false;}goBack();};
+  $$('[data-cancel-editor]').forEach(b=>b.onclick=()=>$('#backBtn').click());
+  window.addEventListener('beforeunload',event=>{if(editorDirty){event.preventDefault();event.returnValue='';}});
+  renderClients();refreshRound();
 </script>
 </body>
 </html>

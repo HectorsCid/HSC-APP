@@ -52,6 +52,11 @@
       </div>
 
       <div>
+        <input type="hidden" name="poliza_present" value="1" />
+        <label for="tiene_poliza" style="display:flex;align-items:center;gap:10px"><input id="tiene_poliza" name="tiene_poliza" type="checkbox" value="1" style="width:20px;height:20px;padding:0" /> Tiene póliza de mantenimiento</label>
+        <div class="hint">Al conectar la app de técnicos, sólo aparecerán los clientes con esta opción marcada. No crea otra lista ni concede acceso a usuarios.</div>
+      </div>
+      <div>
         <label>Personas de atención y sus correos</label>
         <div id="contactList" class="contact-list"></div>
         <div class="actions"><button id="addContact" class="btn btn-ghost contact-add" type="button">＋ Agregar persona</button></div>
