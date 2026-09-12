@@ -624,6 +624,40 @@ class OperationsStore:
             "report_type": row[4], "payload": json.loads(row[5] or "{}"), "updated_at": row[6],
         }
 
+    def finalize_report(self, report_id):
+        """Finaliza un borrador sin perderlo y lo deja listo para sincronización."""
+        self.initialize()
+        report_id = _text(report_id)
+        if not report_id:
+            raise ValueError("El borrador del reporte es obligatorio.")
+        p = self.placeholder
+        stamp = _now()
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT id,client_id,equipment_id,round_number,payload_json FROM operations_reports "
+                f"WHERE id={p} AND source='app' AND state='draft'", (report_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError("El borrador ya no existe o ya fue finalizado.")
+            try:
+                payload = json.loads(row[4] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                payload = {}
+            start_at = _text(payload.get("inicio"))
+            end_at = _text(payload.get("fin"))
+            if not start_at or not end_at:
+                raise ValueError("Captura las fechas de inicio y terminación antes de finalizar.")
+            conn.execute(
+                f"UPDATE operations_reports SET start_at={p},end_at={p},completed=1,state='completed',"
+                f"sync_status='pending',updated_at={p} WHERE id={p}",
+                (start_at, end_at, stamp, report_id),
+            )
+        self.queue_sync("report", report_id, "sheets", "upsert", {
+            "client_id": row[1], "equipment_id": row[2], "round": row[3],
+            "completed": True, "payload": payload,
+        })
+        return self.get_report_detail(report_id)
+
     def get_report_detail(self, report_id):
         """Carga el detalle pesado sólo cuando alguien abre un reporte."""
         self.initialize()

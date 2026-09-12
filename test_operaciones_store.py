@@ -160,6 +160,23 @@ def test_report_detail_is_loaded_on_demand(tmp_path):
     assert store.get_report_evidence_ref("UVMQ1_R 2", 3)["photo_ref"] == "foto-3.jpg"
 
 
+def test_report_draft_can_be_finalized(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+    draft = store.save_report_draft({
+        "client_id": "UVMQ", "equipment_id": "UVMQ1", "round": "3",
+        "payload": {"inicio": "2026-09-12", "fin": "2026-09-12", "p1": "120"},
+    })
+
+    report = store.finalize_report(draft["id"])
+
+    assert report["completed"] is True
+    assert report["state"] == "completed"
+    assert report["sync_status"] == "pending"
+    assert report["payload"]["p1"] == "120"
+    assert any(item["entity_type"] == "report" for item in store.pending_sync())
+
+
 def test_partner_fault_is_linked_to_existing_equipment(tmp_path):
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
     store.import_matrix_snapshot(_payload())

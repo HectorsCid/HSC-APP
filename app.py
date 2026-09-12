@@ -3207,6 +3207,26 @@ def api_operaciones_save_report_draft():
         return jsonify({"ok": False, "error": "No se pudo guardar el borrador."}), 500
 
 
+@app.post('/api/operaciones/reports/finalize')
+def api_operaciones_finalize_report():
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
+    body = request.get_json(silent=True) or {}
+    try:
+        draft = OPERACIONES_STORE.save_report_draft(body)
+        report = OPERACIONES_STORE.finalize_report(draft["id"])
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "report": report, "sync_status": "pending"})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("No se pudo finalizar el reporte operativo: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudo finalizar el reporte."}), 500
+
+
 @app.post('/api/operaciones/faults')
 def api_operaciones_save_fault():
     denied = _operations_forbidden("admin", "technician", "client")
