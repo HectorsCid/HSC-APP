@@ -169,7 +169,9 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
         client_id = _text(_pick(row, "ID_Cliente", "ID Cliente", "Cliente"))
         client_id = client_id or equipment_client.get(equipment_id, "") or linked_report.get("client_id", "")
         equipment_id = equipment_id or linked_report.get("equipment_id", "")
-        fault_id = _text(_pick(row, "ID_Falla", "ID Falla", "Folio", "ID"))
+        fault_id = _text(_pick(
+            row, "ID_ReporteFalla", "ID Reporte Falla", "ID_Falla", "ID Falla", "Folio", "ID",
+        ))
         fault_id = fault_id or f"FALLA-{client_id or 'SINCLIENTE'}-{position}"
         if fault_id in seen_faults:
             duplicate_faults += 1
@@ -188,7 +190,7 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
             "equipment_id": equipment_id,
             "report_id": report_id,
             "description": description or "Falla reportada",
-            "priority": _text(_pick(row, "Prioridad", "Gravedad", "Nivel")) or "Alta",
+            "priority": _text(_pick(row, "TipoFalla", "Tipo Falla", "Prioridad", "Gravedad", "Nivel")) or "Alta",
             "status": _text(_pick(row, "Estatus", "Estado", "Status")) or "Reportada",
             "reported_at": _text(_pick(row, "FechaReporte", "Fecha de reporte", "Fecha", "FechaHora")),
             "resolved_at": _text(_pick(row, "FechaAtendida", "Fecha atendida", "Fecha de atención", "FechaResolucion")),

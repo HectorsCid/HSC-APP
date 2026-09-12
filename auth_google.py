@@ -26,6 +26,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets.readonly",
 ]
 
+# La escritura operativa usa una credencial separada. De esta forma no se
+# amplían los permisos del resto de la aplicación ni del OAuth del usuario.
+SHEETS_WRITE_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
 # Los clientes de google-api-python-client mantienen estado de conexión y no
 # deben compartirse entre el monitor automático y los hilos de Gunicorn.
 _thread_services = threading.local()
@@ -69,6 +73,7 @@ def reset_thread_google_services():
     _thread_services.services = {}
     _thread_services.user_credentials = None
     _thread_services.sa_credentials = None
+    _thread_services.sa_sheets_write_credentials = None
 
 
 def _thread_service(key, api, version, credentials, timeout=None, fresh=False):
@@ -147,6 +152,18 @@ def get_sheets_service(timeout=None, fresh=False):
     """Sheets usando una conexión independiente por hilo."""
     return _thread_service(
         "sheets_sa", "sheets", "v4", _sa_credentials(), timeout=timeout, fresh=fresh
+    )
+
+def get_sheets_write_service(timeout=None, fresh=False):
+    """Sheets de escritura, aislado del cliente de sólo lectura."""
+    credentials = getattr(_thread_services, "sa_sheets_write_credentials", None)
+    if credentials is None:
+        credentials = SA_Credentials.from_service_account_info(
+            _load_service_account_info(), scopes=SHEETS_WRITE_SCOPES
+        )
+        _thread_services.sa_sheets_write_credentials = credentials
+    return _thread_service(
+        "sheets_write_sa", "sheets", "v4", credentials, timeout=timeout, fresh=fresh
     )
 
 def get_sheets_authorized_session():

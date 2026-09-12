@@ -17,5 +17,9 @@ services:
         value: "1"
       - key: REPORTES_AUTO_PDF_QUEUE_DELAY
         value: "30"
+      - key: OPERACIONES_SHEETS_SYNC_ENABLED
+        value: "0"
+      - key: OPERACIONES_SYNC_RETRY_SECONDS
+        value: "120"
       - key: FLASK_SECRET_KEY
         generateValue: true

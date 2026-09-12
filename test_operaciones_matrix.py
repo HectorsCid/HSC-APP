@@ -138,3 +138,17 @@ def test_fault_sheet_is_imported_and_related_by_ids():
     assert fault["client_id"] == "UVMQ"
     assert fault["equipment_id"] == "UVMQ1"
     assert fault["description"] == "Temperatura alta"
+
+
+def test_exact_reportes_falla_headers_keep_original_id_and_type():
+    rows = [{"range": "ReportesFalla!A1:K", "values": [
+        ["ID_ReporteFalla", "ID_Cliente", "ID_Equipo", "Fecha", "DescripcionFalla",
+         "Foto", "Estado", "ID_Reporte", "TipoFalla", "MostrarCliente", "Origen"],
+        ["RF-100", "UVMQ", "UVMQ1", "2026-09-12", "No enfría", "", "Reportada",
+         "UVMQ1_R 2", "Grave", True, "Cliente"],
+    ]}]
+
+    fault = build_operaciones_bootstrap(rows)["faults"][0]
+
+    assert fault["id"] == "RF-100"
+    assert fault["priority"] == "Grave"

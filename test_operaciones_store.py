@@ -84,6 +84,12 @@ def test_sync_queue_is_idempotent(tmp_path):
     assert pending[0]["entity_id"] == "UVMQ1_R 2"
     assert pending[0]["payload"] == {"version": 2}
 
+    store.mark_sync_failure(pending[0]["id"], "temporal", "report", "UVMQ1_R 2")
+    store.queue_sync("report", "UVMQ1_R 2", "drive", "upload_pdf", {"version": 3})
+    refreshed = store.pending_sync()[0]
+    assert refreshed["attempts"] == 0
+    assert refreshed["last_error"] == ""
+
 
 def test_client_and_equipment_writes_are_kept_across_matrix_refresh(tmp_path):
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")

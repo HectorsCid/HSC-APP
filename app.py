@@ -37,6 +37,7 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload, MediaIoBase
 from auth_google import (
     get_drive_service,
     get_sheets_service,
+    get_sheets_write_service,
     get_drive_service_user,
     reset_thread_google_services,
 )
@@ -59,6 +60,7 @@ from reportes_bp import (
 )
 from operaciones_matrix import read_operaciones_matrix
 from operaciones_store import OperationsStore
+from operaciones_sync import sync_operations_outbox
 
 from facturacion_bp import facturacion_bp
 app.register_blueprint(facturacion_bp)
@@ -193,6 +195,14 @@ AUTO_SYNC_FROM_DRIVE = True  # si no quieres en local, pon False
 # base al recibir OPERACIONES_DATABASE_URL, evitando confiar en su disco efímero.
 OPERACIONES_STORE = OperationsStore.from_environment(
     is_render=IS_RENDER, project_root=Path(__file__).resolve().parent
+)
+OPERACIONES_SHEETS_SYNC_ENABLED = str(
+    os.environ.get("OPERACIONES_SHEETS_SYNC_ENABLED", "0")
+).strip().lower() in {"1", "true", "yes", "si", "sí"}
+_OPERACIONES_SYNC_LOCK = threading.Lock()
+_OPERACIONES_SYNC_LAST_ATTEMPT = 0.0
+OPERACIONES_SYNC_RETRY_SECONDS = max(
+    60.0, float(os.environ.get("OPERACIONES_SYNC_RETRY_SECONDS", "120"))
 )
 
 app.static_folder = "static"
@@ -3078,6 +3088,101 @@ def _invalidate_operations_cache():
         _OPERACIONES_MATRIX_CACHE.update(ts=0.0, payload=None, source=None)
 
 
+def _operations_sync_worker(app_obj):
+    try:
+        with app_obj.app_context():
+            result = sync_operations_outbox(
+                OPERACIONES_STORE, get_sheets_write_service(timeout=30), SHEET_ID, limit=25,
+            )
+            if result.get("failed"):
+                current_app.logger.warning("Sincronización operativa con errores: %s", result)
+            elif result.get("synced"):
+                current_app.logger.info("Sincronización operativa completada: %s", result)
+    except Exception as exc:
+        app_obj.logger.exception("No se pudo procesar la cola operativa: %s", exc)
+    finally:
+        reset_thread_google_services()
+        _OPERACIONES_SYNC_LOCK.release()
+
+
+def _schedule_operations_sync(*, force=False):
+    """Agrupa cambios y evita dos escritores simultáneos dentro del proceso."""
+    global _OPERACIONES_SYNC_LAST_ATTEMPT
+    if not OPERACIONES_SHEETS_SYNC_ENABLED or not OPERACIONES_STORE.enabled:
+        return False
+    now = time.monotonic()
+    if not force and now - _OPERACIONES_SYNC_LAST_ATTEMPT < OPERACIONES_SYNC_RETRY_SECONDS:
+        return False
+    if not _OPERACIONES_SYNC_LOCK.acquire(blocking=False):
+        return False
+    _OPERACIONES_SYNC_LAST_ATTEMPT = now
+    try:
+        threading.Thread(
+            target=_operations_sync_worker, args=(current_app._get_current_object(),),
+            daemon=True, name="operations-sheets-sync",
+        ).start()
+        return True
+    except Exception:
+        _OPERACIONES_SYNC_LOCK.release()
+        raise
+
+
+@app.before_request
+def _retry_operations_sync_on_activity():
+    """Reintenta la cola con pausa, aprovechando actividad normal de la app."""
+    if request.method in {"GET", "HEAD"}:
+        _schedule_operations_sync()
+
+
+@app.get('/api/operaciones/sync-status')
+def api_operaciones_sync_status():
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa no está conectada."}), 503
+    pending = OPERACIONES_STORE.pending_sync(50)
+    return jsonify({
+        "ok": True, "automatic_enabled": OPERACIONES_SHEETS_SYNC_ENABLED,
+        "pending": len(pending),
+        "items": [{
+            "entity_type": item["entity_type"], "entity_id": item["entity_id"],
+            "attempts": item["attempts"], "last_error": item["last_error"],
+        } for item in pending],
+    })
+
+
+@app.post('/api/operaciones/sync')
+def api_operaciones_sync():
+    """Previsualiza siempre; sólo escribe cuando la bandera está habilitada."""
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa no está conectada."}), 503
+    body = request.get_json(silent=True) or {}
+    dry_run = body.get("apply") is not True
+    if not dry_run and not OPERACIONES_SHEETS_SYNC_ENABLED:
+        return jsonify({
+            "ok": False, "code": "sync_not_enabled",
+            "error": "La escritura a la Hoja Matriz sigue en modo seguro.",
+        }), 409
+    try:
+        service = get_sheets_service(timeout=30) if dry_run else get_sheets_write_service(timeout=30)
+        result = sync_operations_outbox(
+            OPERACIONES_STORE, service, SHEET_ID,
+            limit=max(1, min(int(body.get("limit") or 25), 100)), dry_run=dry_run,
+        )
+        if not dry_run:
+            _invalidate_operations_cache()
+        return jsonify({"ok": result.get("failed", 0) == 0, **result}), 200 if not result.get("failed") else 409
+    except Exception as exc:
+        current_app.logger.exception("No se pudo revisar/procesar la cola operativa: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudo revisar la sincronización con Google."}), 502
+    finally:
+        reset_thread_google_services()
+
+
 @app.post('/api/operaciones/clients')
 def api_operaciones_save_client():
     """Guarda en la base; la escritura a Sheets queda en la cola de salida."""
@@ -3093,6 +3198,7 @@ def api_operaciones_save_client():
     try:
         client = OPERACIONES_STORE.save_client(payload)
         _invalidate_operations_cache()
+        _schedule_operations_sync(force=True)
         return jsonify({"ok": True, "client": client, "sync_status": "pending"})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -3134,6 +3240,7 @@ def api_operaciones_save_equipment():
     try:
         equipment = OPERACIONES_STORE.save_equipment(payload.get("items"))
         _invalidate_operations_cache()
+        _schedule_operations_sync(force=True)
         return jsonify({"ok": True, "equipment": equipment, "sync_status": "pending"})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -3220,6 +3327,7 @@ def api_operaciones_finalize_report():
         draft = OPERACIONES_STORE.save_report_draft(body)
         report = OPERACIONES_STORE.finalize_report(draft["id"])
         _invalidate_operations_cache()
+        _schedule_operations_sync(force=True)
         return jsonify({"ok": True, "report": report, "sync_status": "pending"})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -3291,14 +3399,17 @@ def api_operaciones_save_fault():
             "ok": False, "code": "storage_not_configured",
             "error": "La base operativa todavía no está conectada en Render.",
         }), 503
-    body = request.get_json(silent=True) or {}
-    if _operations_role() == "client":
+    body = dict(request.get_json(silent=True) or {})
+    role = _operations_role()
+    body["source"] = role
+    if role == "client":
         assigned_id = str(session.get("hsc_client_id") or "").strip()
         if not assigned_id or str(body.get("client_id") or "").strip() != assigned_id:
             return jsonify({"ok": False, "error": "Sólo puedes reportar fallas de tu empresa."}), 403
     try:
         fault = OPERACIONES_STORE.save_fault(body)
         _invalidate_operations_cache()
+        _schedule_operations_sync(force=True)
         return jsonify({"ok": True, "fault": fault, "sync_status": "pending"}), 201
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -3336,6 +3447,7 @@ def api_operaciones_resolve_fault(fault_id):
             resolution_notes=str(body.get("resolution_notes") or "").strip(),
         )
         _invalidate_operations_cache()
+        _schedule_operations_sync(force=True)
         return jsonify({"ok": True, "fault": fault, "sync_status": "pending"})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400

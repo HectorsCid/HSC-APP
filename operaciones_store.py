@@ -567,6 +567,9 @@ class OperationsStore:
         fault_id = _text(item.get("id")) or f"FALLA_{uuid.uuid4().hex[:16].upper()}"
         stamp = _now()
         reported_at = _text(item.get("reported_at")) or stamp
+        source = _text(item.get("source")).casefold()
+        if source not in {"client", "technician", "admin"}:
+            source = "app"
         p = self.placeholder
         with self.connection() as conn:
             conn.execute(
@@ -574,7 +577,7 @@ class OperationsStore:
                 f"VALUES ({','.join([p] * 12)})",
                 (fault_id, client_id, equipment_id, _text(item.get("report_id")), description,
                  _text(item.get("priority")) or "Alta", "Reportada", reported_at,
-                 "app", "{}", "pending", stamp),
+                 source, "{}", "pending", stamp),
             )
         self.queue_sync("fault", fault_id, "sheets", "upsert", {
             "client_id": client_id, "equipment_id": equipment_id,
@@ -751,7 +754,7 @@ class OperationsStore:
                 f"INSERT INTO operations_sync_outbox"
                 f"(id,entity_type,entity_id,destination,action,payload_json,status,attempts,last_error,created_at,updated_at) "
                 f"VALUES ({','.join([p] * 11)}) ON CONFLICT(entity_type,entity_id,destination,action) "
-                "DO UPDATE SET payload_json=excluded.payload_json,status='pending',last_error='',updated_at=excluded.updated_at",
+                "DO UPDATE SET payload_json=excluded.payload_json,status='pending',attempts=0,last_error='',updated_at=excluded.updated_at",
                 (operation_id, _text(entity_type), _text(entity_id), _text(destination),
                  _text(action), json.dumps(payload or {}, ensure_ascii=False), "pending", 0, "", stamp, stamp),
             )
@@ -771,3 +774,44 @@ class OperationsStore:
             "destination": row[3], "action": row[4], "payload": json.loads(row[5] or "{}"),
             "attempts": row[6], "last_error": row[7],
         } for row in rows]
+
+    def mark_sync_success(self, operation_id, entity_type="", entity_id=""):
+        """Confirma una salida y actualiza el estado visible de su entidad."""
+        self.initialize()
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            conn.execute(
+                f"UPDATE operations_sync_outbox SET status='synced',attempts=attempts+1,"
+                f"last_error='',updated_at={p} WHERE id={p}",
+                (stamp, _text(operation_id)),
+            )
+            table = {
+                "report": "operations_reports",
+                "fault": "operations_faults",
+            }.get(_text(entity_type))
+            if table and _text(entity_id):
+                conn.execute(
+                    f"UPDATE {table} SET sync_status='synced',updated_at={p} WHERE id={p}",
+                    (stamp, _text(entity_id)),
+                )
+
+    def mark_sync_failure(self, operation_id, error, entity_type="", entity_id=""):
+        """Conserva la operación para reintento sin perder el error anterior."""
+        self.initialize()
+        p, stamp = self.placeholder, _now()
+        message = _text(error)[:1000]
+        with self.connection() as conn:
+            conn.execute(
+                f"UPDATE operations_sync_outbox SET status='failed',attempts=attempts+1,"
+                f"last_error={p},updated_at={p} WHERE id={p}",
+                (message, stamp, _text(operation_id)),
+            )
+            table = {
+                "report": "operations_reports",
+                "fault": "operations_faults",
+            }.get(_text(entity_type))
+            if table and _text(entity_id):
+                conn.execute(
+                    f"UPDATE {table} SET sync_status='failed',updated_at={p} WHERE id={p}",
+                    (stamp, _text(entity_id)),
+                )
