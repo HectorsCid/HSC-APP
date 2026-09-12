@@ -652,11 +652,51 @@ class OperationsStore:
                 f"sync_status='pending',updated_at={p} WHERE id={p}",
                 (start_at, end_at, stamp, report_id),
             )
+        detail = self.get_report_detail(report_id)
         self.queue_sync("report", report_id, "sheets", "upsert", {
             "client_id": row[1], "equipment_id": row[2], "round": row[3],
             "completed": True, "payload": payload,
+            "evidence": [{"position": item["position"], "drive_ref": item["drive_ref"]}
+                         for item in detail["evidence"]],
         })
-        return self.get_report_detail(report_id)
+        return detail
+
+    def reset_report_evidence(self, report_id):
+        """Prepara un nuevo intento de subida para un borrador."""
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            found = conn.execute(
+                f"SELECT id FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
+                (_text(report_id),),
+            ).fetchone()
+            if not found:
+                raise ValueError("El borrador ya no existe o ya fue finalizado.")
+            conn.execute(f"DELETE FROM operations_evidence WHERE report_id={p}", (_text(report_id),))
+
+    def save_report_evidence(self, report_id, position, drive_ref):
+        """Registra la posición Foto1–Foto6 después de confirmar Drive."""
+        self.initialize()
+        report_id, drive_ref = _text(report_id), _text(drive_ref)
+        position = int(position or 0)
+        if position not in range(1, 7) or not drive_ref:
+            raise ValueError("La posición y el archivo de evidencia no son válidos.")
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            found = conn.execute(
+                f"SELECT id FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
+                (report_id,),
+            ).fetchone()
+            if not found:
+                raise ValueError("El borrador ya no existe o ya fue finalizado.")
+            evidence_id = f"{report_id}:foto:{position}"
+            conn.execute(
+                f"INSERT INTO operations_evidence(id,report_id,position,storage_ref,drive_ref,sync_status,updated_at) "
+                f"VALUES ({','.join([p] * 7)}) ON CONFLICT(report_id,position) DO UPDATE SET "
+                "storage_ref=excluded.storage_ref,drive_ref=excluded.drive_ref,sync_status='pending',updated_at=excluded.updated_at",
+                (evidence_id, report_id, position, drive_ref, drive_ref, "pending", stamp),
+            )
+        return {"position": position, "drive_ref": drive_ref}
 
     def get_report_detail(self, report_id):
         """Carga el detalle pesado sólo cuando alguien abre un reporte."""

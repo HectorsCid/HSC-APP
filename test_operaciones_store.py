@@ -177,6 +177,24 @@ def test_report_draft_can_be_finalized(tmp_path):
     assert any(item["entity_type"] == "report" for item in store.pending_sync())
 
 
+def test_report_evidence_keeps_positions_and_is_included_on_finalize(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+    draft = store.save_report_draft({
+        "client_id": "UVMQ", "equipment_id": "UVMQ1", "round": "4",
+        "payload": {"inicio": "2026-09-12", "fin": "2026-09-12"},
+    })
+    store.reset_report_evidence(draft["id"])
+    store.save_report_evidence(draft["id"], 1, "drive-photo-1")
+    store.save_report_evidence(draft["id"], 2, "drive-photo-2")
+
+    report = store.finalize_report(draft["id"])
+
+    assert [item["drive_ref"] for item in report["evidence"]] == ["drive-photo-1", "drive-photo-2"]
+    queued = [item for item in store.pending_sync() if item["entity_type"] == "report"]
+    assert queued[-1]["payload"]["evidence"][1] == {"position": 2, "drive_ref": "drive-photo-2"}
+
+
 def test_partner_fault_is_linked_to_existing_equipment(tmp_path):
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
     store.import_matrix_snapshot(_payload())

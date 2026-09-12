@@ -55,6 +55,7 @@ from reportes_bp import (
     serve_drive_image_ref_fast,
     start_auto_report_monitor,
     find_client_reports_folder_url,
+    store_operations_evidence,
 )
 from operaciones_matrix import read_operaciones_matrix
 from operaciones_store import OperationsStore
@@ -3225,6 +3226,59 @@ def api_operaciones_finalize_report():
     except Exception as exc:
         current_app.logger.exception("No se pudo finalizar el reporte operativo: %s", exc)
         return jsonify({"ok": False, "error": "No se pudo finalizar el reporte."}), 500
+
+
+@app.post('/api/operaciones/reports/<path:report_id>/evidence/reset')
+def api_operaciones_reset_report_evidence(report_id):
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
+    try:
+        OPERACIONES_STORE.reset_report_evidence(report_id)
+        return jsonify({"ok": True})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("No se pudo preparar la evidencia de %s: %s", report_id, exc)
+        return jsonify({"ok": False, "error": "No se pudo preparar la subida de fotografías."}), 500
+
+
+@app.post('/api/operaciones/reports/<path:report_id>/evidence/<int:position>')
+def api_operaciones_upload_report_evidence(report_id, position):
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
+    if position not in range(1, 7):
+        return jsonify({"ok": False, "error": "La posición debe estar entre Foto1 y Foto6."}), 400
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return jsonify({"ok": False, "error": "Selecciona una fotografía."}), 400
+    if upload.mimetype not in {"image/jpeg", "image/png", "image/webp"}:
+        return jsonify({"ok": False, "error": "La evidencia debe ser JPG, PNG o WebP."}), 400
+    content = upload.stream.read(15 * 1024 * 1024 + 1)
+    if not content or len(content) > 15 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "Cada fotografía debe pesar máximo 15 MB."}), 400
+    try:
+        report = OPERACIONES_STORE.get_report_detail(report_id)
+        if not report or report.get("state") != "draft":
+            return jsonify({"ok": False, "error": "El borrador ya no está disponible."}), 400
+        client = next(
+            (item for item in OPERACIONES_STORE.snapshot()["clients"] if item["id"] == report["client_id"]), None
+        )
+        drive_id = store_operations_evidence(
+            (client or {}).get("name") or report["client_id"], report_id, position, content,
+        )
+        evidence = OPERACIONES_STORE.save_report_evidence(report_id, position, drive_id)
+        return jsonify({"ok": True, "evidence": {"position": evidence["position"]}})
+    except (ValueError, OSError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("No se pudo subir Foto%s de %s: %s", position, report_id, exc)
+        return jsonify({"ok": False, "error": f"Drive no confirmó Foto{position}."}), 502
 
 
 @app.post('/api/operaciones/faults')

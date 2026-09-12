@@ -4,7 +4,7 @@
 
 - Fallas Partner: ya se pueden abrir y marcar como atendidas, con fecha, tipo de usuario y observaciones de cierre; el cambio queda en la base operativa y en cola para sincronizar con Sheets. Falta publicar y validar el cierre con una falla de prueba en Render.
 - Activar/desactivar equipos ya actualiza la base operativa y conserva el historial; falta publicar y validar con un equipo de prueba.
-- Los reportes sin evidencias ya pueden finalizarse en la base operativa, marcar el equipo realizado y quedar en cola para Google. Si hay fotos, se bloquea el cierre para no perderlas hasta conectar su subida permanente.
+- Los reportes pueden finalizarse en la base operativa y marcar el equipo realizado. Las evidencias se suben una por una a Drive respetando Foto1–Foto6; el cierre sólo continúa si todas quedan confirmadas. Falta validar desde un teléfono con un cliente de prueba y materializar la cola en la Hoja Matriz.
 
 - Revisión estructural de las 12 pestañas reales y mapa completo Reportes!A1:AL1 documentados en REVISION_MATRIZ_OPERACIONES.md. Sin modificación de Sheets; falta auditoría global de claves/fórmulas y reglas de AppSheet.
 - Evidencias múltiples locales: hasta seis fotos ordenables con miniaturas, eliminación y límites. Pruebas de lógica en test_demo_evidence.cjs (decodificación simulada). Fotos en memoria por equipo/ronda, no respaldadas con borrador de texto. Falta probar carga real en teléfono, persistencia, subida Drive y mapeo validado U:Z antes de conectar.
