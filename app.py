@@ -2652,7 +2652,12 @@ def inicio_app():
 @app.route('/app-operativa-demo')
 def app_operativa_demo():
     """Maqueta aislada del reemplazo móvil de AppSheet."""
-    return render_template('app_operativa_demo.html')
+    role = _operations_role()
+    return render_template(
+        'app_operativa_demo.html',
+        operations_role=role or "technician",
+        operations_is_owner=role == "admin",
+    )
 
 
 _OPERACIONES_MATRIX_CACHE = {"ts": 0.0, "payload": None, "source": None}
@@ -2987,6 +2992,24 @@ def api_operaciones_save_client():
         return jsonify({"ok": False, "error": "No se pudo guardar el cliente."}), 500
 
 
+@app.post('/api/operaciones/clients/order')
+def api_operaciones_reorder_clients():
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
+    try:
+        ordered = OPERACIONES_STORE.reorder_clients((request.get_json(silent=True) or {}).get("client_ids"))
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "client_ids": ordered})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("No se pudo ordenar clientes operativos: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudo guardar el orden de clientes."}), 500
+
+
 @app.post('/api/operaciones/equipment')
 def api_operaciones_save_equipment():
     """Guarda un lote de equipos de forma transaccional."""
@@ -3025,6 +3048,27 @@ def api_operaciones_get_report_draft():
     except Exception as exc:
         current_app.logger.exception("No se pudo leer el borrador operativo: %s", exc)
         return jsonify({"ok": False, "error": "No se pudo recuperar el borrador."}), 500
+
+
+@app.get('/api/operaciones/reports/<path:report_id>')
+def api_operaciones_report_detail(report_id):
+    denied = _operations_forbidden("admin", "technician", "client")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
+    try:
+        report = OPERACIONES_STORE.get_report_detail(report_id)
+        if not report:
+            abort(404)
+        if _operations_role() == "client" and report.get("client_id") != str(session.get("hsc_client_id") or "").strip():
+            abort(404)
+        return jsonify({"ok": True, "report": report})
+    except Exception as exc:
+        if getattr(exc, "code", None) == 404:
+            raise
+        current_app.logger.exception("No se pudo consultar reporte operativo %s: %s", report_id, exc)
+        return jsonify({"ok": False, "error": "No se pudo cargar el reporte."}), 500
 
 
 @app.post('/api/operaciones/reports/draft')

@@ -17,7 +17,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
 
 
 def _now():
@@ -85,7 +85,8 @@ class OperationsStore:
             """CREATE TABLE IF NOT EXISTS operations_clients (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '',
                 matrix_id TEXT NOT NULL DEFAULT '',
-                selected_round TEXT NOT NULL DEFAULT '', policy_active INTEGER NOT NULL DEFAULT 1,
+                selected_round TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0,
+                policy_active INTEGER NOT NULL DEFAULT 1,
                 has_photo INTEGER NOT NULL DEFAULT 0, photo_ref TEXT NOT NULL DEFAULT '',
                 source TEXT NOT NULL DEFAULT 'sheets', raw_json TEXT NOT NULL DEFAULT '{}',
                 updated_at TEXT NOT NULL
@@ -144,6 +145,7 @@ class OperationsStore:
             for statement in statements:
                 conn.execute(statement)
             self._ensure_column(conn, "operations_clients", "raw_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(conn, "operations_clients", "sort_order", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "operations_equipment", "raw_json", "TEXT NOT NULL DEFAULT '{}'")
             self._upsert_meta(conn, "schema_version", SCHEMA_VERSION)
         self._initialized = True
@@ -270,7 +272,8 @@ class OperationsStore:
         self.initialize()
         with self.connection() as conn:
             clients = conn.execute(
-                "SELECT id,name,address,matrix_id,selected_round,policy_active,has_photo,photo_ref FROM operations_clients ORDER BY name,id"
+                "SELECT id,name,address,matrix_id,selected_round,sort_order,policy_active,has_photo,photo_ref "
+                "FROM operations_clients ORDER BY CASE WHEN sort_order>0 THEN 0 ELSE 1 END,sort_order,name,id"
             ).fetchall()
             equipment = conn.execute(
                 "SELECT id,client_id,name,brand,model,serial,status,location,department,equipment_type,notes,has_photo,photo_ref FROM operations_equipment ORDER BY client_id,name,id"
@@ -286,8 +289,8 @@ class OperationsStore:
             cached_thumbnails = conn.execute("SELECT COUNT(*) FROM operations_media_cache").fetchone()[0]
         result_clients = [{
             "id": row[0], "name": row[1], "address": row[2], "matrix_id": row[3],
-            "selected_round": row[4], "policy_active": bool(row[5]),
-            "has_photo": bool(row[6]), "_photo_ref": row[7],
+            "selected_round": row[4], "sort_order": int(row[5] or 0), "policy_active": bool(row[6]),
+            "has_photo": bool(row[7]), "_photo_ref": row[8],
         } for row in clients]
         result_equipment = [{
             "id": row[0], "client_id": row[1], "name": row[2], "brand": row[3],
@@ -403,6 +406,30 @@ class OperationsStore:
         self.queue_sync("client", client_id, "sheets", "upsert", {"matrix_id": matrix_id})
         return next(client for client in self.snapshot()["clients"] if client["id"] == client_id)
 
+    def reorder_clients(self, client_ids):
+        """Guarda una prioridad explícita sin alterar nombres ni claves de la matriz."""
+        self.initialize()
+        ordered = []
+        seen = set()
+        for value in client_ids or []:
+            client_id = _text(value)
+            if client_id and client_id not in seen:
+                ordered.append(client_id)
+                seen.add(client_id)
+        if not ordered:
+            raise ValueError("Envía por lo menos un cliente para ordenar.")
+        p = self.placeholder
+        with self.connection() as conn:
+            existing = {row[0] for row in conn.execute("SELECT id FROM operations_clients").fetchall()}
+            if any(client_id not in existing for client_id in ordered):
+                raise ValueError("La lista contiene un cliente que ya no existe.")
+            for position, client_id in enumerate(ordered, start=1):
+                conn.execute(
+                    f"UPDATE operations_clients SET sort_order={p},updated_at={p} WHERE id={p}",
+                    (position, _now(), client_id),
+                )
+        return ordered
+
     def save_equipment(self, items):
         """Guarda uno o varios equipos como una sola operación."""
         self.initialize()
@@ -500,6 +527,29 @@ class OperationsStore:
         return {
             "id": row[0], "client_id": row[1], "equipment_id": row[2], "round": row[3],
             "report_type": row[4], "payload": json.loads(row[5] or "{}"), "updated_at": row[6],
+        }
+
+    def get_report_detail(self, report_id):
+        """Carga el detalle pesado sólo cuando alguien abre un reporte."""
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT r.id,r.client_id,r.equipment_id,r.round_number,r.start_at,r.end_at,"
+                f"r.completed,r.report_type,r.payload_json,r.state,r.sync_status,"
+                f"(SELECT COUNT(*) FROM operations_evidence e WHERE e.report_id=r.id) "
+                f"FROM operations_reports r WHERE r.id={p}", (_text(report_id),)
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            payload = json.loads(row[8] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            payload = {}
+        return {
+            "id": row[0], "client_id": row[1], "equipment_id": row[2], "round": row[3],
+            "start": row[4], "end": row[5], "completed": bool(row[6]), "report_type": row[7],
+            "payload": payload, "state": row[9], "sync_status": row[10], "photo_count": int(row[11] or 0),
         }
 
     def queue_sync(self, entity_type, entity_id, destination, action, payload=None):

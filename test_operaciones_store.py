@@ -128,3 +128,27 @@ def test_thumbnail_cache_is_persistent_and_invalidates_when_photo_changes(tmp_pa
     assert reopened.get_cached_thumbnail("client", "UVMQ", "Clientes_Images/nueva.jpg") is None
     assert reopened.get_media_ref("client", "UVMQ") == "Clientes_Images/uvm.jpg"
     assert reopened.snapshot()["stats"]["cached_thumbnails"] == 1
+
+
+def test_client_order_is_explicit_and_survives_matrix_refresh(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    payload = _payload()
+    payload["clients"].append({"id": "ZZZ", "name": "Cliente Z", "policy_active": True})
+    store.import_matrix_snapshot(payload)
+    store.reorder_clients(["ZZZ", "UVMQ"])
+    store.import_matrix_snapshot(payload)
+
+    clients = store.snapshot()["clients"]
+    assert [client["id"] for client in clients[:2]] == ["ZZZ", "UVMQ"]
+    assert [client["sort_order"] for client in clients[:2]] == [1, 2]
+
+
+def test_report_detail_is_loaded_on_demand(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+
+    report = store.get_report_detail("UVMQ1_R 2")
+    assert report["equipment_id"] == "UVMQ1"
+    assert report["client_id"] == "UVMQ"
+    assert report["payload"]["PresionCto1"] == "120"
+    assert report["photo_count"] == 3
