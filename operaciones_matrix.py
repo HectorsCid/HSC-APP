@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 
 # Se leen columnas abiertas para no truncar datos nuevos agregados a la matriz.
@@ -21,6 +22,24 @@ def _truthy(value):
 def _round_number(value):
     match = re.search(r"(?:^|\D)([1-4])(?:\D|$)", _text(value))
     return match.group(1) if match else ""
+
+
+def _header_key(value):
+    value = unicodedata.normalize("NFKD", _text(value)).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]", "", value.casefold())
+
+
+def _pick(row, *names):
+    """Acepta tanto los encabezados originales de AppSheet como los nuevos."""
+    for name in names:
+        if name in row and _text(row.get(name)):
+            return row.get(name)
+    normalized = {_header_key(key): value for key, value in row.items()}
+    for name in names:
+        value = normalized.get(_header_key(name))
+        if _text(value):
+            return value
+    return ""
 
 
 def _records(rows):
@@ -47,19 +66,19 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
     duplicate_clients = 0
     seen_clients = set()
     for row in by_title.get("Clientes", []):
-        client_id = _text(row.get("ID_Cliente"))
+        client_id = _text(_pick(row, "ID_Cliente", "ID Cliente"))
         if not client_id:
             continue
         if client_id in seen_clients:
             duplicate_clients += 1
             continue
         seen_clients.add(client_id)
-        photo = _text(row.get("Foto"))
+        photo = _text(_pick(row, "Foto", "Foto Cliente"))
         client = {
             "id": client_id,
-            "name": _text(row.get("NombreCliente")) or client_id,
-            "address": _text(row.get("Direccion")),
-            "selected_round": _round_number(row.get("RondaSeleccionadaCliente")),
+            "name": _text(_pick(row, "NombreCliente", "Nombre de Cliente", "Nombre del cliente")) or client_id,
+            "address": _text(_pick(row, "Direccion", "Dirección")),
+            "selected_round": _round_number(_pick(row, "RondaSeleccionadaCliente", "Ronda seleccionada")),
             "has_photo": bool(photo),
         }
         if include_media_refs and photo:
@@ -72,25 +91,25 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
     duplicate_equipment = 0
     seen_equipment = set()
     for row in by_title.get("Equipos", []):
-        equipment_id = _text(row.get("ID_Equipo"))
-        client_id = _text(row.get("ID_Cliente"))
+        equipment_id = _text(_pick(row, "ID_Equipo", "ID Equipo"))
+        client_id = _text(_pick(row, "ID_Cliente", "ID Cliente"))
         if not equipment_id or not client_id:
             continue
         if equipment_id in seen_equipment:
             duplicate_equipment += 1
             continue
         seen_equipment.add(equipment_id)
-        photo = _text(row.get("Foto"))
+        photo = _text(_pick(row, "Foto", "Foto Equipo"))
         item = {
             "id": equipment_id,
             "client_id": client_id,
-            "name": _text(row.get("NombreEquipo")) or equipment_id,
-            "brand": _text(row.get("Marca")),
-            "model": _text(row.get("Modelo")),
-            "serial": _text(row.get("NoSerie")),
-            "status": _text(row.get("Estatus")),
-            "location": _text(row.get("Ubicacion")),
-            "department": _text(row.get("Departamento")),
+            "name": _text(_pick(row, "NombreEquipo", "Nombre de Equipo", "Nombre del equipo")) or equipment_id,
+            "brand": _text(_pick(row, "Marca")),
+            "model": _text(_pick(row, "Modelo")),
+            "serial": _text(_pick(row, "NoSerie", "No. Serie", "Número de serie")),
+            "status": _text(_pick(row, "Estatus", "Estado")),
+            "location": _text(_pick(row, "Ubicacion", "Ubicación")),
+            "department": _text(_pick(row, "Departamento")),
             "has_photo": bool(photo),
         }
         if include_media_refs and photo:
@@ -104,26 +123,26 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
     seen_reports = set()
     evidence_count = 0
     for row in by_title.get("Reportes", []):
-        report_id = _text(row.get("ID_Reporte"))
-        equipment_id = _text(row.get("ID_Equipo"))
-        client_id = _text(row.get("ID_Cliente"))
+        report_id = _text(_pick(row, "ID_Reporte", "ID Reporte"))
+        equipment_id = _text(_pick(row, "ID_Equipo", "ID Equipo"))
+        client_id = _text(_pick(row, "ID_Cliente", "ID Cliente"))
         if not report_id:
             continue
         if report_id in seen_reports:
             duplicate_reports += 1
             continue
         seen_reports.add(report_id)
-        evidence_refs = [_text(row.get(f"Foto{index}")) for index in range(1, 7)]
+        evidence_refs = [_text(_pick(row, f"Foto{index}", f"Foto {index}")) for index in range(1, 7)]
         photo_count = sum(bool(value) for value in evidence_refs)
         evidence_count += photo_count
         report = {
             "id": report_id,
             "equipment_id": equipment_id,
             "client_id": client_id,
-            "round": _round_number(row.get("Ronda")),
-            "start": _text(row.get("FechaInicio")),
-            "end": _text(row.get("FechaFin")),
-            "completed": _truthy(row.get("Realizado")),
+            "round": _round_number(_pick(row, "Ronda", "Periodo", "Período") or report_id),
+            "start": _text(_pick(row, "FechaInicio", "FECHA DE INICIO", "Fecha de inicio")),
+            "end": _text(_pick(row, "FechaFin", "FECHA DE TERMINACIÓN", "Fecha de terminación")),
+            "completed": _truthy(_pick(row, "Realizado", "Completado", "Terminado")),
             "photo_count": photo_count,
         }
         if include_media_refs:

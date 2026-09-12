@@ -103,3 +103,19 @@ def test_full_import_keeps_every_column_and_real_evidence_positions():
     assert result["equipment"][0]["_raw"]["NoContrato"] == "POL-2026"
     assert result["reports"][0]["_raw"]["LecturaExtra"] == "42"
     assert result["reports"][0]["_evidence_refs"][:3] == ["uno.jpg", "", "tres.jpg"]
+
+
+def test_appsheet_legacy_report_headers_are_understood():
+    rows = [{"range": "Reportes!A1:ZZ", "values": [
+        ["ID_Reporte", "ID_Equipo", "ID_Cliente", "Periodo", "FECHA DE INICIO",
+         "FECHA DE TERMINACIÓN", "Foto 1", "Realizado"],
+        ["UVMQ1_R 3", "UVMQ1", "UVMQ", "R 3", "2026-09-10", "2026-09-11",
+         "evidencia.jpg", "TRUE"],
+    ]}]
+
+    report = build_operaciones_bootstrap(rows, include_media_refs=True)["reports"][0]
+    assert report["round"] == "3"
+    assert report["start"] == "2026-09-10"
+    assert report["end"] == "2026-09-11"
+    assert report["completed"] is True
+    assert report["_evidence_refs"][0] == "evidencia.jpg"
