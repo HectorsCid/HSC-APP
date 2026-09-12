@@ -27,6 +27,7 @@ from cfdi_drive import (
 from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config, trusted_device_token
 from email_tracking import delivery_status, read_email_deliveries, record_email_delivery
 from factura_pdf_hsc import build_invoice_pdf_bytes, parse_cfdi
+import notification_center as notices
 
 # ----------------------------------------------------------------------
 # Blueprint
@@ -153,6 +154,8 @@ def _write_index(d):
     except Exception as exc:
         try:
             current_app.logger.warning("No se pudo respaldar el índice de pagos en Drive: %s", exc)
+            notices.publish("Respaldo de pagos pendiente", "Los saldos se guardaron localmente, pero Drive no confirmó su respaldo.",
+                            category="respaldos", key=f"payments-backup-{datetime.now().date()}", level="warning", url="/facturacion")
         except RuntimeError:
             pass
 
@@ -298,6 +301,7 @@ def _push_configured():
 
 
 def _send_push_notifications(title, body, url="/facturacion?tab=plantillas", tag="hsc-facturas"):
+    notices.publish(title, body, category="facturas", key=tag, url=url)
     subscriptions = _read_push_subscriptions()
     if not subscriptions or not _push_configured():
         return {"sent": 0, "configured": _push_configured(), "devices": len(subscriptions)}
@@ -690,6 +694,24 @@ def _facturama_received_row(inv):
         "currency": _pick(inv, "Currency") or "MXN",
     })
     return row
+
+
+def _received_summary(rows):
+    """Importes documentales separados por moneda, no deducibilidad ni IVA pagado."""
+    currencies = {}
+    for row in rows:
+        if "cancel" in str(row.get("status") or "").lower() or row.get("type") not in {"I", "E"}:
+            continue
+        currency = str(row.get("currency") or "MXN").upper()
+        group = currencies.setdefault(currency, {"invoices": 0, "credit_notes": 0, "subtotal": 0.0, "total": 0.0})
+        sign = -1 if row["type"] == "E" else 1
+        group["credit_notes" if sign < 0 else "invoices"] += 1
+        group["subtotal"] += sign * (float(row.get("subtotal") or 0) - float(row.get("discount") or 0))
+        group["total"] += sign * float(row.get("total") or 0)
+    for group in currencies.values():
+        group["subtotal"] = round(group["subtotal"], 2)
+        group["total"] = round(group["total"], 2)
+    return currencies
 
 
 def _fm_request(method, path, *, json_body=None, params=None, timeout=60):
@@ -1110,9 +1132,14 @@ def _backup_facturama_cfdi(
         if source_quote_id and result.get("folder_id"):
             moved = move_pending_documents(client_name, source_quote_id, result["folder_id"])
         result["support_documents_moved"] = len(moved)
+        if result.get("ok"):
+            notices.publish("Respaldo confirmado", f"{document_type} {internal_folio or uuid} guardado en Drive.",
+                            category="respaldos", key=f"backup-ok-{uuid}", url="/facturacion")
         return result
     except Exception as exc:
         current_app.logger.warning("CFDI timbrado, pero falló su respaldo en Drive: %s", exc)
+        notices.publish("Respaldo pendiente", f"El CFDI {uuid} está timbrado, pero su respaldo en Drive no se confirmó. No vuelvas a timbrarlo.",
+                        category="respaldos", key=f"backup-error-{uuid}", level="warning", url="/facturacion")
         return {"ok": False, "error": str(exc)}
 
 
@@ -1881,6 +1908,7 @@ def api_billing_balance():
                 "total": total, "paid": summary["paid_amount"], "pending": pending,
             })
 
+    foreign_received_count = 0
     for item in received_source:
         invoice = _facturama_received_row(item)
         if not str(invoice.get("date") or "").startswith(date_prefix) or not _valid_cfdi_uuid(invoice.get("uuid")):
@@ -1889,6 +1917,9 @@ def api_billing_balance():
         if any(word in status_text for word in ("cancel", "canceled", "cancelado")):
             continue
         if invoice.get("type") not in {"I", "E"}:
+            continue
+        if str(invoice.get("currency") or "MXN").upper() != "MXN":
+            foreign_received_count += 1
             continue
         amount = float(invoice.get("total") or 0) * (-1 if invoice.get("type") == "E" else 1)
         received_total += amount
@@ -1915,6 +1946,8 @@ def api_billing_balance():
         "client_options": sorted(client_options.values(), key=lambda row: row["name"].casefold()),
         "top_clients": clients[:8], "pending_invoices": pending_rows, "series": series_rows,
         "payment_sync": payment_sync,
+        "foreign_received_count": foreign_received_count,
+        "received_coverage": "Sólo CFDI disponibles en Facturama; no acredita descarga completa del SAT ni deducibilidad.",
     }}), 200
 
 
@@ -1935,19 +1968,35 @@ def api_list_received_invoices():
                 "dateEnd": month_end.strftime("%d/%m/%Y"),
             })
         rows = []
+        seen = set()
+        truncated = False
         for page in range(20):
             page_params = {**params, "page": page}
             raw = _fm_request("GET", "/api/cfdi", params=page_params, timeout=45)
             batch = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
-            rows.extend(batch)
-            if len(batch) < 100:
+            if not batch:
                 break
+            fresh = []
+            for item in batch:
+                identity = str(_pick(item, "Uuid", "FolioFiscal") or _pick(item, "Id") or "")
+                if identity and identity in seen:
+                    continue
+                if identity:
+                    seen.add(identity)
+                fresh.append(item)
+            if not fresh:
+                break
+            rows.extend(fresh)
+        else:
+            truncated = True
         data = []
         for invoice in rows:
             normalized = _facturama_received_row(invoice)
             if normalized["id"] and _valid_cfdi_uuid(normalized["uuid"]):
                 data.append(normalized)
-        return jsonify({"ok": True, "provider": "facturama", "data": data}), 200
+        return jsonify({"ok": True, "provider": "facturama", "data": data,
+                        "totals_by_currency": _received_summary(data), "truncated": truncated,
+                        "coverage": "Sólo documentos disponibles en Facturama. No confirma que estén todos los gastos ni su deducibilidad."}), 200
     except requests.HTTPError as exc:
         return jsonify({"ok": False, "error": _http_error_detail(exc)}), 400
 
@@ -2143,6 +2192,29 @@ def api_push_config():
     return jsonify({"ok": True, "enabled": _push_configured(), "public_key": os.getenv("VAPID_PUBLIC_KEY", "").strip()}), 200
 
 
+@facturacion_bp.get("/notifications")
+def api_notifications():
+    try:
+        data = notices.snapshot()
+        schedules = _read_invoice_schedules()
+        data["schedules"] = [{key: row.get(key) for key in (
+            "id", "name", "active", "next_run", "last_run_at", "last_status", "last_error"
+        )} for row in schedules]
+        return jsonify({"ok": True, **data})
+    except Exception:
+        current_app.logger.exception("No se pudo consultar el centro de avisos")
+        return jsonify({"ok": False, "error": "No se pudieron cargar los avisos. Intenta actualizar."}), 503
+
+
+@facturacion_bp.post("/notifications/<item_id>/read")
+def api_notification_read(item_id):
+    try:
+        found, backed_up = notices.mark_read(item_id)
+        return jsonify({"ok": found, "drive_backup": backed_up}), 200 if found else 404
+    except Exception:
+        return jsonify({"ok": False, "error": "No se pudo guardar el cambio."}), 503
+
+
 def _stamp_scheduled_invoice(schedule, template, run_key):
     payload = _template_invoice_payload(template, schedule, run_key)
     with current_app.test_request_context("/api/facturar", method="POST", json=payload):
@@ -2150,6 +2222,9 @@ def _stamp_scheduled_invoice(schedule, template, run_key):
     data = response.get_json(silent=True) or {}
     if response.status_code >= 400 or not data.get("ok"):
         raise RuntimeError(str(data.get("error") or "Facturama no confirmó el timbrado."))
+    # Si el correo falla después, conservar la identidad del CFDI ya timbrado.
+    schedule["last_invoice_id"] = str(data.get("invoice_id") or "")
+    schedule["last_uuid"] = str(data.get("uuid") or "")
     if schedule.get("mode") == "auto_stamp_email":
         inv_id = str(data.get("invoice_id") or "")
         folio = str(data.get("internal_folio") or data.get("uuid") or inv_id)
@@ -2204,6 +2279,9 @@ def api_run_invoice_schedules():
             if not template:
                 schedule["last_status"] = "error"
                 schedule["last_error"] = "La plantilla fue eliminada."
+                _send_push_notifications("Factura programada requiere atención",
+                                         f"{schedule.get('name')}: la plantilla ya no existe.",
+                                         "/facturacion?tab=plantillas", f"invoice-schedule-error-{schedule.get('id')}-{run_key}")
             elif schedule.get("mode") in {"reminder", "confirm"}:
                 schedule["last_status"] = "awaiting_confirmation"
                 _send_push_notifications(
@@ -2228,12 +2306,18 @@ def api_run_invoice_schedules():
                     schedule["last_error"] = str(exc)[:500]
                     _send_push_notifications(
                         "Factura programada requiere atención",
-                        f"No se pudo procesar {schedule.get('name')}. Abre HSC para revisar.",
+                        f"No se completó {schedule.get('name')}. Revisa si ya se timbró antes de reintentar.",
                         "/facturacion?tab=plantillas", f"invoice-schedule-error-{schedule.get('id')}-{run_key}",
                     )
             processed.append({"id": schedule.get("id"), "status": schedule.get("last_status"), "error": schedule.get("last_error", "")})
         drive_ok = _write_invoice_schedules(schedules) if processed else True
+        failures = sum(row.get("status") == "error" for row in processed)
+        notices.record_job("facturas_programadas", "error" if failures else "ok",
+                           processed=len(processed), errors=failures, drive_backup=drive_ok)
         return jsonify({"ok": True, "processed": processed, "drive_backup": drive_ok, "checked_at": now.isoformat()}), 200
+    except Exception:
+        notices.record_job("facturas_programadas", "error", last_error="La revisión no pudo terminar. Consulta los registros de Render.")
+        raise
     finally:
         _SCHEDULE_RUN_LOCK.release()
 

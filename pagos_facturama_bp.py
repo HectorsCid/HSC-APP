@@ -332,6 +332,9 @@ def crear_pago():
             "remaining_balance": float(unpaid),
         }
         billing._write_index(index)
+        billing.notices.publish("Pago y complemento registrados",
+                                f"Factura {normalized['folio'] or normalized['uuid']}: pago de ${payment_entry['amount']:,.2f}; saldo ${float(unpaid):,.2f}.",
+                                category="pagos", key=f"payment-{rep_uuid}", url="/facturacion")
         folio_folder = normalized["folio"] or normalized["uuid"]
         drive_backup = billing._backup_facturama_cfdi(
             rep_id, rep_uuid, normalized["customer"].get("folder_name") or normalized["customer"]["legal_name"],

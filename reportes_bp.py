@@ -1111,10 +1111,14 @@ def _folder_web_link(folder_id: str) -> str | None:
         return None
 
 def _generate_and_store_report_pdf(id_reporte: str):
-    """El monitor ejecuta el mismo endpoint que usa el botón manual."""
+    """Invocación interna del generador; no simula un navegador sin sesión.
+
+    La ruta pública sigue protegida por before_request. Sólo el coordinador
+    interno llama esta función, nunca se acepta una cabecera como autenticación.
+    """
     endpoint = url_for("reportes.reportes_pdf_json", id_reporte=id_reporte)
-    with current_app.test_client() as client:
-        response = client.post(endpoint, headers={"X-HSC-Auto-PDF": "1"})
+    with current_app.test_request_context(endpoint, method="POST", headers={"X-HSC-Auto-PDF": "1"}):
+        response = current_app.make_response(reportes_pdf_json(id_reporte))
 
     payload = response.get_json(silent=True) or {}
     if response.status_code != 200 or not payload.get("ok"):
@@ -1212,7 +1216,8 @@ def _recent_report_ids(limit: int):
             result.append(report_id)
         else:
             drafts += 1
-        if considered >= limit:
+        # Los borradores no deben desplazar a los últimos reportes terminados.
+        if len(result) >= limit:
             break
     if is_auto:
         _AUTO_PDF_STATUS.update(
@@ -1284,6 +1289,9 @@ def process_new_reports():
                 _AUTO_PDF_STATUS["phase"] = "error"
                 _AUTO_PDF_STATUS["errors"] = int(_AUTO_PDF_STATUS.get("errors") or 0) + 1
                 current_app.logger.exception("No se pudo generar automáticamente el reporte %s", report_id)
+                from notification_center import publish
+                publish("Reporte automático pendiente", f"No se generó el PDF de {report_id}. Revisa el estado de la cola en Reportes.",
+                        category="reportes", key=f"report-error-{report_id}", url="/reportes", level="warning")
             finally:
                 _AUTO_PDF_STATUS["queued"] = max(0, int(_AUTO_PDF_STATUS.get("queued") or 0) - 1)
                 _clear_pdf_photo_cache()
@@ -1322,7 +1330,7 @@ def _run_auto_report_cycle(app):
                 raise _AutoProcessingCancelled()
             if completed:
                 if int(_AUTO_PDF_STATUS.get("queued") or 0) == 0:
-                    _AUTO_PDF_STATUS["phase"] = "complete"
+                    _AUTO_PDF_STATUS["phase"] = "error" if _AUTO_PDF_STATUS.get("errors") else "complete"
                     break
                 _AUTO_PDF_STATUS["phase"] = "queue_pause"
                 if _AUTO_PDF_CANCEL_EVENT.wait(AUTO_PDF_QUEUE_DELAY):
@@ -1350,6 +1358,12 @@ def _run_auto_report_cycle(app):
                 queue_active=False, running=False, current_report=None,
                 finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
             )
+        from notification_center import record_job
+        record_job("reportes_automaticos", _AUTO_PDF_STATUS.get("phase"),
+                   completed=_AUTO_PDF_STATUS.get("completed", 0),
+                   errors=_AUTO_PDF_STATUS.get("errors", 0),
+                   last_generated=_AUTO_PDF_STATUS.get("last_generated"),
+                   last_error=_AUTO_PDF_STATUS.get("last_error"))
         _AUTO_PDF_CYCLE_LOCK.release()
 
 def _launch_auto_report_cycle(app):

@@ -38,6 +38,13 @@ class AppAccessTests(unittest.TestCase):
         self.client.get("/cerrar-sesion")
         self.assertEqual(self.client.get("/facturacion").status_code, 302)
 
+    def test_notifications_and_report_auto_header_do_not_bypass_login(self):
+        self.assertEqual(self.client.get("/api/notifications").status_code, 401)
+        self.assertEqual(self.client.post("/api/notifications/example/read").status_code, 401)
+        response = self.client.post("/reportes/pdf_json/UDA38_R%201", headers={"X-HSC-Auto-PDF": "1"})
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/acceso", response.headers["Location"])
+
     def test_login_does_not_allow_external_return_url(self):
         response = self.client.post("/acceso", data={
             "password": "clave-segura-pruebas", "next": "https://example.com",
