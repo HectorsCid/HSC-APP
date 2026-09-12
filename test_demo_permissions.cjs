@@ -27,6 +27,7 @@ assert.match(html, /id="inviteTechPermissions"/);
 assert.match(html, /id="inviteClientPermissions"/);
 assert.match(html, /\/api\/operaciones\/clients/);
 assert.match(html, /\/api\/operaciones\/equipment/);
+assert.match(script, /Equipo desactivado; historial conservado/);
 assert.match(html, /\/api\/operaciones\/reports\/draft/);
 assert.match(html, /Sincronizar Google/);
 assert.match(html, /id="reloadApp"/);
