@@ -16,6 +16,7 @@ import re
 import smtplib
 import mimetypes
 import requests
+import time
 from zoneinfo import ZoneInfo
 from werkzeug.utils import secure_filename
 
@@ -47,6 +48,9 @@ _STAMP_RESULTS = {}
 _FM_PROFILE_CACHE = None
 _FM_BRANCH_CACHE = None
 _FISCAL_CATALOG_CACHE = {}
+_BILLING_CLIENT_GROUPS_CACHE = {"ts": 0.0, "result": None, "payment_sync": None}
+_BILLING_CLIENT_GROUPS_LOCK = Lock()
+_BILLING_CLIENT_GROUPS_TTL = 180.0
 _CFDI_UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
@@ -1736,12 +1740,35 @@ def api_list_facturas():
     return jsonify({"ok": True, "data": out}), 200
 
 
-def billing_client_groups():
+def billing_client_groups(refresh=False):
     """Construye la relación por receptor para Panel y las cuentas Partner."""
     if _provider() != "facturama":
         raise RuntimeError("El panel por cliente requiere Facturama.")
-    raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "all", "page": 0})
-    source = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
+    now = time.monotonic()
+    with _BILLING_CLIENT_GROUPS_LOCK:
+        cached = _BILLING_CLIENT_GROUPS_CACHE.get("result")
+        if not refresh and cached is not None and now - _BILLING_CLIENT_GROUPS_CACHE["ts"] < _BILLING_CLIENT_GROUPS_TTL:
+            return cached, _BILLING_CLIENT_GROUPS_CACHE.get("payment_sync") or {}
+        source = []
+        seen = set()
+        # Facturama entrega primero los CFDI recientes. Recorrer sus páginas es
+        # indispensable para que Partner también muestre facturas históricas.
+        for page in range(50):
+            raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "all", "page": page})
+            batch = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
+            if not batch:
+                break
+            added = 0
+            for item in batch:
+                identity = str(_pick(item, "Id") or _pick(item, "Uuid", "FolioFiscal") or "").strip()
+                if identity and identity in seen:
+                    continue
+                if identity:
+                    seen.add(identity)
+                source.append(item)
+                added += 1
+            if added == 0:
+                break
     payment_sync = _sync_facturama_payment_rows(source)
     payments = _read_index()
     deliveries = read_email_deliveries()
@@ -1790,6 +1817,8 @@ def billing_client_groups():
         group["invoices"].sort(key=lambda row: str(row.get("date") or ""), reverse=True)
         group["complements"].sort(key=lambda row: str(row.get("date") or ""), reverse=True)
     result.sort(key=lambda row: (row["pending_complements"] == 0, -row["pending_total"], row["name"].casefold()))
+    with _BILLING_CLIENT_GROUPS_LOCK:
+        _BILLING_CLIENT_GROUPS_CACHE.update(ts=now, result=result, payment_sync=payment_sync)
     return result, payment_sync
 
 
@@ -1797,7 +1826,7 @@ def billing_client_groups():
 def api_billing_clients():
     """Relación por receptor de facturas, cobros y complementos registrados."""
     try:
-        result, payment_sync = billing_client_groups()
+        result, payment_sync = billing_client_groups(refresh=request.args.get("refresh") == "1")
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 503
     except requests.HTTPError as exc:

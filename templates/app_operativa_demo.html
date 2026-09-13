@@ -593,7 +593,7 @@
   function renderPartnerDocuments(){
     const payload=partnerDocuments||{quotes:[],invoices:[],complements:[],summary:{}};
     $('#partnerQuoteCount').textContent=payload.summary?.quotes||0;$('#partnerInvoiceCount').textContent=payload.summary?.invoices||0;$('#partnerComplementCount').textContent=payload.summary?.complements||0;
-    $('#partnerDocumentsIdentity').textContent=payload.client?.rfc?`${payload.client.name} · RFC ${payload.client.rfc}`:`${payload.client?.name||clientName(selectedClient)} · Documentos emitidos por HSC`;
+    $('#partnerDocumentsIdentity').textContent=payload.client?.rfc?`${payload.client.name} · RFC ${payload.client.rfc}`:`${payload.client?.name||clientName(selectedClient)} · Falta vincular el RFC fiscal en Clientes`;
     const labels={quotes:'Cotizaciones',invoices:'Facturas',complements:'Complementos de pago'},rows=payload[partnerDocumentTab]||[];
     $('#partnerDocumentsTitle').textContent=labels[partnerDocumentTab];
     $('#partnerDocumentsList').innerHTML=rows.length?rows.map(item=>partnerDocumentCard(item,partnerDocumentTab)).join(''):`<div class="empty">Todavía no hay ${labels[partnerDocumentTab].toLowerCase()} disponibles para este cliente.</div>`;
@@ -603,7 +603,7 @@
     if(!force&&partnerDocuments&&partnerDocumentsClient===selectedClient){renderPartnerDocuments();return}
     $('#partnerDocumentsList').innerHTML='<div class="empty">Consultando documentos…</div>';
     try{
-      const response=await fetch(`/api/operaciones/partner-documents?client_id=${encodeURIComponent(selectedClient)}`,{headers:{Accept:'application/json'}}),payload=await response.json();
+      const response=await fetch(`/api/operaciones/partner-documents?client_id=${encodeURIComponent(selectedClient)}${force?'&refresh=1':''}`,{headers:{Accept:'application/json'}}),payload=await response.json();
       if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudieron consultar los documentos.');
       partnerDocuments=payload;partnerDocumentsClient=selectedClient;renderPartnerDocuments();
     }catch(error){$('#partnerDocumentsList').innerHTML=`<div class="empty">${escapeHtml(error.message)}</div>`}

@@ -3179,9 +3179,9 @@ def _partner_quote_total(item):
         return 0.0
 
 
-def _partner_documents_payload(client):
+def _partner_documents_payload(client, refresh=False):
     identity = _partner_documents_identity(client)
-    groups, _ = billing_client_groups()
+    groups, _ = billing_client_groups(refresh=refresh)
     billing = next((group for group in groups if identity["rfc"] and group.get("rfc") == identity["rfc"]), None)
     if not billing:
         billing = next((group for group in groups
@@ -3241,7 +3241,8 @@ def _partner_documents_payload(client):
                                    file_type="xml", client_id=client.get("id")),
             })
     return {
-        "client": {"id": client.get("id"), "name": client.get("name"), "rfc": identity["rfc"]},
+        "client": {"id": client.get("id"), "name": client.get("name"), "rfc": identity["rfc"],
+                   "needs_rfc": not bool(identity["rfc"])},
         "quotes": quotes, "invoices": invoices, "complements": complements,
         "summary": {
             "quotes": len(quotes), "invoices": len(invoices), "complements": len(complements),
@@ -3256,7 +3257,9 @@ def api_operaciones_partner_documents():
     if error:
         return error
     try:
-        return jsonify({"ok": True, **_partner_documents_payload(client)})
+        return jsonify({"ok": True, **_partner_documents_payload(
+            client, refresh=request.args.get("refresh") == "1"
+        )})
     except Exception as exc:
         current_app.logger.exception("No se pudieron consultar documentos Partner: %s", exc)
         return jsonify({"ok": False, "error": "No se pudieron consultar los documentos del cliente."}), 502
