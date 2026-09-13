@@ -174,15 +174,15 @@
       body:'Las notificaciones funcionan correctamente en este dispositivo.',
       icon:'/static/img/hsc-app-192.png',
       badge:'/static/img/hsc-app-192.png',
-      tag:'hsc-prueba',
+      tag:'hsc-aviso-local',
       data:{url:'/inicio-app'}
     });
     try{
       const subscribed = await subscribeForServerNotifications();
-      updateStatus(subscribed ? 'Notificaciones y recordatorios activados.' : 'Notificación de prueba enviada. Falta configurar los avisos del servidor.');
+      updateStatus(subscribed ? 'Notificaciones y recordatorios activados.' : 'Aviso enviado. Falta configurar los avisos del servidor.');
     }catch(error){
       console.warn('HSC: no se pudo activar el canal de avisos.', error);
-      updateStatus('Notificación de prueba enviada; el canal de recordatorios todavía no está disponible.');
+      updateStatus('Aviso enviado; el canal de recordatorios todavía no está disponible.');
     }
   }
 
