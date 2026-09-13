@@ -13,7 +13,7 @@ class FakeOperationsStore:
     def snapshot(self):
         return {"clients": [
             {"id": "HDI", "name": "Holiday Inn Diamante"},
-            {"id": "TT", "name": "Travers Tool"},
+            {"id": "TT", "name": "Travers Tool", "billing_rfc": "TTO010101AA1"},
         ]}
 
 
@@ -72,6 +72,13 @@ class PartnerDocumentsTest(unittest.TestCase):
         self.login("client", "HDI")
         response = self.client.get("/api/operaciones/partner-documents?client_id=TT")
         self.assertEqual(response.status_code, 403)
+
+    def test_explicit_fiscal_link_does_not_depend_on_operational_name(self):
+        identity = module._partner_documents_identity({
+            "id": "UDA", "name": "Universidad de Arkansas Querétaro",
+            "billing_rfc": "TTO010101AA1",
+        })
+        self.assertEqual(identity["rfc"], "TTO010101AA1")
 
 
 if __name__ == "__main__":

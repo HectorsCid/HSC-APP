@@ -17,7 +17,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "11"
+SCHEMA_VERSION = "12"
 
 
 def _now():
@@ -93,6 +93,7 @@ class OperationsStore:
             """CREATE TABLE IF NOT EXISTS operations_clients (
                 id TEXT PRIMARY KEY, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '',
                 matrix_id TEXT NOT NULL DEFAULT '',
+                billing_rfc TEXT NOT NULL DEFAULT '',
                 selected_round TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0,
                 policy_active INTEGER NOT NULL DEFAULT 1,
                 has_photo INTEGER NOT NULL DEFAULT 0, photo_ref TEXT NOT NULL DEFAULT '',
@@ -212,6 +213,7 @@ class OperationsStore:
                 conn.execute(statement)
             self._ensure_column(conn, "operations_clients", "raw_json", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_column(conn, "operations_clients", "sort_order", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "operations_clients", "billing_rfc", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_equipment", "raw_json", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_column(conn, "operations_faults", "resolved_at", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_faults", "resolved_by", "TEXT NOT NULL DEFAULT ''")
@@ -355,7 +357,7 @@ class OperationsStore:
         self.initialize()
         with self.connection() as conn:
             clients = conn.execute(
-                "SELECT id,name,address,matrix_id,selected_round,sort_order,policy_active,has_photo,photo_ref "
+                "SELECT id,name,address,matrix_id,billing_rfc,selected_round,sort_order,policy_active,has_photo,photo_ref "
                 "FROM operations_clients ORDER BY CASE WHEN sort_order>0 THEN 0 ELSE 1 END,sort_order,name,id"
             ).fetchall()
             equipment = conn.execute(
@@ -387,8 +389,8 @@ class OperationsStore:
             cached_thumbnails = conn.execute("SELECT COUNT(*) FROM operations_media_cache").fetchone()[0]
         result_clients = [{
             "id": row[0], "name": row[1], "address": row[2], "matrix_id": row[3],
-            "selected_round": row[4], "sort_order": int(row[5] or 0), "policy_active": bool(row[6]),
-            "has_photo": bool(row[7]), "_photo_ref": row[8],
+            "billing_rfc": row[4], "selected_round": row[5], "sort_order": int(row[6] or 0),
+            "policy_active": bool(row[7]), "has_photo": bool(row[8]), "_photo_ref": row[9],
         } for row in clients]
         result_equipment = [{
             "id": row[0], "client_id": row[1], "name": row[2], "brand": row[3],
@@ -520,11 +522,13 @@ class OperationsStore:
         p = self.placeholder
         with self.connection() as conn:
             conn.execute(
-                f"INSERT INTO operations_clients(id,name,address,matrix_id,selected_round,policy_active,has_photo,photo_ref,source,raw_json,updated_at) "
-                f"VALUES ({','.join([p] * 11)}) ON CONFLICT(id) DO UPDATE SET "
+                f"INSERT INTO operations_clients(id,name,address,matrix_id,billing_rfc,selected_round,policy_active,has_photo,photo_ref,source,raw_json,updated_at) "
+                f"VALUES ({','.join([p] * 12)}) ON CONFLICT(id) DO UPDATE SET "
                 "name=excluded.name,address=excluded.address,matrix_id=excluded.matrix_id,"
-                "selected_round=excluded.selected_round,policy_active=excluded.policy_active,source='app',updated_at=excluded.updated_at",
+                "billing_rfc=excluded.billing_rfc,selected_round=excluded.selected_round,"
+                "policy_active=excluded.policy_active,source='app',updated_at=excluded.updated_at",
                 (client_id, name, _text(item.get("address")), matrix_id,
+                 _text(item.get("billing_rfc")).upper(),
                  _text(item.get("selected_round")), int(bool(item.get("policy_active", True))),
                  0, "", "app", "{}", stamp),
             )

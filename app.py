@@ -3150,9 +3150,10 @@ def _partner_documents_client(requested_id=""):
 
 
 def _partner_documents_identity(client):
-    canonical, catalog = _resolver_cliente_catalogo(client.get("name") or "")
+    linked_rfc = str(client.get("billing_rfc") or "").strip().upper()
+    canonical, catalog = _resolver_cliente_catalogo(client.get("name") or "", linked_rfc)
     catalog = catalog or {}
-    rfc = str(catalog.get("rfc") or "").strip().upper()
+    rfc = linked_rfc or str(catalog.get("rfc") or "").strip().upper()
     names = {
         _normalizar_nombre_importacion(value)
         for value in (client.get("name"), canonical, catalog.get("nombre_legal"), catalog.get("nombre"))
@@ -3263,6 +3264,30 @@ def api_operaciones_partner_documents():
     except Exception as exc:
         current_app.logger.exception("No se pudieron consultar documentos Partner: %s", exc)
         return jsonify({"ok": False, "error": "No se pudieron consultar los documentos del cliente."}), 502
+
+
+@app.get('/api/operaciones/fiscal-clients')
+def api_operaciones_fiscal_clients():
+    """Catálogo fiscal para que el administrador vincule Operaciones por RFC."""
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    with _CLIENTES_DATA_LOCK:
+        catalog = dict(clientes_predefinidos or {})
+    rows = []
+    for alias, data in catalog.items():
+        if not isinstance(data, dict):
+            continue
+        rfc = str(data.get("rfc") or "").strip().upper()
+        if not rfc:
+            continue
+        rows.append({
+            "rfc": rfc,
+            "name": str(data.get("razon_social") or data.get("razon") or alias).strip(),
+            "alias": str(alias),
+        })
+    rows.sort(key=lambda item: (item["name"].casefold(), item["rfc"]))
+    return jsonify({"ok": True, "clients": rows})
 
 
 def _partner_document_allowed(client, document_id, kind):

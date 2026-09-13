@@ -134,6 +134,8 @@
           <div class="field" id="clientNameField"><label for="opClientName">Nombre del cliente</label><input id="opClientName" required maxlength="100" autocomplete="organization"></div>
           <div class="field-row"><div class="field locked-field"><label for="opClientId">ID interno (inmutable)</label><input id="opClientId" readonly></div><div class="field" id="matrixIdField"><label for="opMatrixId">ID del cliente en la matriz</label><input id="opMatrixId" maxlength="40" placeholder="Ej. HDI" autocapitalize="characters"></div></div>
           <p class="editor-note">El vínculo con la matriz se validará al conectarla. Escribir una clave aquí no modifica ninguna hoja.</p>
+          <div class="field"><label for="opBillingRfc">Cliente fiscal vinculado</label><select id="opBillingRfc"><option value="">Sin vincular</option></select></div>
+          <p class="editor-note">Este RFC conecta al cliente operativo con sus cotizaciones, facturas y complementos. No depende de que ambos nombres sean iguales.</p>
           <div class="field"><label for="opClientAddress">Dirección</label><textarea id="opClientAddress" maxlength="500"></textarea></div>
           <label class="check-row"><input id="opClientPolicy" type="checkbox" checked> Tiene póliza de mantenimiento</label>
           <p class="editor-note">Sin póliza queda en el catálogo, pero no en la lista de técnicos. Su historial se conserva.</p>
@@ -344,7 +346,7 @@
     if(!Array.isArray(payload.clients)||!payload.clients.length)return false;
     clients.splice(0,clients.length,...payload.clients.map(client=>[client.name,client.id,'']));
     for(const key of Object.keys(clientMeta))delete clientMeta[key];
-    for(const client of payload.clients)clientMeta[client.id]={policy:client.policy_active!==false,matrixId:client.matrix_id||client.id,sortOrder:Number(client.sort_order)||0,address:client.address||'',photo:client.photo_url||'',photoAvailable:Boolean(client.has_photo),selectedRound:client.selected_round||''};
+    for(const client of payload.clients)clientMeta[client.id]={policy:client.policy_active!==false,matrixId:client.matrix_id||client.id,billingRfc:client.billing_rfc||'',sortOrder:Number(client.sort_order)||0,address:client.address||'',photo:client.photo_url||'',photoAvailable:Boolean(client.has_photo),selectedRound:client.selected_round||''};
     equipment.splice(0,equipment.length,...payload.equipment.map(item=>[item.id,item.name,item.brand||'',false]));
     for(const key of Object.keys(equipmentMeta))delete equipmentMeta[key];
     for(const item of payload.equipment)equipmentMeta[item.id]={client:item.client_id,active:String(item.status||'').toLowerCase()!=='inactivo',type:item.equipment_type||'Refrigeración',location:item.location||'',department:item.department||'',model:item.model||'',serial:item.serial||'',notes:item.notes||'',photo:item.photo_url||'',photoAvailable:Boolean(item.has_photo)};
@@ -794,7 +796,7 @@
     finally{button.disabled=false;button.textContent='Finalizar reporte'}
   };
   // Clientes y equipos se guardan primero en la base operativa; Google se sincroniza aparte.
-  let editingClient=null,editingEquipment=null,clientPhoto='',equipmentPhoto='',editorDirty=false;
+  let editingClient=null,editingEquipment=null,clientPhoto='',equipmentPhoto='',editorDirty=false,fiscalClients=[];
   const normalizedName=value=>value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').toLowerCase();
   function nextClientId(){let n=clients.length+1;while(clients.some(c=>c[1]===`C${n}`))n++;return `C${n}`;}
   function nextEquipmentId(){let n=1;while(equipment.some(e=>e[0]===`${selectedClient}${n}`))n++;return `${selectedClient}${n}`;}
@@ -806,8 +808,19 @@
     editingClient=id;const row=clients.find(c=>c[1]===id),meta=clientMeta[id];
     $('#opClientName').value=row?.[0]||'';$('#opClientId').value=id||nextClientId();
     $('#opMatrixId').value=meta?.matrixId||'';$('#opClientAddress').value=meta?.address||'';
+    populateFiscalClients(meta?.billingRfc||'');
     $('#opClientPolicy').checked=meta?.policy??true;clientPhoto=meta?.photo||'';
     $('#opClientPhoto').value='';previewPhoto('Client',clientPhoto);$('#clientEditorError').textContent='';
+  }
+  function populateFiscalClients(selected=''){
+    const select=$('#opBillingRfc'),current=String(selected||'').toUpperCase();
+    select.innerHTML='<option value="">Sin vincular</option>'+fiscalClients.map(item=>`<option value="${escapeHtml(item.rfc)}">${escapeHtml(item.alias||item.name)} · ${escapeHtml(item.rfc)}</option>`).join('');
+    if(current&&!fiscalClients.some(item=>item.rfc===current))select.insertAdjacentHTML('beforeend',`<option value="${escapeHtml(current)}">RFC vinculado · ${escapeHtml(current)}</option>`);
+    select.value=current;
+  }
+  async function loadFiscalClients(selected=''){
+    if(fiscalClients.length){populateFiscalClients(selected);return}
+    try{const response=await fetch('/api/operaciones/fiscal-clients',{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudo cargar el catálogo fiscal');fiscalClients=payload.clients||[];populateFiscalClients(selected)}catch(error){console.warn('Catálogo fiscal:',error);populateFiscalClients(selected)}
   }
   function applyClientEditorPermissions(){
     const mayEditIdentity=can('editClientData'),mayEditMatrix=can('editIds');
@@ -819,10 +832,10 @@
   function openClientEditor(edit=false){
     $('#clientEditorForm').reset();$('#catalogChoice').hidden=edit;
     $('#catalogClient').innerHTML='<option value="">Selecciona un cliente</option><option value="__new">＋ Crear cliente nuevo</option>'+clients.map(c=>`<option value="${escapeHtml(c[1])}">${escapeHtml(c[0])}${clientMeta[c[1]].policy?' · ya tiene póliza':''}</option>`).join('');
-    fillClientEditor(edit?selectedClient:null);applyClientEditorPermissions();$('#clientEditorTitle').textContent=edit?'Editar cliente':'Agregar cliente a Operaciones';
+    fillClientEditor(edit?selectedClient:null);loadFiscalClients(clientMeta[edit?selectedClient:'']?.billingRfc||'');applyClientEditorPermissions();$('#clientEditorTitle').textContent=edit?'Editar cliente':'Agregar cliente a Operaciones';
     editorDirty=false;showView('clientEditor');
   }
-  $('#catalogClient').onchange=()=>{const id=$('#catalogClient').value;fillClientEditor(id&&id!=='__new'?id:null);editorDirty=true;};
+  $('#catalogClient').onchange=()=>{const id=$('#catalogClient').value;fillClientEditor(id&&id!=='__new'?id:null);loadFiscalClients(clientMeta[id]?.billingRfc||'');editorDirty=true;};
   $('#addOperationalClient').onclick=()=>openClientEditor();$('#editOperationalClient').onclick=()=>openClientEditor(true);
   $('#catalogScope').onclick=()=>{showCatalog=!showCatalog;renderClients();};
   $('#orderClients').onclick=()=>{if($('#clientSearch').value.trim()){toast('Limpia la búsqueda antes de ordenar');return;}clientOrderMode=!clientOrderMode;renderClients();};
@@ -834,7 +847,7 @@
     if(matrixId&&Object.entries(clientMeta).some(([id,m])=>id!==editingClient&&m.matrixId.toUpperCase()===matrixId)){error.textContent='Esa clave de matriz ya está vinculada a otro cliente de ejemplo.';return;}
     const id=editingClient||nextClientId(),submit=event.submitter;submit.disabled=true;error.textContent='';
     try{
-      await operationsPost('/api/operaciones/clients',{id,name,matrix_id:matrixId,address:$('#opClientAddress').value.trim(),policy_active:$('#opClientPolicy').checked,selected_round:clientMeta[editingClient]?.selectedRound||''});
+      await operationsPost('/api/operaciones/clients',{id,name,matrix_id:matrixId,billing_rfc:$('#opBillingRfc').value,address:$('#opClientAddress').value.trim(),policy_active:$('#opClientPolicy').checked,selected_round:clientMeta[editingClient]?.selectedRound||''});
       editorDirty=false;await loadMatrixData();selectedClient=id;refreshRound();showView('client');historyStack=['clients','client'];toast('Cliente guardado · sincronización con Google pendiente');
     }catch(saveError){error.textContent=saveError.message}finally{submit.disabled=false}
   };

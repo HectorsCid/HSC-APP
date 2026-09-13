@@ -95,13 +95,15 @@ def test_client_and_equipment_writes_are_kept_across_matrix_refresh(tmp_path):
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
     store.import_matrix_snapshot(_payload())
     store.save_client({"id": "UVMQ", "name": "UVM Piloto", "matrix_id": "UVMQ",
-                       "address": "Campus prueba", "policy_active": True})
+                       "billing_rfc": "UVM870101AA1", "address": "Campus prueba",
+                       "policy_active": True})
     created = store.save_equipment([{"id": "UVMQ2", "client_id": "UVMQ",
                                      "name": "Equipo nuevo", "equipment_type": "Chiller"}])
     store.import_matrix_snapshot(_payload())
     result = store.snapshot()
 
     assert next(item for item in result["clients"] if item["id"] == "UVMQ")["name"] == "UVM Piloto"
+    assert next(item for item in result["clients"] if item["id"] == "UVMQ")["billing_rfc"] == "UVM870101AA1"
     assert created[0]["equipment_type"] == "Chiller"
     assert any(item["id"] == "UVMQ2" for item in result["equipment"])
     assert len(store.pending_sync()) == 2
