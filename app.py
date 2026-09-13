@@ -1434,6 +1434,14 @@ def nueva_cotizacion():
     _reiniciar_costos_internos()
     return redirect(url_for('inicio'))
 
+@app.route('/cancelar-cotizacion')
+def cancelar_cotizacion():
+    """Descarta la captura actual y vuelve al listado de cotizaciones."""
+    partidas.clear()
+    datos_cliente.clear()
+    _reiniciar_costos_internos()
+    return redirect(url_for('ui_inicio_cotizacion'))
+
 def _normalizar_contactos_cliente(datos):
     """Devuelve contactos individuales y conserva compatibilidad con correos antiguos."""
     datos = datos if isinstance(datos, dict) else {}
@@ -3385,10 +3393,13 @@ def api_operaciones_upload_report_evidence(report_id, position):
         client = next(
             (item for item in OPERACIONES_STORE.snapshot()["clients"] if item["id"] == report["client_id"]), None
         )
-        drive_id = store_operations_evidence(
-            (client or {}).get("name") or report["client_id"], report_id, position, content,
+        matrix_report_id = report.get("matrix_id") or report_id
+        stored = store_operations_evidence(
+            (client or {}).get("name") or report["client_id"], matrix_report_id, position, content,
         )
-        evidence = OPERACIONES_STORE.save_report_evidence(report_id, position, drive_id)
+        evidence = OPERACIONES_STORE.save_report_evidence(
+            report_id, position, stored["drive_ref"], storage_ref=stored["storage_ref"],
+        )
         return jsonify({"ok": True, "evidence": {"position": evidence["position"]}})
     except (ValueError, OSError) as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400

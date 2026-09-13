@@ -74,8 +74,9 @@ def _entity_snapshot(store, operation):
         client = clients.get(item.get("client_id"), {})
         payload = item.get("payload") or {}
         client_sheet_id = _text(client.get("matrix_id")) or _text(item.get("client_id"))
+        sheet_report_id = _text(item.get("matrix_id")) or _text(item.get("id"))
         values = {
-            "ID_Reporte": item.get("id"), "ID_Equipo": item.get("equipment_id"),
+            "ID_Reporte": sheet_report_id, "ID_Equipo": item.get("equipment_id"),
             "ID_Cliente": client_sheet_id, "FechaInicio": payload.get("inicio") or item.get("start"),
             "FechaFin": payload.get("fin") or item.get("end"),
             "PresionCto1": payload.get("p1"), "PresionCto2": payload.get("p2"),
@@ -92,20 +93,22 @@ def _entity_snapshot(store, operation):
         }
         for evidence in item.get("evidence", []):
             position = int(evidence.get("position") or 0)
-            if position in range(1, 7) and _text(evidence.get("drive_ref") or evidence.get("storage_ref")):
-                values[f"Foto{position}"] = evidence.get("drive_ref") or evidence.get("storage_ref")
-        return "Reportes", "ID_Reporte", item["id"], values
+            if position in range(1, 7) and _text(evidence.get("storage_ref") or evidence.get("drive_ref")):
+                values[f"Foto{position}"] = evidence.get("storage_ref") or evidence.get("drive_ref")
+        return "Reportes", "ID_Reporte", sheet_report_id, values
     if entity_type == "fault":
         item = next((row for row in snapshot.get("faults", []) if row["id"] == entity_id), None)
         if not item:
             raise ValueError("La falla ya no existe en la base operativa.")
         client = clients.get(item.get("client_id"), {})
         client_sheet_id = _text(client.get("matrix_id")) or _text(item.get("client_id"))
+        linked_report = store.get_report_detail(item.get("report_id")) if item.get("report_id") else None
+        linked_report_id = _text((linked_report or {}).get("matrix_id")) or _text(item.get("report_id"))
         return "ReportesFalla", "ID_ReporteFalla", item["id"], {
             "ID_ReporteFalla": item.get("id"), "ID_Cliente": client_sheet_id,
             "ID_Equipo": item.get("equipment_id"), "Fecha": item.get("reported_at"),
             "DescripcionFalla": item.get("description"), "Estado": item.get("status"),
-            "ID_Reporte": item.get("report_id"), "TipoFalla": item.get("priority"),
+            "ID_Reporte": linked_report_id, "TipoFalla": item.get("priority"),
             "MostrarCliente": True, "Origen": "Cliente" if item.get("source") == "client" else "Reporte técnico",
         }
     raise ValueError(f"Tipo de salida no compatible: {entity_type}.")

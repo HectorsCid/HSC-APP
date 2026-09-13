@@ -90,8 +90,8 @@ def _store_with_report(tmp_path):
         "client_id": "UVMQ", "equipment_id": "UVMQ1", "round": "2",
         "payload": {"inicio": "2026-09-12", "fin": "2026-09-12", "p1": "120", "t1": "4"},
     })
-    store.save_report_evidence(draft["id"], 1, "drive-foto-1")
-    store.save_report_evidence(draft["id"], 2, "drive-foto-2")
+    store.save_report_evidence(draft["id"], 1, "drive-foto-1", storage_ref="/HSC/reportes/UVMQ1_R 2.Foto1.jpg")
+    store.save_report_evidence(draft["id"], 2, "drive-foto-2", storage_ref="/HSC/reportes/UVMQ1_R 2.Foto2.jpg")
     store.finalize_report(draft["id"])
     return store, draft["id"]
 
@@ -119,9 +119,9 @@ def test_report_is_appended_then_completed_in_a_separate_request(tmp_path):
     assert result["synced"] == 1
     append = fake.writes[0]
     row = append[3]
-    assert row[REPORT_HEADERS.index("ID_Reporte")] == report_id
-    assert row[REPORT_HEADERS.index("Foto1")] == "drive-foto-1"
-    assert row[REPORT_HEADERS.index("Foto2")] == "drive-foto-2"
+    assert row[REPORT_HEADERS.index("ID_Reporte")] == "UVMQ1_R 2"
+    assert row[REPORT_HEADERS.index("Foto1")] == "/HSC/reportes/UVMQ1_R 2.Foto1.jpg"
+    assert row[REPORT_HEADERS.index("Foto2")] == "/HSC/reportes/UVMQ1_R 2.Foto2.jpg"
     assert row[REPORT_HEADERS.index("Realizado")] == ""
     assert append[4] == "'Reportes'!A:A"
     assert fake.writes[-1][0] == "update"

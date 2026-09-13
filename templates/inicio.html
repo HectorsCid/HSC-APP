@@ -148,6 +148,11 @@
         </button>
         <a class="btn salida-cotizacion" href="/inicio-app">🏠 Inicio</a>
         <a class="btn salida-cotizacion" href="/cotizaciones">📋 Cotizaciones</a>
+        <a
+          class="btn btn-danger"
+          href="{{ url_for('cancelar_cotizacion') }}"
+          onclick="return confirm('¿Cancelar esta cotización? Se descartarán los datos y partidas que no hayas guardado como borrador.');"
+        >✕ Cancelar cotización</a>
         <button
           id="btn-guardar-borrador"
           class="btn"

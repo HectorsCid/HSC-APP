@@ -525,6 +525,7 @@ class OperationsStore:
             raise ValueError("El equipo no pertenece al cliente seleccionado.")
         p = self.placeholder
         report_id = _text(item.get("id"))
+        matrix_id = f"{equipment_id}_R {round_number}"
         with self.connection() as conn:
             if report_id:
                 found = conn.execute(
@@ -545,10 +546,10 @@ class OperationsStore:
                 f"INSERT INTO operations_reports(id,equipment_id,client_id,round_number,start_at,end_at,completed,source,matrix_id,report_type,payload_json,state,sync_status,updated_at) "
                 f"VALUES ({','.join([p] * 14)}) ON CONFLICT(id) DO UPDATE SET "
                 "equipment_id=excluded.equipment_id,client_id=excluded.client_id,round_number=excluded.round_number,"
-                "start_at=excluded.start_at,end_at=excluded.end_at,report_type=excluded.report_type,"
+                "start_at=excluded.start_at,end_at=excluded.end_at,matrix_id=excluded.matrix_id,report_type=excluded.report_type,"
                 "payload_json=excluded.payload_json,state='draft',sync_status='local_only',updated_at=excluded.updated_at",
                 (report_id, equipment_id, client_id, round_number, _text(payload.get("inicio")),
-                 _text(payload.get("fin")), 0, "app", "", _text(item.get("report_type")) or "refrigeration",
+                 _text(payload.get("fin")), 0, "app", matrix_id, _text(item.get("report_type")) or "refrigeration",
                  json.dumps(payload, ensure_ascii=False), "draft", "local_only", stamp),
             )
         return self.get_report_draft(equipment_id, round_number)
@@ -615,7 +616,7 @@ class OperationsStore:
         p = self.placeholder
         with self.connection() as conn:
             row = conn.execute(
-                f"SELECT id,client_id,equipment_id,round_number,report_type,payload_json,updated_at "
+                f"SELECT id,client_id,equipment_id,round_number,matrix_id,report_type,payload_json,updated_at "
                 f"FROM operations_reports WHERE equipment_id={p} AND round_number={p} "
                 "AND source='app' AND state='draft' ORDER BY updated_at DESC LIMIT 1",
                 (_text(equipment_id), _text(round_number)),
@@ -624,7 +625,8 @@ class OperationsStore:
             return None
         return {
             "id": row[0], "client_id": row[1], "equipment_id": row[2], "round": row[3],
-            "report_type": row[4], "payload": json.loads(row[5] or "{}"), "updated_at": row[6],
+            "matrix_id": row[4], "report_type": row[5], "payload": json.loads(row[6] or "{}"),
+            "updated_at": row[7],
         }
 
     def finalize_report(self, report_id):
@@ -677,10 +679,11 @@ class OperationsStore:
                 raise ValueError("El borrador ya no existe o ya fue finalizado.")
             conn.execute(f"DELETE FROM operations_evidence WHERE report_id={p}", (_text(report_id),))
 
-    def save_report_evidence(self, report_id, position, drive_ref):
+    def save_report_evidence(self, report_id, position, drive_ref, *, storage_ref=""):
         """Registra la posición Foto1–Foto6 después de confirmar Drive."""
         self.initialize()
         report_id, drive_ref = _text(report_id), _text(drive_ref)
+        storage_ref = _text(storage_ref) or drive_ref
         position = int(position or 0)
         if position not in range(1, 7) or not drive_ref:
             raise ValueError("La posición y el archivo de evidencia no son válidos.")
@@ -697,9 +700,9 @@ class OperationsStore:
                 f"INSERT INTO operations_evidence(id,report_id,position,storage_ref,drive_ref,sync_status,updated_at) "
                 f"VALUES ({','.join([p] * 7)}) ON CONFLICT(report_id,position) DO UPDATE SET "
                 "storage_ref=excluded.storage_ref,drive_ref=excluded.drive_ref,sync_status='pending',updated_at=excluded.updated_at",
-                (evidence_id, report_id, position, drive_ref, drive_ref, "pending", stamp),
+                (evidence_id, report_id, position, storage_ref, drive_ref, "pending", stamp),
             )
-        return {"position": position, "drive_ref": drive_ref}
+        return {"position": position, "storage_ref": storage_ref, "drive_ref": drive_ref}
 
     def get_report_detail(self, report_id):
         """Carga el detalle pesado sólo cuando alguien abre un reporte."""
@@ -708,7 +711,7 @@ class OperationsStore:
         with self.connection() as conn:
             row = conn.execute(
                 f"SELECT r.id,r.client_id,r.equipment_id,r.round_number,r.start_at,r.end_at,"
-                f"r.completed,r.report_type,r.payload_json,r.state,r.sync_status,"
+                f"r.completed,r.matrix_id,r.report_type,r.payload_json,r.state,r.sync_status,"
                 f"(SELECT COUNT(*) FROM operations_evidence e WHERE e.report_id=r.id) "
                 f"FROM operations_reports r WHERE r.id={p}", (_text(report_id),)
             ).fetchone()
@@ -719,13 +722,14 @@ class OperationsStore:
         if not row:
             return None
         try:
-            payload = json.loads(row[8] or "{}")
+            payload = json.loads(row[9] or "{}")
         except (TypeError, json.JSONDecodeError):
             payload = {}
         return {
             "id": row[0], "client_id": row[1], "equipment_id": row[2], "round": row[3],
-            "start": row[4], "end": row[5], "completed": bool(row[6]), "report_type": row[7],
-            "payload": payload, "state": row[9], "sync_status": row[10], "photo_count": int(row[11] or 0),
+            "start": row[4], "end": row[5], "completed": bool(row[6]), "matrix_id": row[7],
+            "report_type": row[8], "payload": payload, "state": row[10], "sync_status": row[11],
+            "photo_count": int(row[12] or 0),
             "evidence": [{"position": int(item[0]), "storage_ref": _text(item[1]),
                           "drive_ref": _text(item[2])} for item in evidence_rows],
         }

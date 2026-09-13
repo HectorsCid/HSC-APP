@@ -56,6 +56,10 @@ _LAST10_CACHE = {"ts": 0, "items": []}
 
 # Carpeta raíz de Drive para guardar PDFs (04. Reportes)
 REPORTES_ROOT_ID = os.environ.get("REPORTES_ROOT_ID", "13x9OPrPJNcT3E17lcyISbpL5uE6az5ty")
+REPORTES_APPSHEET_PATH_PREFIX = os.environ.get(
+    "REPORTES_APPSHEET_PATH_PREFIX",
+    "/HSC/1. Refrigeración y Manto. industrial/01. Clientes/04. Reportes",
+).rstrip("/")
 DIAG_RECORDS_FILENAME = os.environ.get("REPORTES_MANUALES_FILENAME", "reportes_manuales.json")
 _DIAG_RECORDS_LOCK = threading.RLock()
 
@@ -919,15 +923,21 @@ def _upsert_bytes(parent_id: str, filename: str, content: bytes, mimetype: str) 
     return _drive_files_call(operation)
 
 
-def store_operations_evidence(client_name: str, report_id: str, position: int, content: bytes) -> str:
-    """Guarda una evidencia optimizada en Drive y devuelve su ID estable."""
+def store_operations_evidence(client_name: str, report_id: str, position: int, content: bytes) -> dict:
+    """Guarda evidencia y devuelve referencias para la app y para AppSheet."""
     if not REPORTES_ROOT_ID:
         raise RuntimeError("REPORTES_ROOT_ID no configurado")
     optimized, mimetype = _optimize_photo_bytes(content)
-    client_folder = _ensure_folder(REPORTES_ROOT_ID, client_name or "Sin Cliente")
-    report_folder = _ensure_folder(client_folder, report_id)
+    safe_client = _sanitize_name(client_name or "Sin Cliente")
+    safe_report = _sanitize_name(report_id)
+    client_folder = _ensure_folder(REPORTES_ROOT_ID, safe_client)
+    report_folder = _ensure_folder(client_folder, safe_report)
     extension = ".png" if mimetype == "image/png" else ".jpg"
-    return _upsert_bytes(report_folder, f"Foto{int(position)}{extension}", optimized, mimetype)
+    timestamp = datetime.utcnow().strftime("%H%M%S")
+    filename = f"{safe_report}.Foto{int(position)}.{timestamp}{extension}"
+    drive_id = _upsert_bytes(report_folder, filename, optimized, mimetype)
+    storage_ref = f"{REPORTES_APPSHEET_PATH_PREFIX}/{safe_client}/{safe_report}/{filename}"
+    return {"drive_ref": drive_id, "storage_ref": storage_ref}
 
 def _normalize_ronda(val: str) -> str | None:
     v = (val or "").strip()
