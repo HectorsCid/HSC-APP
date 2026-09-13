@@ -3238,6 +3238,50 @@ def _partner_quote_total(item):
         return 0.0
 
 
+def _partner_quote_description(item):
+    """Devuelve un concepto breve y reconocible sin cargar el PDF."""
+    for key in ("descripcion", "description", "titulo", "asunto", "resumen"):
+        value = str(item.get(key) or "").strip()
+        if value:
+            return value[:220]
+    details = item.get("datos") or {}
+    if isinstance(details, dict):
+        for key in ("descripcion", "description", "titulo", "asunto", "resumen", "observaciones"):
+            value = str(details.get(key) or "").strip()
+            if value:
+                return value[:220]
+    concepts = item.get("conceptos") or item.get("items") or item.get("detalles") or item.get("partidas") or []
+    descriptions = []
+    for concept in concepts if isinstance(concepts, list) else []:
+        if not isinstance(concept, dict):
+            continue
+        value = str(concept.get("descripcion") or concept.get("description")
+                    or concept.get("concepto") or concept.get("nombre") or "").strip()
+        if value and value not in descriptions:
+            descriptions.append(value)
+    if not descriptions:
+        return ""
+    result = " · ".join(descriptions[:2])
+    if len(descriptions) > 2:
+        result += f" · y {len(descriptions) - 2} concepto{'s' if len(descriptions) - 2 != 1 else ''} más"
+    return result[:220]
+
+
+def _partner_document_folio(item):
+    """Evita presentar el folio cero de Facturama como identificador real."""
+    folio = str(item.get("folio") or "").strip()
+    usable_folio = folio if folio and folio.strip("0") else ""
+    series = str(item.get("series") or "").strip()
+    if usable_folio:
+        return f"{series}{usable_folio}" if series else usable_folio
+    return ""
+
+
+def _partner_document_reference(item):
+    value = str(item.get("uuid") or item.get("id") or "").strip()
+    return f"…{value[-8:]}" if len(value) > 8 else value
+
+
 def _partner_documents_payload(client, refresh=False):
     identity = _partner_documents_identity(client)
     groups, _ = billing_client_groups(refresh=refresh)
@@ -3265,6 +3309,7 @@ def _partner_documents_payload(client, refresh=False):
             "folio": str(item.get("folio") or item.get("numero") or quote_id),
             "date": str(item.get("fecha") or item.get("created_at") or ""),
             "total": _partner_quote_total(item),
+            "description": _partner_quote_description(item),
             "status": str(item.get("status") or item.get("estado") or "Disponible"),
             "pdf_url": url_for("api_operaciones_partner_quote_pdf", quote_id=quote_id,
                                client_id=client.get("id")),
@@ -3277,7 +3322,8 @@ def _partner_documents_payload(client, refresh=False):
         for item in billing.get("invoices", []):
             invoice_id = str(item.get("id") or "")
             invoices.append({
-                "id": invoice_id, "folio": str(item.get("folio") or invoice_id),
+                "id": invoice_id, "folio": _partner_document_folio(item),
+                "reference": _partner_document_reference(item),
                 "date": str(item.get("date") or ""), "total": float(item.get("total") or 0),
                 "active": bool(item.get("active")), "paid": bool(item.get("paid")),
                 "payment_method": str(item.get("payment_method") or ""),
@@ -3289,9 +3335,13 @@ def _partner_documents_payload(client, refresh=False):
             })
         for item in billing.get("complements", []):
             document_id = str(item.get("id") or "")
+            invoice_folio = str(item.get("invoice_folio") or "").strip()
+            if invoice_folio and not invoice_folio.strip("0"):
+                invoice_folio = ""
             complements.append({
                 "id": document_id, "folio": str(item.get("uuid") or document_id),
-                "invoice_folio": str(item.get("invoice_folio") or ""),
+                "reference": _partner_document_reference(item),
+                "invoice_folio": invoice_folio,
                 "date": str(item.get("date") or ""), "amount": float(item.get("amount") or 0),
                 "partiality_number": item.get("partiality_number") or 1,
                 "pdf_url": url_for("api_operaciones_partner_invoice_file", invoice_id=document_id,

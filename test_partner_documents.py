@@ -24,7 +24,8 @@ class PartnerDocumentsTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.quotes = Path(self.temp.name) / "cotizaciones.json"
         self.quotes.write_text(json.dumps([
-            {"id": "COT-HDI", "cliente": "Holiday Inn Diamante", "receptor": {"rfc": "HDI010101AA1"}, "total": 100},
+            {"id": "COT-HDI", "cliente": "Holiday Inn Diamante", "receptor": {"rfc": "HDI010101AA1"},
+             "total": 100, "conceptos": [{"descripcion": "Cambio de compresor"}]},
             {"id": "COT-TT", "cliente": "Travers Tool", "receptor": {"rfc": "TTO010101AA1"}, "total": 200},
         ]), encoding="utf-8")
         self.patches = [
@@ -65,6 +66,7 @@ class PartnerDocumentsTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual([item["id"] for item in data["quotes"]], ["COT-HDI"])
+        self.assertEqual(data["quotes"][0]["description"], "Cambio de compresor")
         self.assertEqual([item["id"] for item in data["invoices"]], ["INV-HDI"])
         self.assertEqual([item["id"] for item in data["complements"]], ["REP-HDI"])
 
@@ -89,6 +91,11 @@ class PartnerDocumentsTest(unittest.TestCase):
                 "id": "UDA", "matrix_id": "UDA", "name": "Universidad de Arkansas Querétaro",
             })
         self.assertEqual(identity["rfc"], "ASR170529JA1")
+
+    def test_zero_invoice_folio_uses_fiscal_reference_instead(self):
+        self.assertEqual(module._partner_document_folio({"folio": "0", "series": "HSC"}), "")
+        self.assertEqual(module._partner_document_folio({"folio": "152", "series": "HSC"}), "HSC152")
+        self.assertEqual(module._partner_document_reference({"uuid": "12345678-ABCD-EFGH-IJKL-87654321"}), "…87654321")
 
 
 if __name__ == "__main__":

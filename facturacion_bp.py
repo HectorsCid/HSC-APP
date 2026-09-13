@@ -671,6 +671,7 @@ def _facturama_invoice_row(inv):
     return {
         "id": _pick(inv, "Id"),
         "uuid": str(uuid or "").strip(),
+        "series": str(_pick(inv, "Serie", "Series") or "").strip(),
         "folio": str(_pick(inv, "Folio") or "").strip(),
         "date": _pick(inv, "Date"),
         "total": _pick(inv, "Total"),
