@@ -85,7 +85,7 @@
   </style>
 </head>
 <body data-operations-shell="true" data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-pwa-install-disabled="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-app-kind="{{ operations_app_kind|default('technician') }}" data-user-id="{{ operations_user_id|default('owner') }}" data-user-name="{{ operations_user_name|default('Héctor Silva Cid') }}" data-permissions="{{ operations_permissions|default({})|tojson|forceescape }}">
-{% if operations_is_owner %}<form id="placeholderCleanupForm" method="post" action="/api/operaciones/admin/prune-placeholder-clients" style="position:fixed;right:12px;bottom:12px;z-index:99999"><input type="hidden" name="confirm" value="BORRAR_CLIENTES_PENDIENTES"><input type="hidden" name="client_ids" value="9b4531f5,HotelfiestaInn,IHPJ,TCFSH"><button type="submit">Confirmar limpieza pendiente</button></form>{% endif %}
+{% if operations_is_owner %}<button id="placeholderCleanupButton" type="button" style="position:fixed;right:12px;bottom:12px;z-index:99999">Confirmar limpieza pendiente</button>{% endif %}
 <div class="app">
   <header class="topbar">
     <button class="back" id="backBtn" hidden aria-label="Regresar">←</button>
@@ -770,6 +770,14 @@
   };
   $('#saveDraft').onclick=()=>{localStorage.setItem('hsc-report-demo',JSON.stringify(Object.fromEntries(new FormData($('#reportForm')))));toast('Borrador guardado en este dispositivo')};$('#reportForm').onsubmit=e=>{e.preventDefault();if(!confirm('¿Finalizar este reporte y marcar el equipo como realizado?'))return;localStorage.removeItem('hsc-report-demo');toast('Reporte finalizado · equipo marcado en verde');setTimeout(()=>showView('equipment'),700)};
   const saved=localStorage.getItem('hsc-report-demo');if(saved){try{const d=JSON.parse(saved);Object.entries(d).forEach(([k,v])=>{const f=$(`[name="${k}"]`);if(f)f.value=v})}catch(_){}}
+  if($('#placeholderCleanupButton'))$('#placeholderCleanupButton').onclick=async()=>{
+    const button=$('#placeholderCleanupButton');button.disabled=true;button.textContent='Limpiando…';
+    try{
+      const response=await fetch('/api/operaciones/admin/prune-placeholder-clients',{method:'POST',headers:{'Content-Type':'application/json','X-HSC-Cleanup':'owner-confirmed'},body:JSON.stringify({confirm:'BORRAR_CLIENTES_PENDIENTES',client_ids:['9b4531f5','HotelfiestaInn','IHPJ','TCFSH']})});
+      const payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error||'No se completó la limpieza.');
+      button.textContent=`Limpieza completa · ${payload.matrix?.rows_deleted||0} filas`;await loadMatrixData();
+    }catch(error){button.disabled=false;button.textContent='Reintentar limpieza';toast(error.message)}
+  };
   $('#sendFault').onclick=async()=>{
     const description=$('#faultText').value.trim(),equipmentId=$('#faultEquipment').value,files=[...$('#faultEvidence').files];
     if(!equipmentId){toast('Selecciona el equipo relacionado');return}

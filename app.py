@@ -3522,6 +3522,8 @@ def api_operaciones_prune_placeholder_clients():
     denied = _operations_forbidden("admin")
     if denied:
         return denied
+    if request.headers.get("X-HSC-Cleanup") != "owner-confirmed":
+        return jsonify({"ok": False, "error": "Solicitud de limpieza no válida."}), 400
     body = request.get_json(silent=True) or request.form or {}
     if str(body.get("confirm") or "") != "BORRAR_CLIENTES_PENDIENTES":
         return jsonify({"ok": False, "error": "Falta la confirmación de limpieza."}), 400
