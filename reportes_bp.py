@@ -631,6 +631,12 @@ _DRIVE_PATTERNS = [
 ]
 
 def _extract_drive_id(url: str):
+    # Las evidencias nuevas conservan además del camino de AppSheet el ID
+    # directo que devuelve Drive. Aceptarlo evita intentar resolverlo como si
+    # fuera una ruta y terminar mostrando el PNG transparente de respaldo.
+    direct = (url or "").strip()
+    if re.fullmatch(r"[a-zA-Z0-9_-]{20,}", direct):
+        return direct
     for pat in _DRIVE_PATTERNS:
         m = re.search(pat, url)
         if m:
