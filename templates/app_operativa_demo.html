@@ -338,9 +338,10 @@
     try{
       const response=await fetch(`/api/operaciones/bootstrap${refresh?'?refresh=1':''}`,{headers:{Accept:'application/json'}}),payload=await response.json();
       if(!response.ok||!payload.ok||!applyMatrixBootstrap(payload))throw Error(payload.error||'La matriz no devolvió clientes.');
+      try{localStorage.setItem(`hsc-operaciones-data-${account.id}-${appKind}`,JSON.stringify({savedAt:Date.now(),payload}))}catch(_){}
       if(payload.warning)$('#matrixStatus').textContent=payload.warning;
       if(refresh)toast('Datos actualizados desde Google');
-    }catch(error){$('#matrixStatus').textContent='Datos de ejemplo · la matriz no está disponible en esta computadora';$('#operationsNoticeText').textContent='Vista local con datos de ejemplo. No guarda reportes reales, no crea cuentas ni envía avisos.';console.warn('Operaciones matrix preview:',error);}
+    }catch(error){let saved=null;try{saved=JSON.parse(localStorage.getItem(`hsc-operaciones-data-${account.id}-${appKind}`)||'null')}catch(_){}if(saved?.payload&&applyMatrixBootstrap(saved.payload)){$('#matrixStatus').textContent='Sin conexión · mostrando la última información guardada';$('#operationsNoticeText').textContent='Puedes consultar la información descargada y conservar borradores con fotos en este dispositivo. Las acciones pendientes se enviarán cuando vuelva la conexión.';toast('Modo sin conexión activado')}else{$('#matrixStatus').textContent='Sin conexión · todavía no hay datos guardados en este dispositivo';$('#operationsNoticeText').textContent='Conéctate una vez para descargar los clientes, equipos y reportes de esta cuenta.';}console.warn('Operaciones bootstrap:',error);}
   }
   const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
   function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2300)}

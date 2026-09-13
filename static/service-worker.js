@@ -1,11 +1,14 @@
-const CACHE_NAME = 'hsc-shell-v9';
+const CACHE_NAME = 'hsc-shell-v10';
 const SAFE_ASSETS = [
   '/static/hsc_theme.css',
   '/static/hsc_theme.js',
   '/static/hsc_inputs.js',
   '/static/pwa.js',
   '/static/img/hsc-app-192.png',
-  '/static/img/hsc-app-512.png'
+  '/static/img/hsc-app-512.png',
+  '/manifest.webmanifest',
+  '/manifest-hsc-tecnico.webmanifest',
+  '/manifest-hsc-partner.webmanifest'
 ];
 const SAFE_PATHS = new Set(SAFE_ASSETS);
 
@@ -26,7 +29,21 @@ self.addEventListener('fetch', event => {
   const request = event.request;
   if(request.method !== 'GET') return;
   const url = new URL(request.url);
-  if(url.origin !== self.location.origin || !SAFE_PATHS.has(url.pathname)) return;
+  if(url.origin !== self.location.origin) return;
+  const operationsShell = request.mode === 'navigate' && (
+    url.pathname === '/hsc-tecnico/' || url.pathname === '/hsc-partner/'
+  );
+  if(operationsShell){
+    event.respondWith(fetch(request).then(response => {
+      if(response.ok && !response.redirected && new URL(response.url).pathname === url.pathname){
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+      }
+      return response;
+    }).catch(() => caches.match(request)));
+    return;
+  }
+  if(!SAFE_PATHS.has(url.pathname)) return;
   event.respondWith(
     caches.match(request).then(cached => cached || fetch(request).then(response => {
       if(response.ok){
