@@ -682,6 +682,7 @@
       const draftResult=await operationsPost('/api/operaciones/reports/draft',{id:activeDraftId,client_id:equipmentMeta[selectedEquipment].client,equipment_id:selectedEquipment,round:selectedRound,report_type:'refrigeration',payload:data});
       activeDraftId=draftResult.draft.id;
       const upload={id:activeDraftId,client:keepClient,equipment:keepEquipment,round:keepRound,key:keepDraftKey,data,photos};
+      rememberPendingReportUpload(upload);
       backgroundReportUploads.set(keepDraftKey,upload);
       showView('equipment');
       toast(photos.length?`Reporte guardado · ${photos.length} foto(s) subiendo`:'Reporte guardado · finalizando');
@@ -790,9 +791,20 @@
   $$('[data-cancel-editor]').forEach(b=>b.onclick=()=>$('#backBtn').click());
   window.addEventListener('beforeunload',event=>{if(editorDirty){event.preventDefault();event.returnValue='';}});
   const reportEvidenceByKey=new Map(),loadedEvidenceKeys=new Set(),backgroundReportUploads=new Map();let evidenceBusy=false;
+  const pendingUploadStorageKey=`hsc-pending-report-uploads-${typeof account==='undefined'?'test':account.id}-${typeof appKind==='undefined'?'technician':appKind}`;
+  function pendingReportUploads(){try{return JSON.parse(localStorage.getItem(pendingUploadStorageKey)||'{}')||{}}catch(_){return {}}}
+  function rememberPendingReportUpload(upload){const pending=pendingReportUploads();pending[upload.key]={id:upload.id,client:upload.client,equipment:upload.equipment,round:upload.round,key:upload.key,data:upload.data,photoCount:upload.photos.length};try{localStorage.setItem(pendingUploadStorageKey,JSON.stringify(pending))}catch(_){}}
+  function forgetPendingReportUpload(key){const pending=pendingReportUploads();delete pending[key];try{Object.keys(pending).length?localStorage.setItem(pendingUploadStorageKey,JSON.stringify(pending)):localStorage.removeItem(pendingUploadStorageKey)}catch(_){}}
   function openEvidenceDb(){if(typeof indexedDB==='undefined')return Promise.resolve(null);return new Promise((resolve,reject)=>{const request=indexedDB.open('hsc-operaciones-offline',1);request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains('evidence')){const store=db.createObjectStore('evidence',{keyPath:'key'});store.createIndex('draft','draft',{unique:false})}};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})}
   async function persistEvidence(){const db=await openEvidenceDb();if(!db)return false;const draft=draftKey(),photos=evidenceForReport();await new Promise((resolve,reject)=>{const transaction=db.transaction('evidence','readwrite'),store=transaction.objectStore('evidence'),index=store.index('draft'),cursor=index.openCursor(IDBKeyRange.only(draft));cursor.onsuccess=()=>{const item=cursor.result;if(item){item.delete();item.continue()}else photos.forEach((photo,position)=>store.put({key:`${draft}:${position}`,draft,position,name:photo.file.name,type:photo.file.type,size:photo.file.size,lastModified:photo.file.lastModified,blob:photo.file}))};transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error)});db.close();return true}
   async function clearEvidenceDraft(key=draftKey()){const db=await openEvidenceDb();if(!db)return;await new Promise((resolve,reject)=>{const transaction=db.transaction('evidence','readwrite'),cursor=transaction.objectStore('evidence').index('draft').openCursor(IDBKeyRange.only(key));cursor.onsuccess=()=>{const item=cursor.result;if(item){item.delete();item.continue()}};transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error)});db.close();}
+  async function evidenceRecordsForKey(key){const db=await openEvidenceDb();if(!db)return[];const records=await new Promise((resolve,reject)=>{const request=db.transaction('evidence').objectStore('evidence').index('draft').getAll(IDBKeyRange.only(key));request.onsuccess=()=>resolve(request.result||[]);request.onerror=()=>reject(request.error)});db.close();return records.sort((a,b)=>a.position-b.position)}
+  async function completePendingReportUpload(upload){
+    try{localStorage.removeItem(upload.key)}catch(_){}
+    forgetPendingReportUpload(upload.key);
+    await clearEvidenceDraft(upload.key);
+    upload.photos.forEach(photo=>URL.revokeObjectURL(photo.url));reportEvidenceByKey.delete(upload.key);loadedEvidenceKeys.delete(upload.key);backgroundReportUploads.delete(upload.key);
+  }
   async function finishReportInBackground(upload){
     try{
       await operationsPost(`/api/operaciones/reports/${encodeURIComponent(upload.id)}/evidence/reset`,{});
@@ -805,17 +817,29 @@
       const report={...result.report,round:String(result.report.round||upload.round),completed:true};
       matrixReports=[report,...matrixReports.filter(item=>item.id!==report.id&&item.matrix_id!==report.matrix_id)];
       demoRounds[upload.round].done=[...new Set([...demoRounds[upload.round].done,upload.equipment])];
-      try{localStorage.removeItem(upload.key)}catch(_){}
-      await clearEvidenceDraft(upload.key);
-      upload.photos.forEach(photo=>URL.revokeObjectURL(photo.url));reportEvidenceByKey.delete(upload.key);loadedEvidenceKeys.delete(upload.key);backgroundReportUploads.delete(upload.key);
+      await completePendingReportUpload(upload);
       refreshRound();
       toast(`Reporte finalizado · ${upload.photos.length} foto(s) guardadas en Drive`);
     }catch(error){
       backgroundReportUploads.delete(upload.key);
-      toast(`Las fotos siguen pendientes · ${error.message||'abre el reporte para reintentar'}`);
+      try{
+        const response=await fetch(`/api/operaciones/reports/${encodeURIComponent(upload.id)}`,{headers:{Accept:'application/json'}}),payload=await response.json();
+        if(response.ok&&payload.ok&&payload.report?.state==='completed'){await completePendingReportUpload(upload);return;}
+      }catch(_){}
+      toast(`Las fotos siguen pendientes · se reintentarán al volver la conexión`);
     }
   }
-  async function restoreEvidence(){const key=draftKey();if(loadedEvidenceKeys.has(key))return;loadedEvidenceKeys.add(key);const db=await openEvidenceDb();if(!db)return;const records=await new Promise((resolve,reject)=>{const request=db.transaction('evidence').objectStore('evidence').index('draft').getAll(IDBKeyRange.only(key));request.onsuccess=()=>resolve(request.result||[]);request.onerror=()=>reject(request.error)});db.close();if(!records.length)return;const restored=records.sort((a,b)=>a.position-b.position).map(record=>{const file=new File([record.blob],record.name,{type:record.type,lastModified:record.lastModified});return {file,url:URL.createObjectURL(file)}});reportEvidenceByKey.set(key,restored);renderEvidence()}
+  async function restoreEvidence(){const key=draftKey();if(loadedEvidenceKeys.has(key))return;loadedEvidenceKeys.add(key);const records=await evidenceRecordsForKey(key);if(!records.length)return;const restored=records.map(record=>{const file=new File([record.blob],record.name,{type:record.type,lastModified:record.lastModified});return {file,url:URL.createObjectURL(file)}});reportEvidenceByKey.set(key,restored);renderEvidence()}
+  async function resumePendingReportUploads(){
+    if(!navigator.onLine)return;
+    for(const saved of Object.values(pendingReportUploads())){
+      if(!saved?.id||backgroundReportUploads.has(saved.key))continue;
+      const records=await evidenceRecordsForKey(saved.key);
+      if(Number(saved.photoCount||0)>0&&records.length!==Number(saved.photoCount))continue;
+      const photos=records.map(record=>{const file=new File([record.blob],record.name,{type:record.type,lastModified:record.lastModified});return {file,url:URL.createObjectURL(file)}}),upload={...saved,photos};
+      backgroundReportUploads.set(saved.key,upload);finishReportInBackground(upload);
+    }
+  }
   function evidenceForReport(){const key=draftKey();if(!reportEvidenceByKey.has(key))reportEvidenceByKey.set(key,[]);return reportEvidenceByKey.get(key);}
   function renderEvidence(){const photos=evidenceForReport();$('#evidenceStatus').textContent=`${photos.length} de 6 fotos · ${selectedEquipment} · R${selectedRound}${photos.length?' · guardadas en este dispositivo':''}`;$('#evidenceList').innerHTML=photos.map((p,i)=>`<article class="form-section" style="padding:10px;margin:0;min-width:0"><img src="${escapeHtml(p.url)}" alt="Evidencia ${i+1}" style="width:100%;height:130px;object-fit:contain;border-radius:10px"><b>Foto${i+1}</b><p class="editor-note" style="overflow-wrap:anywhere">${escapeHtml(p.file.name)}</p><div class="management-bar"><button class="mini-btn" type="button" data-evidence-action="up" data-index="${i}" ${i===0?'disabled':''} aria-label="Mover Foto${i+1} antes">←</button><button class="mini-btn" type="button" data-evidence-action="down" data-index="${i}" ${i===photos.length-1?'disabled':''} aria-label="Mover Foto${i+1} después">→</button><button class="mini-btn" type="button" data-evidence-action="remove" data-index="${i}">Quitar Foto${i+1}</button></div></article>`).join('');}
   $('#evidenceList').onclick=async event=>{const button=event.target.closest('[data-evidence-action]');if(!button||evidenceBusy)return;const photos=evidenceForReport(),i=Number(button.dataset.index),action=button.dataset.evidenceAction;if(action==='remove'){URL.revokeObjectURL(photos[i].url);photos.splice(i,1);}else{const j=i+(action==='up'?-1:1);if(j>=0&&j<photos.length)[photos[i],photos[j]]=[photos[j],photos[i]];}renderEvidence();try{await persistEvidence()}catch(_){$('#evidenceError').textContent='El cambio se conserva abierto, pero el dispositivo no pudo actualizar su respaldo.'}};
@@ -835,7 +859,8 @@
   const openReportWithEvidence=$('#newReport').onclick;$('#newReport').onclick=async()=>{await openReportWithEvidence();$('#evidenceError').textContent='';try{await restoreEvidence()}catch(_){$('#evidenceError').textContent='No se pudo recuperar el respaldo de fotos de este dispositivo.';}renderEvidence();};
   const saveTextDraft=$('#saveDraft').onclick;$('#saveDraft').onclick=()=>{saveTextDraft();if(evidenceForReport().length)toast('Borrador y fotos conservados en este dispositivo');};
   $('#inviteClientSelect').innerHTML=clients.map(client=>`<option value="${escapeHtml(client[1])}">${escapeHtml(client[0])}</option>`).join('');
-  renderClients();refreshRound();applyAccess();if(typeof fetch==='function')loadMatrixData().finally(initializeBrowserNavigation);else initializeBrowserNavigation();
+  window.addEventListener('online',()=>{toast('Conexión recuperada · sincronizando pendientes');loadMatrixData().finally(resumePendingReportUploads)});
+  renderClients();refreshRound();applyAccess();if(typeof fetch==='function')loadMatrixData().finally(()=>{initializeBrowserNavigation();resumePendingReportUploads()});else initializeBrowserNavigation();
 </script>
 </body>
 </html>
