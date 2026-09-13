@@ -59,6 +59,7 @@ from reportes_bp import (
     start_auto_report_monitor,
     find_client_reports_folder_url,
     store_operations_evidence,
+    store_operations_expense_receipt,
 )
 from operaciones_matrix import read_operaciones_matrix
 from operaciones_store import OperationsStore
@@ -2852,6 +2853,8 @@ def _scope_operaciones_payload(payload):
         user_id = str(session.get("hsc_user_id") or "").strip()
         scoped["tasks"] = [task for task in payload.get("tasks", [])
                            if not task.get("assigned_user_id") or task.get("assigned_user_id") == user_id]
+        scoped["expenses"] = [expense for expense in payload.get("expenses", [])
+                              if expense.get("user_id") == user_id]
         return scoped
     if role != "client":
         return payload
@@ -2864,7 +2867,7 @@ def _scope_operaciones_payload(payload):
     faults = [item for item in payload.get("faults", [])
               if item.get("client_id") == client_id or item.get("equipment_id") in equipment_ids]
     scoped = dict(payload)
-    scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults, tasks=[])
+    scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults, tasks=[], expenses=[])
     scoped["stats"] = {
         "clients": len(clients), "equipment": len(equipment), "reports": len(reports),
         "client_photos": sum(bool(item.get("has_photo")) for item in clients),
@@ -2873,7 +2876,7 @@ def _scope_operaciones_payload(payload):
         "orphan_equipment": 0, "orphan_reports": 0,
         "duplicate_clients": 0, "duplicate_equipment": 0, "duplicate_reports": 0,
         "faults": len(faults), "duplicate_faults": 0,
-        "tasks": 0,
+        "tasks": 0, "expenses": 0, "pending_expenses": 0,
     }
     return scoped
 
@@ -2993,6 +2996,102 @@ def api_operaciones_complete_task(task_id):
     task = OPERACIONES_STORE.complete_task(task_id)
     _invalidate_operations_cache()
     return jsonify({"ok": True, "task": task})
+
+
+def _operations_expense_for_actor(expense_id):
+    expense = next(
+        (item for item in OPERACIONES_STORE.snapshot().get("expenses", []) if item["id"] == expense_id), None
+    )
+    if not expense:
+        abort(404)
+    if _operations_role() == "technician" and expense.get("user_id") != str(session.get("hsc_user_id") or ""):
+        abort(404)
+    return expense
+
+
+@app.post('/api/operaciones/expenses')
+def api_operaciones_save_expense():
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
+    body = dict(request.get_json(silent=True) or {})
+    role = _operations_role()
+    if role == "technician":
+        body["user_id"] = str(session.get("hsc_user_id") or "")
+        body["technician_name"] = str(session.get("hsc_user_name") or "Técnico HSC")
+    else:
+        body["user_id"] = str(body.get("user_id") or session.get("hsc_user_id") or "owner")
+        if not body.get("technician_name"):
+            user = next((item for item in OPERACIONES_STORE.list_users() if item["id"] == body["user_id"]), None)
+            body["technician_name"] = (user or {}).get("name") or str(session.get("hsc_user_name") or "Héctor Silva Cid")
+    body["created_by"] = str(session.get("hsc_user_id") or "owner")
+    try:
+        expense = OPERACIONES_STORE.save_expense(body)
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "expense": expense}), 201
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post('/api/operaciones/expenses/<path:expense_id>/receipt')
+def api_operaciones_upload_expense_receipt(expense_id):
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
+    expense = _operations_expense_for_actor(expense_id)
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return jsonify({"ok": False, "error": "Selecciona una fotografía del comprobante."}), 400
+    if upload.mimetype not in {"image/jpeg", "image/png", "image/webp"}:
+        return jsonify({"ok": False, "error": "El comprobante debe ser JPG, PNG o WebP."}), 400
+    content = upload.stream.read(15 * 1024 * 1024 + 1)
+    if not content or len(content) > 15 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "El comprobante debe pesar máximo 15 MB."}), 400
+    try:
+        stored = store_operations_expense_receipt(
+            expense.get("technician_name") or expense.get("user_id"), expense_id, content,
+        )
+        updated = OPERACIONES_STORE.save_expense_receipt(expense_id, stored["drive_ref"])
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "expense": updated,
+                        "url": url_for("api_operaciones_expense_receipt", expense_id=expense_id)})
+    except (ValueError, OSError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("No se pudo guardar el comprobante %s: %s", expense_id, exc)
+        return jsonify({"ok": False, "error": "Drive no confirmó el comprobante."}), 502
+
+
+@app.get('/api/operaciones/expenses/<path:expense_id>/receipt')
+def api_operaciones_expense_receipt(expense_id):
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
+    _operations_expense_for_actor(expense_id)
+    receipt = OPERACIONES_STORE.get_expense_receipt_ref(expense_id)
+    if not receipt:
+        abort(404)
+    return _serve_operations_thumbnail("expense", expense_id, receipt["photo_ref"])
+
+
+@app.post('/api/operaciones/expenses/<path:expense_id>/status')
+def api_operaciones_expense_status(expense_id):
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    body = request.get_json(silent=True) or {}
+    try:
+        expense = OPERACIONES_STORE.update_expense_status(
+            expense_id, body.get("status"), admin_notes=body.get("admin_notes"),
+        )
+        if not expense:
+            abort(404)
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "expense": expense})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
 
 
 @app.get('/api/operaciones/clients/<path:client_id>/reports-folder')

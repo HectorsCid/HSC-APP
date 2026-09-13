@@ -17,7 +17,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "10"
+SCHEMA_VERSION = "11"
 
 
 def _now():
@@ -166,6 +166,16 @@ class OperationsStore:
                 status TEXT NOT NULL DEFAULT 'Pendiente', completed_at TEXT NOT NULL DEFAULT '',
                 created_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             )""",
+            """CREATE TABLE IF NOT EXISTS operations_expenses (
+                id TEXT PRIMARY KEY, user_id TEXT NOT NULL, technician_name TEXT NOT NULL DEFAULT '',
+                client_id TEXT NOT NULL DEFAULT '', equipment_id TEXT NOT NULL DEFAULT '',
+                repair_id TEXT NOT NULL DEFAULT '', expense_date TEXT NOT NULL,
+                amount REAL NOT NULL DEFAULT 0, category TEXT NOT NULL DEFAULT 'Otro',
+                concept TEXT NOT NULL, payment_method TEXT NOT NULL DEFAULT 'Tarjeta propia',
+                reimbursable INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'Pendiente',
+                admin_notes TEXT NOT NULL DEFAULT '', receipt_ref TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""",
             """CREATE TABLE IF NOT EXISTS operations_sync_outbox (
                 id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
                 destination TEXT NOT NULL, action TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}',
@@ -192,6 +202,8 @@ class OperationsStore:
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_users_email ON operations_users(email) WHERE email <> ''",
             "CREATE INDEX IF NOT EXISTS idx_operations_tasks_date ON operations_tasks(scheduled_date,scheduled_time)",
             "CREATE INDEX IF NOT EXISTS idx_operations_tasks_assignee ON operations_tasks(assigned_user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_operations_expenses_user ON operations_expenses(user_id,expense_date)",
+            "CREATE INDEX IF NOT EXISTS idx_operations_expenses_status ON operations_expenses(status,expense_date)",
             "CREATE INDEX IF NOT EXISTS idx_operations_outbox_status ON operations_sync_outbox(status)",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_clients_matrix_id ON operations_clients(matrix_id) WHERE matrix_id <> ''",
         ]
@@ -365,6 +377,11 @@ class OperationsStore:
                 "assigned_user_id,priority,status,completed_at,created_by,created_at,updated_at "
                 "FROM operations_tasks ORDER BY scheduled_date,scheduled_time,id"
             ).fetchall()
+            expenses = conn.execute(
+                "SELECT id,user_id,technician_name,client_id,equipment_id,repair_id,expense_date,amount,"
+                "category,concept,payment_method,reimbursable,status,admin_notes,receipt_ref,created_by,created_at,updated_at "
+                "FROM operations_expenses ORDER BY expense_date DESC,created_at DESC,id DESC"
+            ).fetchall()
             meta_rows = conn.execute("SELECT key,value FROM operations_meta").fetchall()
             pending = conn.execute("SELECT COUNT(*) FROM operations_sync_outbox WHERE status!='synced'").fetchone()[0]
             cached_thumbnails = conn.execute("SELECT COUNT(*) FROM operations_media_cache").fetchone()[0]
@@ -398,11 +415,19 @@ class OperationsStore:
             "completed_at": row[10], "created_by": row[11], "created_at": row[12],
             "updated_at": row[13],
         } for row in tasks]
+        result_expenses = [{
+            "id": row[0], "user_id": row[1], "technician_name": row[2], "client_id": row[3],
+            "equipment_id": row[4], "repair_id": row[5], "expense_date": row[6],
+            "amount": float(row[7] or 0), "category": row[8], "concept": row[9],
+            "payment_method": row[10], "reimbursable": bool(row[11]), "status": row[12],
+            "admin_notes": row[13], "has_receipt": bool(row[14]), "created_by": row[15],
+            "created_at": row[16], "updated_at": row[17],
+        } for row in expenses]
         client_ids = {item["id"] for item in result_clients}
         equipment_ids = {item["id"] for item in result_equipment}
         return {
             "clients": result_clients, "equipment": result_equipment, "reports": result_reports,
-            "faults": result_faults, "tasks": result_tasks,
+            "faults": result_faults, "tasks": result_tasks, "expenses": result_expenses,
             "stats": {
                 "clients": len(result_clients), "equipment": len(result_equipment), "reports": len(result_reports),
                 "client_photos": sum(item["has_photo"] for item in result_clients),
@@ -415,6 +440,8 @@ class OperationsStore:
                 "cached_thumbnails": cached_thumbnails,
                 "faults": len(result_faults),
                 "tasks": len(result_tasks),
+                "expenses": len(result_expenses),
+                "pending_expenses": sum(item["status"] == "Pendiente" for item in result_expenses),
             },
             "meta": dict(meta_rows),
         }
@@ -724,6 +751,82 @@ class OperationsStore:
             if not cursor.rowcount:
                 return None
         return next(task for task in self.snapshot()["tasks"] if task["id"] == _text(task_id))
+
+    def save_expense(self, item):
+        """Registra un gasto de campo conservando responsable y vínculos operativos."""
+        self.initialize()
+        user_id = _text(item.get("user_id"))
+        concept = _text(item.get("concept"))
+        expense_date = _text(item.get("expense_date"))
+        try:
+            amount = round(float(item.get("amount") or 0), 2)
+        except (TypeError, ValueError):
+            amount = 0
+        if not user_id or not concept or not _valid_date(expense_date) or amount <= 0:
+            raise ValueError("Técnico, concepto, fecha e importe mayor a cero son obligatorios.")
+        expense_id = _text(item.get("id")) or f"GASTO_{uuid.uuid4().hex[:16].upper()}"
+        status = _text(item.get("status")) or "Pendiente"
+        if status not in {"Pendiente", "Aprobado", "Rechazado", "Reembolsado"}:
+            raise ValueError("El estado del gasto no es válido.")
+        client_id, equipment_id = _text(item.get("client_id")), _text(item.get("equipment_id"))
+        if equipment_id:
+            equipment = next((row for row in self.snapshot()["equipment"] if row["id"] == equipment_id), None)
+            if not equipment or (client_id and equipment["client_id"] != client_id):
+                raise ValueError("El equipo no pertenece al cliente seleccionado.")
+            client_id = equipment["client_id"]
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            existing = conn.execute(f"SELECT created_at,receipt_ref FROM operations_expenses WHERE id={p}", (expense_id,)).fetchone()
+            created_at, receipt_ref = (existing[0], existing[1]) if existing else (stamp, "")
+            conn.execute(
+                f"INSERT INTO operations_expenses(id,user_id,technician_name,client_id,equipment_id,repair_id,expense_date,amount,category,concept,payment_method,reimbursable,status,admin_notes,receipt_ref,created_by,created_at,updated_at) "
+                f"VALUES ({','.join([p] * 18)}) ON CONFLICT(id) DO UPDATE SET "
+                "client_id=excluded.client_id,equipment_id=excluded.equipment_id,repair_id=excluded.repair_id,"
+                "expense_date=excluded.expense_date,amount=excluded.amount,category=excluded.category,concept=excluded.concept,"
+                "payment_method=excluded.payment_method,reimbursable=excluded.reimbursable,updated_at=excluded.updated_at",
+                (expense_id, user_id, _text(item.get("technician_name")), client_id, equipment_id,
+                 _text(item.get("repair_id")), expense_date, amount, _text(item.get("category")) or "Otro",
+                 concept, _text(item.get("payment_method")) or "Tarjeta propia",
+                 1 if item.get("reimbursable", True) else 0, status, _text(item.get("admin_notes")),
+                 receipt_ref, _text(item.get("created_by")), created_at, stamp),
+            )
+        return next(row for row in self.snapshot()["expenses"] if row["id"] == expense_id)
+
+    def save_expense_receipt(self, expense_id, drive_ref):
+        self.initialize()
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE operations_expenses SET receipt_ref={p},updated_at={p} WHERE id={p}",
+                (_text(drive_ref), stamp, _text(expense_id)),
+            )
+            if not cursor.rowcount:
+                return None
+        return next(row for row in self.snapshot()["expenses"] if row["id"] == _text(expense_id))
+
+    def get_expense_receipt_ref(self, expense_id):
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT user_id,receipt_ref FROM operations_expenses WHERE id={p}", (_text(expense_id),)
+            ).fetchone()
+        return {"user_id": row[0], "photo_ref": _text(row[1])} if row and _text(row[1]) else None
+
+    def update_expense_status(self, expense_id, status, *, admin_notes=""):
+        self.initialize()
+        status = _text(status)
+        if status not in {"Pendiente", "Aprobado", "Rechazado", "Reembolsado"}:
+            raise ValueError("El estado del gasto no es válido.")
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE operations_expenses SET status={p},admin_notes={p},updated_at={p} WHERE id={p}",
+                (status, _text(admin_notes), stamp, _text(expense_id)),
+            )
+            if not cursor.rowcount:
+                return None
+        return next(row for row in self.snapshot()["expenses"] if row["id"] == _text(expense_id))
 
     def list_users(self):
         self.initialize()

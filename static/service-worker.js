@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hsc-shell-v14';
+const CACHE_NAME = 'hsc-shell-v15';
 const SAFE_ASSETS = [
   '/static/hsc_theme.css',
   '/static/hsc_theme.js',

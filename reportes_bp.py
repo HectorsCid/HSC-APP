@@ -945,6 +945,21 @@ def store_operations_evidence(client_name: str, report_id: str, position: int, c
     storage_ref = f"{REPORTES_APPSHEET_PATH_PREFIX}/{safe_client}/{safe_report}/{filename}"
     return {"drive_ref": drive_id, "storage_ref": storage_ref}
 
+
+def store_operations_expense_receipt(technician_name: str, expense_id: str, content: bytes) -> dict:
+    """Guarda un comprobante de gasto fuera de las carpetas de reportes de clientes."""
+    if not REPORTES_ROOT_ID:
+        raise RuntimeError("REPORTES_ROOT_ID no configurado")
+    optimized, mimetype = _optimize_photo_bytes(content)
+    safe_technician = _sanitize_name(technician_name or "Tecnico")
+    safe_expense = _sanitize_name(expense_id)
+    expenses_folder = _ensure_folder(REPORTES_ROOT_ID, "_Comprobantes de gastos")
+    technician_folder = _ensure_folder(expenses_folder, safe_technician)
+    extension = ".png" if mimetype == "image/png" else ".jpg"
+    filename = f"{safe_expense}.Ticket{extension}"
+    drive_id = _upsert_bytes(technician_folder, filename, optimized, mimetype)
+    return {"drive_ref": drive_id, "filename": filename}
+
 def _normalize_ronda(val: str) -> str | None:
     v = (val or "").strip()
     if not v:

@@ -257,3 +257,29 @@ def test_fault_evidence_tasks_invites_and_permissions_are_durable(tmp_path):
     updated = store.save_user_permissions(user["id"], {"createReports": False}, status="suspended")
     assert updated["status"] == "suspended"
     assert updated["permissions"]["createReports"] is False
+
+
+def test_technician_expenses_keep_receipt_and_reimbursement_status(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+
+    expense = store.save_expense({
+        "user_id": "TECH_1", "technician_name": "Técnico Uno",
+        "expense_date": "2026-09-13", "amount": "385.50",
+        "category": "Refacción", "concept": "Capacitor",
+        "payment_method": "Tarjeta propia", "reimbursable": True,
+        "client_id": "UVMQ", "equipment_id": "UVMQ1",
+    })
+    assert expense["status"] == "Pendiente"
+    assert expense["amount"] == 385.50
+    assert expense["client_id"] == "UVMQ"
+    assert expense["has_receipt"] is False
+
+    with_receipt = store.save_expense_receipt(expense["id"], "drive-ticket-1")
+    assert with_receipt["has_receipt"] is True
+    assert store.get_expense_receipt_ref(expense["id"])["photo_ref"] == "drive-ticket-1"
+
+    approved = store.update_expense_status(expense["id"], "Aprobado", admin_notes="Ticket correcto")
+    assert approved["status"] == "Aprobado"
+    assert approved["admin_notes"] == "Ticket correcto"
+    assert store.snapshot()["stats"]["pending_expenses"] == 0
