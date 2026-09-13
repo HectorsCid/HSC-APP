@@ -353,6 +353,70 @@ class OperationsStore:
         with self.connection() as conn:
             return bool(conn.execute("SELECT 1 FROM operations_clients LIMIT 1").fetchone())
 
+    def delete_clients_with_relations(self, client_ids):
+        """Elimina clientes concretos y todas sus relaciones de la base operativa."""
+        self.initialize()
+        targets = sorted({_text(value) for value in client_ids if _text(value)})
+        if not targets:
+            return {"clients": 0, "equipment": 0, "reports": 0, "faults": 0}
+        p = self.placeholder
+        markers = ",".join([p] * len(targets))
+
+        def values(conn, sql, params):
+            return [str(row[0]) for row in conn.execute(sql, params).fetchall() if _text(row[0])]
+
+        with self.connection() as conn:
+            equipment_ids = values(
+                conn, f"SELECT id FROM operations_equipment WHERE client_id IN ({markers})", targets,
+            )
+            equipment_markers = ",".join([p] * len(equipment_ids))
+            report_where = f"client_id IN ({markers})"
+            report_params = list(targets)
+            if equipment_ids:
+                report_where += f" OR equipment_id IN ({equipment_markers})"
+                report_params.extend(equipment_ids)
+            report_ids = values(conn, f"SELECT id FROM operations_reports WHERE {report_where}", report_params)
+            report_markers = ",".join([p] * len(report_ids))
+            fault_where = f"client_id IN ({markers})"
+            fault_params = list(targets)
+            if equipment_ids:
+                fault_where += f" OR equipment_id IN ({equipment_markers})"
+                fault_params.extend(equipment_ids)
+            if report_ids:
+                fault_where += f" OR report_id IN ({report_markers})"
+                fault_params.extend(report_ids)
+            fault_ids = values(conn, f"SELECT id FROM operations_faults WHERE {fault_where}", fault_params)
+
+            if fault_ids:
+                fault_markers = ",".join([p] * len(fault_ids))
+                conn.execute(f"DELETE FROM operations_fault_evidence WHERE fault_id IN ({fault_markers})", fault_ids)
+                conn.execute(f"DELETE FROM operations_faults WHERE id IN ({fault_markers})", fault_ids)
+            if report_ids:
+                conn.execute(f"DELETE FROM operations_evidence WHERE report_id IN ({report_markers})", report_ids)
+                conn.execute(f"DELETE FROM operations_reports WHERE id IN ({report_markers})", report_ids)
+            relation_where = f"client_id IN ({markers})"
+            relation_params = list(targets)
+            if equipment_ids:
+                relation_where += f" OR equipment_id IN ({equipment_markers})"
+                relation_params.extend(equipment_ids)
+            conn.execute(f"DELETE FROM operations_tasks WHERE {relation_where}", relation_params)
+            conn.execute(f"DELETE FROM operations_expenses WHERE {relation_where}", relation_params)
+            conn.execute(f"DELETE FROM operations_invites WHERE client_id IN ({markers})", targets)
+            conn.execute(f"DELETE FROM operations_users WHERE client_id IN ({markers})", targets)
+
+            entity_ids = targets + equipment_ids + report_ids + fault_ids
+            if entity_ids:
+                entity_markers = ",".join([p] * len(entity_ids))
+                conn.execute(f"DELETE FROM operations_sync_outbox WHERE entity_id IN ({entity_markers})", entity_ids)
+                conn.execute(f"DELETE FROM operations_media_cache WHERE record_id IN ({entity_markers})", entity_ids)
+            if equipment_ids:
+                conn.execute(f"DELETE FROM operations_equipment WHERE id IN ({equipment_markers})", equipment_ids)
+            conn.execute(f"DELETE FROM operations_clients WHERE id IN ({markers})", targets)
+        return {
+            "clients": len(targets), "equipment": len(equipment_ids),
+            "reports": len(report_ids), "faults": len(fault_ids),
+        }
+
     def snapshot(self):
         self.initialize()
         with self.connection() as conn:

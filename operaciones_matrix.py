@@ -255,3 +255,107 @@ def read_operaciones_matrix(service, spreadsheet_id, *, include_media_refs=False
         response.get("valueRanges") or [], include_media_refs=include_media_refs,
         include_raw=include_raw,
     )
+
+
+def delete_operaciones_client_rows(service, spreadsheet_id, client_ids):
+    """Borra de la matriz sólo filas relacionadas con clientes explícitos.
+
+    Primero descubre equipos y reportes relacionados y después elimina, de abajo
+    hacia arriba, las filas coincidentes de cualquier pestaña que use IDs de
+    Cliente, Equipo o Reporte. Así también cubre hojas auxiliares de AppSheet.
+    """
+    targets = {_text(value).casefold() for value in client_ids if _text(value)}
+    if not targets:
+        return {"clients": [], "equipment": [], "reports": [], "rows_deleted": 0, "sheets": {}}
+
+    metadata = service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id,
+        fields="sheets.properties(sheetId,title)",
+    ).execute()
+    properties = [item.get("properties") or {} for item in metadata.get("sheets") or []]
+    titles = [_text(item.get("title")) for item in properties if _text(item.get("title"))]
+    if not titles:
+        return {"clients": sorted(targets), "equipment": [], "reports": [], "rows_deleted": 0, "sheets": {}}
+
+    header_ranges = [f"'{title.replace(chr(39), chr(39) * 2)}'!1:1" for title in titles]
+    header_response = service.spreadsheets().values().batchGet(
+        spreadsheetId=spreadsheet_id, ranges=header_ranges, majorDimension="ROWS",
+    ).execute()
+    header_values = header_response.get("valueRanges") or []
+    candidate_titles = []
+    headers_by_title = {}
+    interesting = {_header_key(value) for value in ("ID_Cliente", "ID_Equipo", "ID_Reporte")}
+    for title, item in zip(titles, header_values):
+        headers = list(((item.get("values") or [[]])[0]))
+        if interesting & {_header_key(value) for value in headers}:
+            candidate_titles.append(title)
+            headers_by_title[title] = headers
+
+    data_ranges = [f"'{title.replace(chr(39), chr(39) * 2)}'!A2:ZZ" for title in candidate_titles]
+    data_response = service.spreadsheets().values().batchGet(
+        spreadsheetId=spreadsheet_id, ranges=data_ranges, majorDimension="ROWS",
+    ).execute() if data_ranges else {"valueRanges": []}
+    rows_by_title = {
+        title: list(item.get("values") or [])
+        for title, item in zip(candidate_titles, data_response.get("valueRanges") or [])
+    }
+
+    equipment_ids, report_ids = set(), set()
+    normalized_rows = {}
+    for title in candidate_titles:
+        headers = headers_by_title[title]
+        records = []
+        for row_number, values in enumerate(rows_by_title.get(title, []), start=2):
+            padded = list(values) + [""] * max(0, len(headers) - len(values))
+            record = {_header_key(header): _text(padded[index]) for index, header in enumerate(headers) if _text(header)}
+            records.append((row_number, record))
+        normalized_rows[title] = records
+
+    client_key, equipment_key, report_key = map(_header_key, ("ID_Cliente", "ID_Equipo", "ID_Reporte"))
+    changed = True
+    while changed:
+        changed = False
+        for records in normalized_rows.values():
+            for _, record in records:
+                client_id = record.get(client_key, "").casefold()
+                equipment_id = record.get(equipment_key, "").casefold()
+                report_id = record.get(report_key, "").casefold()
+                related = client_id in targets or equipment_id in equipment_ids or report_id in report_ids
+                if not related:
+                    continue
+                if equipment_id and equipment_id not in equipment_ids:
+                    equipment_ids.add(equipment_id)
+                    changed = True
+                if report_id and report_id not in report_ids:
+                    report_ids.add(report_id)
+                    changed = True
+
+    rows_to_delete = {}
+    for title, records in normalized_rows.items():
+        matches = []
+        for row_number, record in records:
+            client_id = record.get(client_key, "").casefold()
+            equipment_id = record.get(equipment_key, "").casefold()
+            report_id = record.get(report_key, "").casefold()
+            if client_id in targets or equipment_id in equipment_ids or report_id in report_ids:
+                matches.append(row_number)
+        if matches:
+            rows_to_delete[title] = matches
+
+    sheet_ids = {_text(item.get("title")): item.get("sheetId") for item in properties}
+    requests = []
+    for title, row_numbers in rows_to_delete.items():
+        for row_number in sorted(row_numbers, reverse=True):
+            requests.append({"deleteDimension": {"range": {
+                "sheetId": sheet_ids[title], "dimension": "ROWS",
+                "startIndex": row_number - 1, "endIndex": row_number,
+            }}})
+    if requests:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id, body={"requests": requests},
+        ).execute()
+    return {
+        "clients": sorted(targets), "equipment": sorted(equipment_ids),
+        "reports": sorted(report_ids), "rows_deleted": len(requests),
+        "sheets": {title: len(rows) for title, rows in rows_to_delete.items()},
+    }
