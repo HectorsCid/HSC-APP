@@ -25,6 +25,8 @@ assert.match(html, /data-switch-mode="admin"/);
 assert.match(html, /HSC Partner no puede crear, modificar ni finalizar reportes/);
 assert.match(html, /id="inviteTechPermissions"/);
 assert.match(html, /id="inviteClientPermissions"/);
+assert.match(html, /max-height:calc\(100dvh - 36px\)/);
+assert.match(html, /-webkit-overflow-scrolling:touch/);
 assert.match(html, /\/api\/operaciones\/clients/);
 assert.match(html, /\/api\/operaciones\/equipment/);
 assert.match(script, /Equipo desactivado; historial conservado/);
