@@ -583,7 +583,7 @@
     $('#partnerFaultCount').textContent=`${rows.length} registrada${rows.length===1?'':'s'}`;
     bindPartnerFaults();
   }
-  function partnerDocumentCacheKey(clientId){return `hsc-partner-documents-v3-${account.id}-${clientId}`}
+  function partnerDocumentCacheKey(clientId){return `hsc-partner-documents-v4-${account.id}-${clientId}`}
   function readPartnerDocumentCache(clientId){
     try{return JSON.parse(localStorage.getItem(partnerDocumentCacheKey(clientId))||'null')?.payload||null}catch(_){return null}
   }
@@ -605,7 +605,9 @@
     const date=partnerDocumentDate(item.date),reference=item.reference||'';
     let title=isQuote?`Cotización ${item.folio||item.id}`:isInvoice?(item.folio?`Factura ${item.folio}`:`Factura del ${date}`):(item.invoice_folio?`Complemento de factura ${item.invoice_folio}`:`Complemento de pago ${reference}`);
     let detail=isQuote?`${date} · ${money(item.total)}`:isInvoice?`${date} · ${money(item.total)} · ${item.payment_method||'Método no indicado'}${!item.folio&&reference?` · Folio fiscal ${reference}`:''}`:`${date} · ${money(item.amount)} · Parcialidad ${item.partiality_number||1}`;
-    let state=isQuote?(item.status||'Disponible'):isInvoice?(item.cancellation_status==='pending'?'Cancelación en proceso':item.cancellation_status==='rejected'?'Cancelación rechazada':item.cancellation_status==='canceled'||!item.active?'Cancelada':item.paid?'Pagada':Number(item.remaining_balance)>0?'Pendiente de pago':'Vigente'):'Aplicado';
+    const providerLabel=String(item.status_label||item.status||''),providerState=providerLabel.toLocaleLowerCase('es-MX');
+    const cancellationState=item.cancellation_status==='pending'||/requested|pending|pendiente|en proceso/.test(providerState)?'pending':item.cancellation_status==='rejected'||/rejected|rechazad/.test(providerState)?'rejected':item.cancellation_status==='canceled'||/canceled|cancelled|cancelad|accepted|aceptad|expirad/.test(providerState)?'canceled':'active';
+    let state=isQuote?(item.status||'Disponible'):isInvoice?(cancellationState==='pending'?'Cancelación en proceso':cancellationState==='rejected'?'Cancelación rechazada':cancellationState==='canceled'||!item.active?'Cancelada':item.paid?'Pagada':Number(item.remaining_balance)>0?'Pendiente de pago':'Vigente'):'Aplicado';
     const stateClass=/cancel/i.test(state)?'cancelled':/pend/i.test(state)?'pending':'';
     const files=`<a class="mini-btn" target="_blank" rel="noopener" href="${escapeHtml(item.pdf_url)}">PDF</a>${item.xml_url?`<a class="mini-btn" target="_blank" rel="noopener" href="${escapeHtml(item.xml_url)}">XML</a>`:''}`;
     const description=isQuote&&item.description?`<small class="partner-doc-description">${escapeHtml(item.description)}</small>`:'';

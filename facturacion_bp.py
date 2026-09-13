@@ -51,6 +51,9 @@ _FISCAL_CATALOG_CACHE = {}
 _BILLING_CLIENT_GROUPS_CACHE = {"ts": 0.0, "result": None, "payment_sync": None}
 _BILLING_CLIENT_GROUPS_LOCK = Lock()
 _BILLING_CLIENT_GROUPS_TTL = 180.0
+_CFDI_CANCELLATION_CACHE = {}
+_CFDI_CANCELLATION_LOCK = Lock()
+_CFDI_CANCELLATION_TTL = 7 * 24 * 60 * 60
 _CFDI_UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
@@ -674,6 +677,33 @@ def _invoice_status_label(status):
     }[state]
 
 
+def _resolved_invoice_cancellation(inv_id, uuid, provider_status):
+    """Conserva el estado más reciente cuando dos listados de Facturama llegan desfasados."""
+    provider_state = _invoice_cancellation_state(provider_status)
+    now = time.time()
+    keys = [str(value or "").strip().casefold() for value in (inv_id, uuid) if str(value or "").strip()]
+    with _CFDI_CANCELLATION_LOCK:
+        cached = next(
+            (
+                _CFDI_CANCELLATION_CACHE.get(key)
+                for key in keys
+                if _CFDI_CANCELLATION_CACHE.get(key)
+                and now - _CFDI_CANCELLATION_CACHE[key]["ts"] <= _CFDI_CANCELLATION_TTL
+            ),
+            None,
+        )
+        # Un estado explícito de cancelación tiene prioridad sobre una respuesta genérica
+        # "active/Timbrada" que puede provenir de otro índice todavía no actualizado.
+        if provider_state != "active":
+            resolved = {"state": provider_state, "label": _invoice_status_label(provider_status), "ts": now}
+            for key in keys:
+                _CFDI_CANCELLATION_CACHE[key] = resolved
+            return resolved["state"], resolved["label"]
+        if cached:
+            return cached["state"], cached["label"]
+    return provider_state, _invoice_status_label(provider_status)
+
+
 def _facturama_invoice_row(inv):
     """Normaliza tanto el resultado plano de búsqueda como el detalle de Facturama."""
     receiver = _pick(inv, "Receiver", "Customer") or {}
@@ -681,8 +711,10 @@ def _facturama_invoice_row(inv):
     if not uuid:
         complement = _pick(inv, "Complement") or {}
         uuid = _pick(_pick(complement, "TaxStamp") or {}, "Uuid")
+    inv_id = _pick(inv, "Id")
     active = _pick(inv, "IsActive")
     status = _pick(inv, "Status") or ("active" if active is not False else "canceled")
+    cancellation_status, status_label = _resolved_invoice_cancellation(inv_id, uuid, status)
     cfdi_type = str(_pick(inv, "CfdiType", "Type") or "I").strip().lower()
     cfdi_type = {
         "ingreso": "I", "pago": "P", "egreso": "E",
@@ -690,15 +722,15 @@ def _facturama_invoice_row(inv):
     }.get(cfdi_type, cfdi_type.upper()[:1])
     payment_method = str(_pick(inv, "PaymentMethod") or "").strip().upper()[:3]
     return {
-        "id": _pick(inv, "Id"),
+        "id": inv_id,
         "uuid": str(uuid or "").strip(),
         "series": str(_pick(inv, "Serie", "Series") or "").strip(),
         "folio": str(_pick(inv, "Folio") or "").strip(),
         "date": _pick(inv, "Date"),
         "total": _pick(inv, "Total"),
         "status": status,
-        "cancellation_status": _invoice_cancellation_state(status),
-        "status_label": _invoice_status_label(status),
+        "cancellation_status": cancellation_status,
+        "status_label": status_label,
         "payment_method": payment_method,
         "type": cfdi_type or "I",
         "customer_name": _pick(receiver, "Name", "LegalName", "TaxName") or _pick(inv, "TaxName"),
@@ -2613,10 +2645,11 @@ def api_invoice_cancel(inv_id):
             if rep_state["tracked"]:
                 _remove_rep_by_id(inv_id)
             result_status = (_pick(result, "Status") if isinstance(result, dict) else "") or "requested"
+            cancellation_status, status_label = _resolved_invoice_cancellation(inv_id, "", result_status)
             return jsonify({
                 "ok": True, "provider": "facturama", "result": result,
-                "cancellation_status": _invoice_cancellation_state(result_status),
-                "status_label": _invoice_status_label(result_status),
+                "cancellation_status": cancellation_status,
+                "status_label": status_label,
             }), 200
         except requests.HTTPError as exc:
             return jsonify({

@@ -612,6 +612,14 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(canceled["cancellation_status"], "canceled")
         self.assertEqual(rejected["cancellation_status"], "rejected")
 
+    def test_pending_cancellation_is_not_reverted_by_stale_active_listing(self):
+        billing._CFDI_CANCELLATION_CACHE.clear()
+        pending = billing._facturama_invoice_row({"Id": "invoice-pending", "Status": "requested"})
+        stale = billing._facturama_invoice_row({"Id": "invoice-pending", "Status": "active"})
+        self.assertEqual(pending["cancellation_status"], "pending")
+        self.assertEqual(stale["cancellation_status"], "pending")
+        self.assertEqual(stale["status_label"], "Cancelación en proceso")
+
     def test_receiver_validation_reports_each_mismatched_sat_field(self):
         validation = {
             "ExistRfc": True,
