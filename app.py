@@ -61,7 +61,7 @@ from reportes_bp import (
     store_operations_evidence,
     store_operations_expense_receipt,
 )
-from operaciones_matrix import delete_operaciones_client_rows, read_operaciones_matrix
+from operaciones_matrix import read_operaciones_matrix
 from operaciones_store import OperationsStore
 from operaciones_sync import sync_operations_outbox
 
@@ -3514,43 +3514,6 @@ def api_operaciones_storage_status():
         current_app.logger.exception("No se pudo consultar la base operativa: %s", exc)
         return jsonify({"ok": False, "enabled": OPERACIONES_STORE.enabled,
                         "error": "La base operativa no está disponible."}), 503
-
-
-@app.post('/api/operaciones/admin/prune-placeholder-clients')
-def api_operaciones_prune_placeholder_clients():
-    """Limpieza explícita de fichas provisionales y todas sus relaciones."""
-    denied = _operations_forbidden("admin")
-    if denied:
-        return denied
-    if request.headers.get("X-HSC-Cleanup") != "owner-confirmed":
-        return jsonify({"ok": False, "error": "Solicitud de limpieza no válida."}), 400
-    body = request.get_json(silent=True) or request.form or {}
-    if str(body.get("confirm") or "") != "BORRAR_CLIENTES_PENDIENTES":
-        return jsonify({"ok": False, "error": "Falta la confirmación de limpieza."}), 400
-    snapshot = OPERACIONES_STORE.snapshot() if OPERACIONES_STORE.enabled else {}
-    candidates = [
-        str(item.get("id") or "").strip()
-        for item in snapshot.get("clients", [])
-        if str(item.get("name") or "").startswith("Cliente pendiente de vincular (")
-    ]
-    requested = body.get("client_ids") or candidates
-    if isinstance(requested, str):
-        requested = [value.strip() for value in requested.split(",")]
-    candidate_map = {value.casefold(): value for value in candidates}
-    targets = [candidate_map[str(value).strip().casefold()] for value in requested
-               if str(value).strip().casefold() in candidate_map]
-    if not targets:
-        return jsonify({"ok": True, "clients": [], "message": "No quedan clientes pendientes de vincular."})
-    try:
-        sheet_result = delete_operaciones_client_rows(get_sheets_service(timeout=30), SHEET_ID, targets)
-        database_result = OPERACIONES_STORE.delete_clients_with_relations(targets)
-        _invalidate_operations_cache()
-        return jsonify({"ok": True, "clients": targets, "matrix": sheet_result, "database": database_result})
-    except Exception as exc:
-        current_app.logger.exception("No se pudieron borrar clientes provisionales: %s", exc)
-        return jsonify({"ok": False, "error": "No se completó la limpieza; no se tocaron otros clientes."}), 502
-    finally:
-        reset_thread_google_services()
 
 
 def _operations_migration_checks(stats):
