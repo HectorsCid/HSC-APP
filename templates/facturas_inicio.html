@@ -523,18 +523,20 @@ async function load(){
     for(const x of rows){
       const tr = document.createElement('tr');
       if(x.type === 'P') tr.classList.add('is-payment');
+      const lifecycle=invoiceLifecycle(x);
       const pagoStatus =
         x.type==='P' ? '<span class="badge" title="Complemento de pago">REP</span>' :
+        (lifecycle.blocksPayment ? `<span class="badge ${lifecycle.className}">${lifecycle.label}</span>` :
         (x.paid ? '<span class="badge green">Pagado</span>' :
           (x.payment_method==='PUE' ? '<span class="badge green">Completo</span>' :
-            (x.payment_count ? `<span class="badge gray" title="Pagado: $${Number(x.paid_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}; resta: $${Number(x.remaining_balance||0).toLocaleString('es-MX',{minimumFractionDigits:2})}">Parcial ${x.payment_count}</span>` : '<span class="badge red">Sin pagos</span>')));
+            (x.payment_count ? `<span class="badge gray" title="Pagado: $${Number(x.paid_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}; resta: $${Number(x.remaining_balance||0).toLocaleString('es-MX',{minimumFractionDigits:2})}">Parcial ${x.payment_count}</span>` : '<span class="badge red">Sin pagos</span>'))));
 
       tr.innerHTML = `
         <td title="${escAttr(x.customer_name)}">${x.customer_name||''}</td>
         <td>${x.customer_tax_id||''}</td>
         <td>${(x.date||'').slice(0,10)}</td>
         <td>$${Number(x.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
-        <td>${x.status||''}</td>
+        <td>${x.status_label||x.status||''}</td>
         <td><span class="badge gray" ${x.type==='P'?'title="El método PUE/PPD no aplica en complementos de pago"':''}>${x.type==='P'?'N/A':(x.payment_method||'—')}</span></td>
         <td>${tipoBadge(x.type)}</td>
         <td>${pagoStatus}</td>
@@ -550,16 +552,16 @@ async function load(){
                   data-rfc="${escAttr(x.customer_tax_id)}"
                   data-cliente="${escAttr(x.customer_name)}" title="${x.email_delivery?.sent ? `Enviada ${escAttr(x.email_delivery.last_sent_at || '')}` : 'Correo pendiente de enviar'}">${x.email_delivery?.sent ? '✉ ✓' : '✉ Enviar'}</button>
           ${
-            (x.type==='I' && x.payment_method==='PPD' && !x.paid)
+            (x.type==='I' && x.payment_method==='PPD' && !x.paid && !lifecycle.blocksPayment)
               ? `<button class="btn" title="Generar complemento de pago" aria-label="Generar complemento de pago" data-goto="/pagos/nuevo?invoice_id=${encodeURIComponent(x.id)}&uuid=${encodeURIComponent(x.uuid||'')}" data-key="rep-${x.id}">💳 Comp.</button>`
               : '<span class="action-slot" aria-hidden="true"></span>'
           }
-          <button class="btn btn-danger"
+          ${lifecycle.blocksPayment?`<span class="badge ${lifecycle.className}">${lifecycle.label}</span>`:`<button class="btn btn-danger"
                   data-cancel="${x.id}"
                   data-total="${x.total||0}"
                   data-cliente="${(x.customer_name||'').replace(/"/g,'&quot;')}"
                   data-uuid="${x.uuid||''}"
-                  data-key="cancel-${x.id}">⛔ Cancelar</button>
+                  data-key="cancel-${x.id}">⛔ Cancelar</button>`}
         </td>`;
       tbody.appendChild(tr);
     }
@@ -610,6 +612,13 @@ else load();
 
 function moneyMx(value){
   return Number(value||0).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
+}
+function invoiceLifecycle(row){
+  const state=String(row?.cancellation_status||'active');
+  if(state==='pending')return {label:'Cancelación en proceso',className:'gray',blocksPayment:true};
+  if(state==='canceled'||row?.active===false)return {label:'Cancelada',className:'red',blocksPayment:true};
+  if(state==='rejected')return {label:'Cancelación rechazada',className:'red',blocksPayment:false};
+  return {label:'Vigente',className:'green',blocksPayment:false};
 }
 
 async function loadReceived(){
@@ -783,7 +792,7 @@ function billingEmailButton(row, client){
 }
 function renderBillingClient(client){
   const detail=document.getElementById('billingClientDetail');
-  const invoices=(client.invoices||[]).map(row=>`<div class="client-doc"><div><div class="doc-title">Factura ${escAttr(row.folio||'sin folio')}</div><div class="doc-sub">${escAttr((row.date||'').slice(0,10))} · ${escAttr(row.payment_method)} · ${row.active?'Vigente':'Cancelada'}</div></div><div>${moneyMx(row.total)}</div><div>${row.remaining_balance>0?`Pendiente ${moneyMx(row.remaining_balance)}`:(row.active?'Cubierta':'—')}</div><div class="client-doc-actions"><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/pdf">PDF</a><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/xml">XML</a>${billingEmailButton(row,client)}${row.active&&row.payment_method==='PPD'&&row.remaining_balance>0?`<a class="btn btn-primary" href="/pagos/nuevo?invoice_id=${encodeURIComponent(row.id)}&uuid=${encodeURIComponent(row.uuid||'')}">Comp.</a>`:''}</div></div>`).join('');
+  const invoices=(client.invoices||[]).map(row=>{const lifecycle=invoiceLifecycle(row);return `<div class="client-doc"><div><div class="doc-title">Factura ${escAttr(row.folio||'sin folio')}</div><div class="doc-sub">${escAttr((row.date||'').slice(0,10))} · ${escAttr(row.payment_method)} · ${lifecycle.label}</div></div><div>${moneyMx(row.total)}</div><div>${lifecycle.blocksPayment?lifecycle.label:(row.remaining_balance>0?`Pendiente ${moneyMx(row.remaining_balance)}`:'Cubierta')}</div><div class="client-doc-actions"><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/pdf">PDF</a><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/xml">XML</a>${billingEmailButton(row,client)}${row.active&&row.payment_method==='PPD'&&row.remaining_balance>0&&!lifecycle.blocksPayment?`<a class="btn btn-primary" href="/pagos/nuevo?invoice_id=${encodeURIComponent(row.id)}&uuid=${encodeURIComponent(row.uuid||'')}">Comp.</a>`:''}</div></div>`}).join('');
   const complements=(client.complements||[]).map(row=>`<div class="client-doc"><div><div class="doc-title">Complemento P${row.partiality_number}</div><div class="doc-sub">Factura ${escAttr(row.invoice_folio||'')} · ${escAttr((row.date||'').slice(0,10))}</div></div><div>${moneyMx(row.amount)}</div><div>Aplicado</div><div class="client-doc-actions"><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/pdf">PDF</a><a class="btn" target="_blank" href="/api/invoices/${encodeURIComponent(row.id)}/xml">XML</a>${billingEmailButton(row,client)}</div></div>`).join('');
   detail.innerHTML=`<div class="client-detail-head"><div><h3>${escAttr(client.name)}</h3><div class="mini-sub">${escAttr(client.rfc)}</div></div>${client.pending_complements?`<span class="badge red">${client.pending_complements} pendiente(s)</span>`:'<span class="badge green">Al corriente</span>'}</div><div class="client-kpis"><div class="summary-box"><span>Facturado</span><strong>${moneyMx(client.invoiced_total)}</strong></div><div class="summary-box"><span>Cobrado</span><strong>${moneyMx(client.collected_total)}</strong></div><div class="summary-box"><span>Por cobrar</span><strong>${moneyMx(client.pending_total)}</strong></div></div><div class="section-label">Facturas</div>${invoices||'<div class="empty-state">Sin facturas.</div>'}<div class="section-label">Complementos</div>${complements||'<div class="mini-sub">Sin complementos registrados.</div>'}`;
   detail.querySelectorAll('[data-client-email]').forEach(button=>button.onclick=()=>openEmailModal({id:button.dataset.clientEmail,email:button.dataset.email||'',folio:button.dataset.folio||'',rfc:button.dataset.rfc||'',cliente:button.dataset.cliente||''}));
@@ -1075,7 +1084,7 @@ cmConfirm.addEventListener('click', async ()=>{
       throw new Error(errorText(d.body || d.error || 'No se pudo cancelar la factura.'));
     }
     closeCancelModal();
-    alert('CFDI cancelado.');
+    alert(d.status_label||'La solicitud de cancelación fue enviada.');
     load();
   }catch(err){
     cmErr.textContent = err.message || String(err);

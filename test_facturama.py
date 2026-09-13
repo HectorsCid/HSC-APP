@@ -603,6 +603,15 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         remove.assert_called_once_with("rep-2")
 
+    def test_cancellation_lifecycle_distinguishes_pending_and_canceled(self):
+        pending = billing._facturama_invoice_row({"Status": "Cancelación en proceso"})
+        canceled = billing._facturama_invoice_row({"Status": "canceled"})
+        rejected = billing._facturama_invoice_row({"Status": "rejected"})
+        self.assertEqual(pending["cancellation_status"], "pending")
+        self.assertEqual(pending["status_label"], "Cancelación en proceso")
+        self.assertEqual(canceled["cancellation_status"], "canceled")
+        self.assertEqual(rejected["cancellation_status"], "rejected")
+
     def test_receiver_validation_reports_each_mismatched_sat_field(self):
         validation = {
             "ExistRfc": True,

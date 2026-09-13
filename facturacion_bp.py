@@ -494,8 +494,7 @@ def _sync_facturama_payment_rows(rows):
         for _raw, row in payment_rows:
             rep_id = str(row.get("id") or "").strip()
             rep_uuid = str(row.get("uuid") or "").strip()
-            status_text = str(row.get("status") or "").strip().lower()
-            canceled = any(word in status_text for word in ("cancel", "canceled", "cancelado"))
+            canceled = row.get("cancellation_status") == "canceled"
 
             if canceled:
                 for invoice_uuid, record in list(index.items()):
@@ -653,6 +652,28 @@ def _valid_cfdi_uuid(value):
     return bool(_CFDI_UUID_RE.fullmatch(str(value or "").strip()))
 
 
+def _invoice_cancellation_state(status):
+    """Normaliza el ciclo de cancelación sin confundir una solicitud con una baja concluida."""
+    text = str(status or "").strip().casefold()
+    if any(value in text for value in ("rejected", "rechazad")):
+        return "rejected"
+    if any(value in text for value in ("requested", "pending", "pendiente", "en proceso")):
+        return "pending"
+    if any(value in text for value in ("canceled", "cancelled", "cancelado", "cancelada", "accepted", "acepted", "expirad")):
+        return "canceled"
+    return "active"
+
+
+def _invoice_status_label(status):
+    state = _invoice_cancellation_state(status)
+    return {
+        "pending": "Cancelación en proceso",
+        "canceled": "Cancelada",
+        "rejected": "Cancelación rechazada",
+        "active": str(status or "Vigente").strip() or "Vigente",
+    }[state]
+
+
 def _facturama_invoice_row(inv):
     """Normaliza tanto el resultado plano de búsqueda como el detalle de Facturama."""
     receiver = _pick(inv, "Receiver", "Customer") or {}
@@ -676,6 +697,8 @@ def _facturama_invoice_row(inv):
         "date": _pick(inv, "Date"),
         "total": _pick(inv, "Total"),
         "status": status,
+        "cancellation_status": _invoice_cancellation_state(status),
+        "status_label": _invoice_status_label(status),
         "payment_method": payment_method,
         "type": cfdi_type or "I",
         "customer_name": _pick(receiver, "Name", "LegalName", "TaxName") or _pick(inv, "TaxName"),
@@ -1786,17 +1809,18 @@ def billing_client_groups(refresh=False):
             "invoiced_total": 0.0, "collected_total": 0.0, "pending_total": 0.0,
             "pending_complements": 0, "invoices": [], "complements": [],
         })
-        status_text = str(invoice.get("status") or "").lower()
-        active = not any(word in status_text for word in ("cancel", "canceled", "cancelado"))
+        cancellation_status = invoice.get("cancellation_status") or _invoice_cancellation_state(invoice.get("status"))
+        active = cancellation_status != "canceled"
+        collectible = active and cancellation_status != "pending"
         summary = _payment_summary(_payment_record(payments, invoice["uuid"]), invoice.get("total"))
         total = round(float(invoice.get("total") or 0), 2)
-        pending = summary["remaining_balance"] if invoice.get("payment_method") == "PPD" and active else 0.0
+        pending = summary["remaining_balance"] if invoice.get("payment_method") == "PPD" and collectible else 0.0
         collected = (total if invoice.get("payment_method") == "PUE" else summary["paid_amount"]) if active else 0.0
         group["invoice_count"] += 1
         group["invoiced_total"] = round(group["invoiced_total"] + (total if active else 0), 2)
         group["collected_total"] = round(group["collected_total"] + collected, 2)
         group["pending_total"] = round(group["pending_total"] + pending, 2)
-        if active and invoice.get("payment_method") == "PPD" and pending > 0.009:
+        if collectible and invoice.get("payment_method") == "PPD" and pending > 0.009:
             group["pending_complements"] += 1
         group["invoices"].append({
             **invoice, "active": active, "paid_amount": summary["paid_amount"],
@@ -1904,8 +1928,7 @@ def api_billing_balance():
         invoice = _facturama_invoice_row(item)
         if not str(invoice.get("date") or "").startswith(date_prefix) or not _valid_cfdi_uuid(invoice.get("uuid")):
             continue
-        status_text = str(invoice.get("status") or "").lower()
-        if any(word in status_text for word in ("cancel", "canceled", "cancelado")):
+        if invoice.get("cancellation_status") in {"canceled", "pending"}:
             continue
         rfc = str(invoice.get("customer_tax_id") or "").strip().upper()
         name = str(invoice.get("customer_name") or "Cliente sin nombre").strip()
@@ -1951,8 +1974,7 @@ def api_billing_balance():
         invoice = _facturama_received_row(item)
         if not str(invoice.get("date") or "").startswith(date_prefix) or not _valid_cfdi_uuid(invoice.get("uuid")):
             continue
-        status_text = str(invoice.get("status") or "").lower()
-        if any(word in status_text for word in ("cancel", "canceled", "cancelado")):
+        if invoice.get("cancellation_status") in {"canceled", "pending"}:
             continue
         if invoice.get("type") not in {"I", "E"}:
             continue
@@ -2586,9 +2608,16 @@ def api_invoice_cancel(inv_id):
             fm_params["uuidReplacement"] = sub
         try:
             result = _fm_request("DELETE", f"/api/cfdi/{inv_id}", params=fm_params)
+            with _BILLING_CLIENT_GROUPS_LOCK:
+                _BILLING_CLIENT_GROUPS_CACHE.update(ts=0.0, result=None, payment_sync=None)
             if rep_state["tracked"]:
                 _remove_rep_by_id(inv_id)
-            return jsonify({"ok": True, "provider": "facturama", "result": result}), 200
+            result_status = (_pick(result, "Status") if isinstance(result, dict) else "") or "requested"
+            return jsonify({
+                "ok": True, "provider": "facturama", "result": result,
+                "cancellation_status": _invoice_cancellation_state(result_status),
+                "status_label": _invoice_status_label(result_status),
+            }), 200
         except requests.HTTPError as exc:
             return jsonify({
                 "ok": False,

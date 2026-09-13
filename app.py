@@ -3326,6 +3326,8 @@ def _partner_documents_payload(client, refresh=False):
                 "reference": _partner_document_reference(item),
                 "date": str(item.get("date") or ""), "total": float(item.get("total") or 0),
                 "active": bool(item.get("active")), "paid": bool(item.get("paid")),
+                "cancellation_status": str(item.get("cancellation_status") or "active"),
+                "status_label": str(item.get("status_label") or item.get("status") or "Vigente"),
                 "payment_method": str(item.get("payment_method") or ""),
                 "remaining_balance": float(item.get("remaining_balance") or 0),
                 "pdf_url": url_for("api_operaciones_partner_invoice_file", invoice_id=invoice_id,
