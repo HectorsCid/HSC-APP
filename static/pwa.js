@@ -4,7 +4,15 @@
   let installPrompt = null;
   let registration = null;
   const appName = document.querySelector('meta[name="application-name"]')?.content || 'HSC';
-  const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  // `display_override` lets desktop Chromium launch the installed app with
+  // window controls overlaid. That is still an installed PWA even though the
+  // `standalone` media query is false in that mode.
+  const isStandalone = () => [
+    'standalone',
+    'window-controls-overlay',
+    'fullscreen',
+    'minimal-ui'
+  ].some(mode => matchMedia(`(display-mode: ${mode})`).matches) || navigator.standalone === true;
   const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
 
   function addStyles(){

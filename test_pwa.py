@@ -63,6 +63,14 @@ class PwaTests(unittest.TestCase):
         self.assertIn('data-app-kind="partner"', partner)
         self.assertIn('Instalar HSC Partner', partner)
 
+    def test_install_banner_is_hidden_in_every_installed_display_mode(self):
+        html = self.client.get("/hsc-tecnico/").get_data(as_text=True)
+        self.assertIn("display-mode:window-controls-overlay", html)
+        with open("static/pwa.js", encoding="utf-8") as source:
+            pwa_source = source.read()
+        self.assertIn("'window-controls-overlay'", pwa_source)
+        self.assertIn("'standalone'", pwa_source)
+
 
 if __name__ == "__main__":
     unittest.main()
