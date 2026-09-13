@@ -814,13 +814,13 @@
   }
   function populateFiscalClients(selected=''){
     const select=$('#opBillingRfc'),current=String(selected||'').toUpperCase();
-    select.innerHTML='<option value="">Sin vincular</option>'+fiscalClients.map(item=>`<option value="${escapeHtml(item.rfc)}">${escapeHtml(item.alias||item.name)} · ${escapeHtml(item.rfc)}</option>`).join('');
+    select.innerHTML='<option value="">Sin vincular</option>'+fiscalClients.map(item=>{const names=item.name&&item.name!==item.alias?`${item.alias} · ${item.name}`:(item.alias||item.name);return `<option value="${escapeHtml(item.rfc)}">${escapeHtml(names)} · ${escapeHtml(item.rfc)}</option>`}).join('');
     if(current&&!fiscalClients.some(item=>item.rfc===current))select.insertAdjacentHTML('beforeend',`<option value="${escapeHtml(current)}">RFC vinculado · ${escapeHtml(current)}</option>`);
     select.value=current;
   }
   async function loadFiscalClients(selected=''){
     if(fiscalClients.length){populateFiscalClients(selected);return}
-    try{const response=await fetch('/api/operaciones/fiscal-clients',{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudo cargar el catálogo fiscal');fiscalClients=payload.clients||[];populateFiscalClients(selected)}catch(error){console.warn('Catálogo fiscal:',error);populateFiscalClients(selected)}
+    try{const response=await fetch('/api/operaciones/fiscal-clients?refresh=1',{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudo cargar el catálogo fiscal');fiscalClients=payload.clients||[];populateFiscalClients(selected)}catch(error){console.warn('Catálogo fiscal:',error);populateFiscalClients(selected)}
   }
   function applyClientEditorPermissions(){
     const mayEditIdentity=can('editClientData'),mayEditMatrix=can('editIds');

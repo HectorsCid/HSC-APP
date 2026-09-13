@@ -3272,6 +3272,8 @@ def api_operaciones_fiscal_clients():
     denied = _operations_forbidden("admin")
     if denied:
         return denied
+    if request.args.get("refresh") == "1" and (IS_RENDER or AUTO_SYNC_FROM_DRIVE):
+        _sync_clientes_from_drive_into_memory()
     with _CLIENTES_DATA_LOCK:
         catalog = dict(clientes_predefinidos or {})
     rows = []
