@@ -65,7 +65,7 @@ from operaciones_matrix import read_operaciones_matrix
 from operaciones_store import OperationsStore
 from operaciones_sync import sync_operations_outbox
 
-from facturacion_bp import facturacion_bp
+from facturacion_bp import facturacion_bp, billing_client_groups, api_invoice_pdf, api_invoice_xml
 app.register_blueprint(facturacion_bp)
 print(">>> Blueprint facturacion registrado")
 print(app.url_map)
@@ -313,6 +313,16 @@ def _require_app_login():
     if not password and not IS_RENDER:
         return None
     if session.get("hsc_authenticated") is True:
+        if str(session.get("hsc_role") or "").strip().lower() == "client":
+            allowed_partner_path = (
+                request.path.startswith("/hsc-partner/")
+                or request.path.startswith("/api/operaciones/")
+                or request.path in {"/cerrar-sesion", "/manifest-hsc-partner.webmanifest", "/service-worker.js"}
+            )
+            if not allowed_partner_path:
+                if request.path.startswith("/api/"):
+                    return jsonify({"ok": False, "error": "Esta cuenta sólo puede consultar HSC Partner."}), 403
+                return redirect(url_for("hsc_partner"))
         return None
     if not password:
         message = "Falta configurar HSC_APP_PASSWORD en Render."
@@ -3119,6 +3129,174 @@ def api_operaciones_client_reports_folder(client_id):
     if not folder_url:
         return jsonify({"ok": False, "error": "Este cliente todavía no tiene una carpeta de reportes PDF."}), 404
     return redirect(folder_url)
+
+
+def _partner_documents_client(requested_id=""):
+    """Resuelve el cliente visible sin permitir que Partner cambie de empresa."""
+    denied = _operations_forbidden("admin", "client")
+    if denied:
+        return None, denied
+    client_id = str(requested_id or request.args.get("client_id") or "").strip()
+    if _operations_role() == "client":
+        assigned_id = str(session.get("hsc_client_id") or "").strip()
+        if client_id and client_id != assigned_id:
+            return None, (jsonify({"ok": False, "error": "Este cliente no pertenece a tu cuenta."}), 403)
+        client_id = assigned_id
+    clients = OPERACIONES_STORE.snapshot().get("clients", []) if OPERACIONES_STORE.enabled else []
+    client = next((item for item in clients if str(item.get("id") or "").strip() == client_id), None)
+    if not client:
+        return None, (jsonify({"ok": False, "error": "No se encontró el cliente asignado."}), 404)
+    return client, None
+
+
+def _partner_documents_identity(client):
+    canonical, catalog = _resolver_cliente_catalogo(client.get("name") or "")
+    catalog = catalog or {}
+    rfc = str(catalog.get("rfc") or "").strip().upper()
+    names = {
+        _normalizar_nombre_importacion(value)
+        for value in (client.get("name"), canonical, catalog.get("nombre_legal"), catalog.get("nombre"))
+        if str(value or "").strip()
+    }
+    return {"rfc": rfc, "names": names, "canonical": canonical or client.get("name") or ""}
+
+
+def _partner_quote_matches(item, identity):
+    receiver = item.get("receptor") or {}
+    quote_rfc = str(receiver.get("rfc") or item.get("rfc") or "").strip().upper()
+    if identity["rfc"] and quote_rfc:
+        return identity["rfc"] == quote_rfc
+    quote_name = item.get("cliente") or receiver.get("nombre") or item.get("nombre_cliente") or ""
+    canonical, _ = _resolver_cliente_catalogo(quote_name, quote_rfc)
+    normalized = {_normalizar_nombre_importacion(value) for value in (quote_name, canonical) if str(value or "").strip()}
+    return bool(identity["names"] & normalized)
+
+
+def _partner_quote_total(item):
+    try:
+        return round(float(item.get("total") or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _partner_documents_payload(client):
+    identity = _partner_documents_identity(client)
+    groups, _ = billing_client_groups()
+    billing = next((group for group in groups if identity["rfc"] and group.get("rfc") == identity["rfc"]), None)
+    if not billing:
+        billing = next((group for group in groups
+                        if _normalizar_nombre_importacion(group.get("name")) in identity["names"]), None)
+
+    path = _ruta_cotizaciones()
+    try:
+        quote_data = json.loads(path.read_text("utf-8")) if path.exists() else []
+    except Exception:
+        quote_data = []
+    if isinstance(quote_data, dict):
+        quote_data = quote_data.get("items") or quote_data.get("data") or []
+    quotes = []
+    for item in quote_data if isinstance(quote_data, list) else []:
+        if not isinstance(item, dict) or not _partner_quote_matches(item, identity):
+            continue
+        quote_id = str(item.get("id") or item.get("folio") or item.get("numero") or item.get("uuid") or "").strip()
+        if not quote_id:
+            continue
+        quotes.append({
+            "id": quote_id,
+            "folio": str(item.get("folio") or item.get("numero") or quote_id),
+            "date": str(item.get("fecha") or item.get("created_at") or ""),
+            "total": _partner_quote_total(item),
+            "status": str(item.get("status") or item.get("estado") or "Disponible"),
+            "pdf_url": url_for("api_operaciones_partner_quote_pdf", quote_id=quote_id,
+                               client_id=client.get("id")),
+        })
+    quotes.sort(key=lambda item: item["date"], reverse=True)
+
+    invoices = []
+    complements = []
+    if billing:
+        for item in billing.get("invoices", []):
+            invoice_id = str(item.get("id") or "")
+            invoices.append({
+                "id": invoice_id, "folio": str(item.get("folio") or invoice_id),
+                "date": str(item.get("date") or ""), "total": float(item.get("total") or 0),
+                "active": bool(item.get("active")), "paid": bool(item.get("paid")),
+                "payment_method": str(item.get("payment_method") or ""),
+                "remaining_balance": float(item.get("remaining_balance") or 0),
+                "pdf_url": url_for("api_operaciones_partner_invoice_file", invoice_id=invoice_id,
+                                   file_type="pdf", client_id=client.get("id")),
+                "xml_url": url_for("api_operaciones_partner_invoice_file", invoice_id=invoice_id,
+                                   file_type="xml", client_id=client.get("id")),
+            })
+        for item in billing.get("complements", []):
+            document_id = str(item.get("id") or "")
+            complements.append({
+                "id": document_id, "folio": str(item.get("uuid") or document_id),
+                "invoice_folio": str(item.get("invoice_folio") or ""),
+                "date": str(item.get("date") or ""), "amount": float(item.get("amount") or 0),
+                "partiality_number": item.get("partiality_number") or 1,
+                "pdf_url": url_for("api_operaciones_partner_invoice_file", invoice_id=document_id,
+                                   file_type="pdf", client_id=client.get("id")),
+                "xml_url": url_for("api_operaciones_partner_invoice_file", invoice_id=document_id,
+                                   file_type="xml", client_id=client.get("id")),
+            })
+    return {
+        "client": {"id": client.get("id"), "name": client.get("name"), "rfc": identity["rfc"]},
+        "quotes": quotes, "invoices": invoices, "complements": complements,
+        "summary": {
+            "quotes": len(quotes), "invoices": len(invoices), "complements": len(complements),
+            "pending_balance": float((billing or {}).get("pending_total") or 0),
+        },
+    }
+
+
+@app.get('/api/operaciones/partner-documents')
+def api_operaciones_partner_documents():
+    client, error = _partner_documents_client()
+    if error:
+        return error
+    try:
+        return jsonify({"ok": True, **_partner_documents_payload(client)})
+    except Exception as exc:
+        current_app.logger.exception("No se pudieron consultar documentos Partner: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudieron consultar los documentos del cliente."}), 502
+
+
+def _partner_document_allowed(client, document_id, kind):
+    payload = _partner_documents_payload(client)
+    rows = payload.get("quotes" if kind == "quote" else "invoices", [])
+    if kind == "invoice":
+        rows = rows + payload.get("complements", [])
+    return any(str(item.get("id") or "") == str(document_id or "") for item in rows)
+
+
+@app.get('/api/operaciones/partner-documents/quotes/<path:quote_id>/pdf')
+def api_operaciones_partner_quote_pdf(quote_id):
+    client, error = _partner_documents_client()
+    if error:
+        return error
+    if not _partner_document_allowed(client, quote_id, "quote"):
+        abort(404)
+    quote = _buscar_cotizacion_registrada(quote_id)
+    if not quote:
+        abort(404)
+    try:
+        content = _pdf_cotizacion_bytes(quote)
+    except (FileNotFoundError, OSError):
+        abort(404)
+    filename = secure_filename(f"Cotizacion-{quote_id}.pdf") or "cotizacion.pdf"
+    return send_file(io.BytesIO(content), mimetype="application/pdf", as_attachment=False,
+                     download_name=filename)
+
+
+@app.get('/api/operaciones/partner-documents/invoices/<path:invoice_id>/<file_type>')
+def api_operaciones_partner_invoice_file(invoice_id, file_type):
+    client, error = _partner_documents_client()
+    if error:
+        return error
+    if file_type not in {"pdf", "xml"} or not _partner_document_allowed(client, invoice_id, "invoice"):
+        abort(404)
+    return api_invoice_pdf(invoice_id) if file_type == "pdf" else api_invoice_xml(invoice_id)
 
 
 @app.get('/api/operaciones/bootstrap')

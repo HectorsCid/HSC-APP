@@ -1736,15 +1736,11 @@ def api_list_facturas():
     return jsonify({"ok": True, "data": out}), 200
 
 
-@facturacion_bp.get("/facturacion/clientes")
-def api_billing_clients():
-    """Relación por receptor de facturas, cobros y complementos registrados."""
+def billing_client_groups():
+    """Construye la relación por receptor para Panel y las cuentas Partner."""
     if _provider() != "facturama":
-        return jsonify({"ok": False, "error": "El panel por cliente requiere Facturama."}), 503
-    try:
-        raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "all", "page": 0})
-    except requests.HTTPError as exc:
-        return jsonify({"ok": False, "error": _http_error_detail(exc)}), 400
+        raise RuntimeError("El panel por cliente requiere Facturama.")
+    raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "all", "page": 0})
     source = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
     payment_sync = _sync_facturama_payment_rows(source)
     payments = _read_index()
@@ -1794,6 +1790,18 @@ def api_billing_clients():
         group["invoices"].sort(key=lambda row: str(row.get("date") or ""), reverse=True)
         group["complements"].sort(key=lambda row: str(row.get("date") or ""), reverse=True)
     result.sort(key=lambda row: (row["pending_complements"] == 0, -row["pending_total"], row["name"].casefold()))
+    return result, payment_sync
+
+
+@facturacion_bp.get("/facturacion/clientes")
+def api_billing_clients():
+    """Relación por receptor de facturas, cobros y complementos registrados."""
+    try:
+        result, payment_sync = billing_client_groups()
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 503
+    except requests.HTTPError as exc:
+        return jsonify({"ok": False, "error": _http_error_detail(exc)}), 400
     return jsonify({"ok": True, "data": result, "payment_sync": payment_sync}), 200
 
 
