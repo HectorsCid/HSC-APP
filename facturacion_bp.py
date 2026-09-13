@@ -54,6 +54,7 @@ _BILLING_CLIENT_GROUPS_TTL = 180.0
 _CFDI_CANCELLATION_CACHE = {}
 _CFDI_CANCELLATION_LOCK = Lock()
 _CFDI_CANCELLATION_TTL = 7 * 24 * 60 * 60
+_CFDI_CANCELLATION_LOADED = False
 _CFDI_UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
@@ -133,6 +134,9 @@ _SCHEDULE_RUN_LOCK = Lock()
 _PUSH_LOCK = Lock()
 STAMP_REQUESTS = DATA_DIR / "solicitudes_timbrado.json"
 STAMP_REQUESTS_DRIVE_FILE = "HSC-solicitudes-timbrado.json"
+CFDI_CANCELLATIONS = DATA_DIR / "cancelaciones_cfdi.json"
+CFDI_CANCELLATIONS_DRIVE_FILE = "HSC-cancelaciones-cfdi.json"
+_CFDI_CANCELLATION_STORE_LOCK = Lock()
 
 # ----------------------------------------------------------------------
 # Índice local de REP
@@ -677,8 +681,114 @@ def _invoice_status_label(status):
     }[state]
 
 
+def _read_persisted_cancellations():
+    """Combina el archivo desplegado con el respaldo más reciente de Drive."""
+    with _CFDI_CANCELLATION_STORE_LOCK:
+        local = []
+        if CFDI_CANCELLATIONS.exists():
+            try:
+                value = json.loads(CFDI_CANCELLATIONS.read_text("utf-8"))
+                local = value if isinstance(value, list) else []
+            except Exception:
+                pass
+        try:
+            remote = load_json_file(CFDI_CANCELLATIONS_DRIVE_FILE, default=[])
+            remote = remote if isinstance(remote, list) else []
+        except Exception:
+            remote = []
+        merged = {}
+        for item in [*local, *remote]:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("uuid") or item.get("id") or "").strip().casefold()
+            if not key:
+                continue
+            previous = merged.get(key)
+            if not previous or float(item.get("updated_ts") or 0) >= float(previous.get("updated_ts") or 0):
+                merged[key] = item
+        return list(merged.values())
+
+
+def _write_persisted_cancellations(items):
+    with _CFDI_CANCELLATION_STORE_LOCK:
+        CFDI_CANCELLATIONS.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            backup_json_file(CFDI_CANCELLATIONS_DRIVE_FILE, items)
+            return True
+        except Exception as exc:
+            current_app.logger.warning("No se pudo respaldar el estado de cancelaciones en Drive: %s", exc)
+            return False
+
+
+def _load_persisted_cancellations():
+    global _CFDI_CANCELLATION_LOADED
+    with _CFDI_CANCELLATION_LOCK:
+        if _CFDI_CANCELLATION_LOADED:
+            return
+    items = _read_persisted_cancellations()
+    now = time.time()
+    with _CFDI_CANCELLATION_LOCK:
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            state = _invoice_cancellation_state(item.get("state"))
+            updated_ts = float(item.get("updated_ts") or 0)
+            if state == "active" or not updated_ts or now - updated_ts > _CFDI_CANCELLATION_TTL:
+                continue
+            resolved = {
+                "state": state,
+                "label": _invoice_status_label(item.get("label") or state),
+                "ts": updated_ts,
+                "persistent": True,
+            }
+            for value in (item.get("id"), item.get("uuid")):
+                key = str(value or "").strip().casefold()
+                if key:
+                    _CFDI_CANCELLATION_CACHE[key] = resolved
+        _CFDI_CANCELLATION_LOADED = True
+
+
+def _persist_cancellation_state(inv_id, uuid, state, label, source="hsc"):
+    """Guarda solicitudes de cancelación para no depender de índices atrasados del PAC."""
+    normalized_state = _invoice_cancellation_state(state)
+    now = time.time()
+    items = _read_persisted_cancellations()
+    inv_key = str(inv_id or "").strip().casefold()
+    uuid_key = str(uuid or "").strip().casefold()
+    items = [
+        item for item in items
+        if not (
+            (inv_key and str(item.get("id") or "").strip().casefold() == inv_key)
+            or (uuid_key and str(item.get("uuid") or "").strip().casefold() == uuid_key)
+        )
+    ]
+    items.append({
+        "id": str(inv_id or "").strip(),
+        "uuid": str(uuid or "").strip().upper(),
+        "state": normalized_state,
+        "label": label or _invoice_status_label(normalized_state),
+        "source": source,
+        "updated_ts": now,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    })
+    saved = _write_persisted_cancellations(items)
+    resolved = {
+        "state": normalized_state,
+        "label": label or _invoice_status_label(normalized_state),
+        "ts": now,
+        "persistent": True,
+    }
+    with _CFDI_CANCELLATION_LOCK:
+        for value in (inv_id, uuid):
+            key = str(value or "").strip().casefold()
+            if key:
+                _CFDI_CANCELLATION_CACHE[key] = resolved
+    return saved
+
+
 def _resolved_invoice_cancellation(inv_id, uuid, provider_status):
     """Conserva el estado más reciente cuando dos listados de Facturama llegan desfasados."""
+    _load_persisted_cancellations()
     provider_state = _invoice_cancellation_state(provider_status)
     now = time.time()
     keys = [str(value or "").strip().casefold() for value in (inv_id, uuid) if str(value or "").strip()]
@@ -711,6 +821,7 @@ def _reconcile_pending_cancellation_cache(pending_keys):
         for key, value in list(_CFDI_CANCELLATION_CACHE.items()):
             if (
                 value.get("state") == "pending"
+                and not value.get("persistent")
                 and key not in pending_keys
                 and now - value.get("ts", 0) > _BILLING_CLIENT_GROUPS_TTL
             ):
@@ -2702,6 +2813,13 @@ def api_invoice_cancel(inv_id):
                 _remove_rep_by_id(inv_id)
             result_status = (_pick(result, "Status") if isinstance(result, dict) else "") or "requested"
             cancellation_status, status_label = _resolved_invoice_cancellation(inv_id, "", result_status)
+            _persist_cancellation_state(
+                inv_id,
+                b.get("uuid"),
+                cancellation_status,
+                status_label,
+                source="hsc-cancel",
+            )
             return jsonify({
                 "ok": True, "provider": "facturama", "result": result,
                 "cancellation_status": cancellation_status,

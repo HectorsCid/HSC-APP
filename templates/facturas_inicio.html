@@ -1071,7 +1071,7 @@ cmConfirm.addEventListener('click', async ()=>{
   clickLocks.add(k);
 
   try{
-    const payload = { motive };
+    const payload = { motive, uuid: cancelCtx.uuid || '' };
     if(substitution_folio) payload.substitution_folio = substitution_folio;
 
     const r = await fetch(`/api/invoices/${encodeURIComponent(cancelCtx.id)}/cancel`, {

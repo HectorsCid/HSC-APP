@@ -583,7 +583,7 @@
     $('#partnerFaultCount').textContent=`${rows.length} registrada${rows.length===1?'':'s'}`;
     bindPartnerFaults();
   }
-  function partnerDocumentCacheKey(clientId){return `hsc-partner-documents-v5-${account.id}-${clientId}`}
+  function partnerDocumentCacheKey(clientId){return `hsc-partner-documents-v6-${account.id}-${clientId}`}
   function readPartnerDocumentCache(clientId){
     try{return JSON.parse(localStorage.getItem(partnerDocumentCacheKey(clientId))||'null')?.payload||null}catch(_){return null}
   }

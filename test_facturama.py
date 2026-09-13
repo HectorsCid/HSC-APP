@@ -599,6 +599,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
             patch.object(billing, "_read_index", return_value=index),
             patch.object(billing, "_fm_request", return_value={"Status": "canceled"}),
             patch.object(billing, "_remove_rep_by_id") as remove,
+            patch.object(billing, "_persist_cancellation_state"),
         ):
             response = self.client.post("/api/invoices/rep-2/cancel", json={"motive": "02"})
         self.assertEqual(response.status_code, 200)
