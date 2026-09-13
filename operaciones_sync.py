@@ -104,13 +104,22 @@ def _entity_snapshot(store, operation):
         client_sheet_id = _text(client.get("matrix_id")) or _text(item.get("client_id"))
         linked_report = store.get_report_detail(item.get("report_id")) if item.get("report_id") else None
         linked_report_id = _text((linked_report or {}).get("matrix_id")) or _text(item.get("report_id"))
-        return "ReportesFalla", "ID_ReporteFalla", item["id"], {
+        values = {
             "ID_ReporteFalla": item.get("id"), "ID_Cliente": client_sheet_id,
             "ID_Equipo": item.get("equipment_id"), "Fecha": item.get("reported_at"),
             "DescripcionFalla": item.get("description"), "Estado": item.get("status"),
             "ID_Reporte": linked_report_id, "TipoFalla": item.get("priority"),
             "MostrarCliente": True, "Origen": "Cliente" if item.get("source") == "client" else "Reporte técnico",
         }
+        for evidence in store.get_fault_evidence(item["id"]):
+            position = int(evidence.get("position") or 0)
+            photo_ref = _text(evidence.get("storage_ref") or evidence.get("drive_ref"))
+            if position in range(1, 4) and photo_ref:
+                values[f"Foto{position}"] = photo_ref
+                if position == 1:
+                    # Algunas matrices antiguas sólo tienen una columna Foto.
+                    values["Foto"] = photo_ref
+        return "ReportesFalla", "ID_ReporteFalla", item["id"], values
     raise ValueError(f"Tipo de salida no compatible: {entity_type}.")
 
 

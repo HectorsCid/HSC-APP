@@ -156,3 +156,21 @@ def test_pilot_allowlist_leaves_other_clients_queued(tmp_path):
     assert result["skipped_by_pilot"] == 1
     assert result["items"][0]["entity_id"] == report_id
     assert len(store.pending_sync()) == 2
+
+
+def test_fault_photo_uses_legacy_foto_column_when_available(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "fault-sync.sqlite3")
+    store.import_matrix_snapshot({
+        "clients": [{"id": "UVMQ", "name": "UVM Querétaro"}],
+        "equipment": [{"id": "UVMQ1", "client_id": "UVMQ", "name": "Chiller"}],
+        "reports": [], "faults": [],
+    })
+    fault = store.save_fault({"client_id": "UVMQ", "equipment_id": "UVMQ1", "description": "Alarma"})
+    store.save_fault_evidence(fault["id"], 1, "drive-fault", storage_ref="/HSC/fallas/foto-1.jpg")
+    fake = FakeSheets()
+
+    result = sync_operations_outbox(store, fake, "sheet-id", dry_run=True)
+
+    assert result["failed"] == 0
+    fault_plan = next(item for item in result["items"] if item["entity_type"] == "fault")
+    assert "Foto" in fault_plan["columns"]

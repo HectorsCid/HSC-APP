@@ -9,7 +9,7 @@ def ping_root():
 
 
 from markupsafe import escape
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import hmac
 import json
 import os
@@ -26,6 +26,7 @@ import uuid
 import csv
 import mimetypes
 import smtplib
+import secrets
 from difflib import SequenceMatcher
 
 # Google / OAuth
@@ -48,6 +49,7 @@ from google.auth.exceptions import RefreshError
 
 # Otros
 from werkzeug.utils import safe_join, secure_filename
+from werkzeug.security import check_password_hash, generate_password_hash
 from smtp_mailer import authorized_to_send, parse_recipients, send_quote_email, smtp_config, trusted_device_token
 from cfdi_drive import delete_pending_document, list_pending_documents, save_pending_document
 from email_tracking import delivery_status, read_email_deliveries, record_email_delivery
@@ -247,8 +249,25 @@ def acceso():
     next_path = _safe_return_path(request.values.get("next"))
     error = ""
     if request.method == "POST":
+        email = str(request.form.get("email") or "").strip().casefold()
         supplied = str(request.form.get("password") or "")
-        if password and hmac.compare_digest(supplied, password):
+        user = None
+        if email and OPERACIONES_STORE.enabled:
+            try:
+                user = OPERACIONES_STORE.get_user_by_email(email)
+            except Exception:
+                current_app.logger.exception("No se pudo consultar el acceso operativo")
+        if user and user.get("status") == "active" and check_password_hash(user.get("password_hash") or "", supplied):
+            session.clear()
+            session.permanent = True
+            session["hsc_authenticated"] = True
+            session["hsc_role"] = user["role"]
+            session["hsc_user_id"] = user["id"]
+            session["hsc_user_name"] = user["name"]
+            session["hsc_client_id"] = user.get("client_id") or ""
+            session["hsc_permissions"] = user.get("permissions") or {}
+            return redirect(next_path)
+        if not email and password and hmac.compare_digest(supplied, password):
             session.clear()
             session.permanent = True
             session["hsc_authenticated"] = True
@@ -257,8 +276,9 @@ def acceso():
             session["hsc_role"] = "admin"
             session["hsc_user_id"] = "owner"
             return redirect(next_path)
-        error = "La contraseña no es correcta. Intenta nuevamente."
-    return render_template("acceso.html", error=error, next_path=next_path, configured=bool(password))
+        error = "El correo o la contraseña no son correctos."
+    return render_template("acceso.html", error=error, next_path=next_path,
+                           configured=bool(password or OPERACIONES_STORE.enabled))
 
 
 @app.get("/cerrar-sesion")
@@ -273,6 +293,7 @@ def _require_app_login():
     if endpoint in {
         "acceso", "healthz", "health", "health_check", "ping_root",
         "pwa_manifest", "pwa_technician_manifest", "pwa_partner_manifest", "pwa_service_worker",
+        "accept_operations_invite",
     }:
         return None
     if endpoint == "static" and (
@@ -2737,6 +2758,9 @@ def _render_operations_app(app_kind=None):
         operations_app_kind=app_kind,
         operations_app_name=app_name,
         operations_manifest_url=url_for(manifest_endpoint),
+        operations_user_id=str(session.get("hsc_user_id") or "owner"),
+        operations_user_name=str(session.get("hsc_user_name") or "Héctor Silva Cid"),
+        operations_permissions=session.get("hsc_permissions") or {},
     )
 
 
@@ -2807,9 +2831,29 @@ def _operations_forbidden(*allowed):
     }), 403
 
 
+def _operations_permission_forbidden(permission):
+    """Aplica permisos finos únicamente a cuentas técnicas; el propietario conserva control total."""
+    if _operations_role() != "technician":
+        return None
+    permissions = session.get("hsc_permissions") or {}
+    if bool(permissions.get(permission)):
+        return None
+    return jsonify({
+        "ok": False, "code": "permission_required", "permission": permission,
+        "error": "El administrador no habilitó este permiso para tu cuenta.",
+    }), 403
+
+
 def _scope_operaciones_payload(payload):
     """Un cliente sólo recibe los registros vinculados con su propia empresa."""
-    if _operations_role() != "client":
+    role = _operations_role()
+    if role == "technician":
+        scoped = dict(payload)
+        user_id = str(session.get("hsc_user_id") or "").strip()
+        scoped["tasks"] = [task for task in payload.get("tasks", [])
+                           if not task.get("assigned_user_id") or task.get("assigned_user_id") == user_id]
+        return scoped
+    if role != "client":
         return payload
     client_id = str(session.get("hsc_client_id") or "").strip()
     clients = [item for item in payload.get("clients", []) if item.get("id") == client_id]
@@ -2820,7 +2864,7 @@ def _scope_operaciones_payload(payload):
     faults = [item for item in payload.get("faults", [])
               if item.get("client_id") == client_id or item.get("equipment_id") in equipment_ids]
     scoped = dict(payload)
-    scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults)
+    scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults, tasks=[])
     scoped["stats"] = {
         "clients": len(clients), "equipment": len(equipment), "reports": len(reports),
         "client_photos": sum(bool(item.get("has_photo")) for item in clients),
@@ -2829,8 +2873,126 @@ def _scope_operaciones_payload(payload):
         "orphan_equipment": 0, "orphan_reports": 0,
         "duplicate_clients": 0, "duplicate_equipment": 0, "duplicate_reports": 0,
         "faults": len(faults), "duplicate_faults": 0,
+        "tasks": 0,
     }
     return scoped
+
+
+def _invite_token_hash(token):
+    return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
+
+
+@app.post('/api/operaciones/invitations')
+def api_operaciones_create_invitation():
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa no está conectada."}), 503
+    body = request.get_json(silent=True) or {}
+    token = secrets.token_urlsafe(24)
+    try:
+        invite = OPERACIONES_STORE.create_invite({
+            **body, "token_hash": _invite_token_hash(token),
+            "expires_at": (datetime.utcnow() + timedelta(hours=48)).replace(microsecond=0).isoformat() + "+00:00",
+            "created_by": str(session.get("hsc_user_id") or "owner"),
+        })
+        return jsonify({"ok": True, "invite": invite,
+                        "url": url_for("accept_operations_invite", token=token, _external=True)}), 201
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("No se pudo crear la invitación: %s", exc)
+        return jsonify({"ok": False, "error": "No se pudo crear la invitación."}), 500
+
+
+@app.route('/invitacion/<token>', methods=['GET', 'POST'])
+def accept_operations_invite(token):
+    if not OPERACIONES_STORE.enabled:
+        return "La base operativa no está conectada.", 503
+    token_hash = _invite_token_hash(token)
+    invite = OPERACIONES_STORE.get_invite(token_hash)
+    error = ""
+    if not invite or invite.get("status") != "pending" or (invite.get("expires_at") and invite["expires_at"] < datetime.now(timezone.utc).isoformat(timespec="seconds")):
+        invite = None
+        error = "Esta invitación no existe, venció o ya fue utilizada."
+    elif request.method == "POST":
+        password = str(request.form.get("password") or "")
+        confirmation = str(request.form.get("confirmation") or "")
+        if len(password) < 8:
+            error = "La contraseña debe tener al menos 8 caracteres."
+        elif password != confirmation:
+            error = "Las contraseñas no coinciden."
+        else:
+            try:
+                user = OPERACIONES_STORE.accept_invite(token_hash, generate_password_hash(password))
+                session.clear()
+                session.permanent = True
+                session["hsc_authenticated"] = True
+                session["hsc_role"] = user["role"]
+                session["hsc_user_id"] = user["id"]
+                session["hsc_user_name"] = user["name"]
+                session["hsc_client_id"] = user.get("client_id") or ""
+                session["hsc_permissions"] = user.get("permissions") or {}
+                return redirect(url_for("hsc_partner" if user["role"] == "client" else "hsc_tecnico"))
+            except ValueError as exc:
+                error = str(exc)
+    return render_template("aceptar_invitacion.html", invite=invite, error=error)
+
+
+@app.get('/api/operaciones/users')
+def api_operaciones_users():
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    return jsonify({"ok": True, "users": OPERACIONES_STORE.list_users()})
+
+
+@app.post('/api/operaciones/users/<path:user_id>/permissions')
+def api_operaciones_user_permissions(user_id):
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    body = request.get_json(silent=True) or {}
+    try:
+        user = OPERACIONES_STORE.save_user_permissions(user_id, body.get("permissions") or {}, status=body.get("status"))
+        if not user:
+            abort(404)
+        return jsonify({"ok": True, "user": user})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post('/api/operaciones/tasks')
+def api_operaciones_save_task():
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
+    body = dict(request.get_json(silent=True) or {})
+    if _operations_role() == "technician":
+        body["assigned_user_id"] = str(session.get("hsc_user_id") or "")
+    body["created_by"] = str(session.get("hsc_user_id") or "owner")
+    try:
+        task = OPERACIONES_STORE.save_task(body)
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "task": task}), 201
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post('/api/operaciones/tasks/<path:task_id>/complete')
+def api_operaciones_complete_task(task_id):
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
+    task = next((item for item in OPERACIONES_STORE.snapshot().get("tasks", []) if item["id"] == task_id), None)
+    if not task:
+        abort(404)
+    if _operations_role() == "technician" and task.get("assigned_user_id") not in {"", str(session.get("hsc_user_id") or "")}:
+        abort(404)
+    task = OPERACIONES_STORE.complete_task(task_id)
+    _invalidate_operations_cache()
+    return jsonify({"ok": True, "task": task})
 
 
 @app.get('/api/operaciones/clients/<path:client_id>/reports-folder')
@@ -3244,9 +3406,13 @@ def api_operaciones_reorder_clients():
 @app.post('/api/operaciones/equipment')
 def api_operaciones_save_equipment():
     """Guarda un lote de equipos de forma transaccional."""
-    denied = _operations_forbidden("admin")
+    denied = _operations_forbidden("admin", "technician")
     if denied:
         return denied
+    if _operations_role() == "technician":
+        permissions = session.get("hsc_permissions") or {}
+        if not (permissions.get("addEquipment") or permissions.get("editEquipment")):
+            return _operations_permission_forbidden("addEquipment")
     if not OPERACIONES_STORE.enabled:
         return jsonify({
             "ok": False, "code": "storage_not_configured",
@@ -3270,6 +3436,9 @@ def api_operaciones_get_report_draft():
     denied = _operations_forbidden("admin", "technician")
     if denied:
         return denied
+    permission_denied = _operations_permission_forbidden("createReports")
+    if permission_denied:
+        return permission_denied
     if not OPERACIONES_STORE.enabled:
         return jsonify({"ok": True, "configured": False, "draft": None})
     try:
@@ -3296,9 +3465,12 @@ def api_operaciones_report_detail(report_id):
         if _operations_role() == "client" and report.get("client_id") != str(session.get("hsc_client_id") or "").strip():
             abort(404)
         for evidence in report.get("evidence", []):
+            media_version = hashlib.sha1(
+                ("drive-id-v2:" + str(evidence.get("drive_ref") or evidence.get("storage_ref") or "")).encode("utf-8")
+            ).hexdigest()[:10]
             evidence["url"] = url_for(
                 "api_operaciones_report_evidence", report_id=report_id,
-                position=evidence["position"],
+                position=evidence["position"], v=media_version,
             )
             evidence.pop("storage_ref", None)
             evidence.pop("drive_ref", None)
@@ -3315,6 +3487,9 @@ def api_operaciones_save_report_draft():
     denied = _operations_forbidden("admin", "technician")
     if denied:
         return denied
+    permission_denied = _operations_permission_forbidden("createReports")
+    if permission_denied:
+        return permission_denied
     if not OPERACIONES_STORE.enabled:
         return jsonify({
             "ok": False, "code": "storage_not_configured",
@@ -3336,6 +3511,9 @@ def api_operaciones_finalize_report():
     denied = _operations_forbidden("admin", "technician")
     if denied:
         return denied
+    permission_denied = _operations_permission_forbidden("createReports")
+    if permission_denied:
+        return permission_denied
     if not OPERACIONES_STORE.enabled:
         return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
     body = request.get_json(silent=True) or {}
@@ -3357,6 +3535,9 @@ def api_operaciones_reset_report_evidence(report_id):
     denied = _operations_forbidden("admin", "technician")
     if denied:
         return denied
+    permission_denied = _operations_permission_forbidden("createReports")
+    if permission_denied:
+        return permission_denied
     if not OPERACIONES_STORE.enabled:
         return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
     try:
@@ -3374,6 +3555,9 @@ def api_operaciones_upload_report_evidence(report_id, position):
     denied = _operations_forbidden("admin", "technician")
     if denied:
         return denied
+    permission_denied = _operations_permission_forbidden("createReports")
+    if permission_denied:
+        return permission_denied
     if not OPERACIONES_STORE.enabled:
         return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
     if position not in range(1, 7):
@@ -3413,6 +3597,9 @@ def api_operaciones_save_fault():
     denied = _operations_forbidden("admin", "technician", "client")
     if denied:
         return denied
+    permission_denied = _operations_permission_forbidden("reportFaults")
+    if permission_denied:
+        return permission_denied
     if not OPERACIONES_STORE.enabled:
         return jsonify({
             "ok": False, "code": "storage_not_configured",
@@ -3435,6 +3622,70 @@ def api_operaciones_save_fault():
     except Exception as exc:
         current_app.logger.exception("No se pudo registrar la falla operativa: %s", exc)
         return jsonify({"ok": False, "error": "No se pudo registrar la falla."}), 500
+
+
+@app.post('/api/operaciones/faults/<path:fault_id>/evidence/<int:position>')
+def api_operaciones_upload_fault_evidence(fault_id, position):
+    """Guarda hasta tres fotos de una falla y conserva una URL interna privada."""
+    denied = _operations_forbidden("admin", "technician", "client")
+    if denied:
+        return denied
+    permission_denied = _operations_permission_forbidden("reportFaults")
+    if permission_denied:
+        return permission_denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
+    if position not in range(1, 4):
+        return jsonify({"ok": False, "error": "La posición debe estar entre Foto1 y Foto3."}), 400
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return jsonify({"ok": False, "error": "Selecciona una fotografía."}), 400
+    if upload.mimetype not in {"image/jpeg", "image/png", "image/webp"}:
+        return jsonify({"ok": False, "error": "La fotografía debe ser JPG, PNG o WebP."}), 400
+    content = upload.stream.read(15 * 1024 * 1024 + 1)
+    if not content or len(content) > 15 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "Cada fotografía debe pesar máximo 15 MB."}), 400
+    try:
+        snapshot = OPERACIONES_STORE.snapshot()
+        fault = next((item for item in snapshot["faults"] if item["id"] == fault_id), None)
+        if not fault:
+            abort(404)
+        if _operations_role() == "client" and fault.get("client_id") != str(session.get("hsc_client_id") or ""):
+            abort(404)
+        client = next((item for item in snapshot["clients"] if item["id"] == fault.get("client_id")), None)
+        stored = store_operations_evidence(
+            (client or {}).get("name") or fault.get("client_id") or "Fallas",
+            fault_id, position, content,
+        )
+        evidence = OPERACIONES_STORE.save_fault_evidence(
+            fault_id, position, stored["drive_ref"], storage_ref=stored["storage_ref"],
+        )
+        _invalidate_operations_cache()
+        _schedule_operations_sync(force=True)
+        return jsonify({"ok": True, "evidence": {
+            "position": evidence["position"],
+            "url": url_for("api_operaciones_fault_evidence", fault_id=fault_id, position=position),
+        }})
+    except (ValueError, OSError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        if getattr(exc, "code", None) == 404:
+            raise
+        current_app.logger.exception("No se pudo subir Foto%s de la falla %s: %s", position, fault_id, exc)
+        return jsonify({"ok": False, "error": f"Drive no confirmó Foto{position}."}), 502
+
+
+@app.get('/api/operaciones/faults/<path:fault_id>/evidence/<int:position>')
+def api_operaciones_fault_evidence(fault_id, position):
+    denied = _operations_forbidden("admin", "technician", "client")
+    if denied:
+        return denied
+    evidence = OPERACIONES_STORE.get_fault_evidence_ref(fault_id, position)
+    if not evidence:
+        abort(404)
+    if _operations_role() == "client" and evidence.get("client_id") != str(session.get("hsc_client_id") or ""):
+        abort(404)
+    return _serve_operations_thumbnail("fault", f"{fault_id}:{position}", evidence["photo_ref"])
 
 
 @app.post('/api/operaciones/faults/<path:fault_id>/resolve')
@@ -3479,6 +3730,7 @@ def api_operaciones_resolve_fault(fault_id):
 
 def _serve_operations_thumbnail(kind, record_id, photo_ref):
     cached = None
+    usable_thumbnail = True
     if OPERACIONES_STORE.enabled:
         try:
             cached = OPERACIONES_STORE.get_cached_thumbnail(kind, record_id, photo_ref)
@@ -3510,13 +3762,17 @@ def _serve_operations_thumbnail(kind, record_id, photo_ref):
                     )
                 except Exception as exc:
                     current_app.logger.warning("No se pudo guardar miniatura %s/%s: %s", kind, record_id, exc)
+            usable_thumbnail = width > 1 and height > 1
             response = send_file(io.BytesIO(thumbnail), mimetype="image/webp")
             response.headers["X-HSC-Thumbnail"] = "generated"
         except Exception as exc:
             current_app.logger.warning("No se pudo optimizar foto %s/%s: %s", kind, record_id, exc)
             response = original_response
             response.headers["X-HSC-Thumbnail"] = "original"
-    response.headers["Cache-Control"] = "private, max-age=2592000, immutable"
+            usable_thumbnail = False
+    response.headers["Cache-Control"] = (
+        "private, max-age=2592000, immutable" if usable_thumbnail else "no-store, max-age=0"
+    )
     return response
 
 

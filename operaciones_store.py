@@ -17,7 +17,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "7"
+SCHEMA_VERSION = "10"
 
 
 def _now():
@@ -26,6 +26,14 @@ def _now():
 
 def _text(value):
     return str(value or "").strip()
+
+
+def _valid_date(value):
+    try:
+        datetime.strptime(_text(value), "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
 
 
 class OperationsStore:
@@ -128,6 +136,36 @@ class OperationsStore:
                 source TEXT NOT NULL DEFAULT 'sheets', raw_json TEXT NOT NULL DEFAULT '{}',
                 sync_status TEXT NOT NULL DEFAULT 'synced', updated_at TEXT NOT NULL
             )""",
+            """CREATE TABLE IF NOT EXISTS operations_fault_evidence (
+                id TEXT PRIMARY KEY, fault_id TEXT NOT NULL, position INTEGER NOT NULL,
+                storage_ref TEXT NOT NULL DEFAULT '', drive_ref TEXT NOT NULL DEFAULT '',
+                sync_status TEXT NOT NULL DEFAULT 'synced', updated_at TEXT NOT NULL,
+                UNIQUE(fault_id, position),
+                FOREIGN KEY(fault_id) REFERENCES operations_faults(id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS operations_users (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL DEFAULT '',
+                phone TEXT NOT NULL DEFAULT '', role TEXT NOT NULL,
+                client_id TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active',
+                permissions_json TEXT NOT NULL DEFAULT '{}', password_hash TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS operations_invites (
+                id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+                email TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', role TEXT NOT NULL,
+                client_id TEXT NOT NULL DEFAULT '', permissions_json TEXT NOT NULL DEFAULT '{}',
+                status TEXT NOT NULL DEFAULT 'pending', expires_at TEXT NOT NULL,
+                used_at TEXT NOT NULL DEFAULT '', created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS operations_tasks (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, details TEXT NOT NULL DEFAULT '',
+                scheduled_date TEXT NOT NULL, scheduled_time TEXT NOT NULL DEFAULT '',
+                client_id TEXT NOT NULL DEFAULT '', equipment_id TEXT NOT NULL DEFAULT '',
+                assigned_user_id TEXT NOT NULL DEFAULT '', priority TEXT NOT NULL DEFAULT 'Normal',
+                status TEXT NOT NULL DEFAULT 'Pendiente', completed_at TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""",
             """CREATE TABLE IF NOT EXISTS operations_sync_outbox (
                 id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
                 destination TEXT NOT NULL, action TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}',
@@ -150,6 +188,10 @@ class OperationsStore:
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_client ON operations_reports(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_faults_client ON operations_faults(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_faults_equipment ON operations_faults(equipment_id)",
+            "CREATE INDEX IF NOT EXISTS idx_operations_fault_evidence_fault ON operations_fault_evidence(fault_id)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_users_email ON operations_users(email) WHERE email <> ''",
+            "CREATE INDEX IF NOT EXISTS idx_operations_tasks_date ON operations_tasks(scheduled_date,scheduled_time)",
+            "CREATE INDEX IF NOT EXISTS idx_operations_tasks_assignee ON operations_tasks(assigned_user_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_outbox_status ON operations_sync_outbox(status)",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_clients_matrix_id ON operations_clients(matrix_id) WHERE matrix_id <> ''",
         ]
@@ -314,8 +356,14 @@ class OperationsStore:
                 "FROM operations_reports r ORDER BY r.start_at,r.id"
             ).fetchall()
             faults = conn.execute(
-                "SELECT id,client_id,equipment_id,report_id,description,priority,status,reported_at,resolved_at,resolved_by,resolution_notes,source,sync_status "
-                "FROM operations_faults ORDER BY reported_at DESC,id DESC"
+                "SELECT f.id,f.client_id,f.equipment_id,f.report_id,f.description,f.priority,f.status,f.reported_at,f.resolved_at,f.resolved_by,f.resolution_notes,f.source,f.sync_status,"
+                "(SELECT COUNT(*) FROM operations_fault_evidence e WHERE e.fault_id=f.id) "
+                "FROM operations_faults f ORDER BY f.reported_at DESC,f.id DESC"
+            ).fetchall()
+            tasks = conn.execute(
+                "SELECT id,title,details,scheduled_date,scheduled_time,client_id,equipment_id,"
+                "assigned_user_id,priority,status,completed_at,created_by,created_at,updated_at "
+                "FROM operations_tasks ORDER BY scheduled_date,scheduled_time,id"
             ).fetchall()
             meta_rows = conn.execute("SELECT key,value FROM operations_meta").fetchall()
             pending = conn.execute("SELECT COUNT(*) FROM operations_sync_outbox WHERE status!='synced'").fetchone()[0]
@@ -341,12 +389,20 @@ class OperationsStore:
             "description": row[4], "priority": row[5], "status": row[6], "reported_at": row[7],
             "resolved_at": row[8], "resolved_by": row[9], "resolution_notes": row[10],
             "source": row[11], "sync_status": row[12],
+            "photo_count": int(row[13] or 0),
         } for row in faults]
+        result_tasks = [{
+            "id": row[0], "title": row[1], "details": row[2], "scheduled_date": row[3],
+            "scheduled_time": row[4], "client_id": row[5], "equipment_id": row[6],
+            "assigned_user_id": row[7], "priority": row[8], "status": row[9],
+            "completed_at": row[10], "created_by": row[11], "created_at": row[12],
+            "updated_at": row[13],
+        } for row in tasks]
         client_ids = {item["id"] for item in result_clients}
         equipment_ids = {item["id"] for item in result_equipment}
         return {
             "clients": result_clients, "equipment": result_equipment, "reports": result_reports,
-            "faults": result_faults,
+            "faults": result_faults, "tasks": result_tasks,
             "stats": {
                 "clients": len(result_clients), "equipment": len(result_equipment), "reports": len(result_reports),
                 "client_photos": sum(item["has_photo"] for item in result_clients),
@@ -358,6 +414,7 @@ class OperationsStore:
                 "pending_sync": pending,
                 "cached_thumbnails": cached_thumbnails,
                 "faults": len(result_faults),
+                "tasks": len(result_tasks),
             },
             "meta": dict(meta_rows),
         }
@@ -584,6 +641,209 @@ class OperationsStore:
             "client_id": client_id, "equipment_id": equipment_id,
         })
         return next(row for row in self.snapshot()["faults"] if row["id"] == fault_id)
+
+    def save_fault_evidence(self, fault_id, position, drive_ref, *, storage_ref=""):
+        """Registra hasta tres fotografías relacionadas con una falla."""
+        self.initialize()
+        fault_id, drive_ref = _text(fault_id), _text(drive_ref)
+        storage_ref = _text(storage_ref) or drive_ref
+        position = int(position or 0)
+        if position not in range(1, 4) or not drive_ref:
+            raise ValueError("La posición y la fotografía de la falla no son válidas.")
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            if not conn.execute(f"SELECT 1 FROM operations_faults WHERE id={p}", (fault_id,)).fetchone():
+                raise ValueError("La falla ya no existe.")
+            evidence_id = f"{fault_id}:foto:{position}"
+            conn.execute(
+                f"INSERT INTO operations_fault_evidence(id,fault_id,position,storage_ref,drive_ref,sync_status,updated_at) "
+                f"VALUES ({','.join([p] * 7)}) ON CONFLICT(fault_id,position) DO UPDATE SET "
+                "storage_ref=excluded.storage_ref,drive_ref=excluded.drive_ref,sync_status='pending',updated_at=excluded.updated_at",
+                (evidence_id, fault_id, position, storage_ref, drive_ref, "pending", stamp),
+            )
+        self.queue_sync("fault", fault_id, "sheets", "upsert")
+        return {"position": position, "storage_ref": storage_ref, "drive_ref": drive_ref}
+
+    def get_fault_evidence(self, fault_id):
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            rows = conn.execute(
+                f"SELECT position,storage_ref,drive_ref FROM operations_fault_evidence "
+                f"WHERE fault_id={p} ORDER BY position", (_text(fault_id),),
+            ).fetchall()
+        return [{"position": int(row[0]), "storage_ref": _text(row[1]), "drive_ref": _text(row[2])}
+                for row in rows]
+
+    def get_fault_evidence_ref(self, fault_id, position):
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT f.client_id,e.storage_ref,e.drive_ref FROM operations_fault_evidence e "
+                f"JOIN operations_faults f ON f.id=e.fault_id WHERE e.fault_id={p} AND e.position={p}",
+                (_text(fault_id), int(position)),
+            ).fetchone()
+        return {"client_id": row[0], "photo_ref": _text(row[2]) or _text(row[1])} if row else None
+
+    def save_task(self, item):
+        """Crea o edita un pendiente de agenda conservando su ID."""
+        self.initialize()
+        title, scheduled_date = _text(item.get("title")), _text(item.get("scheduled_date"))
+        if not title or not _valid_date(scheduled_date):
+            raise ValueError("Actividad y fecha son obligatorias.")
+        task_id = _text(item.get("id")) or f"TASK_{uuid.uuid4().hex[:16].upper()}"
+        status = _text(item.get("status")) or "Pendiente"
+        if status not in {"Pendiente", "En curso", "Terminada", "Cancelada"}:
+            raise ValueError("El estado de la tarea no es válido.")
+        stamp, p = _now(), self.placeholder
+        with self.connection() as conn:
+            existing = conn.execute(f"SELECT created_at FROM operations_tasks WHERE id={p}", (task_id,)).fetchone()
+            created_at = existing[0] if existing else stamp
+            conn.execute(
+                f"INSERT INTO operations_tasks(id,title,details,scheduled_date,scheduled_time,client_id,equipment_id,assigned_user_id,priority,status,completed_at,created_by,created_at,updated_at) "
+                f"VALUES ({','.join([p] * 14)}) ON CONFLICT(id) DO UPDATE SET "
+                "title=excluded.title,details=excluded.details,scheduled_date=excluded.scheduled_date,"
+                "scheduled_time=excluded.scheduled_time,client_id=excluded.client_id,equipment_id=excluded.equipment_id,"
+                "assigned_user_id=excluded.assigned_user_id,priority=excluded.priority,status=excluded.status,updated_at=excluded.updated_at",
+                (task_id, title, _text(item.get("details")), scheduled_date, _text(item.get("scheduled_time")),
+                 _text(item.get("client_id")), _text(item.get("equipment_id")), _text(item.get("assigned_user_id")),
+                 _text(item.get("priority")) or "Normal", status, _text(item.get("completed_at")),
+                 _text(item.get("created_by")), created_at, stamp),
+            )
+        return next(task for task in self.snapshot()["tasks"] if task["id"] == task_id)
+
+    def complete_task(self, task_id):
+        self.initialize()
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE operations_tasks SET status='Terminada',completed_at={p},updated_at={p} WHERE id={p}",
+                (stamp, stamp, _text(task_id)),
+            )
+            if not cursor.rowcount:
+                return None
+        return next(task for task in self.snapshot()["tasks"] if task["id"] == _text(task_id))
+
+    def list_users(self):
+        self.initialize()
+        with self.connection() as conn:
+            rows = conn.execute(
+                "SELECT id,name,email,phone,role,client_id,status,permissions_json,created_at,updated_at "
+                "FROM operations_users ORDER BY name,id"
+            ).fetchall()
+        result = []
+        for row in rows:
+            try:
+                permissions = json.loads(row[7] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                permissions = {}
+            result.append({"id": row[0], "name": row[1], "email": row[2], "phone": row[3],
+                           "role": row[4], "client_id": row[5], "status": row[6],
+                           "permissions": permissions, "created_at": row[8], "updated_at": row[9]})
+        return result
+
+    def get_user_by_email(self, email):
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT id,name,email,phone,role,client_id,status,permissions_json,password_hash "
+                f"FROM operations_users WHERE LOWER(email)=LOWER({p})", (_text(email),),
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            permissions = json.loads(row[7] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            permissions = {}
+        return {"id": row[0], "name": row[1], "email": row[2], "phone": row[3], "role": row[4],
+                "client_id": row[5], "status": row[6], "permissions": permissions, "password_hash": row[8]}
+
+    def create_invite(self, item):
+        self.initialize()
+        role = _text(item.get("role"))
+        if role not in {"technician", "client"}:
+            raise ValueError("Selecciona un tipo de acceso válido.")
+        name, email = _text(item.get("name")), _text(item.get("email")).casefold()
+        if not name or not email or "@" not in email:
+            raise ValueError("Nombre y correo válido son obligatorios.")
+        client_id = _text(item.get("client_id")) if role == "client" else ""
+        if role == "client" and not any(c["id"] == client_id for c in self.snapshot()["clients"]):
+            raise ValueError("Selecciona el cliente relacionado.")
+        invite_id, stamp, p = f"INV_{uuid.uuid4().hex[:16].upper()}", _now(), self.placeholder
+        with self.connection() as conn:
+            conn.execute(
+                f"INSERT INTO operations_invites(id,token_hash,name,email,phone,role,client_id,permissions_json,status,expires_at,created_by,created_at,updated_at) "
+                f"VALUES ({','.join([p] * 13)})",
+                (invite_id, _text(item.get("token_hash")), name, email, _text(item.get("phone")), role,
+                 client_id, json.dumps(item.get("permissions") or {}, ensure_ascii=False), "pending",
+                 _text(item.get("expires_at")), _text(item.get("created_by")), stamp, stamp),
+            )
+        return self.get_invite(_text(item.get("token_hash")))
+
+    def get_invite(self, token_hash):
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT id,name,email,phone,role,client_id,permissions_json,status,expires_at,used_at "
+                f"FROM operations_invites WHERE token_hash={p}", (_text(token_hash),),
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            permissions = json.loads(row[6] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            permissions = {}
+        return {"id": row[0], "name": row[1], "email": row[2], "phone": row[3], "role": row[4],
+                "client_id": row[5], "permissions": permissions, "status": row[7],
+                "expires_at": row[8], "used_at": row[9]}
+
+    def accept_invite(self, token_hash, password_hash):
+        self.initialize()
+        invite = self.get_invite(token_hash)
+        if not invite or invite["status"] != "pending":
+            raise ValueError("La invitación no existe o ya fue utilizada.")
+        if invite["expires_at"] and invite["expires_at"] < _now():
+            raise ValueError("La invitación ya venció.")
+        user_id, stamp, p = f"USR_{uuid.uuid4().hex[:16].upper()}", _now(), self.placeholder
+        with self.connection() as conn:
+            if conn.execute(f"SELECT 1 FROM operations_users WHERE LOWER(email)=LOWER({p})", (invite["email"],)).fetchone():
+                raise ValueError("Ese correo ya tiene una cuenta.")
+            conn.execute(
+                f"INSERT INTO operations_users(id,name,email,phone,role,client_id,status,permissions_json,password_hash,created_at,updated_at) "
+                f"VALUES ({','.join([p] * 11)})",
+                (user_id, invite["name"], invite["email"], invite["phone"], invite["role"], invite["client_id"],
+                 "active", json.dumps(invite["permissions"], ensure_ascii=False), _text(password_hash), stamp, stamp),
+            )
+            conn.execute(
+                f"UPDATE operations_invites SET status='accepted',used_at={p},updated_at={p} WHERE id={p}",
+                (stamp, stamp, invite["id"]),
+            )
+        return next(user for user in self.list_users() if user["id"] == user_id)
+
+    def save_user_permissions(self, user_id, permissions, *, status=None):
+        self.initialize()
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            row = conn.execute(f"SELECT role FROM operations_users WHERE id={p}", (_text(user_id),)).fetchone()
+            if not row:
+                return None
+            next_status = _text(status) if status is not None else None
+            if next_status and next_status not in {"active", "suspended"}:
+                raise ValueError("El estado de la cuenta no es válido.")
+            if next_status:
+                conn.execute(
+                    f"UPDATE operations_users SET permissions_json={p},status={p},updated_at={p} WHERE id={p}",
+                    (json.dumps(permissions or {}, ensure_ascii=False), next_status, stamp, _text(user_id)),
+                )
+            else:
+                conn.execute(
+                    f"UPDATE operations_users SET permissions_json={p},updated_at={p} WHERE id={p}",
+                    (json.dumps(permissions or {}, ensure_ascii=False), stamp, _text(user_id)),
+                )
+        return next(user for user in self.list_users() if user["id"] == _text(user_id))
 
     def resolve_fault(self, fault_id, *, resolved_by="", resolution_notes=""):
         """Marca una falla como atendida y conserva el cierre para auditoría."""

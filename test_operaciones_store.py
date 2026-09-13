@@ -229,3 +229,31 @@ def test_partner_fault_can_be_marked_as_attended(tmp_path):
     assert queued[-1]["payload"]["status"] == "Atendida"
     store.import_matrix_snapshot(_payload())
     assert store.snapshot()["faults"][0]["status"] == "Atendida"
+
+
+def test_fault_evidence_tasks_invites_and_permissions_are_durable(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+    store.save_fault_evidence("F-UVM-1", 1, "drive-fault-1", storage_ref="/HSC/fallas/foto-1.jpg")
+    assert store.snapshot()["faults"][0]["photo_count"] == 1
+    assert store.get_fault_evidence_ref("F-UVM-1", 1)["photo_ref"] == "drive-fault-1"
+
+    task = store.save_task({
+        "title": "Revisar chiller", "scheduled_date": "2026-09-13", "scheduled_time": "09:30",
+        "client_id": "UVMQ", "equipment_id": "UVMQ1", "assigned_user_id": "owner",
+    })
+    assert task["status"] == "Pendiente"
+    assert store.complete_task(task["id"])["status"] == "Terminada"
+
+    invite = store.create_invite({
+        "token_hash": "token-hash", "name": "Técnico Uno", "email": "tecnico@example.com",
+        "role": "technician", "permissions": {"createReports": True},
+        "expires_at": "2099-01-01T00:00:00+00:00",
+    })
+    assert invite["status"] == "pending"
+    user = store.accept_invite("token-hash", "password-hash")
+    assert user["role"] == "technician"
+    assert user["permissions"]["createReports"] is True
+    updated = store.save_user_permissions(user["id"], {"createReports": False}, status="suspended")
+    assert updated["status"] == "suspended"
+    assert updated["permissions"]["createReports"] is False

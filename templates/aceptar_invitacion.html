@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Crear acceso · HSC</title>
+  <style>
+    :root{--bg:#07101f;--card:#111d30;--text:#f4f8ff;--muted:#9fb0c9;--line:#304563;--brand:#2f86ff;--danger:#fecaca}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 30% 0,#172b49,var(--bg) 55%);color:var(--text);font-family:Segoe UI,system-ui,sans-serif}.card{width:min(450px,100%);padding:26px;border:1px solid var(--line);border-radius:24px;background:var(--card);box-shadow:0 24px 70px #0006}.brand{color:#72b1ff;font-size:.75rem;font-weight:850;letter-spacing:.13em;text-transform:uppercase}h1{margin:8px 0 6px}.muted{color:var(--muted);line-height:1.5}.error{padding:11px;border:1px solid #7f1d1d;border-radius:12px;color:var(--danger);background:#48212a}label{display:block;margin:14px 0 7px;color:var(--muted);font-size:.82rem;font-weight:750}input{width:100%;padding:13px;border:1px solid var(--line);border-radius:12px;background:#0a1425;color:var(--text);font:inherit}button{width:100%;margin-top:17px;padding:13px;border:0;border-radius:12px;background:var(--brand);color:#fff;font:800 1rem inherit;cursor:pointer}.scope{padding:13px;border:1px solid var(--line);border-radius:14px;background:#0a1425}.scope b,.scope span{display:block}.scope span{margin-top:4px;color:var(--muted);font-size:.82rem}
+  </style>
+</head>
+<body><main class="card"><div class="brand">HSC {{ 'Partner' if invite and invite.role == 'client' else 'Técnico' }}</div><h1>Crear tu acceso</h1>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  {% if invite %}<p class="muted">Hola, {{ invite.name }}. Esta invitación está ligada a {{ invite.email }} y sólo puede utilizarse una vez.</p><div class="scope"><b>{{ 'Consulta de cliente' if invite.role == 'client' else 'Cuenta de técnico' }}</b><span>{{ 'Equipos, reportes y fallas de tu empresa.' if invite.role == 'client' else 'Agenda, clientes y herramientas autorizadas por HSC.' }}</span></div><form method="post"><label>Correo</label><input value="{{ invite.email }}" disabled><label for="password">Crea una contraseña</label><input id="password" name="password" type="password" minlength="8" autocomplete="new-password" required><label for="confirmation">Confirma la contraseña</label><input id="confirmation" name="confirmation" type="password" minlength="8" autocomplete="new-password" required><button type="submit">Crear cuenta y abrir la app</button></form>{% endif %}
+</main></body></html>
