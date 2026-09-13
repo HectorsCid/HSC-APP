@@ -200,11 +200,13 @@
       polishTitles();
       mountDesktopHistory();
     }
+    const installDisabled = document.body.dataset.pwaInstallDisabled === 'true';
     const hasInlineInstall = Boolean(document.querySelector('[data-pwa-install]'));
-    const button = hasInlineInstall ? null : installButton();
+    const button = installDisabled || hasInlineInstall ? null : installButton();
     if(button && isIos && !isStandalone()) button.classList.add('show');
 
     window.addEventListener('beforeinstallprompt', event => {
+      if(installDisabled) return;
       event.preventDefault();
       installPrompt = event;
       if(button && !isStandalone()) button.classList.add('show');

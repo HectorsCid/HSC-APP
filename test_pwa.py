@@ -63,6 +63,14 @@ class PwaTests(unittest.TestCase):
         self.assertIn('data-app-kind="partner"', partner)
         self.assertIn('Instalar HSC Partner', partner)
 
+    def test_owner_does_not_see_operations_install_banner(self):
+        with self.client.session_transaction() as session:
+            session["hsc_authenticated"] = True
+            session["hsc_role"] = "admin"
+        html = self.client.get("/hsc-tecnico/").get_data(as_text=True)
+        self.assertIn('data-pwa-install-disabled="true"', html)
+        self.assertNotIn('data-pwa-install data-install-label=', html)
+
     def test_install_banner_is_hidden_in_every_installed_display_mode(self):
         html = self.client.get("/hsc-tecnico/").get_data(as_text=True)
         self.assertIn("display-mode:window-controls-overlay", html)
