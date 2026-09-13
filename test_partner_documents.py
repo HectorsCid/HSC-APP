@@ -80,6 +80,16 @@ class PartnerDocumentsTest(unittest.TestCase):
         })
         self.assertEqual(identity["rfc"], "TTO010101AA1")
 
+    def test_catalog_client_id_links_different_operational_and_fiscal_names(self):
+        with patch.object(module, "clientes_predefinidos", {
+            "Arkansas fiscal": {"id_cliente": "UDA", "rfc": "ASR170529JA1",
+                                 "razon_social": "ASUCQ STUDENT RESIDENCES"}
+        }), patch.object(module, "_resolver_cliente_catalogo", wraps=module._resolver_cliente_catalogo):
+            identity = module._partner_documents_identity({
+                "id": "UDA", "matrix_id": "UDA", "name": "Universidad de Arkansas Querétaro",
+            })
+        self.assertEqual(identity["rfc"], "ASR170529JA1")
+
 
 if __name__ == "__main__":
     unittest.main()

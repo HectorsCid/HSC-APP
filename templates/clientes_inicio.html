@@ -170,6 +170,7 @@
       return {
         id: x.id || x.nombre || x.razon_social || '',
         nombre: x.nombre || x.razon_social || x.id || '',
+        idCliente: (x.id_cliente||'').toUpperCase(),
         rfc: (x.rfc||'').toUpperCase(),
         razon: x.razon_social || x.legal_name || '',
         cp: x.cp || x.codigo_postal || ''
@@ -183,7 +184,7 @@
       }
       tbody.innerHTML = list.map(c=>`
         <tr>
-          <td>${esc(c.nombre)}</td>
+          <td>${esc(c.nombre)}${c.idCliente?` <span class="muted">· ${esc(c.idCliente)}</span>`:''}</td>
           <td>${esc(c.rfc)}</td>
           <td>${esc(c.razon)}</td>
           <td>${esc(c.cp)}</td>
@@ -241,7 +242,7 @@
       const term = q.value.trim().toLowerCase();
       if(!term){ render(DATA); return; }
       render(DATA.filter(c =>
-        [c.nombre,c.rfc,c.razon].some(v=>String(v||'').toLowerCase().includes(term))
+        [c.nombre,c.idCliente,c.rfc,c.razon].some(v=>String(v||'').toLowerCase().includes(term))
       ));
     });
 

@@ -57,6 +57,11 @@
         <div class="hint">Al conectar la app de técnicos, sólo aparecerán los clientes con esta opción marcada. No crea otra lista ni concede acceso a usuarios.</div>
       </div>
       <div>
+        <label for="id_cliente">ID_Cliente de Operaciones</label>
+        <input id="id_cliente" name="id_cliente" type="text" maxlength="40" placeholder="Ej. UDA" autocapitalize="characters" style="text-transform:uppercase" />
+        <div class="hint">Úsalo para clientes con póliza. Debe ser el mismo ID_Cliente de la Hoja Matriz; así se enlazarán automáticamente con Técnico y Partner.</div>
+      </div>
+      <div>
         <label>Personas de atención y sus correos</label>
         <div id="contactList" class="contact-list"></div>
         <div class="actions"><button id="addContact" class="btn btn-ghost contact-add" type="button">＋ Agregar persona</button></div>

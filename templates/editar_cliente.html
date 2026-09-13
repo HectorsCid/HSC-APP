@@ -54,6 +54,11 @@
         <div class="hint">Al conectar la app de técnicos, sólo aparecerán los clientes con esta opción marcada. Desmarcarla no borra sus equipos, reportes ni historial.</div>
       </div>
       <div>
+        <label for="id_cliente">ID_Cliente de Operaciones</label>
+        <input id="id_cliente" name="id_cliente" type="text" maxlength="40" value="{{ datos.id_cliente or '' }}" placeholder="Ej. UDA" autocapitalize="characters" style="text-transform:uppercase" />
+        <div class="hint">Debe coincidir con el ID_Cliente de la Hoja Matriz. Con esto Técnico y Partner encontrarán automáticamente esta ficha fiscal.</div>
+      </div>
+      <div>
         <label>Personas de atención y sus correos</label>
         <div id="contactList" class="contact-list">
           {% for contacto in datos.contactos or [] %}

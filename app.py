@@ -900,6 +900,39 @@ def _resolver_cliente_catalogo(nombre="", rfc=""):
         return candidates[0][1], candidates[0][2]
     return None, None
 
+
+def _resolver_cliente_catalogo_por_id(*client_ids):
+    """Relaciona el ID operativo explícito con una ficha fiscal."""
+    wanted = {str(value or "").strip().upper() for value in client_ids if str(value or "").strip()}
+    if not wanted:
+        return None, None
+    with _CLIENTES_DATA_LOCK:
+        catalogo = dict(clientes_predefinidos or {})
+    for alias, data in catalogo.items():
+        if not isinstance(data, dict):
+            continue
+        saved_id = str(data.get("id_cliente") or "").strip().upper()
+        if saved_id and saved_id in wanted:
+            return alias, data
+    return None, None
+
+
+def _normalizar_id_cliente(value):
+    client_id = str(value or "").strip().upper()
+    if client_id and not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]{0,39}", client_id):
+        raise ValueError("El ID_Cliente sólo puede contener letras, números, guion y guion bajo.")
+    return client_id
+
+
+def _id_cliente_duplicado(client_id, *, except_alias=""):
+    if not client_id:
+        return None
+    with _CLIENTES_DATA_LOCK:
+        catalogo = dict(clientes_predefinidos or {})
+    return next((alias for alias, data in catalogo.items()
+                 if alias != except_alias and isinstance(data, dict)
+                 and str(data.get("id_cliente") or "").strip().upper() == client_id), None)
+
 def _sync_clientes_from_drive_into_memory():
     global clientes_predefinidos
     with _CLIENTES_DATA_LOCK:
@@ -1581,6 +1614,11 @@ def nuevo_cliente():
         vigencia = request.form.get('vigencia', '')
 
         # Datos fiscales opcionales
+        try:
+            id_cliente = _normalizar_id_cliente(request.form.get('id_cliente'))
+        except ValueError as exc:
+            flash(str(exc))
+            return redirect(url_for('nuevo_cliente'))
         rfc            = (request.form.get('rfc') or '').strip().upper()
         razon_social   = (request.form.get('razon_social') or request.form.get('razon') or '').strip()
         cp             = (request.form.get('cp') or '').strip()
@@ -1594,6 +1632,10 @@ def nuevo_cliente():
 
         if not nombre:
             flash("El nombre del cliente no puede estar vacío.")
+            return redirect(url_for('nuevo_cliente'))
+        duplicate_id = _id_cliente_duplicado(id_cliente)
+        if duplicate_id:
+            flash(f"El ID_Cliente {id_cliente} ya está asignado a {duplicate_id}.")
             return redirect(url_for('nuevo_cliente'))
 
         with _CLIENTES_DATA_LOCK:
@@ -1610,6 +1652,7 @@ def nuevo_cliente():
             }
 
             # Solo guarda si vienen
+            if id_cliente:     clientes_predefinidos[nombre]["id_cliente"] = id_cliente
             if rfc:            clientes_predefinidos[nombre]["rfc"] = rfc
             if razon_social:   clientes_predefinidos[nombre]["razon_social"] = razon_social
             if cp:             clientes_predefinidos[nombre]["cp"] = cp
@@ -2268,6 +2311,11 @@ def editar_cliente():
         vigencia  = (request.form.get('vigencia') or '').strip()
 
         # Datos fiscales opcionales
+        try:
+            id_cliente = _normalizar_id_cliente(request.form.get('id_cliente'))
+        except ValueError as exc:
+            flash(str(exc))
+            return redirect(url_for('editar_cliente', cliente=nombre_actual))
         rfc            = (request.form.get('rfc') or '').strip().upper()
         razon_social   = (request.form.get('razon_social') or request.form.get('razon') or '').strip()
         cp             = (request.form.get('cp') or '').strip()
@@ -2286,6 +2334,10 @@ def editar_cliente():
         existe_conflicto = (nuevo_nombre != nombre_actual) and (nuevo_nombre in clientes_predefinidos)
         if existe_conflicto:
             flash(f"Ya existe un cliente llamado '{nuevo_nombre}'. Elige otro nombre.")
+            return redirect(url_for('editar_cliente', cliente=nombre_actual))
+        duplicate_id = _id_cliente_duplicado(id_cliente, except_alias=nombre_actual)
+        if duplicate_id:
+            flash(f"El ID_Cliente {id_cliente} ya está asignado a {duplicate_id}.")
             return redirect(url_for('editar_cliente', cliente=nombre_actual))
 
         # Merge con lo existente para no perder campos previos
@@ -2307,6 +2359,7 @@ def editar_cliente():
             else:   obj.pop(key, None)
 
         # Aplica opcionales solo si vienen
+        set_or_pop(merged, "id_cliente", id_cliente)
         set_or_pop(merged, "rfc", rfc)
         set_or_pop(merged, "razon_social", razon_social)
         set_or_pop(merged, "cp", cp)
@@ -3151,7 +3204,12 @@ def _partner_documents_client(requested_id=""):
 
 def _partner_documents_identity(client):
     linked_rfc = str(client.get("billing_rfc") or "").strip().upper()
-    canonical, catalog = _resolver_cliente_catalogo(client.get("name") or "", linked_rfc)
+    canonical = catalog = None
+    if not linked_rfc:
+        canonical, catalog = _resolver_cliente_catalogo_por_id(client.get("id"), client.get("matrix_id"))
+        linked_rfc = str((catalog or {}).get("rfc") or "").strip().upper()
+    if not catalog:
+        canonical, catalog = _resolver_cliente_catalogo(client.get("name") or "", linked_rfc)
     catalog = catalog or {}
     rfc = linked_rfc or str(catalog.get("rfc") or "").strip().upper()
     names = {
@@ -3287,6 +3345,7 @@ def api_operaciones_fiscal_clients():
             "rfc": rfc,
             "name": str(data.get("razon_social") or data.get("razon") or alias).strip(),
             "alias": str(alias),
+            "id_cliente": str(data.get("id_cliente") or "").strip().upper(),
         })
     rows.sort(key=lambda item: (item["name"].casefold(), item["rfc"]))
     return jsonify({"ok": True, "clients": rows})
@@ -5140,6 +5199,14 @@ def guardar_datos_fiscales_cliente():
             "retencion_isr_tasa": str(payload.get("retencion_isr_tasa") or "0").strip(),
             "retencion_iva_tasa": str(payload.get("retencion_iva_tasa") or "0").strip(),
         }
+        if "id_cliente" in payload:
+            try:
+                values["id_cliente"] = _normalizar_id_cliente(payload.get("id_cliente"))
+            except ValueError as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 400
+            duplicate_id = _id_cliente_duplicado(values["id_cliente"], except_alias=canonical_name)
+            if duplicate_id:
+                return jsonify({"ok": False, "error": f"Ese ID_Cliente ya está asignado a {duplicate_id}."}), 409
         for key, value in values.items():
             if value or key in {"retencion_isr_tasa", "retencion_iva_tasa"}:
                 client[key] = value
