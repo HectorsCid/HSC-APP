@@ -85,6 +85,7 @@
   </style>
 </head>
 <body data-operations-shell="true" data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-pwa-install-disabled="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-app-kind="{{ operations_app_kind|default('technician') }}" data-user-id="{{ operations_user_id|default('owner') }}" data-user-name="{{ operations_user_name|default('Héctor Silva Cid') }}" data-permissions="{{ operations_permissions|default({})|tojson|forceescape }}">
+{% if operations_is_owner %}<form id="placeholderCleanupForm" method="post" action="/api/operaciones/admin/prune-placeholder-clients" style="position:fixed;right:12px;bottom:12px;z-index:99999"><input type="hidden" name="confirm" value="BORRAR_CLIENTES_PENDIENTES"><input type="hidden" name="client_ids" value="9b4531f5,HotelfiestaInn,IHPJ,TCFSH"><button type="submit">Confirmar limpieza pendiente</button></form>{% endif %}
 <div class="app">
   <header class="topbar">
     <button class="back" id="backBtn" hidden aria-label="Regresar">←</button>
