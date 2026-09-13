@@ -934,7 +934,7 @@ def store_operations_evidence(client_name: str, report_id: str, position: int, c
     report_folder = _ensure_folder(client_folder, safe_report)
     extension = ".png" if mimetype == "image/png" else ".jpg"
     timestamp = datetime.utcnow().strftime("%H%M%S")
-    filename = f"{safe_report}.Foto{int(position)}.{timestamp}{extension}"
+    filename = f"{safe_report}.Foto {int(position)}.{timestamp}{extension}"
     drive_id = _upsert_bytes(report_folder, filename, optimized, mimetype)
     storage_ref = f"{REPORTES_APPSHEET_PATH_PREFIX}/{safe_client}/{safe_report}/{filename}"
     return {"drive_ref": drive_id, "storage_ref": storage_ref}
