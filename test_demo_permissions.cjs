@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const html = fs.readFileSync('templates/app_operativa_demo.html', 'utf8');
-const script = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
+const script = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>'));
 
 new vm.Script(script);
 assert.match(html, /ID interno \(inmutable\)/);
@@ -32,7 +32,11 @@ assert.match(html, /\/api\/operaciones\/reports\/draft/);
 assert.match(html, /\/api\/operaciones\/reports\/finalize/);
 assert.match(html, /\/evidence\/reset/);
 assert.match(html, /evidence\/\$\{index\+1\}/);
-assert.match(script, /async function clearEvidenceDraft\(\)/);
+assert.match(script, /async function clearEvidenceDraft\([^)]*\)/);
+assert.match(script, /Reporte guardado · \$\{photos\.length\} foto\(s\) subiendo/);
+assert.match(script, /showView\('equipment'\);[\s\S]*finishReportInBackground\(upload\)/);
+assert.doesNotMatch(script, /await finishReportInBackground\(upload\)/);
+assert.match(script, /await clearEvidenceDraft\(upload\.key\)/);
 assert.match(html, /Sincronizar Google/);
 assert.match(html, /id="reloadApp"/);
 assert.match(html, /id="orderClients"/);
