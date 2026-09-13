@@ -1807,24 +1807,40 @@ def billing_client_groups(refresh=False):
             return cached, _BILLING_CLIENT_GROUPS_CACHE.get("payment_sync") or {}
         source = []
         seen = set()
-        # Facturama entrega primero los CFDI recientes. Recorrer sus páginas es
-        # indispensable para que Partner también muestre facturas históricas.
-        for page in range(50):
-            raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "all", "page": page})
-            batch = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
-            if not batch:
-                break
+        def append_unique(batch):
             added = 0
             for item in batch:
-                identity = str(_pick(item, "Id") or _pick(item, "Uuid", "FolioFiscal") or "").strip()
+                identity = str(_pick(item, "Id") or _pick(item, "Uuid", "FolioFiscal") or "").strip().casefold()
                 if identity and identity in seen:
                     continue
                 if identity:
                     seen.add(identity)
                 source.append(item)
                 added += 1
-            if added == 0:
+            return added
+
+        # El listado filtrado por fecha devuelve el ciclo de cancelación más reciente.
+        # Se agrega primero para que el histórico general, que puede tardar en reflejar
+        # una solicitud, no vuelva a marcar el mismo UUID como activo.
+        recent_end = datetime.now() + timedelta(days=1)
+        recent_start = recent_end - timedelta(days=370)
+        append_unique(_facturama_period_rows("issued", recent_start, recent_end))
+        # Facturama entrega primero los CFDI recientes. Recorrer sus páginas es
+        # indispensable para que Partner también muestre facturas históricas.
+        previous_page = None
+        for page in range(50):
+            raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "all", "page": page})
+            batch = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
+            if not batch:
                 break
+            page_identity = tuple(
+                str(_pick(item, "Id") or _pick(item, "Uuid", "FolioFiscal") or "").strip().casefold()
+                for item in batch
+            )
+            if page_identity == previous_page:
+                break
+            previous_page = page_identity
+            append_unique(batch)
     payment_sync = _sync_facturama_payment_rows(source)
     payments = _read_index()
     deliveries = read_email_deliveries()
