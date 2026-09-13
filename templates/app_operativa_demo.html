@@ -163,7 +163,7 @@
       <div class="reminder"><div class="reminder-icon">♢</div><div class="reminder-copy"><b>Resumen “Tareas para hoy”</b><span>Las tareas ya se guardan en la cuenta y quedan listas para conectarse al aviso matutino.</span></div></div>
       <div class="section-head"><h2 id="agendaListTitle">Para hoy</h2><span class="count">Ordenadas por hora</span></div>
       <div class="task-list" id="taskList"></div>
-      <div class="section-head"><h2>Pendientes de R2</h2><span class="count">6 equipos</span></div><div class="equipment-list" id="pendingList"></div>
+      <div class="section-head"><h2>Pendientes de R2</h2><span class="count" id="agendaPendingCount">0 equipos</span></div><div class="equipment-list" id="pendingList"></div>
     </section>
 
     <section class="view" data-view="users">
@@ -192,7 +192,7 @@
       <article class="welcome"><div class="eyebrow" id="taskDetailMeta">Pendiente</div><h2 id="taskDetailTitle">Actividad</h2><p id="taskDetailText"></p></article>
       <div class="section-head"><h2>Información</h2><span class="access-state pending" id="taskDetailStatus">Programada</span></div>
       <div class="user-list" id="taskDetailClient"></div>
-      <div class="section-head"><h2>Equipos de esta visita</h2><span class="count">37 de 43 listos</span></div><div class="equipment-list" id="taskEquipment"></div>
+      <div class="section-head"><h2>Equipo relacionado</h2><span class="count" id="taskEquipmentSummary"></span></div><div class="equipment-list" id="taskEquipment"></div>
       <div class="actions"><button class="primary" id="taskStart">Iniciar reporte</button><button class="secondary" id="taskComplete">Terminar tarea</button></div>
     </section>
 
@@ -448,9 +448,9 @@
     // Adelanta la siguiente pantalla del teléfono sin solicitar los 388 equipos.
     hydratePhotos($('#equipmentList'),12);
     // La agenda conserva R2; consultar un histórico no reprograma tareas.
-    const pending=equipment.filter(e=>!e[3]&&equipmentMeta[e[0]].active&&equipmentMeta[e[0]].client==='HDI'&&clientMeta.HDI.policy);
+    const pending=equipment.filter(e=>!reportForEquipment(e[0],'2')?.completed&&equipmentMeta[e[0]].active&&equipmentMeta[e[0]].client==='HDI'&&clientMeta.HDI?.policy);
     $('#pendingList').innerHTML=pending.map(equipmentCard).join('');
-    $('#taskEquipment').innerHTML=pending.slice(0,3).map(equipmentCard).join('');
+    $('#agendaPendingCount').textContent=`${pending.length} equipo${pending.length===1?'':'s'}`;
     $('#roundLabel').textContent=`R${selectedRound}`;$('#roundReports').textContent=all.filter(e=>e[3]).length;
     $('#roundEquipment').textContent=active.length;$('#roundPending').textContent=`${active.length-completed} pendientes · ${all.length-active.length} inactivos`;
     $('#roundProgress').style.width=`${active.length?completed/active.length*100:0}%`;
@@ -597,7 +597,7 @@
     $('#taskDetailMeta').textContent=`${localDate(task.scheduled_date).toLocaleDateString('es-MX',{day:'numeric',month:'long'})} · ${task.scheduled_time||'Sin hora'}`;
     $('#taskDetailTitle').textContent=task.title;$('#taskDetailText').textContent=task.details||'Sin indicaciones adicionales.';$('#taskDetailStatus').textContent=task.status||'Pendiente';
     $('#taskDetailClient').innerHTML=`<article class="user-card"><div class="avatar">${escapeHtml((client?.[1]||'--').slice(0,2))}</div><div><b>${escapeHtml(client?.[0]||'Sin cliente')}</b><small>${escapeHtml(equipmentRow?`${equipmentRow[0]} · ${equipmentRow[1]}`:'Sin equipo específico')}</small></div></article>`;
-    $('#taskEquipment').innerHTML=equipmentRow?`<article class="equipment-card"><span class="equipment-photo">❄</span><span class="card-copy"><span class="card-title">${escapeHtml(equipmentRow[1])}</span><span class="card-sub">${escapeHtml(equipmentRow[0])}</span></span></article>`:'<div class="empty">Esta actividad no está vinculada a un equipo.</div>';
+    $('#taskEquipmentSummary').textContent=equipmentRow?'1 equipo':'Sin equipo';$('#taskEquipment').innerHTML=equipmentRow?`<article class="equipment-card"><span class="equipment-photo">❄</span><span class="card-copy"><span class="card-title">${escapeHtml(equipmentRow[1])}</span><span class="card-sub">${escapeHtml(equipmentRow[0])}</span></span></article>`:'<div class="empty">Esta actividad no está vinculada a un equipo.</div>';
     $('#taskStart').hidden=!equipmentRow||task.status==='Terminada';$('#taskComplete').hidden=task.status==='Terminada';showView('task');
   }
   function populateTaskForm(){

@@ -276,7 +276,7 @@ def acceso():
             session["hsc_role"] = "admin"
             session["hsc_user_id"] = "owner"
             return redirect(next_path)
-        error = "El correo o la contraseña no son correctos."
+        error = "La contraseña no es correcta o el correo no corresponde a una cuenta activa."
     return render_template("acceso.html", error=error, next_path=next_path,
                            configured=bool(password or OPERACIONES_STORE.enabled))
 
