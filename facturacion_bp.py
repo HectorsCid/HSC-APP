@@ -704,6 +704,19 @@ def _resolved_invoice_cancellation(inv_id, uuid, provider_status):
     return provider_state, _invoice_status_label(provider_status)
 
 
+def _reconcile_pending_cancellation_cache(pending_keys):
+    """Retira solicitudes ya resueltas cuando dejan de aparecer en el índice pending."""
+    now = time.time()
+    with _CFDI_CANCELLATION_LOCK:
+        for key, value in list(_CFDI_CANCELLATION_CACHE.items()):
+            if (
+                value.get("state") == "pending"
+                and key not in pending_keys
+                and now - value.get("ts", 0) > _BILLING_CLIENT_GROUPS_TTL
+            ):
+                _CFDI_CANCELLATION_CACHE.pop(key, None)
+
+
 def _facturama_invoice_row(inv):
     """Normaliza tanto el resultado plano de búsqueda como el detalle de Facturama."""
     receiver = _pick(inv, "Receiver", "Customer") or {}
@@ -1818,6 +1831,33 @@ def billing_client_groups(refresh=False):
                 source.append(item)
                 added += 1
             return added
+
+        # Facturama ofrece un filtro específico para solicitudes pendientes. Es
+        # la fuente autoritativa para Partner y evita depender del texto que
+        # llegue en el índice histórico general.
+        pending_keys = set()
+        previous_pending_page = None
+        for page in range(20):
+            raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "pending", "page": page})
+            batch = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
+            if not batch:
+                break
+            page_identity = tuple(
+                str(_pick(item, "Id") or _pick(item, "Uuid", "FolioFiscal") or "").strip().casefold()
+                for item in batch
+            )
+            if page_identity == previous_pending_page:
+                break
+            previous_pending_page = page_identity
+            for item in batch:
+                # El filtro de la respuesta es más confiable que un campo Status
+                # genérico que algunas cuentas todavía devuelven como "active".
+                item["Status"] = "pending"
+                for value in (_pick(item, "Id"), _pick(item, "Uuid", "FolioFiscal")):
+                    if str(value or "").strip():
+                        pending_keys.add(str(value).strip().casefold())
+            append_unique(batch)
+        _reconcile_pending_cancellation_cache(pending_keys)
 
         # El listado filtrado por fecha devuelve el ciclo de cancelación más reciente.
         # Se agrega primero para que el histórico general, que puede tardar en reflejar

@@ -1,5 +1,6 @@
 import base64
 import os
+import time
 import unittest
 from unittest.mock import patch
 
@@ -619,6 +620,16 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(pending["cancellation_status"], "pending")
         self.assertEqual(stale["cancellation_status"], "pending")
         self.assertEqual(stale["status_label"], "Cancelación en proceso")
+
+    def test_pending_cache_is_reconciled_after_provider_stops_returning_invoice(self):
+        billing._CFDI_CANCELLATION_CACHE.clear()
+        billing._CFDI_CANCELLATION_CACHE["invoice-resolved"] = {
+            "state": "pending",
+            "label": "Cancelación en proceso",
+            "ts": time.time() - billing._BILLING_CLIENT_GROUPS_TTL - 1,
+        }
+        billing._reconcile_pending_cancellation_cache(set())
+        self.assertNotIn("invoice-resolved", billing._CFDI_CANCELLATION_CACHE)
 
     def test_receiver_validation_reports_each_mismatched_sat_field(self):
         validation = {
