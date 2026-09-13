@@ -327,6 +327,8 @@
     selectedEquipment=equipment.filter(item=>equipmentMeta[item[0]]?.client===selectedClient).sort(byEquipmentId)[0]?.[0]||equipment[0]?.[0]||'';
     matrixLoaded=true;
     const stats=payload.stats||{};
+    const localUploads=typeof pendingReportUploads==='function'?Object.keys(pendingReportUploads()).length:0,pendingTotal=Number(stats.pending_sync||0)+localUploads,syncState=$('#profileSyncState');
+    if(syncState){syncState.textContent=pendingTotal?`${pendingTotal} pendiente${pendingTotal===1?'':'s'}`:'Al día';syncState.classList.toggle('pending',pendingTotal>0)}
     const databaseSource=payload.source==='database';
     $('#matrixStatus').textContent=databaseSource?`Base operativa conectada · ${payload.cached?'caché':'actualizada'}`:`Matriz conectada en lectura · ${payload.cached?'caché':'actualizada'}`;
     $('#operationsNoticeText').textContent=databaseSource?'Clientes, equipos y reportes se consultan desde la base operativa. Mientras editas, las fotos quedan seguras en el dispositivo; al finalizar se guardan en Drive.':'Clientes, equipos, reportes y miniaturas se consultan desde la Hoja Matriz. Mientras editas, las fotos quedan seguras en el dispositivo.';
@@ -362,7 +364,7 @@
     $('#profileName').textContent=account.name;$('#profileAvatar').textContent=account.name.split(/\s+/).map(part=>part[0]).join('').slice(0,2).toUpperCase();$('#profileRole').textContent=account.isOwner?'Propietario · Cuenta activa':`${serverRole==='client'?'Cliente':'Técnico'} · Cuenta activa`;
     $('#profileTasks').textContent=matrixTasks.filter(task=>task.scheduled_date===dateKey(new Date())&&task.status!=='Terminada'&&task.status!=='Cancelada').length;$('#profileReports').textContent=matrixReports.length;$('#profileClients').textContent=clients.length;
   }
-  async function syncGoogleNow(button,state){button.disabled=true;if(state)state.textContent='Sincronizando…';else button.textContent='Sincronizando…';try{await loadMatrixData(true);if(state)state.textContent='Al día'}finally{button.disabled=false;if(!state)button.textContent='Sincronizar Google'}}
+  async function syncGoogleNow(button,state){button.disabled=true;if(state)state.textContent='Sincronizando…';else button.textContent='Sincronizando…';try{await operationsPost('/api/operaciones/sync',{apply:true,limit:100});await loadMatrixData(true)}catch(error){toast(error.message||'No se pudo completar la sincronización')}finally{button.disabled=false;if(!state)button.textContent='Sincronizar Google'}}
   $('#syncGoogleNow').onclick=()=>syncGoogleNow($('#syncGoogleNow'));$('#syncGoogleProfile').onclick=()=>syncGoogleNow($('#syncGoogleProfile'),$('#profileSyncState'));
   const navigationStorageKey=`hsc-operaciones-navigation-${appKind}`;
   let browserHistoryReady=false,handlingHistoryPop=false;
