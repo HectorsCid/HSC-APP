@@ -313,8 +313,8 @@ def get_attachment(folder, uid, part_index):
     return filename, part.get_content_type() or mimetypes.guess_type(filename)[0] or "application/octet-stream", part.get_payload(decode=True) or b""
 
 
-def _fetch_with_reconnect(folder, uid, command, *, readonly):
-    """Reabre IMAP una vez si el servidor corta el socket durante FETCH."""
+def _fetch_with_reconnect(folder, uid, command, *, readonly, chunk_size=256 * 1024, max_bytes=30 * 1024 * 1024):
+    """Descarga el mensaje por bloques y reabre IMAP una vez ante un corte."""
     from mail_idle import resume_listener, suspend_listener
     suspend_listener()
     time.sleep(0.25)
@@ -322,7 +322,29 @@ def _fetch_with_reconnect(folder, uid, command, *, readonly):
         for attempt in range(2):
             try:
                 with imap_connection(readonly=readonly, folder=folder) as mailbox:
-                    return mailbox.uid("fetch", str(uid), command)
+                    section = "BODY.PEEK[]" if readonly else "BODY[]"
+                    chunks = []
+                    metadata = b""
+                    offset = 0
+                    while offset < max_bytes:
+                        status, rows = mailbox.uid(
+                            "fetch", str(uid), f"({section}<{offset}.{chunk_size}> FLAGS)",
+                        )
+                        if status != "OK":
+                            return status, rows
+                        pairs = [row for row in rows or [] if isinstance(row, tuple)]
+                        if not pairs:
+                            break
+                        if not metadata:
+                            metadata = pairs[0][0]
+                        block = b"".join(row[1] for row in pairs if isinstance(row[1], bytes))
+                        chunks.append(block)
+                        if len(block) < chunk_size:
+                            return "OK", [(metadata, b"".join(chunks))]
+                        offset += len(block)
+                    if chunks and offset >= max_bytes:
+                        raise RuntimeError("El correo supera el limite de lectura de 30 MB.")
+                    return "OK", []
             except (imaplib.IMAP4.abort, ConnectionError, EOFError, OSError):
                 if attempt:
                     raise RuntimeError("El servidor de correo interrumpio la descarga. Intenta nuevamente.")

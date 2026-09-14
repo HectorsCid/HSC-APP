@@ -26,6 +26,28 @@ class MailClientParsingTests(unittest.TestCase):
         self.assertEqual(connection.call_count, 2)
         self.assertEqual(sleep.call_count, 2)
 
+    @patch("mail_client.time.sleep")
+    @patch("mail_client.imap_connection")
+    def test_fetch_reassembles_message_chunks(self, connection, sleep):
+        context = Mock()
+        context.__enter__ = Mock(return_value=Mock())
+        context.__exit__ = Mock(return_value=False)
+        context.__enter__.return_value.uid.side_effect = [
+            ("OK", [(b"meta", b"abcd")]),
+            ("OK", [(b"meta", b"ef")]),
+        ]
+        connection.return_value = context
+
+        status, rows = mail_client._fetch_with_reconnect(
+            "INBOX", "12", "(BODY.PEEK[])", readonly=True, chunk_size=4, max_bytes=20,
+        )
+
+        self.assertEqual(status, "OK")
+        self.assertEqual(rows[0][1], b"abcdef")
+        commands = context.__enter__.return_value.uid.call_args_list
+        self.assertIn("BODY.PEEK[]<0.4>", commands[0].args[2])
+        self.assertIn("BODY.PEEK[]<4.4>", commands[1].args[2])
+
     def test_folder_roles_support_carrierzone_names(self):
         sent = mail_client._parse_list_row(b'(\\HasNoChildren) "/" "mail/sent-mail"')
         spam = mail_client._parse_list_row(b'(\\HasNoChildren) "/" "mail/spam"')
