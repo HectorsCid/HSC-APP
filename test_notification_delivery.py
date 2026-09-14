@@ -136,6 +136,19 @@ class NotificationsTest(unittest.TestCase):
         self.assertEqual([t['user_id'] for t in targets],['T1'])
         self.assertEqual(self.client.get('/api/operaciones/avisos').get_json()['items'],[])
 
+    def test_quote_notifications_only_target_own_partner(self):
+        self.login('client','user-a','A');self.subscribe('https://fcm.googleapis.com/a')
+        self.login('client','user-b','B');self.subscribe('https://fcm.googleapis.com/b')
+        self.login('technician','tech');self.subscribe('https://fcm.googleapis.com/tech')
+        delivery.observe_partner_documents('A',{'quotes':[]})
+        delivery.observe_partner_documents('A',{'quotes':[{'id':'quote-A','status':'Disponible'}]})
+        job=notices._read()['push_queue'][-1]
+        self.assertEqual([t['user_id'] for t in job['targets']],['user-a'])
+        for role,user,company,count in [('client','user-a','A',1),('client','user-b','B',0),('technician','tech','',0)]:
+            self.login(role,user,company)
+            rows=self.client.get('/api/operaciones/avisos').get_json()['items']
+            self.assertEqual(len([r for r in rows if r['category']=='cotizaciones']),count)
+
     def test_documents_baseline_new_item_and_change_without_duplicates(self):
         delivery.observe_partner_documents('A',{'quotes':[{'id':'old','status':'Disponible'}]})
         self.assertEqual(notices._read().get('items',[]),[])

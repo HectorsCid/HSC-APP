@@ -1292,9 +1292,11 @@ class OperationsStore:
                 )
         return next(user for user in self.list_users() if user["id"] == _text(user_id))
 
-    def resolve_fault(self, fault_id, *, resolved_by="", resolution_notes=""):
+    def resolve_fault(self, fault_id, *, resolved_by="", resolution_notes="", status="Atendida"):
         """Marca una falla como atendida y conserva el cierre para auditoría."""
         self.initialize()
+        if status not in {"Atendida", "Revisada", "Reparada"}:
+            raise ValueError("Selecciona Revisada o Reparada.")
         fault_id = _text(fault_id)
         if not fault_id:
             raise ValueError("La falla es obligatoria.")
@@ -1309,11 +1311,11 @@ class OperationsStore:
             conn.execute(
                 f"UPDATE operations_faults SET status={p},resolved_at={p},resolved_by={p},"
                 f"resolution_notes={p},source='app',sync_status='pending',updated_at={p} WHERE id={p}",
-                ("Atendida", stamp, _text(resolved_by), _text(resolution_notes), stamp, fault_id),
+                (status, stamp if status != 'Revisada' else '', _text(resolved_by), _text(resolution_notes), stamp, fault_id),
             )
         self.queue_sync("fault", fault_id, "sheets", "upsert", {
             "client_id": found[1], "equipment_id": found[2],
-            "status": "Atendida", "resolved_at": stamp,
+            "status": status, "resolved_at": stamp if status != 'Revisada' else '',
             "resolved_by": _text(resolved_by), "resolution_notes": _text(resolution_notes),
         })
         return next(row for row in self.snapshot()["faults"] if row["id"] == fault_id)
