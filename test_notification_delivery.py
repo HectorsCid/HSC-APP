@@ -38,6 +38,14 @@ class NotificationsTest(unittest.TestCase):
         admin_id=notices.snapshot()['items'][0]['id']
         self.assertEqual(self.client.post(f'/api/operaciones/avisos/{admin_id}/read').status_code,404)
 
+    def test_legacy_authenticated_owner_and_anonymous(self):
+        self.assertEqual(self.client.get('/api/operaciones/avisos').status_code,401)
+        with self.client.session_transaction() as session:
+            session['hsc_authenticated']=True
+        self.assertEqual(self.client.get('/api/operaciones/avisos').status_code,200)
+        self.subscribe()
+        self.assertEqual(notices._read()['push_devices'][0]['user_id'],'owner')
+
     def test_subscription_identity_cannot_be_forged(self):
         self.login('client','user-a','A');self.subscribe()
         device=notices._read()['push_devices'][0]

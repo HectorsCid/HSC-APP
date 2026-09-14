@@ -16,8 +16,11 @@ _WAKE = threading.Event()
 
 
 def identity():
-    return dict(role=session.get('hsc_role', ''),
-                client_id=session.get('hsc_client_id', ''), user_id=session.get('hsc_user_id', ''))
+    role = str(session.get('hsc_role') or '').strip().lower()
+    if role not in {'admin','client','technician'}:
+        role = 'admin' if session.get('hsc_authenticated') is True else ''
+    return dict(role=role, client_id=session.get('hsc_client_id', ''),
+                user_id=session.get('hsc_user_id') or ('owner' if role=='admin' else ''))
 
 
 @bp.before_request
