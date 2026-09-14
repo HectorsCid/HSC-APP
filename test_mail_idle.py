@@ -1,10 +1,15 @@
 import unittest
 from unittest.mock import Mock
+from unittest.mock import patch
 
 import mail_idle
 
 
 class MailIdleTests(unittest.TestCase):
+    def test_listener_is_enabled_by_default_on_render(self):
+        with patch.dict("os.environ", {"RENDER": "true"}, clear=True):
+            self.assertTrue(mail_idle._enabled())
+
     def test_idle_detects_exists_and_closes_command(self):
         mailbox = Mock()
         mailbox._new_tag.return_value = b"ABCD1"

@@ -27,7 +27,8 @@ _STATE = {
 
 
 def _enabled():
-    return os.getenv("MAIL_IDLE_ENABLED", "0").strip().lower() in {"1", "true", "yes", "on"}
+    default = "1" if os.getenv("RENDER") else "0"
+    return os.getenv("MAIL_IDLE_ENABLED", default).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def listener_status():

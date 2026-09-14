@@ -65,7 +65,7 @@
       await loadMessages();
     }catch(error){$('folders').innerHTML=`<span class="status">${esc(error.message)}</span>`;$('messages').innerHTML=`<div class="empty">${esc(error.message)}</div>`}
   }
-  async function loadStatus(){try{const data=await api('/api/correo/status');$('accountStatus').textContent=data.listener?.connected?'● Avisos instantáneos activos':data.idle?'IMAP IDLE disponible':'IMAP sincronizado'}catch(error){$('accountStatus').textContent='Correo sin conexión'}}
+  async function loadStatus(retry=true){try{const data=await api('/api/correo/status');$('accountStatus').textContent=data.listener?.connected?'● Avisos instantáneos activos':data.idle?'IMAP IDLE disponible':'IMAP sincronizado';if(retry&&data.listener?.enabled&&!data.listener?.connected)setTimeout(()=>loadStatus(false),3000)}catch(error){$('accountStatus').textContent='Correo sin conexión'}}
   function renderFolderSelection(){$('folders').querySelectorAll('button').forEach(x=>x.classList.toggle('active',x.dataset.folder===state.folder))}
   async function loadMessages(){
     $('messages').innerHTML='<div class="empty">Actualizando…</div>';
