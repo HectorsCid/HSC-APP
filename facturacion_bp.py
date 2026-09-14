@@ -311,8 +311,8 @@ def _push_configured():
     return bool(os.getenv("VAPID_PUBLIC_KEY", "").strip() and os.getenv("VAPID_PRIVATE_KEY", "").strip())
 
 
-def _send_push_notifications(title, body, url="/facturacion?tab=plantillas", tag="hsc-facturas"):
-    notices.publish(title, body, category="facturas", key=tag, url=url)
+def _send_push_notifications(title, body, url="/facturacion?tab=plantillas", tag="hsc-facturas", category="facturas"):
+    notices.publish(title, body, category=category, key=tag, url=url)
     subscriptions = _read_push_subscriptions()
     if not subscriptions or not _push_configured():
         return {"sent": 0, "configured": _push_configured(), "devices": len(subscriptions)}

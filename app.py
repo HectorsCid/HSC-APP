@@ -4230,6 +4230,22 @@ def api_operaciones_upload_report_evidence(report_id, position):
         return jsonify({"ok": False, "error": f"Drive no confirmó Foto{position}."}), 502
 
 
+def _notify_operations_fault(fault):
+    """El aviso no debe convertir una falla ya guardada en un error de registro."""
+    try:
+        from urllib.parse import urlencode
+        from facturacion_bp import _send_push_notifications
+        _send_push_notifications(
+            "Nueva falla reportada",
+            f"{fault.get('client_id') or 'Cliente'} · {fault.get('equipment_id') or 'Equipo'}: "
+            f"{fault.get('description') or 'Revisar falla'}",
+            url="/hsc-tecnico/?" + urlencode({"client": fault.get("client_id") or ""}),
+            tag=f"fault:{fault.get('id')}", category="fallas",
+        )
+    except Exception:
+        current_app.logger.exception("No se pudo enviar el aviso de falla %s", fault.get("id"))
+
+
 @app.post('/api/operaciones/faults')
 def api_operaciones_save_fault():
     denied = _operations_forbidden("admin", "technician", "client")
@@ -4254,6 +4270,7 @@ def api_operaciones_save_fault():
         fault = OPERACIONES_STORE.save_fault(body)
         _invalidate_operations_cache()
         _schedule_operations_sync(force=True)
+        _notify_operations_fault(fault)
         return jsonify({"ok": True, "fault": fault, "sync_status": "pending"}), 201
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400

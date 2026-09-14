@@ -14,6 +14,9 @@
   </script>
   {% with pwa_manifest_url=operations_manifest_url, pwa_name=operations_app_name %}{% include '_pwa_head.html' %}{% endwith %}
   <style>
+    body:not(.operations-ready) main,body:not(.operations-ready) .bottom-nav{display:none!important}
+    body:not(.operations-ready) .heading{visibility:hidden}
+    body:not(.operations-ready)::after{content:'Cargando tu cuenta… Si no hay conexión, vuelve a intentar actualizar.';display:block;padding:32px;text-align:center}
     :root{
       --bg:#07101f;--surface:#101c2f;--surface-2:#15243a;--line:#273a55;
       --text:#f4f7fb;--muted:#9fb0c7;--brand:#2f86ff;--brand-2:#70b5ff;
@@ -282,8 +285,8 @@
 
 <div class="modal" id="profileEditModal"><div class="sheet"><div class="eyebrow">Mi cuenta</div><h2>Editar perfil</h2><div class="field"><label for="ownProfileName">Nombre visible</label><input id="ownProfileName" maxlength="100" autocomplete="name"></div><div class="field" id="ownProfilePhotoField" style="margin-top:12px"><label for="ownProfilePhoto">Fotografía opcional</label><input id="ownProfilePhoto" type="file" accept="image/jpeg,image/png,image/webp"><p class="editor-note">JPG, PNG o WebP de máximo 8 MB.</p></div><div class="sheet-actions"><button class="secondary" id="closeOwnProfile" type="button">Cancelar</button><button class="primary" id="saveOwnProfile" type="button">Guardar perfil</button></div></div></div>
 <script>
-  const clients=[['Holiday Inn Diamante','HDI','43 equipos'],['Travers Tool','TT','12 equipos'],['Visscher Caravelle','VC','18 equipos'],['Universidad de Arkansas','UDA','9 equipos'],['Fiesta Inn Querétaro','FIQ','16 equipos'],['UVM Querétaro','UVMQ','21 equipos'],['IHOP Esfera','IHPE','8 equipos']];
-  const equipment=[['HDI1','Fábrica de hielo grande','Monitowac',true],['HDI2','Restaurante','Cámara de conservación',true],['HDI3','Lobby','Unidad paquete',false],['HDI4','Lavandería','Extractor',false],['HDI5','Cocina','Cámara de congelación',true],['HDI6','Salón Diamante','Minisplit',false]];
+  const clients=[];
+  const equipment=[];
   const views={clients:['HSC Técnico','Clientes'],client:['Cliente','Holiday Inn Diamante'],equipment:['Equipo','Fábrica de hielo grande'],report:['Reporte','Nuevo reporte'],agenda:['HSC Técnico','Agenda'],users:['Administración','Usuarios'],userPermissions:['Administración','Permisos'],task:['Agenda','Detalle de tarea'],reportView:['Reporte','HDI1_R2'],profile:['HSC','Mi cuenta'],expenses:['HSC','Gastos de campo'],partner:['HSC Partner','Inicio'],partnerEquipment:['HSC Partner','Equipos'],partnerReports:['HSC Partner','Reportes'],partnerFaults:['HSC Partner','Fallas reportadas'],partnerDocuments:['HSC Partner','Documentos'],inviteAccept:['Acceso','Aceptar invitación']};
   const serverRole=document.body.dataset.operationsRole||'technician';
   const appKind=document.body.dataset.appKind||'technician';
@@ -344,7 +347,8 @@
     return matches.length?matches[matches.length-1]:null;
   }
   function applyMatrixBootstrap(payload,preferLocalRounds=false){
-    if(!Array.isArray(payload.clients)||!payload.clients.length)return false;
+    if(!Array.isArray(payload.clients)||!payload.clients.length||!Array.isArray(payload.equipment))return false;
+    const wasLoaded=matrixLoaded,keepClient=selectedClient,keepEquipment=selectedEquipment,keepRound=selectedRound;
     clients.splice(0,clients.length,...payload.clients.map(client=>[client.name,client.id,'']));
     for(const key of Object.keys(clientMeta))delete clientMeta[key];
     for(const client of payload.clients)clientMeta[client.id]={policy:client.policy_active!==false,matrixId:client.matrix_id||client.id,billingRfc:client.billing_rfc||'',sortOrder:Number(client.sort_order)||0,address:client.address||'',photo:client.photo_url||'',photoAvailable:Boolean(client.has_photo),selectedRound:client.selected_round||''};
@@ -366,9 +370,9 @@
       const dated=matrixReports.filter(report=>report.round===round).map(report=>report.end||report.start).filter(Boolean);
       demoRounds[round].date=dated.length?dated[dated.length-1]:'';
     }
-    selectedClient=clients[0][1];
-    selectedRound=clientMeta[selectedClient].selectedRound||'2';
-    selectedEquipment=equipment.filter(item=>equipmentMeta[item[0]]?.client===selectedClient).sort(byEquipmentId)[0]?.[0]||equipment[0]?.[0]||'';
+    selectedClient=clientMeta[keepClient]?keepClient:(clients[0]?.[1]||'');
+    selectedRound=wasLoaded&&selectedClient===keepClient?keepRound:(clientMeta[selectedClient]?.selectedRound||'2');
+    selectedEquipment=equipmentMeta[keepEquipment]?.client===selectedClient?keepEquipment:(equipment.filter(item=>equipmentMeta[item[0]]?.client===selectedClient).sort(byEquipmentId)[0]?.[0]||'');
     matrixLoaded=true;
     const stats=payload.stats||{};
     const localUploads=typeof pendingReportUploads==='function'?Object.keys(pendingReportUploads()).length:0,pendingTotal=Number(stats.pending_sync||0)+localUploads,syncState=$('#profileSyncState');
@@ -378,7 +382,7 @@
     if($('#operationsNoticeText'))$('#operationsNoticeText').textContent=databaseSource?'Clientes, equipos y reportes se consultan desde la base operativa. Mientras editas, las fotos quedan seguras en el dispositivo; al finalizar se guardan en Drive.':'Clientes, equipos, reportes y miniaturas se consultan desde la Hoja Matriz. Mientras editas, las fotos quedan seguras en el dispositivo.';
     $('#inviteClientSelect').innerHTML=clients.map(client=>`<option value="${escapeHtml(client[1])}">${escapeHtml(client[0])}</option>`).join('');
     $('#partnerClientSelect').innerHTML=clients.map(client=>`<option value="${escapeHtml(client[1])}">${escapeHtml(client[0])}</option>`).join('');
-    renderClients();refreshRound();renderAgenda();renderExpenses();restoreOperationalNavigation();announcePendingExpenses();return true;
+    renderClients();refreshRound();renderAgenda();renderExpenses();if(!wasLoaded)restoreOperationalNavigation();else saveOperationalNavigation();document.body.classList.add('operations-ready');announcePendingExpenses();return true;
   }
   async function loadMatrixData(refresh=false){
     try{
@@ -427,7 +431,7 @@
   $('#syncGoogleProfile').onclick=()=>syncGoogleNow($('#syncGoogleProfile'),$('#profileSyncState'));
   $('#offlineSyncMode').onchange=event=>{localStorage.setItem(offlineSyncStorageKey,event.target.value);updateOfflineSyncUi();if(shouldSyncNow())resumePendingReportUploads();else toast(event.target.value==='offline'?'Modo sin conexión activado':'Preferencia de conexión guardada')};
   $('#syncPendingNow').onclick=async()=>{const button=$('#syncPendingNow');button.disabled=true;button.textContent='Sincronizando…';try{if(!navigator.onLine)throw Error('Todavía no hay conexión');await resumePendingReportUploads(true);await loadMatrixData(true);toast(Object.keys(pendingReportUploads()).length?'Quedan envíos pendientes; vuelve a intentarlo':'Todo quedó sincronizado')}catch(error){toast(error.message||'No se pudo sincronizar')}finally{button.disabled=false;button.textContent='↻ Sincronizar ahora';updateOfflineSyncUi()}};
-  const navigationStorageKey=`hsc-operaciones-navigation-${appKind}`;
+  const navigationStorageKey=`hsc-operaciones-navigation-v2-${account.id}-${appKind}`;
   const clientRoundsStorageKey=`hsc-client-rounds-${account.id}`;
   let clientRoundTimers={};
   function savedClientRounds(){try{return JSON.parse(localStorage.getItem(clientRoundsStorageKey)||'{}')||{}}catch(_){return {}}}
@@ -468,7 +472,8 @@
   function restoreOperationalNavigation(){
     let state={};try{state=JSON.parse(localStorage.getItem(navigationStorageKey)||'{}')}catch(_){}
     if(state.client&&clientMeta[state.client])selectedClient=state.client;
-    if(state.equipment&&equipmentMeta[state.equipment]){selectedEquipment=state.equipment;selectedClient=equipmentMeta[state.equipment].client;}
+    if(state.equipment&&equipmentMeta[state.equipment]?.client===selectedClient)selectedEquipment=state.equipment;
+    else selectedEquipment=equipment.find(item=>equipmentMeta[item[0]]?.client===selectedClient)?.[0]||'';
     selectClientRound(selectedClient);
     if(['1','2','3','4'].includes(String(state.round))){selectedRound=String(state.round);rememberClientRound(selectedClient,selectedRound,false);}
     if(appKind==='partner'||serverRole==='client')currentMode='partner';
@@ -476,6 +481,8 @@
     const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','equipment','partnerReports','partnerFaults','partnerDocuments','reportView']:['clients','client','equipment','report','reportView','agenda','profile','expenses'];
     if(account.isOwner)allowedRoots.push('users','userPermissions','clientEditor','equipmentEditor');
     if(account.isOwner&&new URLSearchParams(location.search).get('open')==='expenses')state.view='expenses';
+    const linkedClient=new URLSearchParams(location.search).get('client');
+    if(account.isOwner&&linkedClient&&clientMeta[linkedClient]){selectedClient=linkedClient;selectedEquipment=equipment.find(item=>equipmentMeta[item[0]]?.client===selectedClient)?.[0]||'';selectClientRound(selectedClient);state.view='client';}
     const target=allowedRoots.includes(state.view)?state.view:(currentMode==='partner'?'partner':'clients');
     historyStack=canonicalPath(target);current='__restore__';refreshRound();
     if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=canonicalPath('reportView');initializeBrowserNavigation();return;}}
@@ -537,7 +544,8 @@
     bindRoundReports();
   }
   function renderEquipmentDetail(){
-    const e=equipment.find(row=>row[0]===selectedEquipment),done=demoRounds[selectedRound].done.includes(e[0]);
+    const e=equipment.find(row=>row[0]===selectedEquipment);if(!e)return;
+    const done=demoRounds[selectedRound].done.includes(e[0]);
     const hero=$('[data-view="equipment"] .equipment-hero');
     hero.querySelector('.eyebrow').textContent=e[0];hero.querySelector('h2').textContent=e[1];
     const meta=equipmentMeta[e[0]];
@@ -1120,7 +1128,7 @@
   window.addEventListener('online',()=>{updateOfflineSyncUi();if(shouldSyncNow()){toast('Conexión recuperada · sincronizando pendientes');loadMatrixData().finally(()=>resumePendingReportUploads())}else toast(offlineSyncMode()==='offline'?'Conexión disponible · continúas trabajando sin conexión':'Conexión disponible · esperando Wi‑Fi')});
   window.addEventListener('offline',()=>{updateOfflineSyncUi();toast('Sin conexión · los reportes quedarán en este dispositivo')});
   const networkConnection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;if(networkConnection?.addEventListener)networkConnection.addEventListener('change',()=>{updateOfflineSyncUi();if(shouldSyncNow())resumePendingReportUploads()});
-  renderClients();refreshRound();applyAccess();updateOfflineSyncUi();if(typeof fetch==='function')loadMatrixData().finally(()=>{initializeBrowserNavigation();resumePendingReportUploads()});else initializeBrowserNavigation();
+  applyAccess();updateOfflineSyncUi();if(typeof fetch==='function')loadMatrixData().finally(()=>{initializeBrowserNavigation();resumePendingReportUploads()});else initializeBrowserNavigation();
 </script>
 </body>
 </html>
