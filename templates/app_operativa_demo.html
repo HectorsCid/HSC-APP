@@ -456,6 +456,7 @@
   function showView(name,push=true){if(name===current){$('#backBtn').hidden=false;applyAccess();saveOperationalNavigation();if(name==='partnerDocuments')loadPartnerDocuments();return;}if(push)historyStack=canonicalPath(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=false;navMode(currentMode);$('.bottom-nav').hidden=currentMode==='partner'||name==='inviteAccept';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();saveOperationalNavigation();if(name==='agenda')renderAgenda();if(name==='expenses')renderExpenses();if(name==='users')loadUsers();if(name==='partnerDocuments')loadPartnerDocuments();if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,name,historyStack);scrollTo({top:0,behavior:'smooth'});}
   function goBack(){const target=parentView(current);if(target===current)return;if(current==='report'&&activeReportContext)saveActiveReportDraft(false);historyStack=canonicalPath(target);showView(target,false);if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,target,historyStack)}
   function openRoot(name){if(name===current)return;historyStack=[name];showView(name,false);if(browserHistoryReady)writeBrowserNavigation(true,false,name,historyStack);}
+  let restoringReportOpen=false;
   function restoreOperationalNavigation(){
     let state={};try{state=JSON.parse(localStorage.getItem(navigationStorageKey)||'{}')}catch(_){}
     if(state.client&&clientMeta[state.client])selectedClient=state.client;
@@ -471,7 +472,7 @@
     historyStack=canonicalPath(target);current='__restore__';refreshRound();
     if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=canonicalPath('reportView');initializeBrowserNavigation();return;}}
     showView(target,false);
-    if(target==='report')setTimeout(()=>$('#newReport').click(),0);
+    if(target==='report')setTimeout(async()=>{restoringReportOpen=true;try{await $('#newReport').onclick()}finally{restoringReportOpen=false}},0);
     initializeBrowserNavigation();
   }
   window.addEventListener('popstate',()=>{
@@ -873,7 +874,7 @@
     const e=equipment.find(row=>row[0]===selectedEquipment),form=$('#reportForm');form.reset();
     if(!clientMeta[equipmentMeta[e[0]].client].policy){openStandaloneReport('refrigeracion',e[0]);return false;}
     const completedReport=reportForEquipment(e[0],String(selectedRound));
-    if(completedReport&&!confirm(`Este equipo ya tiene el reporte ${completedReport.matrix_id||completedReport.id} en R${selectedRound}. ¿Quieres editarlo conservando el mismo folio?`))return false;
+    if(completedReport&&!restoringReportOpen&&!confirm(`Este equipo ya tiene el reporte ${completedReport.matrix_id||completedReport.id} en R${selectedRound}. ¿Quieres editarlo conservando el mismo folio?`))return false;
     const context={client:equipmentMeta[e[0]].client,equipment:e[0],round:String(selectedRound),key:reportKey(e[0],selectedRound),draftId:'',editReportId:completedReport?.id||'',existingEvidence:[],requestId:++reportOpenSequence};activeReportContext=context;
     if(pendingReportUploads()[context.key]){activeReportContext=null;toast('Este reporte ya está finalizando sus fotos en segundo plano');resumePendingReportUploads();return false;}
     const fixed=[...form.querySelectorAll('input[readonly]')];fixed[0].value=clientName(context.client);fixed[1].value=context.equipment;fixed[2].value=`R${context.round}`;
