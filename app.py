@@ -2999,7 +2999,10 @@ def _scope_operaciones_payload(payload):
     faults = [item for item in payload.get("faults", [])
               if item.get("client_id") == client_id or item.get("equipment_id") in equipment_ids]
     scoped = dict(payload)
-    scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults, tasks=[], expenses=[])
+    tasks = [{key: item.get(key) for key in ('id','title','scheduled_date','scheduled_time','client_id','equipment_id','status')}
+             for item in payload.get('tasks', []) if client_id and
+             (item.get('client_id') == client_id or (not item.get('client_id') and item.get('equipment_id') in equipment_ids))]
+    scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults, tasks=tasks, expenses=[])
     scoped["stats"] = {
         "clients": len(clients), "equipment": len(equipment), "reports": len(reports),
         "client_photos": sum(bool(item.get("has_photo")) for item in clients),
@@ -3008,7 +3011,7 @@ def _scope_operaciones_payload(payload):
         "orphan_equipment": 0, "orphan_reports": 0,
         "duplicate_clients": 0, "duplicate_equipment": 0, "duplicate_reports": 0,
         "faults": len(faults), "duplicate_faults": 0,
-        "tasks": 0, "expenses": 0, "pending_expenses": 0,
+        "tasks": len(tasks), "expenses": 0, "pending_expenses": 0,
     }
     return scoped
 
@@ -3210,6 +3213,13 @@ def api_operaciones_save_task():
     try:
         task = OPERACIONES_STORE.save_task(body)
         _invalidate_operations_cache()
+        if body.get('notify_client') is True and task.get('client_id'):
+            from notification_delivery import enqueue
+            from urllib.parse import urlencode
+            enqueue('Actividad programada', f"{task['title']} · {task['scheduled_date']} · {task.get('scheduled_time') or 'Sin hora definida'}",
+                    '/hsc-partner/?'+urlencode({'client':task['client_id'],'open':'calendar','date':task['scheduled_date']}),
+                    f"task-client:{task['id']}:{task['scheduled_date']}:{task.get('scheduled_time','')}",
+                    category='agenda',audience='client',client_id=task['client_id'])
         return jsonify({"ok": True, "task": task}), 201
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400

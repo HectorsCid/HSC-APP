@@ -37,7 +37,7 @@ def configured():
 NOTICE_OPTIONS = {
     'admin': {'fallas':'Fallas nuevas y resueltas','gastos':'Gastos nuevos de técnicos','facturas':'Facturas programadas','respaldos':'Respaldos','reportes':'Reportes y generación de PDF'},
     'technician': {'fallas':'Fallas por atender','pagos':'Estado de mis gastos y reembolsos'},
-    'client': {'fallas':'Fallas resueltas','cotizaciones':'Cotizaciones disponibles','facturas':'Facturas y cambios de estado','complementos':'Complementos de pago','reportes':'Reportes terminados'},
+    'client': {'fallas':'Fallas resueltas','agenda':'Actividades y visitas programadas','cotizaciones':'Cotizaciones disponibles','facturas':'Facturas y cambios de estado','complementos':'Complementos de pago','reportes':'Reportes terminados'},
 }
 
 
