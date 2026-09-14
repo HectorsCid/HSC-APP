@@ -3299,6 +3299,24 @@ def api_operaciones_expense_status(expense_id):
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
+@app.delete('/api/operaciones/expenses/<path:expense_id>')
+def api_operaciones_delete_expense(expense_id):
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    try:
+        deleted = OPERACIONES_STORE.delete_expense(expense_id)
+        if not deleted:
+            abort(404)
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "deleted": True})
+    except Exception as exc:
+        if getattr(exc, "code", None) == 404:
+            raise
+        current_app.logger.exception("No se pudo eliminar el gasto %s: %s", expense_id, exc)
+        return jsonify({"ok": False, "error": "No se pudo eliminar el gasto."}), 500
+
+
 @app.get('/api/operaciones/clients/<path:client_id>/reports-folder')
 def api_operaciones_client_reports_folder(client_id):
     """Abre la carpeta existente de PDF sin crear ni modificar datos en Drive."""
@@ -4121,9 +4139,17 @@ def api_operaciones_finalize_report():
     try:
         draft = OPERACIONES_STORE.save_report_draft(body)
         report = OPERACIONES_STORE.finalize_report(draft["id"])
+        payload = report.get("payload") or {}
+        fault = None
+        if payload.get("falla_grave") and str(payload.get("falla_descripcion") or "").strip():
+            fault = OPERACIONES_STORE.ensure_report_fault(
+                report["id"], client_id=report["client_id"], equipment_id=report["equipment_id"],
+                description=payload.get("falla_descripcion"),
+                priority=payload.get("falla_prioridad") or "Alta",
+            )
         _invalidate_operations_cache()
         _schedule_operations_sync(force=True)
-        return jsonify({"ok": True, "report": report, "sync_status": "pending"})
+        return jsonify({"ok": True, "report": report, "fault": fault, "sync_status": "pending"})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:

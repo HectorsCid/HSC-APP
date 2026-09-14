@@ -18,7 +18,68 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "14"
+SCHEMA_VERSION = "15"
+
+
+DEFAULT_OBSERVATION_OPTIONS = {
+    "electrico": [
+        "Cables dañados.",
+        "Falla de luz.",
+        "Variación de voltaje.",
+        "Cortocircuito en el sistema.",
+        "Asistente de arranque en el sistema.",
+        "Equipo trabaja correctamente.",
+        "Se recomienda instalar una pastilla termomagnética.",
+        "Se recomienda mejorar y asegurar la instalación eléctrica debido a conexiones expuestas o protección inadecuada, a fin de prevenir cortocircuitos y fallas eléctricas.",
+        "Tapa de caja de interruptor sin tornillos.",
+        "Falla en cableado.",
+        "Falla en componente eléctrico.",
+    ],
+    "electronico": [
+        "Falla en control de temperatura.",
+        "Tarjeta electrónica deshabilitada.",
+        "Tarjeta electrónica dañada.",
+        "Se recomienda sustituir el control.",
+        "Se sugiere barnizado de transformador.",
+        "Se detecta defecto en el display indicador del minisplit, con segmentos de iluminación irregular o incompleta.",
+        "Se realizó sustitución del sensor térmico.",
+        "Capacitor con daño físico.",
+        "Se detecta control remoto sin funcionamiento; no emite señal ni permite controlar el encendido, apagado o cambio de parámetros. Se recomienda sustituirlo.",
+        "Falla en tarjeta electrónica.",
+    ],
+    "mecanico": [
+        "Falta de gas refrigerante.",
+        "Compresor amarrado.",
+        "Compresor aterrizado.",
+        "Motor ventilador dañado.",
+        "Presostato dañado.",
+        "No cuenta con válvula de servicio.",
+        "Presión de gas por debajo de lo recomendado.",
+        "Presión de gas ligeramente por debajo de lo recomendado.",
+        "Requiere prueba de hermeticidad o carga de gas.",
+        "Empaques de puerta dañados.",
+        "Falta la tapa superior de la condensadora.",
+        "Puerta de hielera en mal estado.",
+        "Se recomienda realizar una prueba de eficiencia al compresor.",
+        "Se recomienda colocar aislante y cinta para tuberías.",
+        "Filtro dañado.",
+        "Se detectaron daños en las uniones de los ductos.",
+        "Se detectaron fracturas en los puntos de sujeción de la tapa frontal de la evaporadora.",
+        "Corrosión en la protección de la condensadora; se recomienda aplicar recubrimiento.",
+        "Se encontró una fuga ligera en la válvula de servicio y se realizó un ajuste en su núcleo.",
+        "Se realizó carga de gas refrigerante.",
+        "Se recomienda cambiar los empaques.",
+        "Corrosión en la tubería de descarga; se recomienda aplicar recubrimiento para evitar futuras fugas.",
+        "Se recomienda sustituir el presostato.",
+        "Requiere calibración de gas refrigerante.",
+        "Se detectaron indicios de falla en la válvula solenoide; se recomienda evaluar su sustitución.",
+        "Requiere cambio de tubería de desagüe.",
+        "Corrosión en la salida de desagüe.",
+    ],
+    "notas": [
+        "Se realizó mantenimiento preventivo y chequeo de parámetros. Se deja el equipo trabajando bien.",
+    ],
+}
 
 
 def _now():
@@ -27,6 +88,12 @@ def _now():
 
 def _text(value):
     return str(value or "").strip()
+
+
+def _observation_key(value):
+    """Iguala mayúsculas, espacios y puntuación final para no repetir sugerencias."""
+    normalized = re.sub(r"\s+", " ", _text(value)).casefold()
+    return re.sub(r"[.!?;:,]+$", "", normalized).strip()
 
 
 def _valid_date(value):
@@ -225,6 +292,7 @@ class OperationsStore:
             self._ensure_column(conn, "operations_faults", "resolved_by", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_faults", "resolution_notes", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_users", "photo_ref", "TEXT NOT NULL DEFAULT ''")
+            self._seed_observation_options(conn)
             self._remove_legacy_fault_duplicates(conn)
             self._upsert_meta(conn, "schema_version", SCHEMA_VERSION)
         self._initialized = True
@@ -249,6 +317,19 @@ class OperationsStore:
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
             (key, _text(value), _now()),
         )
+
+    def _seed_observation_options(self, conn):
+        """Carga el catálogo inicial sin duplicar opciones aprendidas de reportes reales."""
+        p, stamp = self.placeholder, _now()
+        for category, values in DEFAULT_OBSERVATION_OPTIONS.items():
+            for value in values:
+                normalized = _observation_key(value)
+                conn.execute(
+                    f"INSERT INTO operations_observation_options"
+                    f"(category,normalized_value,value,use_count,last_used_at) "
+                    f"VALUES ({p},{p},{p},0,{p}) ON CONFLICT(category,normalized_value) DO NOTHING",
+                    (category, normalized, value, stamp),
+                )
 
     def _remove_legacy_fault_duplicates(self, conn):
         """Elimina sólo copias provisionales cuando existe la fila real de AppSheet."""
@@ -564,12 +645,12 @@ class OperationsStore:
 
     def _remember_observations(self, conn, payload):
         p, stamp = self.placeholder, _now()
-        for category in ("electrico", "electronico", "mecanico"):
+        for category in ("electrico", "electronico", "mecanico", "notas"):
             raw = _text((payload or {}).get(category))
             for value in (line.strip(" •-\t") for line in raw.splitlines()):
                 if not value:
                     continue
-                normalized = re.sub(r"\s+", " ", value).casefold()
+                normalized = _observation_key(value)
                 conn.execute(
                     f"INSERT INTO operations_observation_options(category,normalized_value,value,use_count,last_used_at) "
                     f"VALUES ({p},{p},{p},1,{p}) ON CONFLICT(category,normalized_value) DO UPDATE SET "
@@ -753,7 +834,7 @@ class OperationsStore:
         equipment_id = _text(item.get("equipment_id"))
         client_id = _text(item.get("client_id"))
         round_number = _text(item.get("round"))
-        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        payload = dict(item.get("payload")) if isinstance(item.get("payload"), dict) else {}
         if not equipment_id or not client_id or round_number not in {"1", "2", "3", "4"}:
             raise ValueError("Cliente, equipo y ronda son obligatorios.")
         equipment = next((row for row in self.snapshot()["equipment"] if row["id"] == equipment_id), None)
@@ -761,8 +842,18 @@ class OperationsStore:
             raise ValueError("El equipo no pertenece al cliente seleccionado.")
         p = self.placeholder
         report_id = _text(item.get("id"))
+        edit_report_id = _text(item.get("edit_report_id") or payload.get("_edit_report_id"))
         matrix_id = f"{equipment_id}_R {round_number}"
         with self.connection() as conn:
+            if edit_report_id:
+                target = conn.execute(
+                    f"SELECT id FROM operations_reports WHERE id={p} AND equipment_id={p} "
+                    f"AND client_id={p} AND round_number={p} AND completed=1",
+                    (edit_report_id, equipment_id, client_id, round_number),
+                ).fetchone()
+                if not target:
+                    raise ValueError("El reporte que intentas editar ya no existe.")
+                payload["_edit_report_id"] = edit_report_id
             if report_id:
                 found = conn.execute(
                     f"SELECT id,equipment_id,client_id,round_number FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
@@ -791,6 +882,28 @@ class OperationsStore:
                  json.dumps(payload, ensure_ascii=False), "draft", "local_only", stamp),
             )
         return self.get_report_draft(equipment_id, round_number)
+
+    def ensure_report_fault(self, report_id, *, client_id, equipment_id, description, priority="Alta"):
+        """Crea o actualiza la falla grave vinculada al reporte de forma idempotente."""
+        report_id, description = _text(report_id), _text(description)
+        if not report_id or not description:
+            return None
+        fault_id = f"FALLA_REPORTE_{re.sub(r'[^A-Za-z0-9_-]+', '_', report_id)[:80]}"
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            conn.execute(
+                f"INSERT INTO operations_faults"
+                f"(id,client_id,equipment_id,report_id,description,priority,status,reported_at,source,raw_json,sync_status,updated_at) "
+                f"VALUES ({','.join([p] * 12)}) ON CONFLICT(id) DO UPDATE SET "
+                "client_id=excluded.client_id,equipment_id=excluded.equipment_id,report_id=excluded.report_id,"
+                "description=excluded.description,priority=excluded.priority,sync_status='pending',updated_at=excluded.updated_at",
+                (fault_id, _text(client_id), _text(equipment_id), report_id, description,
+                 _text(priority) or "Alta", "Reportada", stamp, "app", "{}", "pending", stamp),
+            )
+        self.queue_sync("fault", fault_id, "sheets", "upsert", {
+            "client_id": _text(client_id), "equipment_id": _text(equipment_id), "report_id": report_id,
+        })
+        return next(row for row in self.snapshot()["faults"] if row["id"] == fault_id)
 
     def save_fault(self, item):
         """Registra una falla vinculada obligatoriamente con cliente y equipo."""
@@ -981,6 +1094,23 @@ class OperationsStore:
             if not cursor.rowcount:
                 return None
         return next(row for row in self.snapshot()["expenses"] if row["id"] == _text(expense_id))
+
+    def delete_expense(self, expense_id):
+        """Elimina un gasto desde administración; no afecta ningún otro registro operativo."""
+        self.initialize()
+        expense_id, p = _text(expense_id), self.placeholder
+        with self.connection() as conn:
+            found = conn.execute(
+                f"SELECT id FROM operations_expenses WHERE id={p}", (expense_id,)
+            ).fetchone()
+            if not found:
+                return False
+            conn.execute(
+                f"DELETE FROM operations_media_cache WHERE kind='expense' AND record_id={p}",
+                (expense_id,),
+            )
+            conn.execute(f"DELETE FROM operations_expenses WHERE id={p}", (expense_id,))
+        return True
 
     def list_users(self):
         self.initialize()
@@ -1222,18 +1352,49 @@ class OperationsStore:
                 payload = json.loads(row[4] or "{}")
             except (TypeError, json.JSONDecodeError):
                 payload = {}
+            edit_report_id = _text(payload.pop("_edit_report_id", ""))
             start_at = _text(payload.get("inicio"))
             end_at = _text(payload.get("fin"))
             if not start_at or not end_at:
                 raise ValueError("Captura las fechas de inicio y terminación antes de finalizar.")
-            conn.execute(
-                f"UPDATE operations_reports SET start_at={p},end_at={p},completed=1,state='completed',"
-                f"sync_status='pending',updated_at={p} WHERE id={p}",
-                (start_at, end_at, stamp, report_id),
-            )
+            final_report_id = report_id
+            if edit_report_id:
+                target = conn.execute(
+                    f"SELECT id FROM operations_reports WHERE id={p} AND client_id={p} AND equipment_id={p} "
+                    f"AND round_number={p} AND completed=1",
+                    (edit_report_id, row[1], row[2], row[3]),
+                ).fetchone()
+                if not target:
+                    raise ValueError("El reporte original ya no existe.")
+                final_report_id = edit_report_id
+                conn.execute(
+                    f"UPDATE operations_reports SET start_at={p},end_at={p},payload_json={p},"
+                    f"completed=1,state='completed',sync_status='pending',updated_at={p} WHERE id={p}",
+                    (start_at, end_at, json.dumps(payload, ensure_ascii=False), stamp, final_report_id),
+                )
+                draft_evidence = conn.execute(
+                    f"SELECT position,storage_ref,drive_ref,sync_status,updated_at FROM operations_evidence "
+                    f"WHERE report_id={p} ORDER BY position", (report_id,),
+                ).fetchall()
+                if draft_evidence:
+                    conn.execute(f"DELETE FROM operations_evidence WHERE report_id={p}", (final_report_id,))
+                    for evidence in draft_evidence:
+                        conn.execute(
+                            f"INSERT INTO operations_evidence(id,report_id,position,storage_ref,drive_ref,sync_status,updated_at) "
+                            f"VALUES ({','.join([p] * 7)})",
+                            (f"{final_report_id}:foto:{evidence[0]}", final_report_id, *evidence),
+                        )
+                conn.execute(f"DELETE FROM operations_evidence WHERE report_id={p}", (report_id,))
+                conn.execute(f"DELETE FROM operations_reports WHERE id={p}", (report_id,))
+            else:
+                conn.execute(
+                    f"UPDATE operations_reports SET start_at={p},end_at={p},payload_json={p},"
+                    f"completed=1,state='completed',sync_status='pending',updated_at={p} WHERE id={p}",
+                    (start_at, end_at, json.dumps(payload, ensure_ascii=False), stamp, report_id),
+                )
             self._remember_observations(conn, payload)
-        detail = self.get_report_detail(report_id)
-        self.queue_sync("report", report_id, "sheets", "upsert", {
+        detail = self.get_report_detail(final_report_id)
+        self.queue_sync("report", final_report_id, "sheets", "upsert", {
             "client_id": row[1], "equipment_id": row[2], "round": row[3],
             "completed": True, "payload": payload,
             "evidence": [{"position": item["position"], "drive_ref": item["drive_ref"]}

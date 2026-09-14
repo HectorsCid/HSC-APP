@@ -256,9 +256,41 @@ def test_finalized_report_grows_shared_observation_history(tmp_path):
     store.finalize_report(draft["id"])
 
     options = store.snapshot()["observation_options"]
-    assert {item["value"] for item in options if item["category"] == "electrico"} == {
-        "Apretar terminales", "Limpiar tablero"
-    }
+    electrical = {item["value"] for item in options if item["category"] == "electrico"}
+    assert {"Apretar terminales", "Limpiar tablero", "Cables dañados."} <= electrical
+    assert any(item["category"] == "notas" for item in options)
+
+
+def test_editing_completed_report_keeps_folio_and_removes_temporary_draft(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+    draft = store.save_report_draft({
+        "edit_report_id": "UVMQ1_R 2", "client_id": "UVMQ", "equipment_id": "UVMQ1",
+        "round": "2", "payload": {"inicio": "2026-09-13", "fin": "2026-09-13", "p1": "135"},
+    })
+    store.save_report_evidence(draft["id"], 1, "foto-editada.jpg")
+
+    report = store.finalize_report(draft["id"])
+
+    assert report["id"] == "UVMQ1_R 2"
+    assert report["payload"]["p1"] == "135"
+    assert report["evidence"][0]["drive_ref"] == "foto-editada.jpg"
+    assert store.get_report_draft("UVMQ1", "2") is None
+    assert len([item for item in store.snapshot()["reports"] if item["matrix_id"] == "UVMQ1_R 2"]) == 1
+
+
+def test_report_fault_is_idempotent_and_linked_to_report(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+
+    first = store.ensure_report_fault("UVMQ1_R 2", client_id="UVMQ", equipment_id="UVMQ1",
+                                      description="Compresor detenido", priority="Alta")
+    second = store.ensure_report_fault("UVMQ1_R 2", client_id="UVMQ", equipment_id="UVMQ1",
+                                       description="Compresor detenido", priority="Alta")
+
+    assert first["id"] == second["id"]
+    assert second["report_id"] == "UVMQ1_R 2"
+    assert len([item for item in store.snapshot()["faults"] if item["id"] == first["id"]]) == 1
 
 
 def test_report_evidence_keeps_positions_and_is_included_on_finalize(tmp_path):
@@ -307,6 +339,21 @@ def test_partner_fault_can_be_marked_as_attended(tmp_path):
     assert queued[-1]["payload"]["status"] == "Atendida"
     store.import_matrix_snapshot(_payload())
     assert store.snapshot()["faults"][0]["status"] == "Atendida"
+
+
+def test_admin_can_delete_only_requested_expense_record(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+    first = store.save_expense({"user_id": "TECH1", "technician_name": "Técnico Uno",
+                                "expense_date": "2026-09-13", "amount": 125,
+                                "concept": "Registro de prueba"})
+    second = store.save_expense({"user_id": "TECH1", "technician_name": "Técnico Uno",
+                                 "expense_date": "2026-09-13", "amount": 80,
+                                 "concept": "Compra válida"})
+
+    assert store.delete_expense(first["id"]) is True
+    assert store.delete_expense(first["id"]) is False
+    assert [item["id"] for item in store.snapshot()["expenses"]] == [second["id"]]
 
 
 def test_fault_evidence_tasks_invites_and_permissions_are_durable(tmp_path):
