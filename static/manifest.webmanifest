@@ -44,6 +44,12 @@
       "short_name": "Reportes",
       "url": "/reportes",
       "icons": [{"src": "/static/img/hsc-app-192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Correo HSC",
+      "short_name": "Correo",
+      "url": "/correo",
+      "icons": [{"src": "/static/img/hsc-app-192.png", "sizes": "192x192"}]
     }
   ]
 }

@@ -68,6 +68,10 @@ from operaciones_sync import sync_operations_outbox
 
 from facturacion_bp import facturacion_bp, billing_client_groups, api_invoice_pdf, api_invoice_xml
 app.register_blueprint(facturacion_bp)
+from mail_bp import mail_bp
+app.register_blueprint(mail_bp)
+from mail_idle import start_mail_idle_listener
+start_mail_idle_listener(app)
 print(">>> Blueprint facturacion registrado")
 print(app.url_map)
 
@@ -398,7 +402,7 @@ def _security_headers(response):
     response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
     if IS_RENDER:
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-    if request.path.startswith(("/factur", "/api/", "/pagos", "/clientes", "/acceso")):
+    if request.path.startswith(("/factur", "/api/", "/pagos", "/clientes", "/acceso", "/correo")):
         response.headers.setdefault("Cache-Control", "no-store, private")
     if request.path == "/service-worker.js":
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"

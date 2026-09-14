@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="application-name" content="Correo HSC">
+  <title>Correo HSC</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
+  {% include "_pwa_head.html" %}
+  <style>
+    :root{--mail-bg:#07101f;--mail-panel:#101d30;--mail-line:#263b58;--mail-text:#edf5ff;--mail-muted:#9fb0c7;--mail-blue:#4d9fff}
+    *{box-sizing:border-box}body{margin:0;background:var(--mail-bg);color:var(--mail-text);font-family:"Segoe UI",system-ui,sans-serif;min-height:100dvh}
+    button,input,textarea{font:inherit}.mail-shell{display:grid;grid-template-columns:245px minmax(290px,390px) minmax(380px,1fr);height:100dvh;overflow:hidden}
+    .folders,.list,.reader{min-width:0;background:var(--mail-panel);border-right:1px solid var(--mail-line)}
+    .folders{padding:16px 12px}.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 18px}.brand img{width:38px;height:38px;border-radius:10px}.brand strong{font-size:18px}.back{color:var(--mail-muted);text-decoration:none;font-size:13px}
+    .compose,.primary{width:100%;border:0;border-radius:12px;background:#1767c4;color:#fff;padding:12px;font-weight:750;cursor:pointer}.folder-list{margin-top:15px;display:grid;gap:3px}.folder{display:flex;gap:9px;width:100%;border:0;background:transparent;color:var(--mail-text);padding:10px;border-radius:9px;text-align:left;cursor:pointer}.folder.active,.folder:hover{background:#1c3351}.folder small{margin-left:auto;color:var(--mail-muted)}
+    .toolbar{display:flex;gap:8px;padding:14px;border-bottom:1px solid var(--mail-line)}.search{flex:1;min-width:0;border:1px solid var(--mail-line);border-radius:10px;background:#091525;color:var(--mail-text);padding:9px 11px}.icon-btn{border:1px solid var(--mail-line);border-radius:9px;background:#172943;color:var(--mail-text);padding:8px 11px;cursor:pointer}
+    .messages{overflow:auto;height:calc(100dvh - 63px)}.message-row{display:block;width:100%;border:0;border-bottom:1px solid var(--mail-line);background:transparent;color:inherit;text-align:left;padding:14px 15px;cursor:pointer}.message-row:hover,.message-row.active{background:#172943}.message-row.unseen{border-left:3px solid var(--mail-blue);background:#13253c}.sender,.subject-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sender{font-weight:700}.subject-line{margin-top:5px;color:#d4dfec}.message-row time{display:block;color:var(--mail-muted);font-size:12px;margin-top:7px}
+    .reader{border:0;overflow:auto;padding:24px;background:#0b1627}.empty{display:grid;place-items:center;height:100%;color:var(--mail-muted);text-align:center}.reader-head{border-bottom:1px solid var(--mail-line);padding-bottom:18px}.reader h1{font-size:24px;margin:10px 0}.meta{color:var(--mail-muted);line-height:1.5}.reader-actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.body{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;color:#e7eef8}.attachments{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.attachment{color:#cfe4ff;border:1px solid var(--mail-line);border-radius:9px;padding:8px 10px;text-decoration:none}
+    dialog{width:min(720px,calc(100vw - 24px));border:1px solid var(--mail-line);border-radius:18px;background:#101d30;color:var(--mail-text);padding:0;box-shadow:0 30px 80px #0009}dialog::backdrop{background:#020617c4}.compose-head{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--mail-line)}.compose-form{display:grid;gap:10px;padding:18px}.compose-form input,.compose-form textarea{width:100%;border:1px solid var(--mail-line);border-radius:9px;background:#091525;color:var(--mail-text);padding:10px}.compose-form textarea{min-height:260px;resize:vertical}.form-actions{display:flex;align-items:center;gap:10px}.form-actions .primary{width:auto;padding-inline:24px}.status{color:var(--mail-muted);font-size:13px}.more-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @media(max-width:900px){.mail-shell{grid-template-columns:210px 1fr}.reader{position:fixed;inset:0;z-index:10;display:none}.reader.open{display:block}.reader-close{display:inline-block!important}}
+    @media(max-width:620px){.mail-shell{display:block}.folders{height:auto;border:0;border-bottom:1px solid var(--mail-line);padding:10px}.brand{padding-bottom:8px}.folder-list{display:flex;overflow:auto;margin-top:8px}.folder{width:auto;white-space:nowrap}.compose{position:fixed;right:18px;bottom:18px;z-index:8;width:auto;padding:13px 20px;box-shadow:0 10px 30px #0008}.list{height:calc(100dvh - 142px);border:0}.messages{height:calc(100% - 63px)}.more-fields{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main class="mail-shell">
+  <aside class="folders">
+    <div class="brand"><img src="{{ url_for('static', filename='img/hsc-app-192.png') }}" alt=""><div><strong>Correo HSC</strong><br><a class="back" href="/inicio-app">← Panel HSC</a><br><small class="status" id="accountStatus">Conectando…</small></div></div>
+    <button class="compose" id="composeBtn" type="button">✎ Redactar</button>
+    <nav class="folder-list" id="folders" aria-label="Carpetas"><span class="status">Cargando carpetas…</span></nav>
+  </aside>
+  <section class="list">
+    <div class="toolbar"><input class="search" id="search" type="search" placeholder="Buscar correo"><button class="icon-btn" id="refresh" title="Actualizar">↻</button></div>
+    <div class="messages" id="messages"><div class="empty">Conectando con el correo…</div></div>
+  </section>
+  <article class="reader" id="reader"><div class="empty"><div><div style="font-size:42px">✉</div><p>Selecciona un correo para leerlo.</p></div></div></article>
+</main>
+
+<dialog id="composer">
+  <div class="compose-head"><strong id="composerTitle">Nuevo mensaje</strong><button class="icon-btn" type="button" id="closeComposer">×</button></div>
+  <form class="compose-form" id="composeForm">
+    <input name="to" type="text" required placeholder="Para">
+    <div class="more-fields"><input name="cc" type="text" placeholder="CC"><input name="bcc" type="text" placeholder="CCO"></div>
+    <input name="subject" type="text" required placeholder="Asunto">
+    <textarea name="body" required placeholder="Escribe tu mensaje"></textarea>
+    <input name="attachments" type="file" multiple>
+    <input name="in_reply_to" type="hidden"><input name="references" type="hidden">
+    <div class="form-actions"><button class="primary" type="submit">Enviar</button><span class="status" id="sendStatus"></span></div>
+  </form>
+</dialog>
+
+<script>
+(()=>{
+  const $=id=>document.getElementById(id), state={folders:[],folder:'INBOX',selected:null,query:''};
+  const esc=value=>String(value??'').replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+  const addr=rows=>(rows||[]).map(x=>x.name?`${x.name} <${x.email}>`:x.email).join(', ');
+  const addrEmails=rows=>(rows||[]).map(x=>x.email).filter(Boolean).join(', ');
+  const date=value=>{if(!value)return '';const d=new Date(value);return d.toLocaleString('es-MX',{dateStyle:'medium',timeStyle:'short'})};
+  const api=async(url,options)=>{const response=await fetch(url,options),data=await response.json();if(!response.ok||!data.ok)throw Error(data.error||'No se pudo completar la operación.');return data};
+  function icon(role){return {inbox:'▣',sent:'➤',drafts:'▤',archive:'▥',junk:'⚠',trash:'⌫'}[role]||'□'}
+  async function loadFolders(){
+    try{const data=await api('/api/correo/folders');state.folders=data.folders;const inbox=state.folders.find(x=>x.role==='inbox');if(inbox)state.folder=inbox.name;
+      $('folders').innerHTML=state.folders.map(x=>`<button class="folder ${x.name===state.folder?'active':''}" data-folder="${esc(x.name)}"><span>${icon(x.role)}</span><span>${esc(x.label)}</span></button>`).join('');
+      $('folders').querySelectorAll('button').forEach(button=>button.onclick=()=>{state.folder=button.dataset.folder;state.selected=null;renderFolderSelection();loadMessages()});
+      await loadMessages();
+    }catch(error){$('folders').innerHTML=`<span class="status">${esc(error.message)}</span>`;$('messages').innerHTML=`<div class="empty">${esc(error.message)}</div>`}
+  }
+  async function loadStatus(){try{const data=await api('/api/correo/status');$('accountStatus').textContent=data.listener?.connected?'● Avisos instantáneos activos':data.idle?'IMAP IDLE disponible':'IMAP sincronizado'}catch(error){$('accountStatus').textContent='Correo sin conexión'}}
+  function renderFolderSelection(){$('folders').querySelectorAll('button').forEach(x=>x.classList.toggle('active',x.dataset.folder===state.folder))}
+  async function loadMessages(){
+    $('messages').innerHTML='<div class="empty">Actualizando…</div>';
+    try{const data=await api(`/api/correo/messages?folder=${encodeURIComponent(state.folder)}&q=${encodeURIComponent(state.query)}`);
+      if(!data.items.length){$('messages').innerHTML='<div class="empty">No hay mensajes en esta carpeta.</div>';return}
+      $('messages').innerHTML=data.items.map(row=>`<button class="message-row ${row.seen?'':'unseen'}" data-uid="${esc(row.uid)}"><div class="sender">${esc(addr(row.from)||'(Sin remitente)')}</div><div class="subject-line">${row.has_attachments?'📎 ':''}${esc(row.subject)}</div><time>${esc(date(row.date))}</time></button>`).join('');
+      $('messages').querySelectorAll('button').forEach(button=>button.onclick=()=>openMessage(button.dataset.uid));
+    }catch(error){$('messages').innerHTML=`<div class="empty">${esc(error.message)}</div>`}
+  }
+  async function openMessage(uid){
+    $('reader').classList.add('open');$('reader').innerHTML='<div class="empty">Abriendo mensaje…</div>';
+    try{const {message:m}=await api(`/api/correo/message/${encodeURIComponent(uid)}?folder=${encodeURIComponent(state.folder)}`);state.selected=m;
+      const files=m.attachments.map(file=>`<a class="attachment" href="/api/correo/message/${encodeURIComponent(m.uid)}/attachment/${file.part}?folder=${encodeURIComponent(state.folder)}">📎 ${esc(file.filename)}</a>`).join('');
+      $('reader').innerHTML=`<button class="icon-btn reader-close" style="display:none" id="readerClose">← Volver</button><header class="reader-head"><h1>${esc(m.subject)}</h1><div class="meta"><strong>${esc(addr(m.from))}</strong><br>Para: ${esc(addr(m.to))}<br>${esc(date(m.date))}</div></header><div class="reader-actions"><button class="icon-btn" data-action="reply">Responder</button><button class="icon-btn" data-action="replyAll">Responder a todos</button><button class="icon-btn" data-action="forward">Reenviar</button><button class="icon-btn" data-move="junk">Spam</button><button class="icon-btn" data-move="trash">Eliminar</button></div><div class="attachments">${files}</div><div class="body">${esc(m.body)}</div>`;
+      $('readerClose').onclick=()=>$('reader').classList.remove('open');$('messages').querySelector(`[data-uid="${CSS.escape(uid)}"]`)?.classList.remove('unseen');
+      $('reader').querySelectorAll('[data-action]').forEach(x=>x.onclick=()=>compose(x.dataset.action,m));$('reader').querySelectorAll('[data-move]').forEach(x=>x.onclick=()=>move(m.uid,x.dataset.move));
+    }catch(error){$('reader').innerHTML=`<div class="empty">${esc(error.message)}</div>`}
+  }
+  function compose(kind='',m=null){
+    const form=$('composeForm');form.reset();form.in_reply_to.value='';form.references.value='';$('composerTitle').textContent='Nuevo mensaje';
+    if(m&&(kind==='reply'||kind==='replyAll')){
+      const reply=m.reply_to?.length?m.reply_to:m.from;form.to.value=addrEmails(reply);if(kind==='replyAll')form.cc.value=addrEmails([...(m.to||[]),...(m.cc||[])]);
+      form.subject.value=/^re:/i.test(m.subject)?m.subject:`Re: ${m.subject}`;form.in_reply_to.value=m.message_id;form.references.value=[m.references,m.message_id].filter(Boolean).join(' ');form.body.value=`\n\n--- Mensaje anterior ---\nDe: ${addr(m.from)}\nFecha: ${date(m.date)}\n\n${m.body}`;$('composerTitle').textContent='Responder';
+    }else if(m&&kind==='forward'){form.subject.value=/^(rv|fw|fwd):/i.test(m.subject)?m.subject:`RV: ${m.subject}`;form.body.value=`\n\n--- Mensaje reenviado ---\nDe: ${addr(m.from)}\nPara: ${addr(m.to)}\nFecha: ${date(m.date)}\nAsunto: ${m.subject}\n\n${m.body}`;$('composerTitle').textContent='Reenviar'}
+    $('sendStatus').textContent='';$('composer').showModal();setTimeout(()=>form.to.focus(),0);
+  }
+  async function move(uid,destination){try{await api(`/api/correo/message/${encodeURIComponent(uid)}/move`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder:state.folder,destination})});$('reader').classList.remove('open');state.selected=null;loadMessages()}catch(error){alert(error.message)}}
+  $('composeForm').onsubmit=async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;$('sendStatus').textContent='Enviando…';try{await api('/api/correo/send',{method:'POST',body:new FormData(event.target)});$('sendStatus').textContent='Enviado';setTimeout(()=>$('composer').close(),550);if(state.folders.find(x=>x.name===state.folder)?.role==='sent')loadMessages()}catch(error){$('sendStatus').textContent=error.message}finally{button.disabled=false}};
+  $('composeBtn').onclick=()=>compose();$('closeComposer').onclick=()=>$('composer').close();$('refresh').onclick=loadMessages;
+  let searchTimer;$('search').oninput=event=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{state.query=event.target.value.trim();loadMessages()},450)};
+  loadStatus();loadFolders();
+})();
+</script>
+</body>
+</html>

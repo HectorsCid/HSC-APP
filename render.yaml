@@ -23,5 +23,7 @@ services:
         value: "120"
       - key: OPERACIONES_SYNC_CLIENT_ALLOWLIST
         value: "UVMQ"
+      - key: MAIL_IDLE_ENABLED
+        value: "1"
       - key: FLASK_SECRET_KEY
         generateValue: true
