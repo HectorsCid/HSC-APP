@@ -96,7 +96,7 @@
     <div class="heading"><div class="eyebrow" id="eyebrow">Operaciones</div><h1 id="screenTitle">Clientes</h1></div>
     <button class="icon-btn" id="quickThemeToggle" aria-label="Cambiar a modo claro" title="Cambiar apariencia">☀</button>
     <button class="icon-btn" id="reloadApp" aria-label="Recargar datos" title="Recargar datos">↻</button>
-    <button class="icon-btn" id="searchToggle" aria-label="Cambiar vista">⋮</button>
+    <button class="icon-btn" id="searchToggle" aria-label="Menú de mi cuenta">⋮</button>
   </header>
 
   <main>
@@ -422,7 +422,7 @@
     $$('[data-permission]').forEach(el=>el.dataset.roleHidden=can(el.dataset.permission)?'false':'true');
     $$('[data-tech-only]').forEach(el=>el.dataset.roleHidden=currentMode==='partner'?'true':'false');
     $('#partnerClientChooser').hidden=!account.isOwner||currentMode!=='partner';
-    $('#searchToggle').dataset.roleHidden=account.isOwner||can('switchViews')?'false':'true';
+    $('#searchToggle').dataset.roleHidden='false';
     $$('#appMenu .app-option.admin').forEach(el=>el.dataset.roleHidden=account.isOwner?'false':'true');
     renderProfileIdentity();$('#profileRole').textContent=account.isOwner?'Propietario · Cuenta activa':`${serverRole==='client'?'Cliente':'Técnico'} · Cuenta activa`;
     $('#profileTasks').textContent=matrixTasks.filter(task=>task.scheduled_date===dateKey(new Date())&&task.status!=='Terminada'&&task.status!=='Cancelada').length;$('#profileReports').textContent=matrixReports.length;$('#profileClients').textContent=clients.length;const pendingExpenses=visibleExpenses().filter(expense=>expense.status==='Pendiente'),pendingTotal=pendingExpenses.reduce((sum,item)=>sum+Number(item.amount||0),0);$('#profileExpenseState').textContent=pendingExpenses.length?`${pendingExpenses.length} · ${money(pendingTotal)}`:'Sin pendientes';$('#profileExpenseState').classList.toggle('pending',pendingExpenses.length>0);const expenseBadge=$('#pendingExpenseNavBadge');expenseBadge.hidden=!account.isOwner||!pendingExpenses.length;expenseBadge.textContent=pendingExpenses.length>99?'99+':String(pendingExpenses.length);$('#profileExpenseTitle').textContent=account.isOwner?'Gastos de técnicos':'Mis gastos';$('#profileExpenseDescription').textContent=account.isOwner?'Revisar, aprobar y marcar como liquidados':'Tickets, compras y reembolsos';$('#profileControlHeading').textContent=account.isOwner?'Administración y preferencias':'Preferencias';updateOfflineSyncUi();
@@ -1044,6 +1044,22 @@
   $('#backBtn').onclick=()=>{if(['clientEditor','equipmentEditor'].includes(current)&&editorDirty){if(!confirm('¿Salir sin guardar estos cambios?'))return;editorDirty=false;}goBack();};
   $$('[data-cancel-editor]').forEach(b=>b.onclick=()=>$('#backBtn').click());
   window.addEventListener('beforeunload',event=>{if(editorDirty){event.preventDefault();event.returnValue='';}});
+  $('#searchToggle').onclick=()=>$('#appMenu').classList.add('open');
+  const logoutButton=document.createElement('button');logoutButton.type='button';logoutButton.className='app-option';logoutButton.innerHTML='<span class="app-badge">↪</span><span><strong>Cerrar sesión</strong><span>Salir de esta cuenta</span></span>';$('#appMenu .app-menu').append(logoutButton);
+  const profileLogout=logoutButton.cloneNode(true);profileLogout.className='secondary wide';profileLogout.style.marginTop='16px';$('[data-view="profile"]').append(profileLogout);
+  async function logoutOperations(){
+    if(evidenceBusy||backgroundReportUploads.size){toast('Espera a que termine el envío de fotos antes de cerrar sesión.');return;}
+    if(Object.keys(pendingReportUploads()).length&&!confirm('Tienes reportes pendientes de enviar. Quedarán en este dispositivo para cuando vuelvas a entrar con esta cuenta. ¿Cerrar sesión?'))return;
+    logoutButton.disabled=profileLogout.disabled=true;
+    try{
+      if(current==='report'&&activeReportContext){await saveActiveReportDraft(false);await persistEvidence();}
+      const response=await fetch('/cerrar-sesion',{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw Error('No se pudo cerrar sesión. Revisa tu conexión.');
+      if('caches'in window){for(const name of await caches.keys()){const cache=await caches.open(name);for(const request of await cache.keys()){const path=new URL(request.url).pathname;if(path==='/hsc-tecnico/'||path==='/hsc-partner/')await cache.delete(request);}}}
+      location.replace('/acceso');
+    }catch(error){toast(error.message||'Necesitas conexión para cerrar sesión.');logoutButton.disabled=profileLogout.disabled=false;}
+  }
+  logoutButton.onclick=profileLogout.onclick=logoutOperations;
+  window.addEventListener('pageshow',event=>{if(event.persisted)location.reload()});
   const reportEvidenceByKey=new Map(),loadedEvidenceKeys=new Set(),backgroundReportUploads=new Map();let evidenceBusy=false;
   const pendingUploadStorageKey=`hsc-pending-report-uploads-${typeof account==='undefined'?'test':account.id}-${typeof appKind==='undefined'?'technician':appKind}`;
   function pendingReportUploads(){try{return JSON.parse(localStorage.getItem(pendingUploadStorageKey)||'{}')||{}}catch(_){return {}}}
