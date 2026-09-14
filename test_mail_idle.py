@@ -27,6 +27,13 @@ class MailIdleTests(unittest.TestCase):
         self.assertEqual(mail_idle._initial_uid(mailbox), 430)
         mailbox.uid.assert_not_called()
 
+    def test_suspend_listener_closes_active_idle_socket(self):
+        mailbox = Mock()
+        with patch.object(mail_idle, "_MAILBOX", mailbox):
+            mail_idle.suspend_listener(seconds=5)
+            mailbox.shutdown.assert_called_once()
+            mail_idle.resume_listener()
+
     def test_idle_detects_exists_and_closes_command(self):
         mailbox = Mock()
         mailbox._new_tag.return_value = b"ABCD1"

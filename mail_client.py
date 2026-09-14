@@ -315,14 +315,20 @@ def get_attachment(folder, uid, part_index):
 
 def _fetch_with_reconnect(folder, uid, command, *, readonly):
     """Reabre IMAP una vez si el servidor corta el socket durante FETCH."""
-    for attempt in range(2):
-        try:
-            with imap_connection(readonly=readonly, folder=folder) as mailbox:
-                return mailbox.uid("fetch", str(uid), command)
-        except (imaplib.IMAP4.abort, ConnectionError, EOFError, OSError):
-            if attempt:
-                raise RuntimeError("El servidor de correo interrumpio la descarga. Intenta nuevamente.")
-            time.sleep(0.2)
+    from mail_idle import resume_listener, suspend_listener
+    suspend_listener()
+    time.sleep(0.25)
+    try:
+        for attempt in range(2):
+            try:
+                with imap_connection(readonly=readonly, folder=folder) as mailbox:
+                    return mailbox.uid("fetch", str(uid), command)
+            except (imaplib.IMAP4.abort, ConnectionError, EOFError, OSError):
+                if attempt:
+                    raise RuntimeError("El servidor de correo interrumpio la descarga. Intenta nuevamente.")
+                time.sleep(0.25)
+    finally:
+        resume_listener()
 
 
 def set_seen(folder, uid, seen):

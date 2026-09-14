@@ -15,6 +15,9 @@ import mail_client
 LOG = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 _STARTED = False
+_MAILBOX = None
+_SUSPEND_UNTIL = 0.0
+_WAKE = threading.Event()
 _STATE = {
     "enabled": False,
     "running": False,
@@ -52,6 +55,32 @@ def listener_status():
 def _update(**values):
     with _LOCK:
         _STATE.update(values)
+
+
+def _suspend_remaining():
+    with _LOCK:
+        return max(0.0, _SUSPEND_UNTIL - time.monotonic())
+
+
+def suspend_listener(seconds=30):
+    """Libera la conexion IDLE mientras una ruta descarga un mensaje."""
+    global _SUSPEND_UNTIL
+    with _LOCK:
+        _SUSPEND_UNTIL = max(_SUSPEND_UNTIL, time.monotonic() + max(1, seconds))
+        mailbox = _MAILBOX
+    if mailbox is not None:
+        try:
+            mailbox.shutdown()
+        except Exception:
+            pass
+    _WAKE.set()
+
+
+def resume_listener():
+    global _SUSPEND_UNTIL
+    with _LOCK:
+        _SUSPEND_UNTIL = 0.0
+    _WAKE.set()
 
 
 def _latest_uid(mailbox):
@@ -130,10 +159,17 @@ def _notify_new_message(app, uid):
 
 
 def _run(app):
+    global _MAILBOX
     backoff = 5
     last_uid = 0
     _update(enabled=True, running=True, stage="configuring")
     while True:
+        remaining = _suspend_remaining()
+        if remaining:
+            _update(connected=False, last_error="", stage="suspended")
+            _WAKE.wait(timeout=min(remaining, 5))
+            _WAKE.clear()
+            continue
         cfg = mail_client.mail_config()
         if not cfg["configured"]:
             _update(connected=False, last_error="Faltan credenciales IMAP.")
@@ -143,6 +179,8 @@ def _run(app):
         try:
             _update(stage="connecting")
             mailbox = imaplib.IMAP4_SSL(cfg["imap_host"], cfg["imap_port"], timeout=30)
+            with _LOCK:
+                _MAILBOX = mailbox
             _update(stage="authenticating")
             mailbox.login(cfg["username"], cfg["password"])
             _update(stage="selecting_inbox")
@@ -168,11 +206,17 @@ def _run(app):
                         last_uid = max(fresh)
                         _update(last_uid=last_uid)
         except Exception as exc:
-            LOG.warning("Listener IMAP desconectado; se reintentara: %s", exc)
-            _update(connected=False, last_error=str(exc)[:300], stage="retry_wait")
-            time.sleep(backoff)
-            backoff = min(120, backoff * 2)
+            if _suspend_remaining():
+                _update(connected=False, last_error="", stage="suspended")
+            else:
+                LOG.warning("Listener IMAP desconectado; se reintentara: %s", exc)
+                _update(connected=False, last_error=str(exc)[:300], stage="retry_wait")
+                time.sleep(backoff)
+                backoff = min(120, backoff * 2)
         finally:
+            with _LOCK:
+                if _MAILBOX is mailbox:
+                    _MAILBOX = None
             if mailbox is not None:
                 try:
                     mailbox.logout()

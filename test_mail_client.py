@@ -24,7 +24,7 @@ class MailClientParsingTests(unittest.TestCase):
 
         self.assertEqual(result[0], "OK")
         self.assertEqual(connection.call_count, 2)
-        sleep.assert_called_once()
+        self.assertEqual(sleep.call_count, 2)
 
     def test_folder_roles_support_carrierzone_names(self):
         sent = mail_client._parse_list_row(b'(\\HasNoChildren) "/" "mail/sent-mail"')
