@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hsc-shell-v17';
+const CACHE_NAME = 'hsc-shell-v18';
 const SAFE_ASSETS = [
   '/static/hsc_theme.css',
   '/static/hsc_theme.js',
@@ -34,13 +34,14 @@ self.addEventListener('fetch', event => {
     url.pathname === '/hsc-tecnico/' || url.pathname === '/hsc-partner/'
   );
   if(operationsShell){
+    const shellKey = new Request(url.origin + url.pathname, {method:'GET'});
     event.respondWith(fetch(request).then(response => {
       if(response.ok && !response.redirected && new URL(response.url).pathname === url.pathname){
         const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+        caches.open(CACHE_NAME).then(cache => cache.put(shellKey, copy));
       }
       return response;
-    }).catch(() => caches.match(request)));
+    }).catch(() => caches.match(shellKey)));
     return;
   }
   if(!SAFE_PATHS.has(url.pathname)) return;
