@@ -3888,6 +3888,30 @@ def api_operaciones_reorder_clients():
         return jsonify({"ok": False, "error": "No se pudo guardar el orden de clientes."}), 500
 
 
+@app.post('/api/operaciones/clients/<path:client_id>/round')
+def api_operaciones_save_client_round(client_id):
+    """Guarda la ronda de trabajo elegida para un cliente."""
+    denied = _operations_forbidden("admin", "technician", "client")
+    if denied:
+        return denied
+    if _operations_role() == "client" and str(session.get("hsc_client_id") or "").strip() != client_id:
+        return jsonify({"ok": False, "error": "Esta cuenta sólo puede cambiar la ronda de su empresa."}), 403
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
+    try:
+        client = OPERACIONES_STORE.set_client_round(
+            client_id,
+            (request.get_json(silent=True) or {}).get("round"),
+        )
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "client": client})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        current_app.logger.exception("No se pudo guardar la ronda de %s: %s", client_id, exc)
+        return jsonify({"ok": False, "error": "No se pudo guardar la ronda del cliente."}), 500
+
+
 @app.post('/api/operaciones/equipment')
 def api_operaciones_save_equipment():
     """Guarda un lote de equipos de forma transaccional."""

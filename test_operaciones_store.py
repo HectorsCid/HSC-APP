@@ -109,6 +109,16 @@ def test_client_and_equipment_writes_are_kept_across_matrix_refresh(tmp_path):
     assert len(store.pending_sync()) == 2
 
 
+def test_selected_round_is_saved_per_client(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+
+    updated = store.set_client_round("UVMQ", "3")
+
+    assert updated["selected_round"] == "3"
+    assert store.snapshot()["clients"][0]["selected_round"] == "3"
+
+
 def test_report_draft_is_durable_and_does_not_queue_google(tmp_path):
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
     store.import_matrix_snapshot(_payload())

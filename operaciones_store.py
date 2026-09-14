@@ -623,6 +623,23 @@ class OperationsStore:
                 )
         return ordered
 
+    def set_client_round(self, client_id, round_number):
+        """Recuerda la ronda operativa sin modificar los demás datos del cliente."""
+        self.initialize()
+        client_id = _text(client_id)
+        round_number = _text(round_number)
+        if round_number not in {"1", "2", "3", "4"}:
+            raise ValueError("La ronda debe estar entre R1 y R4.")
+        p = self.placeholder
+        with self.connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE operations_clients SET selected_round={p},updated_at={p} WHERE id={p}",
+                (round_number, _now(), client_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("El cliente ya no existe.")
+        return next(client for client in self.snapshot()["clients"] if client["id"] == client_id)
+
     def save_equipment(self, items):
         """Guarda uno o varios equipos como una sola operación."""
         self.initialize()

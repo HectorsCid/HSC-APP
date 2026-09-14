@@ -339,11 +339,14 @@
     const matches=matrixReports.filter(report=>report.equipment_id===equipmentId&&report.round===round);
     return matches.length?matches[matches.length-1]:null;
   }
-  function applyMatrixBootstrap(payload){
+  function applyMatrixBootstrap(payload,preferLocalRounds=false){
     if(!Array.isArray(payload.clients)||!payload.clients.length)return false;
     clients.splice(0,clients.length,...payload.clients.map(client=>[client.name,client.id,'']));
     for(const key of Object.keys(clientMeta))delete clientMeta[key];
     for(const client of payload.clients)clientMeta[client.id]={policy:client.policy_active!==false,matrixId:client.matrix_id||client.id,billingRfc:client.billing_rfc||'',sortOrder:Number(client.sort_order)||0,address:client.address||'',photo:client.photo_url||'',photoAvailable:Boolean(client.has_photo),selectedRound:client.selected_round||''};
+    const rememberedRounds=savedClientRounds();
+    if(preferLocalRounds){for(const [clientId,round] of Object.entries(rememberedRounds)){if(clientMeta[clientId]&&['1','2','3','4'].includes(String(round)))clientMeta[clientId].selectedRound=String(round)}}
+    else{for(const client of payload.clients){if(['1','2','3','4'].includes(String(client.selected_round)))rememberedRounds[client.id]=String(client.selected_round)}try{localStorage.setItem(clientRoundsStorageKey,JSON.stringify(rememberedRounds))}catch(_){}}
     equipment.splice(0,equipment.length,...payload.equipment.map(item=>[item.id,item.name,item.brand||'',false]));
     for(const key of Object.keys(equipmentMeta))delete equipmentMeta[key];
     for(const item of payload.equipment)equipmentMeta[item.id]={client:item.client_id,active:String(item.status||'').toLowerCase()!=='inactivo',type:item.equipment_type||'Refrigeración',location:item.location||'',department:item.department||'',model:item.model||'',serial:item.serial||'',notes:item.notes||'',photo:item.photo_url||'',photoAvailable:Boolean(item.has_photo)};
@@ -378,7 +381,7 @@
       try{localStorage.setItem(`hsc-operaciones-data-${account.id}-${appKind}`,JSON.stringify({savedAt:Date.now(),payload}))}catch(_){}
       if(payload.warning)$('#matrixStatus').textContent=payload.warning;
       if(refresh)toast('Datos actualizados desde Google');
-    }catch(error){let saved=null;try{saved=JSON.parse(localStorage.getItem(`hsc-operaciones-data-${account.id}-${appKind}`)||'null')}catch(_){}if(saved?.payload&&applyMatrixBootstrap(saved.payload)){$('#matrixStatus').textContent='Sin conexión · mostrando la última información guardada';if($('#operationsNoticeText'))$('#operationsNoticeText').textContent='Puedes consultar la información descargada y conservar borradores con fotos en este dispositivo. Las acciones pendientes se enviarán cuando vuelva la conexión.';toast('Modo sin conexión activado')}else{$('#matrixStatus').textContent='Sin conexión · todavía no hay datos guardados en este dispositivo';if($('#operationsNoticeText'))$('#operationsNoticeText').textContent='Conéctate una vez para descargar los clientes, equipos y reportes de esta cuenta.';}console.warn('Operaciones bootstrap:',error);}
+    }catch(error){let saved=null;try{saved=JSON.parse(localStorage.getItem(`hsc-operaciones-data-${account.id}-${appKind}`)||'null')}catch(_){}if(saved?.payload&&applyMatrixBootstrap(saved.payload,true)){$('#matrixStatus').textContent='Sin conexión · mostrando la última información guardada';if($('#operationsNoticeText'))$('#operationsNoticeText').textContent='Puedes consultar la información descargada y conservar borradores con fotos en este dispositivo. Las acciones pendientes se enviarán cuando vuelva la conexión.';toast('Modo sin conexión activado')}else{$('#matrixStatus').textContent='Sin conexión · todavía no hay datos guardados en este dispositivo';if($('#operationsNoticeText'))$('#operationsNoticeText').textContent='Conéctate una vez para descargar los clientes, equipos y reportes de esta cuenta.';}console.warn('Operaciones bootstrap:',error);}
   }
   const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
   function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2300)}
@@ -405,6 +408,18 @@
   async function syncGoogleNow(button,state){button.disabled=true;if(state)state.textContent='Sincronizando…';else button.textContent='Sincronizando…';try{await operationsPost('/api/operaciones/sync',{apply:true,limit:100});await loadMatrixData(true)}catch(error){toast(error.message||'No se pudo completar la sincronización')}finally{button.disabled=false;if(!state)button.textContent='Sincronizar Google'}}
   $('#syncGoogleProfile').onclick=()=>syncGoogleNow($('#syncGoogleProfile'),$('#profileSyncState'));
   const navigationStorageKey=`hsc-operaciones-navigation-${appKind}`;
+  const clientRoundsStorageKey=`hsc-client-rounds-${account.id}`;
+  let clientRoundTimers={};
+  function savedClientRounds(){try{return JSON.parse(localStorage.getItem(clientRoundsStorageKey)||'{}')||{}}catch(_){return {}}}
+  function roundForClient(clientId){const local=savedClientRounds()[clientId],stored=clientMeta[clientId]?.selectedRound;return ['1','2','3','4'].includes(String(stored))?String(stored):['1','2','3','4'].includes(String(local))?String(local):'2';}
+  function rememberClientRound(clientId,round,persist=true){
+    if(!clientMeta[clientId]||!['1','2','3','4'].includes(String(round)))return;
+    const value=String(round),saved=savedClientRounds();saved[clientId]=value;clientMeta[clientId].selectedRound=value;
+    try{localStorage.setItem(clientRoundsStorageKey,JSON.stringify(saved))}catch(_){}
+    if(!persist)return;
+    clearTimeout(clientRoundTimers[clientId]);clientRoundTimers[clientId]=setTimeout(async()=>{try{await operationsPost(`/api/operaciones/clients/${encodeURIComponent(clientId)}/round`,{round:value})}catch(error){toast(`R${value} guardada en este dispositivo · ${error.message}`)}},350);
+  }
+  function selectClientRound(clientId){selectedRound=roundForClient(clientId);rememberClientRound(clientId,selectedRound,false);}
   let browserHistoryReady=false,handlingHistoryPop=false;
   function saveOperationalNavigation(){if(!matrixLoaded)return;try{localStorage.setItem(navigationStorageKey,JSON.stringify({view:current,client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode}))}catch(_){}}
   function browserNavigationState(guard=false,view=current,stack=historyStack){return {hscOperations:true,guard,view,stack:[...stack],client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode};}
@@ -426,7 +441,8 @@
     let state={};try{state=JSON.parse(localStorage.getItem(navigationStorageKey)||'{}')}catch(_){}
     if(state.client&&clientMeta[state.client])selectedClient=state.client;
     if(state.equipment&&equipmentMeta[state.equipment]){selectedEquipment=state.equipment;selectedClient=equipmentMeta[state.equipment].client;}
-    if(['1','2','3','4'].includes(String(state.round)))selectedRound=String(state.round);
+    selectClientRound(selectedClient);
+    if(['1','2','3','4'].includes(String(state.round))){selectedRound=String(state.round);rememberClientRound(selectedClient,selectedRound,false);}
     if(appKind==='partner'||serverRole==='client')currentMode='partner';
     else currentMode='tech';
     const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','equipment','partnerReports','partnerFaults','partnerDocuments','reportView']:['clients','client','equipment','report','reportView','agenda','profile','expenses'];
@@ -446,8 +462,9 @@
     if(['clientEditor','equipmentEditor'].includes(current)&&editorDirty&&!confirm('¿Salir sin guardar estos cambios?')){window.history.forward();return;}
     editorDirty=false;handlingHistoryPop=true;
     if(state.client&&clientMeta[state.client])selectedClient=state.client;
-    if(state.equipment&&equipmentMeta[state.equipment])selectedEquipment=state.equipment;
-    if(['1','2','3','4'].includes(String(state.round)))selectedRound=String(state.round);
+    if(state.equipment&&equipmentMeta[state.equipment]){selectedEquipment=state.equipment;selectedClient=equipmentMeta[state.equipment].client;}
+    selectClientRound(selectedClient);
+    if(['1','2','3','4'].includes(String(state.round))){selectedRound=String(state.round);rememberClientRound(selectedClient,selectedRound,false);}
     if(state.mode==='partner')currentMode='partner';else currentMode='tech';
     historyStack=Array.isArray(state.stack)&&state.stack.length?state.stack:[state.view];
     current='__history__';refreshRound();showView(state.view||historyStack.at(-1),false);handlingHistoryPop=false;
@@ -473,7 +490,7 @@
     try{await operationsPost('/api/operaciones/clients/order',{client_ids:clients.map(client=>client[1])});await loadMatrixData();toast('Orden de clientes guardado');}
     catch(error){toast(error.message);await loadMatrixData();}
   }
-  function openClient(id){selectedClient=id;equipmentFilter='all';$$('#equipmentFilters .chip').forEach(b=>b.classList.toggle('active',b.dataset.filter==='all'));refreshRound();showView('client');}
+  function openClient(id){selectedClient=id;selectClientRound(id);equipmentFilter='all';$$('#equipmentFilters .chip').forEach(b=>b.classList.toggle('active',b.dataset.filter==='all'));refreshRound();showView('client');}
   function renderClientDetail(){const meta=clientMeta[selectedClient],hero=$('[data-view="client"] .hero');hero.querySelector('h2').textContent=clientName(selectedClient);hero.querySelector('p').textContent=`${selectedClient} · ${meta.policy?'Póliza activa':'Sin póliza · sólo catálogo'}`;hero.querySelector('.hero-logo').innerHTML=photoMarkup(meta.photo,selectedClient.slice(0,2));hydratePhotos(hero,1);hero.querySelector('.address span:last-child').textContent=meta.address||'Dirección por completar';views.client[1]=clientName(selectedClient);if(current==='client')$('#screenTitle').textContent=clientName(selectedClient);}
   function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<button class="equipment-card" data-equipment="${escapeHtml(e[0])}"><span class="equipment-photo">${photoMarkup(meta.photo,'❄')}</span><span class="card-copy"><span class="card-title">${escapeHtml(e[1])}</span><span class="card-sub">${escapeHtml(e[0])} · ${escapeHtml(e[2])}${meta.photoAvailable?' · Foto registrada':''}${meta.active?'':' · Inactivo'}</span></span><span class="status-dot ${!meta.active?'off':e[3]?'done':''}" title="${!meta.active?'Inactivo':e[3]?'Realizado':'Pendiente'}"></span><span class="chevron">›</span></button>`}
   function reportCards(rows){return rows.slice().sort(byEquipmentId).map(e=>{const report=reportForEquipment(e[0]);return `<button type="button" class="equipment-card" data-round-report="${escapeHtml(e[0])}"><span class="report-icon">▤</span><span class="card-copy"><span class="card-title">${escapeHtml(e[1])}</span><span class="card-sub">${escapeHtml(e[0])} · ${escapeHtml(report?.end||report?.start||demoRounds[selectedRound].date)}${report?.photo_count?` · ${report.photo_count} fotos`:''}</span></span><span class="chevron">›</span></button>`}).join('')||'<div class="empty">Todavía no hay reportes en esta ronda.</div>';}
@@ -494,8 +511,7 @@
     renderClientFaults();
     renderEquipmentDetail();
     $$('[data-equipment]').forEach(b=>b.onclick=()=>{
-      if(b.closest('#taskEquipment'))selectedRound='2';
-      selectedEquipment=b.dataset.equipment;selectedClient=equipmentMeta[selectedEquipment].client;refreshRound();showView('equipment');
+      selectedEquipment=b.dataset.equipment;const nextClient=equipmentMeta[selectedEquipment].client;if(nextClient!==selectedClient){selectedClient=nextClient;selectClientRound(nextClient)}refreshRound();showView('equipment');
     });
     bindRoundReports();
   }
@@ -762,9 +778,9 @@
   $('#reloadApp').onclick=()=>location.reload();$('#searchToggle').onclick=()=>{if(account.isOwner||can('switchViews'))$('#appMenu').classList.add('open')};$('#closeAppMenu').onclick=()=>$('#appMenu').classList.remove('open');$$('[data-app-view]').forEach(b=>b.onclick=()=>{if(!account.isOwner)return;$('#appMenu').classList.remove('open');currentMode=b.dataset.appView==='partner'?'partner':'tech';openRoot(b.dataset.appView)});$$('.task-card').slice(0,4).forEach(b=>{b.style.cursor='pointer';b.onclick=()=>showView('task')});$('#taskStart').onclick=()=>showView('equipment');$('#taskComplete').onclick=()=>toast('Tarea marcada como terminada');$$('[data-open-report]').forEach(b=>b.onclick=()=>{renderReportEvidence([],0);showView('reportView')});$$('[data-partner-action]').forEach(b=>b.onclick=()=>{const action=b.dataset.partnerAction;if(action==='faults')showView('partnerFaults');else if(action==='reports')showView('partnerReports');else if(action==='documents')showView('partnerDocuments');else showView('partnerEquipment')});$('#acceptInvite').onclick=()=>{currentMode='partner';toast('Cuenta creada · HSC Partner listo para instalar');setTimeout(()=>openRoot('partner'),700)};$('#cancelAccept').onclick=()=>{currentMode='tech';openRoot('users')};
   $$('[data-partner-doc-tab]').forEach(button=>button.onclick=()=>{partnerDocumentTab=button.dataset.partnerDocTab;renderPartnerDocuments()});$('#reloadPartnerDocuments').onclick=()=>loadPartnerDocuments(true);
   $$('#equipmentFilters .chip').forEach(b=>b.onclick=()=>{equipmentFilter=b.dataset.filter;$$('#equipmentFilters .chip').forEach(x=>x.classList.toggle('active',x===b));renderEquipment()});$$('.nav-btn').forEach(b=>b.onclick=()=>openRoot(b.dataset.nav));
-  $('#partnerClientSelect').onchange=event=>{if(!account.isOwner)return;selectedClient=event.target.value;selectedRound=clientMeta[selectedClient]?.selectedRound||'2';selectedEquipment=equipment.filter(item=>equipmentMeta[item[0]]?.client===selectedClient).sort(byEquipmentId)[0]?.[0]||'';refreshRound();saveOperationalNavigation();};
+  $('#partnerClientSelect').onchange=event=>{if(!account.isOwner)return;selectedClient=event.target.value;selectClientRound(selectedClient);selectedEquipment=equipment.filter(item=>equipmentMeta[item[0]]?.client===selectedClient).sort(byEquipmentId)[0]?.[0]||'';refreshRound();saveOperationalNavigation();};
   $('#partnerRoundAction').onclick=()=>{$('#partnerRoundPicker').hidden=!$('#partnerRoundPicker').hidden;};
-  $('#partnerRoundSelect').onchange=event=>{selectedRound=event.target.value;refreshRound();saveOperationalNavigation();};
+  $('#partnerRoundSelect').onchange=event=>{selectedRound=event.target.value;rememberClientRound(selectedClient,selectedRound);refreshRound();saveOperationalNavigation();};
   $('#partnerFaultAction').onclick=openFaultForm;
   $('#closeFaultDetail').onclick=()=>$('#faultDetailModal').classList.remove('open');
   $('#resolveFault').onclick=async()=>{
@@ -811,7 +827,7 @@
   $('#shareEmail').onclick=()=>{if(!createdInviteUrl)return;window.open(`mailto:${encodeURIComponent($('#inviteEmail').value.trim())}?subject=${encodeURIComponent('Invitación a HSC')}&body=${encodeURIComponent(createdInviteUrl)}`,'_blank')};
   $('#copyInvite').onclick=async()=>{if(!createdInviteUrl)return;try{await navigator.clipboard.writeText(createdInviteUrl);toast('Enlace copiado')}catch(_){toast('Mantén presionado el enlace para copiarlo')}};
   $('#finishInvite').onclick=()=>{$('#inviteModal').classList.remove('open');loadUsers()};
-  $$('[data-round-select]').forEach(select=>select.onchange=()=>{selectedRound=select.value;refreshRound();saveOperationalNavigation();});
+  $$('[data-round-select]').forEach(select=>select.onchange=()=>{selectedRound=select.value;rememberClientRound(selectedClient,selectedRound);refreshRound();saveOperationalNavigation();});
   const draftKey=()=>`hsc-report-demo-${selectedEquipment}-R${selectedRound}`;let activeDraftId='';
   function fillReportFields(values){for(const [name,value] of Object.entries(values||{})){const field=$('#reportForm').elements.namedItem(name);if(field)field.value=value??'';}}
   function openStandaloneReport(type,equipmentId='',prefillClient=true){
@@ -843,7 +859,12 @@
       const upload={id:activeDraftId,client:keepClient,equipment:keepEquipment,round:keepRound,key:keepDraftKey,data,photos};
       rememberPendingReportUpload(upload);
       backgroundReportUploads.set(keepDraftKey,upload);
-      showView('equipment');
+      // La captura ya quedó entregada. Se reemplaza en el historial para que
+      // Atrás continúe hacia el cliente y nunca reabra el formulario cerrado.
+      historyStack=historyStack.at(-1)==='report'?historyStack.slice(0,-1):historyStack.filter(view=>view!=='report');
+      if(historyStack.at(-1)!=='equipment')historyStack.push('equipment');
+      current='__completed_report__';showView('equipment',false);
+      if(browserHistoryReady){writeBrowserNavigation(true,false,'equipment',historyStack);window.history.back();}
       toast(photos.length?`Reporte guardado · ${photos.length} foto(s) subiendo`:'Reporte guardado · finalizando');
       finishReportInBackground(upload);
     }catch(error){toast(error.message||'No se pudo finalizar el reporte')}
@@ -939,7 +960,7 @@
     }catch(error){toast(error.message||'No se pudo actualizar el equipo')}
     finally{button.disabled=false;button.textContent=nextActive?'Desactivar equipo':'Reactivar equipo'}
   };
-  $('#taskStart').onclick=()=>{const task=matrixTasks.find(item=>item.id===selectedTask);if(!task?.equipment_id)return;selectedEquipment=task.equipment_id;selectedClient=task.client_id||equipmentMeta[selectedEquipment]?.client||selectedClient;refreshRound();showView('equipment');};
+  $('#taskStart').onclick=()=>{const task=matrixTasks.find(item=>item.id===selectedTask);if(!task?.equipment_id)return;selectedEquipment=task.equipment_id;selectedClient=task.client_id||equipmentMeta[selectedEquipment]?.client||selectedClient;selectClientRound(selectedClient);refreshRound();showView('equipment');};
   $('#criticalFault').onclick=()=>{selectedClient=equipmentMeta[selectedEquipment]?.client||selectedClient;openFaultForm();};
   for(const kind of ['Client','Equipment']){
     $(`#op${kind}Photo`).onchange=async event=>{
