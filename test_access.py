@@ -1,4 +1,5 @@
 import os
+import time
 import unittest
 from unittest.mock import patch
 
@@ -57,6 +58,32 @@ class AppAccessTests(unittest.TestCase):
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
         self.assertIn("no-store", response.headers["Cache-Control"])
         self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+
+    def _open_role_session(self, role):
+        with self.client.session_transaction() as saved:
+            saved["hsc_authenticated"] = True
+            saved["hsc_role"] = role
+            saved["hsc_user_id"] = f"test-{role}"
+            saved["hsc_user_name"] = "Cuenta de prueba"
+            saved["hsc_account_checked_at"] = time.time()
+
+    def test_technician_cannot_open_admin_panel_or_financial_api(self):
+        self._open_role_session("technician")
+        for path in ("/", "/inicio-app", "/facturacion", "/clientes", "/hsc-partner/"):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 302, path)
+            self.assertTrue(response.headers["Location"].endswith("/hsc-tecnico/"), path)
+        response = self.client.get("/api/cotizaciones/list")
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("HSC Técnico", response.get_json()["error"])
+
+    def test_technician_can_open_technical_app_and_manual_report(self):
+        self._open_role_session("technician")
+        self.assertEqual(self.client.get("/hsc-tecnico/").status_code, 200)
+        self.assertEqual(
+            self.client.get("/reportes/diag/nuevo?origin=operations").status_code,
+            200,
+        )
 
 
 if __name__ == "__main__":

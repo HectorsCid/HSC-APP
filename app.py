@@ -244,6 +244,30 @@ def _safe_return_path(value):
     return target if target.startswith("/") and not target.startswith("//") else "/inicio-app"
 
 
+def _role_home(role):
+    """Entrada segura para cada tipo de cuenta, sin confiar en la URL solicitada."""
+    normalized = str(role or "").strip().lower()
+    if normalized == "technician":
+        return url_for("hsc_tecnico")
+    if normalized == "client":
+        return url_for("hsc_partner")
+    return url_for("inicio_app")
+
+
+def _technician_path_allowed(path):
+    """Superficie web disponible para una cuenta técnica."""
+    normalized = str(path or "")
+    return (
+        normalized in {
+            "/hsc-tecnico/", "/app-operativa-demo", "/cerrar-sesion",
+            "/manifest-hsc-tecnico.webmanifest", "/service-worker.js",
+        }
+        or normalized.startswith("/api/operaciones/")
+        or normalized.startswith("/reportes/diag/")
+        or normalized == "/reportes/imgproxy"
+    )
+
+
 @app.route("/acceso", methods=["GET", "POST"])
 def acceso():
     password = _app_access_password()
@@ -267,7 +291,9 @@ def acceso():
             session["hsc_user_name"] = user["name"]
             session["hsc_client_id"] = user.get("client_id") or ""
             session["hsc_permissions"] = user.get("permissions") or {}
-            return redirect(next_path)
+            # Las cuentas invitadas siempre entran a su propia aplicación. La
+            # URL que tenían abierta no puede llevarlas al panel administrativo.
+            return redirect(_role_home(user["role"]))
         if not email and password and hmac.compare_digest(supplied, password):
             session.clear()
             session.permanent = True
@@ -345,6 +371,13 @@ def _require_app_login():
                 if request.path.startswith("/api/"):
                     return jsonify({"ok": False, "error": "Esta cuenta sólo puede consultar HSC Partner."}), 403
                 return redirect(url_for("hsc_partner"))
+        if session_role == "technician" and not _technician_path_allowed(request.path):
+            if request.path.startswith("/api/"):
+                return jsonify({
+                    "ok": False,
+                    "error": "Esta cuenta sólo puede utilizar HSC Técnico.",
+                }), 403
+            return redirect(url_for("hsc_tecnico"))
         return None
     if not password:
         message = "Falta configurar HSC_APP_PASSWORD en Render."
