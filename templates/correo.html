@@ -82,7 +82,7 @@
       $('reader').innerHTML=`<button class="icon-btn reader-close" style="display:none" id="readerClose">← Volver</button><header class="reader-head"><h1>${esc(m.subject)}</h1><div class="meta"><strong>${esc(addr(m.from))}</strong><br>Para: ${esc(addr(m.to))}<br>${esc(date(m.date))}</div></header><div class="reader-actions"><button class="icon-btn" data-action="reply">Responder</button><button class="icon-btn" data-action="replyAll">Responder a todos</button><button class="icon-btn" data-action="forward">Reenviar</button><button class="icon-btn" data-move="junk">Spam</button><button class="icon-btn" data-move="trash">Eliminar</button></div><div class="attachments">${files}</div><div class="body">${esc(m.body)}</div>`;
       $('readerClose').onclick=()=>$('reader').classList.remove('open');$('messages').querySelector(`[data-uid="${CSS.escape(uid)}"]`)?.classList.remove('unseen');
       $('reader').querySelectorAll('[data-action]').forEach(x=>x.onclick=()=>compose(x.dataset.action,m));$('reader').querySelectorAll('[data-move]').forEach(x=>x.onclick=()=>move(m.uid,x.dataset.move));
-    }catch(error){$('reader').innerHTML=`<div class="empty">${esc(error.message)}</div>`}
+    }catch(error){$('reader').innerHTML=`<div class="empty"><div><p>${esc(error.message)}</p><button class="icon-btn" id="retryMessage" type="button">Reintentar</button></div></div>`;$('retryMessage').onclick=()=>openMessage(uid)}
   }
   function compose(kind='',m=null){
     const form=$('composeForm');form.reset();form.in_reply_to.value='';form.references.value='';$('composerTitle').textContent='Nuevo mensaje';

@@ -13,6 +13,7 @@ import os
 import re
 import smtplib
 import ssl
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from email import policy
@@ -284,8 +285,7 @@ def list_messages(folder="INBOX", *, page=1, page_size=40, query=""):
 def get_message(folder, uid, *, mark_seen=True):
     folder = resolve_folder(folder)
     command = "RFC822" if mark_seen else "BODY.PEEK[]"
-    with imap_connection(readonly=not mark_seen, folder=folder) as mailbox:
-        status, rows = mailbox.uid("fetch", str(uid), f"({command} FLAGS)")
+    status, rows = _fetch_with_reconnect(folder, uid, f"({command} FLAGS)", readonly=not mark_seen)
     if status != "OK":
         raise LookupError("No se encontro el mensaje.")
     pair = next((row for row in rows if isinstance(row, tuple)), None)
@@ -300,8 +300,7 @@ def get_message(folder, uid, *, mark_seen=True):
 
 def get_attachment(folder, uid, part_index):
     folder = resolve_folder(folder)
-    with imap_connection(readonly=True, folder=folder) as mailbox:
-        status, rows = mailbox.uid("fetch", str(uid), "(BODY.PEEK[])")
+    status, rows = _fetch_with_reconnect(folder, uid, "(BODY.PEEK[])", readonly=True)
     pair = next((row for row in rows if isinstance(row, tuple)), None) if status == "OK" else None
     if not pair:
         raise LookupError("No se encontro el mensaje.")
@@ -312,6 +311,18 @@ def get_attachment(folder, uid, part_index):
     part = parts[part_index]
     filename = _decode_header(part.get_filename()) or "archivo"
     return filename, part.get_content_type() or mimetypes.guess_type(filename)[0] or "application/octet-stream", part.get_payload(decode=True) or b""
+
+
+def _fetch_with_reconnect(folder, uid, command, *, readonly):
+    """Reabre IMAP una vez si el servidor corta el socket durante FETCH."""
+    for attempt in range(2):
+        try:
+            with imap_connection(readonly=readonly, folder=folder) as mailbox:
+                return mailbox.uid("fetch", str(uid), command)
+        except (imaplib.IMAP4.abort, ConnectionError, EOFError, OSError):
+            if attempt:
+                raise RuntimeError("El servidor de correo interrumpio la descarga. Intenta nuevamente.")
+            time.sleep(0.2)
 
 
 def set_seen(folder, uid, seen):

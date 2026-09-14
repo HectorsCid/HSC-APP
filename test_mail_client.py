@@ -1,10 +1,31 @@
 import unittest
+import imaplib
 from email.message import EmailMessage
+from unittest.mock import Mock, patch
 
 import mail_client
 
 
 class MailClientParsingTests(unittest.TestCase):
+    @patch("mail_client.time.sleep")
+    @patch("mail_client.imap_connection")
+    def test_fetch_reconnects_after_imap_eof(self, connection, sleep):
+        first = Mock()
+        first.__enter__ = Mock(return_value=Mock())
+        first.__exit__ = Mock(return_value=False)
+        first.__enter__.return_value.uid.side_effect = imaplib.IMAP4.abort("socket error: EOF")
+        second = Mock()
+        second.__enter__ = Mock(return_value=Mock())
+        second.__exit__ = Mock(return_value=False)
+        second.__enter__.return_value.uid.return_value = ("OK", [(b"meta", b"message")])
+        connection.side_effect = [first, second]
+
+        result = mail_client._fetch_with_reconnect("INBOX", "12", "(BODY.PEEK[])", readonly=True)
+
+        self.assertEqual(result[0], "OK")
+        self.assertEqual(connection.call_count, 2)
+        sleep.assert_called_once()
+
     def test_folder_roles_support_carrierzone_names(self):
         sent = mail_client._parse_list_row(b'(\\HasNoChildren) "/" "mail/sent-mail"')
         spam = mail_client._parse_list_row(b'(\\HasNoChildren) "/" "mail/spam"')
