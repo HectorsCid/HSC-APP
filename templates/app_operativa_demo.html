@@ -101,12 +101,12 @@
       <button class="secondary" type="button" data-pwa-install data-install-label="Instalar {{ operations_app_name|default('HSC Técnico') }}">⬇ Instalar</button>
     </div>{% endif %}
     <section class="view active" data-view="clients">
-      <span id="matrixStatus" hidden>Conectando con la Hoja Matriz…</span>
+      <span id="matrixStatus" hidden>Conectando con la base operativa…</span>
       <div class="search"><span>⌕</span><input id="clientSearch" type="search" placeholder="Buscar cliente, clave o ubicación"></div>
       <div class="section-head"><h2>Clientes</h2><div><span class="count" id="clientCount"></span> <button class="mini-btn" id="openUsers" data-admin-only>Usuarios</button></div></div>
       <div class="management-bar"><button class="primary" id="openOccasionalReport" data-permission="createReports">📝 Reporte único</button><button class="secondary" id="addOperationalClient" data-permission="addClients">＋ Agregar cliente</button><button class="secondary" id="catalogScope">Ver clientes sin póliza</button><button class="secondary" id="orderClients" data-admin-only>Ordenar clientes</button></div>
       <div class="client-list" id="clientList"></div>
-      <p class="editor-note" id="persistenceNotice">Las altas y ediciones se guardan en la base operativa y quedan pendientes de sincronización con Google.</p>
+      <p class="editor-note" id="persistenceNotice">Las altas y ediciones se guardan en la base operativa. La exportación de compatibilidad se procesa en segundo plano.</p>
     </section>
 
     <section class="view" data-view="client">
@@ -114,6 +114,7 @@
       <div class="management-bar"><button class="secondary" id="editOperationalClient" data-permission="editClientData">Editar cliente</button><button class="primary" id="addOperationalEquipment" data-permission="addEquipment">＋ Agregar equipo</button><button class="secondary" id="singleWorkReport" data-permission="createReports" data-tech-only>📝 Reporte de trabajo</button></div>
       <div class="section-head"><h2>Equipos</h2><span class="count" id="roundPending"></span></div><div class="filters" id="equipmentFilters"><button class="chip active" data-filter="all">Todos</button><button class="chip" data-filter="pending">Pendientes</button><button class="chip" data-filter="done">Realizados</button></div><div class="equipment-list bounded-list" id="equipmentList" style="margin-top:10px"></div>
       <div class="section-head"><h2>Reportes de la ronda</h2><span class="count" id="roundReportCount"></span></div><div class="report-list bounded-list" id="roundReportList"></div>
+      <div class="section-head"><h2>Fallas del cliente</h2><span class="count" id="clientFaultCount"></span></div><div class="user-list bounded-list" id="clientFaultList"></div>
     </section>
 
     <section class="view" data-view="equipment">
@@ -187,13 +188,13 @@
     <section class="view" data-view="users">
       <article class="invite-hero"><div class="eyebrow">Administración</div><h2>Usuarios e invitaciones</h2><p>Crea accesos independientes para técnicos y clientes. Cada persona verá solamente lo que le corresponda.</p><div class="invite-buttons"><button class="primary" data-invite-role="tech">Invitar técnico</button><button class="secondary" data-invite-role="client">Invitar cliente</button></div></article>
       <div class="section-head"><h2>Accesos</h2><span class="count" id="usersCount">Cargando…</span></div>
-      <div class="filters"><button class="chip active">Todos</button><button class="chip">Activos</button><button class="chip">Pendientes</button><button class="chip">Suspendidos</button></div>
+      <div class="filters" id="userStatusFilters"><button class="chip active" data-user-status-filter="all">Todos</button><button class="chip" data-user-status-filter="active">Activos</button><button class="chip" data-user-status-filter="suspended">Suspendidos</button></div>
       <div class="user-list" id="usersList" style="margin-top:10px"></div>
     </section>
 
     <section class="view editor" data-view="userPermissions">
       <div class="form-intro"><b id="permissionUserName">Permisos de Carlos Ramírez</b><span>Los cambios afectan únicamente lo que esta cuenta puede consultar o modificar.</span></div>
-      <div class="form-section"><div class="section-body" style="padding-top:16px"><div class="permission-list">
+      <div class="form-section"><div class="section-body" style="padding-top:16px"><div class="field" style="margin-bottom:16px"><label for="permissionUserStatus">Estado de la cuenta</label><select id="permissionUserStatus"><option value="active">Activa</option><option value="suspended">Suspendida</option></select><p class="editor-note" id="permissionStatusNote">Una cuenta suspendida ya no podrá entrar y su sesión abierta se cerrará automáticamente.</p></div><div class="permission-list">
         <label class="permission"><input type="checkbox" data-tech-permission="createReports"><span class="permission-copy"><b>Crear reportes</b><small>Capturar mediciones, evidencias y finalizar servicios.</small></span></label>
         <label class="permission"><input type="checkbox" data-tech-permission="reportFaults"><span class="permission-copy"><b>Reportar fallas graves</b><small>La falla aparecerá en HSC Partner.</small></span></label>
         <label class="permission"><input type="checkbox" data-tech-permission="addEquipment"><span class="permission-copy"><b>Agregar equipos</b><small>Genera nuevos IDs sin cambiar los existentes.</small></span></label>
@@ -290,7 +291,7 @@
   let activePermissions=account.isOwner?{...defaultPermissions,...sessionPermissions}:{...sessionPermissions};
   let selectedRound='2', selectedEquipment='HDI1';
   let selectedClient='HDI',showCatalog=false,clientOrderMode=false;
-  let matrixReports=[],matrixFaults=[],matrixTasks=[],matrixExpenses=[],operationUsers=[],matrixLoaded=false,selectedFault='',selectedTask='',selectedExpense='',selectedPermissionUser='',partnerDocuments=null,partnerDocumentsClient='',partnerDocumentTab='quotes',partnerDocumentCacheWarming=false;
+  let matrixReports=[],matrixFaults=[],matrixTasks=[],matrixExpenses=[],operationUsers=[],userStatusFilter='all',matrixLoaded=false,selectedFault='',selectedTask='',selectedExpense='',selectedPermissionUser='',partnerDocuments=null,partnerDocumentsClient='',partnerDocumentTab='quotes',partnerDocumentCacheWarming=false;
   const clientMeta=Object.fromEntries(clients.map((c,index)=>[c[1],{policy:true,matrixId:c[1],sortOrder:index+1,address:c[1]==='HDI'?'Anillo Vial Fray Junípero Serra 1500-A, Arboledas, Querétaro':'',photo:''}]));
   const equipmentMeta=Object.fromEntries(equipment.map(e=>[e[0],{client:'HDI',active:true,type:'Refrigeración',location:'',model:'',serial:'',notes:'',photo:''}]));
   const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -490,6 +491,7 @@
     $('#roundProgressText').textContent=`${completed} de ${active.length} activos`;
     $('#roundReportCount').textContent=`R${selectedRound} · ${all.filter(e=>e[3]).length} reportes`;
     $('#roundReportList').innerHTML=reportCards(all.filter(e=>e[3]));
+    renderClientFaults();
     renderEquipmentDetail();
     $$('[data-equipment]').forEach(b=>b.onclick=()=>{
       if(b.closest('#taskEquipment'))selectedRound='2';
@@ -573,6 +575,13 @@
     $('#partnerFaultPreview').innerHTML=faultCards(rows.slice(0,2));
     $('#partnerFaultFull').innerHTML=markup;
     $('#partnerFaultCount').textContent=`${rows.length} registrada${rows.length===1?'':'s'}`;
+    bindPartnerFaults();
+  }
+  function renderClientFaults(){
+    const rows=matrixFaults.filter(fault=>fault.client_id===selectedClient||equipmentMeta[fault.equipment_id]?.client===selectedClient);
+    const pending=rows.filter(fault=>!/resuelt|cerrad|atendid|terminad/i.test(String(fault.status||''))).length;
+    $('#clientFaultList').innerHTML=faultCards(rows);
+    $('#clientFaultCount').textContent=rows.length?`${pending} pendiente${pending===1?'':'s'} · ${rows.length} total`:'Sin fallas';
     bindPartnerFaults();
   }
   function partnerDocumentCacheKey(clientId){return `hsc-partner-documents-v6-${account.id}-${clientId}`}
@@ -735,7 +744,14 @@
   }
   function refreshTaskEquipment(){const clientId=$('#taskClient').value;$('#taskEquipmentSelect').innerHTML='<option value="">Sin equipo específico</option>'+equipment.filter(row=>!clientId||equipmentMeta[row[0]]?.client===clientId).sort(byEquipmentId).map(row=>`<option value="${escapeHtml(row[0])}">${escapeHtml(row[0])} · ${escapeHtml(row[1])}</option>`).join('')}
   $('#taskClient').onchange=refreshTaskEquipment;$('#openTask').onclick=()=>{populateTaskForm();$('#taskModal').classList.add('open')};$('#closeTask').onclick=()=>$('#taskModal').classList.remove('open');
-  async function loadUsers(){if(!account.isOwner)return;try{const response=await fetch('/api/operaciones/users',{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudieron consultar los accesos.');operationUsers=payload.users||[];$('#usersCount').textContent=`${operationUsers.length+1} cuenta${operationUsers.length?'s':''}`;$('#usersList').innerHTML=`<button type="button" class="user-card" data-user-permissions="owner"><span class="avatar">HS</span><span><b>${escapeHtml(account.name)}</b><small>Propietario · Administrador y técnico</small></span><span class="access-state">Activa</span></button>`+operationUsers.map(user=>`<button type="button" class="user-card" data-user-permissions="${escapeHtml(user.id)}"><span class="avatar">${escapeHtml(user.name.split(/\s+/).map(part=>part[0]).join('').slice(0,2).toUpperCase())}</span><span><b>${escapeHtml(user.name)}</b><small>${user.role==='client'?`Cliente · ${escapeHtml(clientName(user.client_id))}`:'Técnico'} · ${escapeHtml(user.email)}</small></span><span class="access-state ${user.status==='suspended'?'suspended':''}">${user.status==='suspended'?'Suspendida':'Activa'}</span></button>`).join('');bindUserPermissions();}catch(error){$('#usersCount').textContent='No disponible';$('#usersList').innerHTML=`<div class="empty">${escapeHtml(error.message)}</div>`}}
+  function renderUsers(){
+    const rows=operationUsers.filter(user=>userStatusFilter==='all'||user.status===userStatusFilter),showOwner=userStatusFilter!=='suspended';
+    $('#usersCount').textContent=`${rows.length+(showOwner?1:0)} cuenta${rows.length+(showOwner?1:0)===1?'':'s'}`;
+    const owner=showOwner?`<button type="button" class="user-card" data-user-permissions="owner"><span class="avatar">HS</span><span><b>${escapeHtml(account.name)}</b><small>Propietario · Administrador y técnico</small></span><span class="access-state">Activa</span></button>`:'';
+    $('#usersList').innerHTML=owner+rows.map(user=>`<button type="button" class="user-card" data-user-permissions="${escapeHtml(user.id)}"><span class="avatar">${escapeHtml(user.name.split(/\s+/).map(part=>part[0]).join('').slice(0,2).toUpperCase())}</span><span><b>${escapeHtml(user.name)}</b><small>${user.role==='client'?`Cliente · ${escapeHtml(clientName(user.client_id))}`:'Técnico'} · ${escapeHtml(user.email)}</small></span><span class="access-state ${user.status==='suspended'?'suspended':''}">${user.status==='suspended'?'Suspendida':'Activa'}</span></button>`).join('')||'<div class="empty">No hay cuentas con este estado.</div>';
+    bindUserPermissions();
+  }
+  async function loadUsers(){if(!account.isOwner)return;try{const response=await fetch('/api/operaciones/users',{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudieron consultar los accesos.');operationUsers=payload.users||[];renderUsers();}catch(error){$('#usersCount').textContent='No disponible';$('#usersList').innerHTML=`<div class="empty">${escapeHtml(error.message)}</div>`}}
   let inviteRole='tech',createdInviteUrl='';function updateInviteRole(role){inviteRole=role;$$('[data-role-choice]').forEach(button=>button.classList.toggle('active',button.dataset.roleChoice===role));$('#inviteClientField').style.display=role==='client'?'block':'none';$('#inviteTechPermissions').style.display=role==='tech'?'block':'none';$('#inviteClientPermissions').style.display=role==='client'?'block':'none';}function openInvite(role='tech'){updateInviteRole(role);$('#inviteForm').hidden=false;$('#inviteShare').hidden=true;createdInviteUrl='';$('#inviteModal').classList.add('open')}$('#openUsers').onclick=()=>openRoot('users');$$('[data-invite-role]').forEach(b=>b.onclick=()=>openInvite(b.dataset.inviteRole));$$('[data-role-choice]').forEach(b=>b.onclick=()=>updateInviteRole(b.dataset.roleChoice));$('#closeInvite').onclick=()=>$('#inviteModal').classList.remove('open');
   const styleNames={corporate:'Corporativo',fusion:'Mezcla',glass:'Cristal',classic:'Oldschool'};
   function syncOperationsStyle(){const style=document.documentElement.dataset.style||'corporate',dark=document.documentElement.dataset.theme==='dark';$$('[data-style-option]').forEach(button=>{const active=button.dataset.styleOption===style;button.classList.toggle('active',active);button.setAttribute('aria-checked',String(active))});$$('#styleThemeNote,#partnerStyleThemeNote').forEach(note=>note.textContent=`${styleNames[style]||'Corporativo'} · modo ${dark?'oscuro':'claro'}`)}
@@ -781,12 +797,15 @@
   $('#saveTask').onclick=async()=>{const title=$('#taskTitle').value.trim(),scheduledDate=$('#taskDate').value;if(!title){toast('Escribe la actividad pendiente');return}if(!scheduledDate){toast('Selecciona la fecha');return}const button=$('#saveTask');button.disabled=true;button.textContent='Guardando…';try{const result=await operationsPost('/api/operaciones/tasks',{title,details:$('#taskDetails').value.trim(),scheduled_date:scheduledDate,scheduled_time:$('#taskTime').value,client_id:$('#taskClient').value,equipment_id:$('#taskEquipmentSelect').value,assigned_user_id:$('#taskTechnician').value,priority:$('#taskPriority').value});matrixTasks=[result.task,...matrixTasks.filter(item=>item.id!==result.task.id)];agendaDate=scheduledDate;$('#taskModal').classList.remove('open');renderAgenda();toast('Pendiente agregado a la agenda')}catch(error){toast(error.message)}finally{button.disabled=false;button.textContent='Guardar pendiente'}};
   $('#taskComplete').onclick=async()=>{const task=matrixTasks.find(item=>item.id===selectedTask);if(!task)return;const button=$('#taskComplete');button.disabled=true;try{const result=await operationsPost(`/api/operaciones/tasks/${encodeURIComponent(task.id)}/complete`,{});matrixTasks=matrixTasks.map(item=>item.id===task.id?result.task:item);renderAgenda();goBack();toast('Tarea marcada como terminada')}catch(error){toast(error.message)}finally{button.disabled=false}};
   let permissionDraft=null;
-  function bindUserPermissions(){$$('[data-user-permissions]').forEach(button=>button.onclick=()=>{if(button.dataset.userPermissions==='owner'){toast('La cuenta propietaria conserva acceso completo');return;}const user=operationUsers.find(item=>item.id===button.dataset.userPermissions);if(!user)return;selectedPermissionUser=user.id;permissionDraft={...user.permissions};$('#permissionUserName').textContent=`Permisos de ${user.name}`;$$('[data-tech-permission]').forEach(input=>{input.checked=Boolean(permissionDraft[input.dataset.techPermission]);input.disabled=user.role==='client'});showView('userPermissions')})}
+  function bindUserPermissions(){$$('[data-user-permissions]').forEach(button=>button.onclick=()=>{if(button.dataset.userPermissions==='owner'){toast('La cuenta propietaria conserva acceso completo');return;}const user=operationUsers.find(item=>item.id===button.dataset.userPermissions);if(!user)return;selectedPermissionUser=user.id;permissionDraft={...user.permissions};$('#permissionUserName').textContent=`Permisos de ${user.name}`;$('#permissionUserStatus').value=user.status==='suspended'?'suspended':'active';$$('[data-tech-permission]').forEach(input=>{input.checked=Boolean(permissionDraft[input.dataset.techPermission]);input.disabled=user.role==='client'});showView('userPermissions')})}
   $('#cancelPermissions').onclick=goBack;
   $('#savePermissions').onclick=async()=>{
     $$('[data-tech-permission]').forEach(input=>permissionDraft[input.dataset.techPermission]=input.checked);
-    const button=$('#savePermissions');button.disabled=true;try{const result=await operationsPost(`/api/operaciones/users/${encodeURIComponent(selectedPermissionUser)}/permissions`,{permissions:permissionDraft});operationUsers=operationUsers.map(user=>user.id===result.user.id?result.user:user);toast('Permisos guardados');goBack();loadUsers()}catch(error){toast(error.message)}finally{button.disabled=false}
+    const currentUser=operationUsers.find(user=>user.id===selectedPermissionUser),status=$('#permissionUserStatus').value;
+    if(currentUser?.status!=='suspended'&&status==='suspended'&&!confirm(`¿Suspender la cuenta de ${currentUser.name}? Ya no podrá entrar y su sesión se cerrará automáticamente.`))return;
+    const button=$('#savePermissions');button.disabled=true;try{const result=await operationsPost(`/api/operaciones/users/${encodeURIComponent(selectedPermissionUser)}/permissions`,{permissions:permissionDraft,status});operationUsers=operationUsers.map(user=>user.id===result.user.id?result.user:user);toast(result.user.status==='suspended'?'Cuenta suspendida':'Cuenta activa');goBack();renderUsers()}catch(error){toast(error.message)}finally{button.disabled=false}
   };
+  $$('[data-user-status-filter]').forEach(button=>button.onclick=()=>{userStatusFilter=button.dataset.userStatusFilter;$$('[data-user-status-filter]').forEach(item=>item.classList.toggle('active',item===button));renderUsers()});
   $('#createInvite').onclick=async()=>{const name=$('#inviteName').value.trim(),email=$('#inviteEmail').value.trim();if(!name){toast('Escribe el nombre de la persona');return}if(!email){toast('Escribe el correo de la persona');return}if(inviteRole==='client'&&!$('#inviteClientSelect').value){toast('Selecciona el cliente que podrá consultar');return}const permissions={};$$('[data-invite-permission]').forEach(input=>permissions[input.dataset.invitePermission]=input.checked);const button=$('#createInvite');button.disabled=true;button.textContent='Generando…';try{const result=await operationsPost('/api/operaciones/invitations',{name,email,phone:$('#invitePhone').value.trim(),role:inviteRole==='client'?'client':'technician',client_id:inviteRole==='client'?$('#inviteClientSelect').value:'',permissions});createdInviteUrl=result.url;$('#inviteLink').textContent=createdInviteUrl;$('#inviteForm').hidden=true;$('#inviteShare').hidden=false;$('#shareTitle').textContent=inviteRole==='client'?'Invitar a HSC Partner':'Invitar a HSC Técnico';toast('Enlace personal generado')}catch(error){toast(error.message)}finally{button.disabled=false;button.textContent='Generar enlace'}};
   $('#shareWhatsApp').onclick=()=>{if(!createdInviteUrl)return;const message=`Te invito a ${inviteRole==='client'?'HSC Partner':'HSC Técnico'}: ${createdInviteUrl}`;window.open(`https://wa.me/?text=${encodeURIComponent(message)}`,'_blank','noopener')};
   $('#shareEmail').onclick=()=>{if(!createdInviteUrl)return;window.open(`mailto:${encodeURIComponent($('#inviteEmail').value.trim())}?subject=${encodeURIComponent('Invitación a HSC')}&body=${encodeURIComponent(createdInviteUrl)}`,'_blank')};

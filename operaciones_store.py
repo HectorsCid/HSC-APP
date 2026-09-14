@@ -931,6 +931,24 @@ class OperationsStore:
         return {"id": row[0], "name": row[1], "email": row[2], "phone": row[3], "role": row[4],
                 "client_id": row[5], "status": row[6], "permissions": permissions, "password_hash": row[8]}
 
+    def get_user_by_id(self, user_id):
+        """Consulta el estado vigente de una cuenta para invalidar sesiones suspendidas."""
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT id,name,email,phone,role,client_id,status,permissions_json "
+                f"FROM operations_users WHERE id={p}", (_text(user_id),),
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            permissions = json.loads(row[7] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            permissions = {}
+        return {"id": row[0], "name": row[1], "email": row[2], "phone": row[3], "role": row[4],
+                "client_id": row[5], "status": row[6], "permissions": permissions}
+
     def create_invite(self, item):
         self.initialize()
         role = _text(item.get("role"))

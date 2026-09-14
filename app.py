@@ -313,7 +313,29 @@ def _require_app_login():
     if not password and not IS_RENDER:
         return None
     if session.get("hsc_authenticated") is True:
-        if str(session.get("hsc_role") or "").strip().lower() == "client":
+        session_role = str(session.get("hsc_role") or "").strip().lower()
+        if session_role in {"technician", "client"} and OPERACIONES_STORE.enabled:
+            try:
+                last_check = float(session.get("hsc_account_checked_at") or 0)
+            except (TypeError, ValueError):
+                last_check = 0
+            if time.time() - last_check >= 30:
+                try:
+                    current_user = OPERACIONES_STORE.get_user_by_id(session.get("hsc_user_id"))
+                    if not current_user or current_user.get("status") != "active":
+                        session.clear()
+                        message = "Esta cuenta fue suspendida. Comunícate con el administrador de HSC."
+                        if request.path.startswith("/api/"):
+                            return jsonify({"ok": False, "code": "account_suspended", "error": message}), 403
+                        return redirect(url_for("acceso", next=_safe_return_path(request.full_path.rstrip("?"))))
+                    session["hsc_user_name"] = current_user.get("name") or session.get("hsc_user_name")
+                    session["hsc_client_id"] = current_user.get("client_id") or ""
+                    session["hsc_permissions"] = current_user.get("permissions") or {}
+                    session["hsc_account_checked_at"] = time.time()
+                except Exception:
+                    # Un fallo temporal de la base no debe cerrar cuentas válidas.
+                    current_app.logger.exception("No se pudo verificar el estado de la sesión operativa")
+        if session_role == "client":
             allowed_partner_path = (
                 request.path.startswith("/hsc-partner/")
                 or request.path.startswith("/api/operaciones/")
