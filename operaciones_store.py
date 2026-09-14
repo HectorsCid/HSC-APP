@@ -915,16 +915,28 @@ class OperationsStore:
         return next(row for row in self.snapshot()["faults"] if row["id"] == fault_id)
 
     def save_fault(self, item):
-        """Registra una falla vinculada obligatoriamente con cliente y equipo."""
+        """Registra una falla del cliente, de catálogo o de un equipo fuera de póliza."""
         self.initialize()
         client_id = _text(item.get("client_id"))
         equipment_id = _text(item.get("equipment_id"))
         description = _text(item.get("description"))
-        if not client_id or not equipment_id or not description:
-            raise ValueError("Cliente, equipo y descripción son obligatorios.")
-        equipment = next((row for row in self.snapshot()["equipment"] if row["id"] == equipment_id), None)
-        if not equipment or equipment["client_id"] != client_id:
-            raise ValueError("El equipo no pertenece al cliente seleccionado.")
+        if not client_id or not description:
+            raise ValueError("Cliente y descripción son obligatorios.")
+        snapshot = self.snapshot()
+        if not any(row['id']==client_id for row in snapshot['clients']):
+            raise ValueError('El cliente no existe.')
+        external = item.get('outside_policy') is True
+        if external:
+            name, location = _text(item.get('equipment_name')), _text(item.get('equipment_location'))
+            if not name or not location or len(name)>200 or len(location)>300:
+                raise ValueError('Escribe el nombre del equipo (máximo 200 caracteres) y su ubicación (máximo 300).')
+            if equipment_id or item.get('report_id'):
+                raise ValueError('Un equipo fuera de catálogo no debe vincularse a otro equipo o reporte.')
+            description = f'Fuera de póliza · Equipo: {name} · Ubicación: {location}\n{description}'
+        else:
+            equipment = next((row for row in snapshot['equipment'] if row['id']==equipment_id),None)
+            if not equipment or equipment['client_id']!=client_id:
+                raise ValueError('El equipo no pertenece al cliente seleccionado.')
         fault_id = _text(item.get("id")) or f"FALLA_{uuid.uuid4().hex[:16].upper()}"
         existing=next((row for row in self.snapshot()['faults'] if row['id']==fault_id),None)
         if existing:
