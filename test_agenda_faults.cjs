@@ -1,0 +1,15 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync('templates/app_operativa_demo.html','utf8');
+const cards=source.slice(source.indexOf('  function faultCards('),source.indexOf('  function bindPartnerFaults('));
+const render=source.slice(source.indexOf('  function renderAgendaFaults('),source.indexOf('  function renderAgenda(){'));
+const nodes={};let bound=0;
+const ns={serverRole:'technician',matrixFaults:[{id:'closed',client_id:'B',description:'Ya reparada',status:'Reparada',reported_at:'2026-09-20'}, {id:'open',client_id:'A',description:'Sin programar <prueba>',status:'Reportada',reported_at:'2026-09-18'}, {id:'reviewed',client_id:'B',description:'Revisada',status:'Revisada',reported_at:'2026-09-19'}],equipment:[],equipmentMeta:{},clientName:id=>({A:'Cliente A',B:'Cliente B'})[id],escapeHtml:v=>String(v||'').replaceAll('<','&lt;'),$:id=>nodes[id]??={},bindPartnerFaults:()=>bound++};
+vm.runInNewContext(cards+render,ns);ns.renderAgendaFaults();
+const html=nodes['#agendaFaultList'].innerHTML;
+assert(html.includes('Cliente A'));assert(html.includes('Cliente B'));
+assert(html.includes('Sin programar &lt;prueba>'));
+assert(html.indexOf('data-fault-id="reviewed"')<html.indexOf('data-fault-id="closed"'));
+assert.equal(nodes['#agendaFaultCount'].textContent,'2 pendientes · 3 reportadas');assert.equal(bound,1);
+ns.serverRole='client';ns.renderAgendaFaults();assert(nodes['#agendaFaultSection'].hidden);
+assert(source.indexOf('id="agendaFaultSection"')>source.indexOf('id="taskList"'));
+console.log('OK: todas las fallas al final de Agenda, clientes identificados, pendientes primero y acceso técnico.');

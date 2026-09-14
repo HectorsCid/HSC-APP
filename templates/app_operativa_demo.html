@@ -99,6 +99,8 @@
     .month-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px}.month-toolbar h2{font-size:1.15rem;margin:10px 0;text-transform:capitalize}
     .month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin:12px 0}.month-weekday{text-align:center;color:var(--muted);font-size:.75rem}
     .month-day{min-width:0;min-height:48px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);cursor:pointer;padding:5px 2px}.month-day[aria-pressed="true"]{border-color:var(--brand);background:var(--brand);color:white}.month-day small{display:block;font-size:.65rem;min-height:12px}.month-task{padding:12px;border:1px solid var(--line);border-radius:12px;margin-top:8px;overflow-wrap:anywhere}.month-task small{display:block;color:var(--muted);margin-top:4px}#monthDayTasks{max-height:240px;overflow-y:auto}
+    #agendaFaultList{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;max-height:380px;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:4px}
+    #agendaFaultList .fault-card{min-width:0;overflow-wrap:anywhere}#agendaFaultList .fault-top{flex-wrap:wrap}#agendaFaultList .fault-top h3{flex:1 1 180px;min-width:0}#agendaFaultList .fault-status{flex-shrink:0}
 </style>
 </head>
 <body data-operations-shell="true" data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-pwa-install-disabled="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-app-kind="{{ operations_app_kind|default('technician') }}" data-user-id="{{ operations_user_id|default('owner') }}" data-user-name="{{ operations_user_name|default('Héctor Silva Cid') }}" data-permissions="{{ operations_permissions|default({})|tojson|forceescape }}">
@@ -200,6 +202,11 @@
       <div class="reminder"><div class="reminder-icon">♢</div><div class="reminder-copy"><b>Resumen “Tareas para hoy”</b><span>Las tareas ya se guardan en la cuenta y quedan listas para conectarse al aviso matutino.</span></div></div>
       <div class="section-head"><h2 id="agendaListTitle">Para hoy</h2><span class="count">Ordenadas por hora</span></div>
       <div class="task-list" id="taskList"></div>
+      <section id="agendaFaultSection" style="margin-top:24px" aria-labelledby="agendaFaultHeading">
+        <div class="section-head"><h2 id="agendaFaultHeading">Fallas de todos los clientes</h2><span class="count" id="agendaFaultCount"></span></div>
+        <p class="count">Incluye fallas sin programar. Las pendientes aparecen primero.</p>
+        <div id="agendaFaultList" tabindex="0" role="region" aria-label="Fallas reportadas de todos los clientes"></div>
+      </section>
     </section>
 
     <section class="view" data-view="users">
@@ -619,13 +626,13 @@
       if(report?.id){try{const response=await fetch(`/api/operaciones/reports/${encodeURIComponent(report.id)}`,{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error();applyReportMeasurements(set,payload.report.payload);renderReportEvidence(payload.report.evidence,payload.report.photo_count)}catch(_){applyReportMeasurements(set,{});renderReportEvidence([],report.photo_count)}}
     });
   }
-  function faultCards(rows){
+  function faultCards(rows,showClient=false){
     if(!rows.length)return '<div class="empty">No hay fallas reportadas para este cliente.</div>';
     return rows.map(fault=>{
       const equipmentRow=equipment.find(item=>item[0]===fault.equipment_id);
       const status=String(fault.status||'Reportada');
       const resolved=/resuelt|cerrad|atendid|terminad|reparad/i.test(status);
-      return `<button type="button" class="fault-card ${resolved?'resolved':''}" data-fault-id="${escapeHtml(fault.id)}"><div class="fault-top"><h3>${escapeHtml(fault.description||'Falla reportada')}</h3><span class="fault-status">${escapeHtml(status)}</span></div><p>${escapeHtml(equipmentRow?.[1]||fault.equipment_id||'Equipo sin identificar')}${fault.reported_at?` · ${escapeHtml(fault.reported_at)}`:''}</p><small class="count">${escapeHtml(fault.priority||'Alta')}</small></button>`;
+      return `<button type="button" class="fault-card ${resolved?'resolved':''}" data-fault-id="${escapeHtml(fault.id)}"><div class="fault-top"><h3>${escapeHtml(fault.description||'Falla reportada')}</h3><span class="fault-status">${escapeHtml(status)}</span></div>${showClient?`<p><strong>${escapeHtml(clientName(fault.client_id||equipmentMeta[fault.equipment_id]?.client)||fault.client_id||'Cliente sin identificar')}</strong></p>`:''}<p>${escapeHtml(equipmentRow?.[1]||fault.equipment_id||'Equipo sin identificar')}${fault.reported_at?` · ${escapeHtml(fault.reported_at)}`:''}</p><small class="count">${escapeHtml(fault.priority||'Alta')}</small></button>`;
     }).join('');
   }
   function bindPartnerFaults(){
@@ -635,7 +642,7 @@
       const equipmentRow=equipment.find(item=>item[0]===fault.equipment_id),status=String(fault.status||'Reportada');
       const resolved=/resuelt|cerrad|atendid|terminad|reparad/i.test(status);
       $('#faultDetailTitle').textContent=fault.description||'Falla reportada';
-      $('#faultDetailMeta').textContent=`${equipmentRow?.[1]||fault.equipment_id||'Equipo sin identificar'} · ${fault.priority||'Alta'} · ${status}`;
+      $('#faultDetailMeta').textContent=`${clientName(fault.client_id||equipmentMeta[fault.equipment_id]?.client)||fault.client_id||'Cliente sin identificar'} · ${equipmentRow?.[1]||fault.equipment_id||'Equipo sin identificar'} · ${fault.priority||'Alta'} · ${status}`;
       $('#faultEvidencePreview').innerHTML=Array.from({length:Number(fault.photo_count||0)},(_,index)=>`<figure class="evidence-thumb"><img src="/api/operaciones/faults/${encodeURIComponent(fault.id)}/evidence/${index+1}" alt="Foto ${index+1}" loading="lazy"><figcaption>Foto ${index+1}</figcaption></figure>`).join('');
       $('#faultResolutionField').hidden=resolved;$('#resolveFault').hidden=resolved;$('#faultResolutionSummary').hidden=!resolved;
       $('#faultAttentionStatus').value='Revisada';
@@ -833,6 +840,15 @@
   $('#closeMonthCalendar').onclick=()=>$('#monthCalendarModal').classList.remove('open');
   for(const [id,delta] of [['monthPrevious',-1],['monthNext',1]])$('#'+id).onclick=()=>{const date=localDate(calendarMonth+'-01');date.setMonth(date.getMonth()+delta);calendarMonth=dateKey(date).slice(0,7);agendaDate=calendarMonth+'-01';renderMonthCalendar();renderAgenda()};
   $('#monthAddTask').onclick=async()=>{const button=$('#monthAddTask');button.disabled=true;try{await populateTaskForm();if(currentMode==='partner'){$('#taskClient').value=selectedClient;refreshTaskEquipment()}taskFromCalendar=true;$('#monthCalendarModal').classList.remove('open');$('#taskModal').classList.add('open')}catch(error){toast(error.message)}finally{button.disabled=false}};
+  function renderAgendaFaults(){
+    const section=$('#agendaFaultSection');if(!section)return;
+    section.hidden=serverRole==='client';if(section.hidden)return;
+    const isClosed=fault=>/resuelt|cerrad|atendid|terminad|reparad/i.test(String(fault.status||''));
+    const rows=matrixFaults.slice().sort((a,b)=>Number(isClosed(a))-Number(isClosed(b))||String(b.reported_at||'').localeCompare(String(a.reported_at||'')));
+    $('#agendaFaultCount').textContent=`${rows.filter(fault=>!isClosed(fault)).length} pendientes · ${rows.length} reportadas`;
+    $('#agendaFaultList').innerHTML=rows.length?faultCards(rows,true):'<div class="empty">No hay fallas reportadas.</div>';
+    bindPartnerFaults();
+  }
   function renderAgenda(){
     const chosen=localDate(agendaDate),start=new Date(chosen);start.setDate(chosen.getDate()-3);
     $('#agendaDays').innerHTML=Array.from({length:7},(_,index)=>{const day=new Date(start);day.setDate(start.getDate()+index);const key=dateKey(day),count=matrixTasks.filter(task=>task.scheduled_date===key&&task.status!=='Cancelada').length;return `<button type="button" class="day ${key===agendaDate?'today':''}" data-agenda-date="${key}"><span>${day.toLocaleDateString('es-MX',{weekday:'short'})}</span><b>${day.getDate()}</b>${count?'<i></i>':''}</button>`}).join('');
@@ -843,6 +859,7 @@
     $('#agendaListTitle').textContent=agendaDate===dateKey(new Date())?'Para hoy':'Actividades';
     $('#taskList').innerHTML=rows.length?rows.map(task=>{const client=clientName(task.client_id),equipmentRow=equipment.find(row=>row[0]===task.equipment_id),done=task.status==='Terminada';return `<button type="button" class="task-card" data-task-id="${escapeHtml(task.id)}"><span class="task-time">${escapeHtml(task.scheduled_time||'--:--')}<small>${done?'Terminada':'Programada'}</small></span><span><span class="task-title">${escapeHtml(task.title)}</span><span class="task-sub">${escapeHtml(client||'Sin cliente')}${equipmentRow?` · ${escapeHtml(equipmentRow[1])}`:''}</span></span><span class="priority ${done?'done':String(task.priority).toLowerCase()==='alta'?'high':''}"></span></button>`}).join(''):'<div class="empty">No hay pendientes para esta fecha. Usa ＋ para agregar uno.</div>';
     $$('[data-task-id]').forEach(button=>button.onclick=()=>openTaskDetail(button.dataset.taskId));
+    renderAgendaFaults();
     if($('#monthCalendarModal').classList.contains('open'))renderMonthCalendar();
   }
   const money=value=>new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:2}).format(Number(value)||0);
