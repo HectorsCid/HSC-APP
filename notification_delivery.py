@@ -70,13 +70,13 @@ def manage_preferences(user_id):
     return jsonify(ok=True,options=options,notifications=notification_preferences(user_id))
 
 
-def enqueue(title, body, url, tag, category='sistema', audience='admin', client_id='', user_id='', endpoint=None):
+def enqueue(title, body, url, tag, category='sistema', audience='admin', client_id='', user_id='', endpoint=None, exclude_user_id=''):
     if audience == 'client' and not client_id:
         raise ValueError('Los avisos Partner requieren una empresa destinataria.')
     if audience == 'technician' and category == 'pagos' and not user_id:
         raise ValueError('Los avisos de reembolsos requieren el técnico destinatario.')
     notices.publish(title, body, url=url, key=tag, category=category,
-                    audience=audience, client_id=client_id, user_id=user_id)
+                    audience=audience, client_id=client_id, user_id=user_id, exclude_user_id=exclude_user_id)
     with notices.LOCK:
         state = notices._read()
         queue = state.setdefault('push_queue', [])
@@ -84,6 +84,7 @@ def enqueue(title, body, url, tag, category='sistema', audience='admin', client_
             return {'queued': False, 'configured': configured(), 'sent': 0}
         targets = [device for device in state.get('push_devices', [])
                    if device['role'] == audience
+                   and (not exclude_user_id or device['user_id'] != exclude_user_id)
                    and (not client_id or device.get('client_id') == client_id)
                    and (not user_id or device.get('user_id') == user_id)
                    and (not endpoint or device['endpoint'] == endpoint)
@@ -283,7 +284,7 @@ def inbox():
         deliveries = [dict(title=j['title'],status=t['status'],attempts=t['attempts'],error=t.get('error',''))
                       for j in reversed(state.get('push_queue',[])) for t in j['targets']
                       if all(t.get(k,'')==v for k,v in who.items())][:30]
-    return jsonify(ok=True, **result, push=dict(configured=configured(), devices=len(devices), deliveries=deliveries))
+    return jsonify(ok=True, role=who['role'], categories=NOTICE_OPTIONS.get(who['role'], {}), **result, push=dict(configured=configured(), devices=len(devices), deliveries=deliveries))
 
 
 @bp.post('/<item_id>/read')

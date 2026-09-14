@@ -94,6 +94,22 @@ class NotificationsTest(unittest.TestCase):
         self.assertEqual(notices._read()['push_queue'][0]['targets'],[])
         self.assertEqual(self.client.get('/api/operaciones/avisos').get_json()['items'],[])
 
+    def test_resolution_excludes_actor_on_all_devices_and_inbox(self):
+        self.login('technician','T1');self.subscribe('https://push.example/t1-phone');self.subscribe('https://push.example/t1-tablet')
+        self.login('technician','T2');self.subscribe('https://push.example/t2')
+        delivery.enqueue('Resuelta','body','/hsc-tecnico/','resolved-test',category='fallas',audience='technician',exclude_user_id='T1')
+        self.assertEqual([t['user_id'] for t in notices._read()['push_queue'][0]['targets']],['T2'])
+        self.login('technician','T1')
+        self.assertEqual(self.client.get('/api/operaciones/avisos').get_json()['items'],[])
+        self.login('technician','T2')
+        response=self.client.get('/api/operaciones/avisos').get_json()
+        self.assertEqual(len(response['items']),1)
+        self.assertNotIn('facturas',response['categories'])
+        self.login();self.subscribe('https://push.example/admin')
+        delivery.enqueue('Resuelta','body','/inicio-app','resolved-self',category='fallas',exclude_user_id='owner')
+        self.assertEqual(notices._read()['push_queue'][-1]['targets'],[])
+        self.assertEqual(self.client.get('/api/operaciones/avisos').get_json()['items'],[])
+
     def test_technician_payment_targets_only_its_owner(self):
         self.login('technician','T1');self.subscribe('https://push.example/one')
         self.login('technician','T2');self.subscribe('https://push.example/two')

@@ -4423,9 +4423,11 @@ def api_operaciones_resolve_fault(fault_id):
             from urllib.parse import urlencode
             query = urlencode({"client": fault.get("client_id") or "", "fault": fault.get("id") or ""})
             message = f"{fault.get('equipment_id') or 'Equipo'} · {fault.get('description') or 'Falla atendida'}"
-            enqueue('Falla resuelta', message, '/hsc-tecnico/?'+query, f"resolved-admin:{fault_id}", category='fallas')
+            actor_id = str(session.get('hsc_user_id') or ('owner' if role=='admin' else ''))
+            enqueue('Falla resuelta', message, '/hsc-tecnico/?'+query, f"resolved-admin:{fault_id}", category='fallas', exclude_user_id=actor_id)
+            enqueue('Falla resuelta', message, '/hsc-tecnico/?'+query, f"resolved-tech:{fault_id}", category='fallas', audience='technician', exclude_user_id=actor_id)
             enqueue('Tu falla fue resuelta', message, '/hsc-partner/?'+query, f"resolved-client:{fault_id}",
-                    category='fallas', audience='client', client_id=fault.get('client_id') or '')
+                    category='fallas', audience='client', client_id=fault.get('client_id') or '', exclude_user_id=actor_id)
         except Exception:
             current_app.logger.exception('No se pudo crear el aviso de resolución %s', fault_id)
         _invalidate_operations_cache()

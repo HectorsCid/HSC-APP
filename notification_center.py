@@ -46,7 +46,7 @@ def _write(state):
         return False
 
 
-def publish(title, body, *, category="sistema", key=None, url="/inicio-app", level="info", audience="admin", client_id="", user_id=""):
+def publish(title, body, *, category="sistema", key=None, url="/inicio-app", level="info", audience="admin", client_id="", user_id="", exclude_user_id=""):
     """Idempotencia por evento; volver a consultar no crea avisos duplicados."""
     try:
         with LOCK:
@@ -59,7 +59,7 @@ def publish(title, body, *, category="sistema", key=None, url="/inicio-app", lev
                 "body": str(body)[:800], "category": category, "level": level,
                 "url": url if url.startswith("/") and not url.startswith("//") else "/inicio-app",
                 "created_at": datetime.now(timezone.utc).isoformat(), "read": False,
-                "audience": audience, "client_id": client_id, "user_id": user_id,
+                "audience": audience, "client_id": client_id, "user_id": user_id, "exclude_user_id": exclude_user_id,
             })
             # Retención acotada por cantidad, sin prometer un plazo de conservación.
             state["items"] = items[:2000]
@@ -72,6 +72,7 @@ def publish(title, body, *, category="sistema", key=None, url="/inicio-app", lev
 
 def visible(row, role="admin", client_id="", user_id=""):
     return (row.get("audience", "admin") == role
+            and (not row.get('exclude_user_id') or row['exclude_user_id'] != user_id)
             and (not row.get("client_id") or row.get("client_id") == client_id)
             and (not row.get("user_id") or row.get("user_id") == user_id))
 
