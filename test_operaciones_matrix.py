@@ -152,3 +152,23 @@ def test_exact_reportes_falla_headers_keep_original_id_and_type():
 
     assert fault["id"] == "RF-100"
     assert fault["priority"] == "Grave"
+
+
+def test_fault_copy_without_id_is_replaced_by_appsheet_unique_id():
+    rows = [
+        {"range": "Fallas antiguas!A1:ZZ", "values": [
+            ["ID_Cliente", "ID_Equipo", "Fecha", "DescripcionFalla", "Estado", "Prioridad"],
+            ["TT", "TT33", "2026-08-25", "Ducteria con falla en empates", "Pendiente", "Alta"],
+        ]},
+        {"range": "ReportesFalla!A1:ZZ", "values": [
+            ["ID_ReporteFalla", "ID_Cliente", "ID_Equipo", "Fecha", "DescripcionFalla", "Estado", "TipoFalla"],
+            ["564cb2c5", "TT", "TT33", "2026-08-25", "Ducteria con falla en empates", "Pendiente", "Mecánica"],
+        ]},
+    ]
+
+    result = build_operaciones_bootstrap(rows)
+
+    assert len(result["faults"]) == 1
+    assert result["faults"][0]["id"] == "564cb2c5"
+    assert result["faults"][0]["priority"] == "Mecánica"
+    assert result["stats"]["duplicate_faults"] == 1

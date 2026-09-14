@@ -156,6 +156,7 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
     faults = []
     duplicate_faults = 0
     seen_faults = set()
+    fault_signatures = {}
     fault_rows = []
     fault_sheet_count = 0
     for title, rows in by_title.items():
@@ -169,10 +170,11 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
         client_id = _text(_pick(row, "ID_Cliente", "ID Cliente", "Cliente"))
         client_id = client_id or equipment_client.get(equipment_id, "") or linked_report.get("client_id", "")
         equipment_id = equipment_id or linked_report.get("equipment_id", "")
-        fault_id = _text(_pick(
+        source_fault_id = _text(_pick(
             row, "ID_ReporteFalla", "ID Reporte Falla", "ID_Falla", "ID Falla", "Folio", "ID",
         ))
-        fault_id = fault_id or f"FALLA-{client_id or 'SINCLIENTE'}-{position}"
+        generated_id = not bool(source_fault_id)
+        fault_id = source_fault_id or f"FALLA-{client_id or 'SINCLIENTE'}-{position}"
         if fault_id in seen_faults:
             duplicate_faults += 1
             continue
@@ -199,6 +201,25 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
         }
         if include_raw:
             fault["_raw"] = dict(row)
+        signature = (
+            client_id.casefold(), equipment_id.casefold(), report_id.casefold(),
+            " ".join(fault["description"].casefold().split()), fault["reported_at"].casefold(),
+            fault["status"].casefold(),
+        )
+        previous = fault_signatures.get(signature)
+        if previous:
+            previous_index, previous_generated = previous
+            # Algunas matrices conservan la misma fila en una pestaña antigua
+            # sin ID y en la tabla actual de AppSheet con UNIQUEID(). Se conserva
+            # siempre la fila real de AppSheet, no el identificador provisional.
+            if previous_generated and not generated_id:
+                seen_faults.discard(faults[previous_index]["id"])
+                faults[previous_index] = fault
+                seen_faults.add(fault_id)
+                fault_signatures[signature] = (previous_index, False)
+            duplicate_faults += 1
+            continue
+        fault_signatures[signature] = (len(faults), generated_id)
         faults.append(fault)
 
     client_ids = {item["id"] for item in clients}

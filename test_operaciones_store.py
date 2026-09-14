@@ -119,6 +119,30 @@ def test_selected_round_is_saved_per_client(tmp_path):
     assert store.snapshot()["clients"][0]["selected_round"] == "3"
 
 
+def test_schema_cleanup_removes_only_provisional_sheet_fault_copy(tmp_path):
+    database = tmp_path / "operations.sqlite3"
+    store = OperationsStore(local_path=database)
+    store.import_matrix_snapshot(_payload())
+    stamp = "2026-09-13T00:00:00+00:00"
+    with store.connection() as conn:
+        conn.execute("DELETE FROM operations_meta WHERE key='fault_dedupe_v1'")
+        values = (
+            "FALLA-UVMQ-9", "UVMQ", "UVMQ1", "UVMQ1_R 2", "Temperatura alta", "Alta",
+            "Reportada", "2026-09-12", "", "", "", "sheets", "{}", "synced", stamp,
+        )
+        conn.execute(
+            "INSERT INTO operations_faults(id,client_id,equipment_id,report_id,description,priority,status,reported_at,resolved_at,resolved_by,resolution_notes,source,raw_json,sync_status,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            values,
+        )
+    store._initialized = False
+
+    ids = {item["id"] for item in store.snapshot()["faults"]}
+
+    assert "F-UVM-1" in ids
+    assert "FALLA-UVMQ-9" not in ids
+
+
 def test_report_draft_is_durable_and_does_not_queue_google(tmp_path):
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
     store.import_matrix_snapshot(_payload())

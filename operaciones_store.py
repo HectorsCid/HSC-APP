@@ -13,11 +13,12 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "12"
+SCHEMA_VERSION = "13"
 
 
 def _now():
@@ -218,6 +219,7 @@ class OperationsStore:
             self._ensure_column(conn, "operations_faults", "resolved_at", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_faults", "resolved_by", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_faults", "resolution_notes", "TEXT NOT NULL DEFAULT ''")
+            self._remove_legacy_fault_duplicates(conn)
             self._upsert_meta(conn, "schema_version", SCHEMA_VERSION)
         self._initialized = True
 
@@ -241,6 +243,42 @@ class OperationsStore:
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
             (key, _text(value), _now()),
         )
+
+    def _remove_legacy_fault_duplicates(self, conn):
+        """Elimina sólo copias provisionales cuando existe la fila real de AppSheet."""
+        p = self.placeholder
+        if conn.execute(f"SELECT 1 FROM operations_meta WHERE key={p}", ("fault_dedupe_v1",)).fetchone():
+            return 0
+        rows = conn.execute(
+            "SELECT id,client_id,equipment_id,report_id,description,status,reported_at,source "
+            "FROM operations_faults"
+        ).fetchall()
+        groups = {}
+        for row in rows:
+            if _text(row[7]).casefold() != "sheets":
+                continue
+            signature = (
+                _text(row[1]).casefold(), _text(row[2]).casefold(), _text(row[3]).casefold(),
+                " ".join(_text(row[4]).casefold().split()), _text(row[5]).casefold(),
+                _text(row[6]).casefold(),
+            )
+            groups.setdefault(signature, []).append(_text(row[0]))
+        removed = 0
+        for ids in groups.values():
+            real_ids = [value for value in ids if not re.fullmatch(r"FALLA-.+-\d+", value, re.IGNORECASE)]
+            provisional_ids = [value for value in ids if re.fullmatch(r"FALLA-.+-\d+", value, re.IGNORECASE)]
+            if not real_ids:
+                continue
+            for fault_id in provisional_ids:
+                has_evidence = conn.execute(
+                    f"SELECT 1 FROM operations_fault_evidence WHERE fault_id={p} LIMIT 1", (fault_id,),
+                ).fetchone()
+                if has_evidence:
+                    continue
+                conn.execute(f"DELETE FROM operations_faults WHERE id={p} AND source='sheets'", (fault_id,))
+                removed += 1
+        self._upsert_meta(conn, "fault_dedupe_v1", str(removed))
+        return removed
 
     def _upsert_many(self, conn, table, columns, rows, update_columns, *, update_where=""):
         if not rows:
