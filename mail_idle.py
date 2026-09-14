@@ -18,6 +18,7 @@ _STARTED = False
 _MAILBOX = None
 _SUSPEND_UNTIL = 0.0
 _WAKE = threading.Event()
+_PAUSED = threading.Event()
 _STATE = {
     "enabled": False,
     "running": False,
@@ -68,12 +69,17 @@ def suspend_listener(seconds=30):
     with _LOCK:
         _SUSPEND_UNTIL = max(_SUSPEND_UNTIL, time.monotonic() + max(1, seconds))
         mailbox = _MAILBOX
-    if mailbox is not None:
+        idling = _STATE.get("stage") == "idle"
+    _PAUSED.clear()
+    if mailbox is not None and idling:
         try:
-            mailbox.shutdown()
+            mailbox.send(b"DONE\r\n")
         except Exception:
             pass
+    elif mailbox is None:
+        _PAUSED.set()
     _WAKE.set()
+    _PAUSED.wait(timeout=5)
 
 
 def resume_listener():
@@ -120,6 +126,7 @@ def _idle_once(mailbox, timeout=240):
     changed = False
     previous_timeout = mailbox.sock.gettimeout()
     mailbox.sock.settimeout(max(10, int(timeout)))
+    completed = False
     try:
         try:
             line = mailbox.readline()
@@ -127,15 +134,19 @@ def _idle_once(mailbox, timeout=240):
                 raise ConnectionError("El servidor IMAP cerro la conexion IDLE.")
             upper = line.upper()
             changed = b" EXISTS" in upper or b" RECENT" in upper
+            completed = line.startswith(tag)
         except (TimeoutError, socket.timeout):
             changed = False
     finally:
-        mailbox.send(b"DONE\r\n")
+        externally_stopped = _suspend_remaining() > 0
+        if not completed and not externally_stopped:
+            mailbox.send(b"DONE\r\n")
         mailbox.sock.settimeout(previous_timeout)
-        while True:
-            response = mailbox.readline()
-            if not response or response.startswith(tag):
-                break
+        if not completed:
+            while True:
+                response = mailbox.readline()
+                if not response or response.startswith(tag):
+                    break
         mailbox.tagged_commands.pop(tag, None)
     return changed
 
@@ -198,6 +209,10 @@ def _run(app):
             )
             backoff = 5
             while True:
+                if _suspend_remaining():
+                    _update(connected=False, last_error="", stage="suspended")
+                    _PAUSED.set()
+                    break
                 if _idle_once(mailbox):
                     fresh = _new_uids(mailbox, last_uid)
                     for uid in fresh[-10:]:
@@ -222,6 +237,8 @@ def _run(app):
                     mailbox.logout()
                 except Exception:
                     pass
+            if _suspend_remaining():
+                _PAUSED.set()
 
 
 def start_mail_idle_listener(app):

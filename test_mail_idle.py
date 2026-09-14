@@ -27,11 +27,13 @@ class MailIdleTests(unittest.TestCase):
         self.assertEqual(mail_idle._initial_uid(mailbox), 430)
         mailbox.uid.assert_not_called()
 
-    def test_suspend_listener_closes_active_idle_socket(self):
+    @patch("mail_idle._PAUSED.wait")
+    def test_suspend_listener_finishes_active_idle_command(self, wait):
         mailbox = Mock()
-        with patch.object(mail_idle, "_MAILBOX", mailbox):
+        with patch.object(mail_idle, "_MAILBOX", mailbox), patch.dict(mail_idle._STATE, {"stage": "idle"}):
             mail_idle.suspend_listener(seconds=5)
-            mailbox.shutdown.assert_called_once()
+            mailbox.send.assert_called_once_with(b"DONE\r\n")
+            wait.assert_called_once_with(timeout=5)
             mail_idle.resume_listener()
 
     def test_idle_detects_exists_and_closes_command(self):
@@ -45,6 +47,17 @@ class MailIdleTests(unittest.TestCase):
         self.assertEqual(mailbox.send.call_args_list[0].args[0], b"ABCD1 IDLE\r\n")
         self.assertEqual(mailbox.send.call_args_list[1].args[0], b"DONE\r\n")
         self.assertNotIn(b"ABCD1", mailbox.tagged_commands)
+
+    @patch("mail_idle._suspend_remaining", return_value=5)
+    def test_idle_accepts_external_done_without_sending_it_twice(self, remaining):
+        mailbox = Mock()
+        mailbox._new_tag.return_value = b"ABCD2"
+        mailbox.readline.side_effect = [b"+ idling\r\n", b"ABCD2 OK IDLE done\r\n"]
+        mailbox.sock.gettimeout.return_value = 30
+        mailbox.tagged_commands = {b"ABCD2": None}
+
+        self.assertFalse(mail_idle._idle_once(mailbox, timeout=60))
+        self.assertEqual(mailbox.send.call_args_list, [unittest.mock.call(b"ABCD2 IDLE\r\n")])
 
     def test_new_uids_only_returns_messages_after_checkpoint(self):
         mailbox = Mock()
