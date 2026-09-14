@@ -182,7 +182,6 @@
       <div class="reminder"><div class="reminder-icon">♢</div><div class="reminder-copy"><b>Resumen “Tareas para hoy”</b><span>Las tareas ya se guardan en la cuenta y quedan listas para conectarse al aviso matutino.</span></div></div>
       <div class="section-head"><h2 id="agendaListTitle">Para hoy</h2><span class="count">Ordenadas por hora</span></div>
       <div class="task-list" id="taskList"></div>
-      <div class="section-head"><h2>Pendientes de R2</h2><span class="count" id="agendaPendingCount">0 equipos</span></div><div class="equipment-list" id="pendingList"></div>
     </section>
 
     <section class="view" data-view="users">
@@ -484,10 +483,6 @@
     $('#equipmentList').innerHTML=rows.map(equipmentCard).join('')||'<div class="empty">No hay equipos con este estado en la ronda seleccionada.</div>';
     // Adelanta la siguiente pantalla del teléfono sin solicitar los 388 equipos.
     hydratePhotos($('#equipmentList'),12);
-    // La agenda conserva R2; consultar un histórico no reprograma tareas.
-    const pending=equipment.filter(e=>!reportForEquipment(e[0],'2')?.completed&&equipmentMeta[e[0]].active&&equipmentMeta[e[0]].client==='HDI'&&clientMeta.HDI?.policy);
-    $('#pendingList').innerHTML=pending.map(equipmentCard).join('');
-    $('#agendaPendingCount').textContent=`${pending.length} equipo${pending.length===1?'':'s'}`;
     $('#roundLabel').textContent=`R${selectedRound}`;$('#roundReports').textContent=all.filter(e=>e[3]).length;
     $('#roundEquipment').textContent=active.length;$('#roundPending').textContent=`${active.length-completed} pendientes · ${all.length-active.length} inactivos`;
     $('#roundProgress').style.width=`${active.length?completed/active.length*100:0}%`;
@@ -496,7 +491,7 @@
     $('#roundReportList').innerHTML=reportCards(all.filter(e=>e[3]));
     renderEquipmentDetail();
     $$('[data-equipment]').forEach(b=>b.onclick=()=>{
-      if(b.closest('#pendingList,#taskEquipment'))selectedRound='2';
+      if(b.closest('#taskEquipment'))selectedRound='2';
       selectedEquipment=b.dataset.equipment;selectedClient=equipmentMeta[selectedEquipment].client;refreshRound();showView('equipment');
     });
     bindRoundReports();
