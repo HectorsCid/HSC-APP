@@ -1252,6 +1252,19 @@ class OperationsStore:
             )
         return next(user for user in self.list_users() if user["id"] == user_id)
 
+    def delete_user_account(self, user_id):
+        self.initialize()
+        user=self.get_user_by_id(user_id)
+        if not user:
+            return False
+        if user['role'] not in {'client','technician'}:
+            raise ValueError('No se puede eliminar una cuenta administrativa.')
+        p=self.placeholder
+        with self.connection() as conn:
+            conn.execute(f'DELETE FROM operations_invites WHERE LOWER(email)=LOWER({p})', (user['email'],))
+            conn.execute(f'DELETE FROM operations_users WHERE id={p}', (user_id,))
+        return True
+
     def save_user_permissions(self, user_id, permissions, *, status=None):
         self.initialize()
         p, stamp = self.placeholder, _now()

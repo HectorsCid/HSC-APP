@@ -87,5 +87,36 @@ class NotificationsTest(unittest.TestCase):
         self.assertEqual(len(notices._read()['push_queue']),1)
         self.assertTrue(notices.PATH.exists())
 
+    def test_disabled_category_blocks_push_and_inbox(self):
+        self.login();self.subscribe()
+        state=notices._read();state['notification_preferences']={'owner':{'fallas':False}};notices._write_local(state)
+        delivery.enqueue('Falla','body','/inicio-app','fault-muted',category='fallas')
+        self.assertEqual(notices._read()['push_queue'][0]['targets'],[])
+        self.assertEqual(self.client.get('/api/operaciones/avisos').get_json()['items'],[])
+
+    def test_technician_payment_targets_only_its_owner(self):
+        self.login('technician','T1');self.subscribe('https://push.example/one')
+        self.login('technician','T2');self.subscribe('https://push.example/two')
+        delivery.enqueue('Pagado','body','/hsc-tecnico/','paid:1',category='pagos',audience='technician',user_id='T1')
+        targets=notices._read()['push_queue'][0]['targets']
+        self.assertEqual([t['user_id'] for t in targets],['T1'])
+        self.assertEqual(self.client.get('/api/operaciones/avisos').get_json()['items'],[])
+
+    def test_documents_baseline_new_item_and_change_without_duplicates(self):
+        delivery.observe_partner_documents('A',{'quotes':[{'id':'old','status':'Disponible'}]})
+        self.assertEqual(notices._read().get('items',[]),[])
+        payload={'quotes':[{'id':'old','status':'Disponible'},{'id':'new','status':'Disponible'}]}
+        delivery.observe_partner_documents('A',payload)
+        delivery.observe_partner_documents('A',payload)
+        self.assertEqual(len(notices._read()['items']),1)
+        self.assertEqual(notices._read()['items'][0]['client_id'],'A')
+        payload['quotes'][1]['status']='Aceptada'
+        delivery.observe_partner_documents('A',payload)
+        self.assertEqual(len(notices._read()['items']),2)
+
+    def test_only_admin_can_change_notification_settings(self):
+        self.login('technician','T1')
+        self.assertEqual(self.client.post('/api/operaciones/avisos/preferences/owner',json={'notifications':{}}).status_code,403)
+
 
 if __name__=='__main__':unittest.main()

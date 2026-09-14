@@ -29,7 +29,7 @@ class FaultNoticeTests(unittest.TestCase):
             'current_app':SimpleNamespace(logger=Mock()),
         }
         exec(compile(ast.Module(body=functions,type_ignores=[]),'app.py','exec'),namespace)
-        with patch.dict('sys.modules',{'facturacion_bp':SimpleNamespace(_send_push_notifications=push)}):
+        with patch.dict('sys.modules',{'facturacion_bp':SimpleNamespace(_send_push_notifications=push),'notification_delivery':SimpleNamespace(enqueue=Mock())}):
             result,status = namespace['api_operaciones_save_fault']()
             self.assertEqual(status,201)
             self.assertTrue(result['ok'])

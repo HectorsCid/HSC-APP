@@ -13,6 +13,7 @@ _START_LOCK = threading.Lock()
 _DRAIN_LOCK = threading.Lock()
 _STARTED = False
 _WAKE = threading.Event()
+_DOCUMENT_SCAN_AT = 0
 
 
 def identity():
@@ -33,9 +34,47 @@ def configured():
     return bool(os.getenv('VAPID_PUBLIC_KEY') and os.getenv('VAPID_PRIVATE_KEY'))
 
 
+NOTICE_OPTIONS = {
+    'admin': {'fallas':'Fallas nuevas y resueltas','gastos':'Gastos nuevos de técnicos','correo':'Correos nuevos','facturas':'Facturas programadas','respaldos':'Respaldos','reportes':'Reportes y generación de PDF'},
+    'technician': {'fallas':'Fallas por atender','pagos':'Estado de mis gastos y reembolsos'},
+    'client': {'fallas':'Fallas resueltas','cotizaciones':'Cotizaciones disponibles','facturas':'Facturas y cambios de estado','complementos':'Complementos de pago','reportes':'Reportes terminados'},
+}
+
+
+def notification_preferences(user_id):
+    with notices.LOCK:
+        return dict(notices._read().get('notification_preferences', {}).get(user_id, {}))
+
+
+def accepts_notice(user_id, category):
+    return notification_preferences(user_id).get(category, True) is not False
+
+
+@bp.route('/preferences/<user_id>', methods=['GET','POST'])
+def manage_preferences(user_id):
+    if identity()['role'] != 'admin':
+        return jsonify(ok=False,error='Sólo administración puede cambiar estas opciones.'),403
+    from app import OPERACIONES_STORE
+    user = {'role':'admin'} if user_id=='owner' else OPERACIONES_STORE.get_user_by_id(user_id)
+    if not user:
+        return jsonify(ok=False,error='Cuenta inexistente.'),404
+    options=NOTICE_OPTIONS.get(user['role'], {})
+    if request.method=='POST':
+        values=(request.get_json(silent=True) or {}).get('notifications', {})
+        if not isinstance(values,dict) or any(type(v) is not bool for v in values.values()):
+            return jsonify(ok=False,error='Opciones inválidas.'),400
+        with notices.LOCK:
+            state=notices._read()
+            state.setdefault('notification_preferences', {})[user_id]={k:values.get(k,True) for k in options}
+            notices._write(state)
+    return jsonify(ok=True,options=options,notifications=notification_preferences(user_id))
+
+
 def enqueue(title, body, url, tag, category='sistema', audience='admin', client_id='', user_id='', endpoint=None):
     if audience == 'client' and not client_id:
         raise ValueError('Los avisos Partner requieren una empresa destinataria.')
+    if audience == 'technician' and category == 'pagos' and not user_id:
+        raise ValueError('Los avisos de reembolsos requieren el técnico destinatario.')
     notices.publish(title, body, url=url, key=tag, category=category,
                     audience=audience, client_id=client_id, user_id=user_id)
     with notices.LOCK:
@@ -47,8 +86,9 @@ def enqueue(title, body, url, tag, category='sistema', audience='admin', client_
                    if device['role'] == audience
                    and (not client_id or device.get('client_id') == client_id)
                    and (not user_id or device.get('user_id') == user_id)
-                   and (not endpoint or device['endpoint'] == endpoint)]
-        queue.append(dict(tag=tag, title=str(title)[:160], body=str(body)[:800], url=url,
+                   and (not endpoint or device['endpoint'] == endpoint)
+                   and accepts_notice(device['user_id'], category)]
+        queue.append(dict(tag=tag, category=category, title=str(title)[:160], body=str(body)[:800], url=url,
                           created=time.time(), targets=[dict(endpoint=d['endpoint'], user_id=d['user_id'],
                           role=d['role'], client_id=d.get('client_id',''), status='pending', attempts=0, next_at=0)
                           for d in targets]))
@@ -89,6 +129,8 @@ def _drain():
                 user = OPERACIONES_STORE.get_user_by_id(device['user_id']) if OPERACIONES_STORE.enabled else None
                 if not user or user.get('status') != 'active' or user.get('role') != device['role'] or (device['role']=='client' and user.get('client_id')!=device.get('client_id')):
                     device = None
+            if device and not accepts_notice(device['user_id'], job.get('category','sistema')):
+                device = None
             if not device:
                 status, error = 'cancelled', 'El dispositivo cambió de cuenta o fue desvinculado.'
             elif time.time() - job['created'] > 86400:
@@ -136,11 +178,64 @@ def start(app):
             try:
                 with app.app_context():
                     drain()
+                scan_partner_documents(app)
             except Exception:
                 app.logger.exception('No se pudo procesar la cola de avisos')
             _WAKE.wait(30)
             _WAKE.clear()
     threading.Thread(target=run, daemon=True, name='hsc-push-delivery').start()
+
+
+def observe_partner_documents(client_id, payload):
+    """Primera lectura establece la base; las siguientes notifican novedades."""
+    import hashlib
+    events=[]
+    for group,category,label in [('quotes','cotizaciones','Cotización'),('invoices','facturas','Factura'),('complements','complementos','Complemento de pago')]:
+        for row in payload.get(group,[]):
+            if not row.get('id'):
+                continue
+            key=f"{category}:{row['id']}"
+            signature=json.dumps({k:row.get(k) for k in ('status','status_label','active','cancellation_status','paid','total','amount','description')},sort_keys=True,ensure_ascii=False)
+            events.append((key,hashlib.sha256(signature.encode()).hexdigest(),category,label,row))
+    with notices.LOCK:
+        state=notices._read()
+        baseline=state.setdefault('partner_document_baselines',{})
+        previous=baseline.get(client_id)
+    if previous is not None:
+        from urllib.parse import urlencode
+        for key,signature,category,label,row in events:
+            if previous.get(key)==signature:
+                continue
+            enqueue(f'{label} disponible' if key not in previous else f'{label} actualizada',
+                    f"{row.get('folio') or row.get('reference') or row['id']} · {row.get('description') or row.get('status_label') or row.get('status') or 'Consulta el documento en tu cuenta'}",
+                    '/hsc-partner/?'+urlencode({'client':client_id,'open':'documents'}),
+                    f'document:{client_id}:{key}:{signature}',category=category,audience='client',client_id=client_id)
+    with notices.LOCK:
+        state=notices._read()
+        state.setdefault('partner_document_baselines',{})[client_id]={key:signature for key,signature,*_ in events}
+        notices._write(state)
+
+
+def scan_partner_documents(app):
+    global _DOCUMENT_SCAN_AT
+    if time.time() < _DOCUMENT_SCAN_AT:
+        return
+    _DOCUMENT_SCAN_AT=time.time()+300
+    from app import OPERACIONES_STORE, _partner_documents_payload
+    if not OPERACIONES_STORE.enabled:
+        return
+    client_ids={u['client_id'] for u in OPERACIONES_STORE.list_users() if u['role']=='client' and u['status']=='active' and u.get('client_id')}
+    if not client_ids:
+        return
+    for client in OPERACIONES_STORE.snapshot().get('clients',[]):
+        if client['id'] not in client_ids:
+            continue
+        try:
+            with app.test_request_context('/'):
+                payload=_partner_documents_payload(client)
+            observe_partner_documents(client['id'],payload)
+        except Exception:
+            app.logger.exception('No se pudieron revisar los documentos Partner de %s',client['id'])
 
 
 @bp.get('/config')
@@ -179,6 +274,9 @@ def revoke_session_devices():
 def inbox():
     who = identity()
     result = notices.snapshot(**who)
+    preferences=notification_preferences(who['user_id'])
+    result['items']=[row for row in result['items'] if preferences.get(row.get('category'),True) is not False]
+    result['unread']=sum(not row.get('read') for row in result['items'])
     with notices.LOCK:
         state = notices._read()
         devices = [d for d in state.get('push_devices',[]) if all(d.get(k,'')==v for k,v in who.items())]

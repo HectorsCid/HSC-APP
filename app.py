@@ -3175,6 +3175,28 @@ def api_operaciones_user_permissions(user_id):
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
+@app.delete('/api/operaciones/users/<user_id>')
+def api_operaciones_delete_user(user_id):
+    denied=_operations_forbidden('admin')
+    if denied:
+        return denied
+    user=OPERACIONES_STORE.get_user_by_id(user_id)
+    if not user:
+        abort(404)
+    if user_id==session.get('hsc_user_id') or user['role'] not in {'client','technician'}:
+        return jsonify(ok=False,error='No puedes eliminar la cuenta administrativa.'),403
+    if (request.get_json(silent=True) or {}).get('confirm_email','').strip().lower()!=user['email'].lower():
+        return jsonify(ok=False,error='Escribe el correo de la cuenta para confirmar.'),400
+    OPERACIONES_STORE.delete_user_account(user_id)
+    import notification_center as notices
+    with notices.LOCK:
+        state=notices._read()
+        state['push_devices']=[d for d in state.get('push_devices',[]) if d.get('user_id')!=user_id]
+        state.get('notification_preferences',{}).pop(user_id,None)
+        notices._write(state)
+    return jsonify(ok=True)
+
+
 @app.post('/api/operaciones/tasks')
 def api_operaciones_save_task():
     denied = _operations_forbidden("admin", "technician")
@@ -3241,13 +3263,13 @@ def api_operaciones_save_expense():
         _invalidate_operations_cache()
         if role == "technician":
             try:
-                from notification_center import publish
-                publish(
+                from notification_delivery import enqueue
+                enqueue(
                     "Nuevo gasto por revisar",
                     f"{expense.get('technician_name') or 'Un técnico'} registró "
                     f"${float(expense.get('amount') or 0):,.2f}: {expense.get('concept') or 'Gasto de campo'}.",
-                    category="gastos", key=f"expense:{expense.get('id')}",
-                    url="/hsc-tecnico/?open=expenses", level="warning",
+                    category="gastos", tag=f"expense:{expense.get('id')}",
+                    url="/hsc-tecnico/?open=expenses",
                 )
             except Exception:
                 current_app.logger.exception("No se pudo crear el aviso del gasto %s", expense.get("id"))
@@ -3309,6 +3331,13 @@ def api_operaciones_expense_status(expense_id):
         )
         if not expense:
             abort(404)
+        try:
+            from notification_delivery import enqueue
+            enqueue('Actualización de tu gasto', f"{expense.get('concept','Gasto')}: {expense.get('status','')} · ${float(expense.get('amount') or 0):,.2f}",
+                    '/hsc-tecnico/?open=expenses', f"expense-status:{expense_id}:{expense.get('status')}",
+                    category='pagos', audience='technician', user_id=expense.get('user_id') or '')
+        except Exception:
+            current_app.logger.exception('No se pudo notificar el estado del gasto %s', expense_id)
         _invalidate_operations_cache()
         return jsonify({"ok": True, "expense": expense})
     except ValueError as exc:
@@ -4155,6 +4184,14 @@ def api_operaciones_finalize_report():
     try:
         draft = OPERACIONES_STORE.save_report_draft(body)
         report = OPERACIONES_STORE.finalize_report(draft["id"])
+        try:
+            from notification_delivery import enqueue
+            from urllib.parse import urlencode
+            enqueue('Reporte terminado', f"{report.get('equipment_id','Equipo')} · R{report.get('round','')}",
+                    '/hsc-partner/?'+urlencode({'client':report.get('client_id',''),'open':'reports'}),
+                    f"partner-report:{report['id']}",category='reportes',audience='client',client_id=report.get('client_id') or '')
+        except Exception:
+            current_app.logger.exception('No se pudo notificar el reporte %s',report['id'])
         payload = report.get("payload") or {}
         fault = None
         if payload.get("falla_grave") and str(payload.get("falla_descripcion") or "").strip():
@@ -4248,6 +4285,10 @@ def _notify_operations_fault(fault):
             url="/hsc-tecnico/?" + urlencode({"client": fault.get("client_id") or "", "fault": fault.get("id") or ""}),
             tag=f"fault:{fault.get('id')}", category="fallas",
         )
+        from notification_delivery import enqueue
+        enqueue('Falla por atender', f"{fault.get('client_id','')} · {fault.get('equipment_id','')}: {fault.get('description','')}",
+                '/hsc-tecnico/?'+urlencode({'client':fault.get('client_id',''),'fault':fault.get('id','')}),
+                f"tech-fault:{fault.get('id')}",category='fallas',audience='technician')
     except Exception:
         current_app.logger.exception("No se pudo enviar el aviso de falla %s", fault.get("id"))
 

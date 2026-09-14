@@ -21,6 +21,24 @@ def _payload():
     }
 
 
+def test_delete_account_preserves_work_and_prevents_reusing_invite(tmp_path):
+    store=OperationsStore(local_path=tmp_path/'delete.sqlite3')
+    store.import_matrix_snapshot(_payload())
+    store.create_invite({'token_hash':'delete-token','name':'Prueba','email':'test@example.com','role':'technician','expires_at':'2099-01-01T00:00:00+00:00'})
+    user=store.accept_invite('delete-token','hash')
+    expense=store.save_expense({'user_id':user['id'],'technician_name':'Prueba','amount':125,'concept':'Compra','expense_date':'2026-09-14'})
+    before=store.snapshot()
+    assert store.delete_user_account(user['id'])
+    assert store.get_user_by_id(user['id']) is None
+    assert store.get_user_by_email('test@example.com') is None
+    after=store.snapshot()
+    assert after['reports']==before['reports']
+    assert after['clients']==before['clients']
+    assert any(row['id']==expense['id'] for row in after['expenses'])
+    with store.connection() as conn:
+        assert conn.execute('SELECT COUNT(*) FROM operations_invites').fetchone()[0]==0
+
+
 def test_matrix_snapshot_round_trip_uses_ids_and_evidence_rows(tmp_path):
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
     counts = store.import_matrix_snapshot(_payload())

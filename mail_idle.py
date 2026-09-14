@@ -161,7 +161,7 @@ def _notify_new_message(app, uid):
             from facturacion_bp import _send_push_notifications
             _send_push_notifications(
                 f"Correo de {sender_name}", subject,
-                url=f"/correo?folder=INBOX&uid={uid}", tag=f"hsc-mail-{uid}",
+                url=f"/correo?folder=INBOX&uid={uid}", tag=f"hsc-mail-{uid}", category='correo',
             )
         _update(last_event_at=datetime.now(timezone.utc).isoformat(), last_error="")
     except Exception as exc:
