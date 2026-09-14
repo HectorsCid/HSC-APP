@@ -39,6 +39,21 @@ def test_delete_account_preserves_work_and_prevents_reusing_invite(tmp_path):
         assert conn.execute('SELECT COUNT(*) FROM operations_invites').fetchone()[0]==0
 
 
+def test_queued_fault_retry_keeps_one_record(tmp_path):
+    store=OperationsStore(local_path=tmp_path/'retry.sqlite3')
+    store.import_matrix_snapshot(_payload())
+    item={'id':'FALLA_RETRY','client_id':'UVMQ','equipment_id':'UVMQ1','description':'No enfría'}
+    first=store.save_fault(item)
+    second=store.save_fault(item)
+    assert first['id']==second['id']
+    assert len([r for r in store.snapshot()['faults'] if r['id']=='FALLA_RETRY'])==1
+    try:
+        store.save_fault(dict(item,description='Otro registro'))
+        assert False,'No debe aceptar otra falla con el mismo identificador'
+    except ValueError:
+        pass
+
+
 def test_matrix_snapshot_round_trip_uses_ids_and_evidence_rows(tmp_path):
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
     counts = store.import_matrix_snapshot(_payload())

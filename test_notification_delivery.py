@@ -94,6 +94,24 @@ class NotificationsTest(unittest.TestCase):
         self.assertEqual(notices._read()['push_queue'][0]['targets'],[])
         self.assertEqual(self.client.get('/api/operaciones/avisos').get_json()['items'],[])
 
+    def test_read_and_delete_do_not_affect_other_users(self):
+        notices.publish('Falla','body',key='shared-tech',audience='technician')
+        self.login('technician','T1')
+        item=self.client.get('/api/operaciones/avisos').get_json()['items'][0]
+        self.client.post(f"/api/operaciones/avisos/{item['id']}/read")
+        self.assertEqual(self.client.get('/api/operaciones/avisos').get_json()['unread'],0)
+        self.login('technician','T2')
+        self.assertEqual(self.client.get('/api/operaciones/avisos').get_json()['unread'],1)
+        self.login('technician','T1')
+        self.client.delete(f"/api/operaciones/avisos/{item['id']}")
+        self.assertEqual(self.client.get('/api/operaciones/avisos').get_json()['items'],[])
+        self.login('technician','T2')
+        self.assertEqual(len(self.client.get('/api/operaciones/avisos').get_json()['items']),1)
+        self.login('client','C1','OTHER')
+        self.client.post('/api/operaciones/avisos/delete-many',json={'ids':[item['id']]})
+        self.login('technician','T2')
+        self.assertEqual(len(self.client.get('/api/operaciones/avisos').get_json()['items']),1)
+
     def test_resolution_excludes_actor_on_all_devices_and_inbox(self):
         self.login('technician','T1');self.subscribe('https://push.example/t1-phone');self.subscribe('https://push.example/t1-tablet')
         self.login('technician','T2');self.subscribe('https://push.example/t2')

@@ -305,3 +305,18 @@ def test():
     result = enqueue('Prueba desde el servidor HSC','Este aviso fue enviado por el servidor a tu dispositivo.',home,
                      'test:'+str(uuid4()),audience=who['role'],client_id=who['client_id'],user_id=who['user_id'],endpoint=endpoint)
     return jsonify(ok=True, **result)
+
+
+@bp.delete('/<item_id>')
+def delete_notice(item_id):
+    notices.delete_for_user([item_id], **identity())
+    return jsonify(ok=True)
+
+
+@bp.post('/delete-many')
+def delete_many_notices():
+    ids=(request.get_json(silent=True) or {}).get('ids', [])
+    if not isinstance(ids,list) or len(ids)>2000 or any(not isinstance(value,str) for value in ids):
+        return jsonify(ok=False,error='Selección inválida.'),400
+    count=notices.delete_for_user(ids, **identity())
+    return jsonify(ok=True,deleted=count)

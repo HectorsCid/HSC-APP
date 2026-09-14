@@ -72,6 +72,7 @@ def publish(title, body, *, category="sistema", key=None, url="/inicio-app", lev
 
 def visible(row, role="admin", client_id="", user_id=""):
     return (row.get("audience", "admin") == role
+            and user_id not in row.get('deleted_by', [])
             and (not row.get('exclude_user_id') or row['exclude_user_id'] != user_id)
             and (not row.get("client_id") or row.get("client_id") == client_id)
             and (not row.get("user_id") or row.get("user_id") == user_id))
@@ -80,7 +81,7 @@ def visible(row, role="admin", client_id="", user_id=""):
 def snapshot(role="admin", client_id="", user_id=""):
     with LOCK:
         state = _read()
-        items = [row for row in state.get("items", []) if visible(row, role, client_id, user_id)]
+        items = [dict(row, read=(user_id in row['read_by'] if 'read_by' in row else bool(row.get('read')))) for row in state.get("items", []) if visible(row, role, client_id, user_id)]
         return {"items": items, "unread": sum(not row.get("read") for row in items),
                 "jobs": state.get("jobs", {}) if role == "admin" else {}}
 
@@ -91,9 +92,29 @@ def mark_read(item_id, role="admin", client_id="", user_id=""):
         found = False
         for row in state.get("items", []):
             if row["id"] == item_id and visible(row, role, client_id, user_id):
-                row["read"] = True
+                readers=row.setdefault('read_by', [])
+                if user_id not in readers:
+                    readers.append(user_id)
                 found = True
         return found, _write(state) if found else True
+
+
+def delete_for_user(item_ids, role='admin', client_id='', user_id=''):
+    with LOCK:
+        state=_read()
+        changed=0
+        for row in state.get('items',[]):
+            if row['id'] in item_ids and visible(row,role,client_id,user_id):
+                row.setdefault('deleted_by',[]).append(user_id)
+                for job in state.get('push_queue',[]):
+                    if job.get('tag')==row.get('key'):
+                        for target in job.get('targets',[]):
+                            if target.get('user_id')==user_id and target.get('status')=='pending':
+                                target.update(status='cancelled',error='Aviso eliminado por esta cuenta.')
+                changed+=1
+        if changed:
+            _write(state)
+        return changed
 
 
 def record_job(name, status, **details):

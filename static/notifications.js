@@ -32,6 +32,11 @@
   const pushStatus=document.createElement('p');pushStatus.className='notice-device';pushStatus.setAttribute('aria-live','polite');dialog.querySelector('nav').after(pushStatus);
   const activate=document.createElement('button');activate.type='button';activate.textContent='Activar y probar en este dispositivo';activate.onclick=()=>window.hscTestServerNotification?.();dialog.querySelector('nav').append(activate);
   let data={items:[]};
+  const pendingEdits=new Map();let noticeRevision=0;
+  const actionStatus=document.createElement('p');actionStatus.className='notice-device';actionStatus.setAttribute('role','status');dialog.querySelector('nav').after(actionStatus);
+  function applyPending(){data.items=data.items.filter(row=>pendingEdits.get(row.id)!=='delete').map(row=>pendingEdits.get(row.id)==='read'?{...row,read:true}:row);data.unread=data.items.filter(row=>!row.read).length;}
+  async function editNotices(rows,action){const ids=rows.map(row=>row.id).filter(id=>!pendingEdits.has(id));if(!ids.length)return;noticeRevision++;const originals=rows.filter(row=>ids.includes(row.id)).map(row=>({...row}));ids.forEach(id=>pendingEdits.set(id,action));applyPending();updateButton();render();actionStatus.textContent='Guardando cambios en segundo plano…';try{const response=await fetch(action==='delete'?`${api}/delete-many`:`${api}/${encodeURIComponent(ids[0])}/read`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});if(!response.ok)throw Error();actionStatus.textContent=action==='delete'?'Avisos eliminados de tu cuenta.':'Marcado como leído.';}catch{data.items=data.items.filter(row=>!ids.includes(row.id)).concat(originals).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));actionStatus.textContent='No se guardó el cambio. Restauramos los avisos para que puedas reintentar.';}finally{ids.forEach(id=>pendingEdits.delete(id));applyPending();updateButton();render();}}
+  const clearRead=document.createElement('button');clearRead.type='button';clearRead.textContent='Borrar leídas';clearRead.onclick=()=>editNotices(data.items.filter(row=>row.read),'delete');dialog.querySelector('nav').append(clearRead);
   dialog.querySelector('details summary').textContent='Configuración y estado de entrega';
   dialog.append(dialog.querySelector('details'));
   dialog.querySelector('details summary').after(activate);
@@ -50,10 +55,11 @@
       article.dataset.category=row.category;const icon=el('span','');icon.className='notice-icon';icon.setAttribute('aria-hidden','true');icon.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${symbols[row.category]||symbols.default}</svg>`;const copy=el('div','');copy.append(el('strong',row.title),el('p',row.body),el('small',date(row.created_at)));article.append(icon,copy);
       const actions=el('div','');actions.className='notice-actions';
       if(row.url?.startsWith('/')&&!row.url.startsWith('//')){const link=el('a','Abrir');link.href=row.url;actions.append(link);}
-      if(!row.read){const read=el('button','Marcar leído');read.onclick=async()=>{read.disabled=true;try{const result=await fetch(`${api}/${encodeURIComponent(row.id)}/read`,{method:'POST'});if(!result.ok)throw Error();row.read=true;data.unread=Math.max(0,data.unread-1);updateButton();render();}catch{read.textContent='No se guardó. Reintentar';read.disabled=false;}};actions.append(read);}
+      if(!row.read){const read=el('button','Marcar leído');read.onclick=()=>editNotices([row],'read');actions.append(read);}
+      const remove=el('button','Borrar');remove.setAttribute('aria-label',`Borrar aviso: ${row.title}`);remove.onclick=()=>editNotices([row],'delete');actions.append(remove);
       copy.append(actions);list.append(article);
     }
-    const jobs=dialog.querySelector('[data-jobs]');jobs.replaceChildren();
+    clearRead.disabled=!data.items.some(row=>row.read);const jobs=dialog.querySelector('[data-jobs]');jobs.replaceChildren();
     pushStatus.textContent=!data.push?.configured?'Falta configurar el envío en el servidor.':`Dispositivos vinculados: ${data.push.devices}. Permiso aquí: ${typeof Notification==='undefined'?'no disponible':Notification.permission}.`;
     for(const delivery of data.push?.deliveries||[]){const labels={accepted:'Aceptado por el servicio push (no confirma que se haya visto)',pending:'Pendiente de reintento',failed:'No enviado',expired:'Suscripción vencida',cancelled:'Cancelado'};jobs.append(el('p',`${delivery.title}: ${labels[delivery.status]||delivery.status} · ${delivery.attempts} intento(s). ${delivery.error||''}`));}
     for(const [key,label] of (data.role==='admin'?[['facturas_programadas','Revisión de facturas'],['reportes_automaticos','Reportes automáticos']]:[])){
@@ -71,7 +77,7 @@
     if(count)count.textContent=unread>99?'99+':String(unread||'');
   }
   let loading=false;
-  async function load(){if(loading)return;loading=true;try{const response=await fetch(api,{cache:'no-store'});if(response.status===401||response.status===403){button.hidden=true;return;}const result=await response.json();if(!response.ok||!result.ok)throw Error(result.error||'No se pudieron cargar los avisos.');data=result;updateButton();render();}catch(error){dialog.querySelector('[data-items]').replaceChildren(el('p',error.message));}finally{loading=false}}
+  async function load(){if(loading||pendingEdits.size)return;loading=true;const revision=noticeRevision;try{const response=await fetch(api,{cache:'no-store'});if(response.status===401||response.status===403){button.hidden=true;return;}const result=await response.json();if(!response.ok||!result.ok)throw Error(result.error||'No se pudieron cargar los avisos.');if(revision!==noticeRevision)return;data=result;applyPending();updateButton();render();}catch(error){dialog.querySelector('[data-items]').replaceChildren(el('p',error.message));}finally{loading=false}}
   button.onclick=()=>{dialog.showModal();load();};dialog.querySelector('header button').onclick=()=>dialog.close();dialog.querySelector('[data-refresh]').onclick=load;dialog.querySelector('select').onchange=render;
   setInterval(()=>{if(!document.hidden&&navigator.onLine)load()},30000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)load()});

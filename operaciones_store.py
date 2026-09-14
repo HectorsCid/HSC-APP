@@ -917,6 +917,11 @@ class OperationsStore:
         if not equipment or equipment["client_id"] != client_id:
             raise ValueError("El equipo no pertenece al cliente seleccionado.")
         fault_id = _text(item.get("id")) or f"FALLA_{uuid.uuid4().hex[:16].upper()}"
+        existing=next((row for row in self.snapshot()['faults'] if row['id']==fault_id),None)
+        if existing:
+            if existing['client_id']!=client_id or existing['equipment_id']!=equipment_id or existing['description']!=description:
+                raise ValueError('El identificador de falla ya corresponde a otro registro.')
+            return existing
         stamp = _now()
         reported_at = _text(item.get("reported_at")) or stamp
         source = _text(item.get("source")).casefold()
@@ -926,7 +931,7 @@ class OperationsStore:
         with self.connection() as conn:
             conn.execute(
                 f"INSERT INTO operations_faults(id,client_id,equipment_id,report_id,description,priority,status,reported_at,source,raw_json,sync_status,updated_at) "
-                f"VALUES ({','.join([p] * 12)})",
+                f"VALUES ({','.join([p] * 12)}) ON CONFLICT(id) DO NOTHING",
                 (fault_id, client_id, equipment_id, _text(item.get("report_id")), description,
                  _text(item.get("priority")) or "Alta", "Reportada", reported_at,
                  source, "{}", "pending", stamp),
