@@ -34,7 +34,18 @@ def _enabled():
 
 def listener_status():
     with _LOCK:
-        return dict(_STATE)
+        state = dict(_STATE)
+    if state["connected"]:
+        state["phase"] = "connected"
+    elif not state["enabled"]:
+        state["phase"] = "disabled"
+    elif state["last_error"]:
+        state["phase"] = "retrying"
+    elif state["running"]:
+        state["phase"] = "starting"
+    else:
+        state["phase"] = "stopped"
+    return state
 
 
 def _update(**values):

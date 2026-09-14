@@ -12,6 +12,14 @@ class MailIdleTests(unittest.TestCase):
         with patch.dict("os.environ", {"RENDER_EXTERNAL_HOSTNAME": "hsc-app-3.onrender.com"}, clear=True):
             self.assertTrue(mail_idle._enabled())
 
+    def test_listener_status_reports_retry_phase(self):
+        with patch.object(mail_idle, "_STATE", {
+            "enabled": True, "running": True, "connected": False,
+            "last_uid": 0, "last_event_at": "", "last_connected_at": "",
+            "last_error": "temporary failure",
+        }):
+            self.assertEqual(mail_idle.listener_status()["phase"], "retrying")
+
     def test_idle_detects_exists_and_closes_command(self):
         mailbox = Mock()
         mailbox._new_tag.return_value = b"ABCD1"
