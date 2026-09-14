@@ -49,6 +49,8 @@ assert.match(html, /data-expense-status="Liquidado"/);
 assert.match(html, /id="pendingExpenseNavBadge"/);
 assert.doesNotMatch(html, /Pendientes de R2|id="pendingList"|id="agendaPendingCount"/);
 assert.match(html, /id="singleWorkReport"/);
+assert.match(html, /id="openOccasionalReport"/);
+assert.match(html, /id="standaloneReportModal"/);
 assert.match(html, /Generar reporte único/);
 assert.match(script, /function openStandaloneReport\(type,equipmentId=''/);
 assert.match(html, /data-view="expenses"/);
