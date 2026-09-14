@@ -71,7 +71,14 @@ app.register_blueprint(facturacion_bp)
 from mail_bp import mail_bp
 app.register_blueprint(mail_bp)
 from mail_idle import start_mail_idle_listener
-start_mail_idle_listener(app)
+
+
+@app.before_request
+def ensure_mail_idle_listener():
+    """Arranca IDLE cuando Gunicorn ya termino de cargar la aplicacion."""
+    start_mail_idle_listener(app)
+
+
 print(">>> Blueprint facturacion registrado")
 print(app.url_map)
 
