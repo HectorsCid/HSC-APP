@@ -27,7 +27,8 @@ _STATE = {
 
 
 def _enabled():
-    default = "1" if os.getenv("RENDER") else "0"
+    on_render = any(os.getenv(name) for name in ("RENDER", "RENDER_SERVICE_ID", "RENDER_EXTERNAL_HOSTNAME"))
+    default = "1" if on_render else "0"
     return os.getenv("MAIL_IDLE_ENABLED", default).strip().lower() in {"1", "true", "yes", "on"}
 
 
