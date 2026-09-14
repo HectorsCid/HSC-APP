@@ -84,6 +84,25 @@ class SmtpMailerTests(unittest.TestCase):
         self.assertEqual(result["recipients"], ["uno@example.com", "dos@example.com"])
         self.assertEqual({part.get_filename() for part in message.iter_attachments()}, {"Cotizacion-10.pdf", "orden.pdf"})
 
+    def test_adds_thread_headers_and_returns_message_id(self):
+        smtp = MagicMock()
+        smtp.__enter__.return_value = smtp
+        env = {"SMTP_USER": "hsc@example.com", "SMTP_PASSWORD": "secret", "SMTP_FROM": "hsc@example.com"}
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch.object(smtp_mailer.smtplib, "SMTP_SSL", return_value=smtp),
+            patch.object(smtp_mailer, "_save_sent_copy", return_value=True),
+        ):
+            result = smtp_mailer.send_quote_email(
+                recipient="cliente@example.com", subject="Cotización 10", body="Seguimiento",
+                pdf_bytes=b"%PDF", folio="10", in_reply_to="<segundo@example.com>",
+                references=["<primero@example.com>", "<segundo@example.com>"],
+            )
+        message = smtp.send_message.call_args.args[0]
+        self.assertEqual(message["In-Reply-To"], "<segundo@example.com>")
+        self.assertEqual(message["References"], "<primero@example.com> <segundo@example.com>")
+        self.assertEqual(result["message_id"], str(message["Message-ID"]))
+
     def test_sent_copy_uses_carrierzone_folder(self):
         mailbox = MagicMock()
         mailbox.__enter__.return_value = mailbox

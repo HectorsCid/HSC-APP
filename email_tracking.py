@@ -43,10 +43,21 @@ def delivery_status(document_type, document_id, deliveries=None):
         "last_sent_at": str(record.get("last_sent_at") or ""),
         "recipients": list(record.get("recipients") or []),
         "cc": list(record.get("cc") or []),
+        "message_id": str(record.get("last_message_id") or ""),
     }
 
 
-def record_email_delivery(document_type, document_id, *, recipients=None, cc=None, client_name="", folio=""):
+def email_thread_headers(document_type, document_id, deliveries=None):
+    deliveries = deliveries if isinstance(deliveries, dict) else read_email_deliveries()
+    record = deliveries.get(_key(document_type, document_id)) or {}
+    last_message_id = str(record.get("last_message_id") or "").strip()
+    references = [str(item).strip() for item in (record.get("references") or []) if str(item).strip()]
+    if last_message_id and last_message_id not in references:
+        references.append(last_message_id)
+    return {"in_reply_to": last_message_id, "references": references[-50:]}
+
+
+def record_email_delivery(document_type, document_id, *, recipients=None, cc=None, client_name="", folio="", message_id=""):
     with _LOCK:
         if DATA_FILE.exists():
             try:
@@ -61,6 +72,12 @@ def record_email_delivery(document_type, document_id, *, recipients=None, cc=Non
         deliveries = deliveries if isinstance(deliveries, dict) else {}
         key = _key(document_type, document_id)
         prior = deliveries.get(key) or {}
+        clean_message_id = str(message_id or "").strip()
+        references = [str(item).strip() for item in (prior.get("references") or []) if str(item).strip()]
+        prior_message_id = str(prior.get("last_message_id") or "").strip()
+        for item in (prior_message_id, clean_message_id):
+            if item and item not in references:
+                references.append(item)
         deliveries[key] = {
             "document_type": str(document_type or "").strip().lower(),
             "document_id": str(document_id or "").strip(),
@@ -70,6 +87,9 @@ def record_email_delivery(document_type, document_id, *, recipients=None, cc=Non
             "last_sent_at": datetime.now().isoformat(timespec="seconds"),
             "recipients": list(recipients or []),
             "cc": list(cc or []),
+            "thread_root_message_id": str(prior.get("thread_root_message_id") or clean_message_id),
+            "last_message_id": clean_message_id or prior_message_id,
+            "references": references[-50:],
         }
         DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
         DATA_FILE.write_text(json.dumps(deliveries, ensure_ascii=False, indent=2), encoding="utf-8")

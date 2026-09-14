@@ -52,7 +52,7 @@ from werkzeug.utils import safe_join, secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 from smtp_mailer import authorized_to_send, parse_recipients, send_quote_email, smtp_config, trusted_device_token
 from cfdi_drive import delete_pending_document, list_pending_documents, save_pending_document
-from email_tracking import delivery_status, read_email_deliveries, record_email_delivery
+from email_tracking import delivery_status, email_thread_headers, read_email_deliveries, record_email_delivery
 from reportes_bp import (
     reportes_bp,
     serve_drive_image_ref_fast,
@@ -5014,6 +5014,7 @@ def api_enviar_cotizacion(qid):
             "Ing. Héctor Silva Cid\n\n"
             "Cel: 5527605496"
         )
+        thread = email_thread_headers("cotizacion", str(cotizacion.get("id") or folio))
         result = send_quote_email(
             recipient=request.form.get("email", ""),
             cc=request.form.get("cc", ""),
@@ -5022,11 +5023,13 @@ def api_enviar_cotizacion(qid):
             pdf_bytes=_pdf_cotizacion_bytes(cotizacion),
             folio=folio,
             extra_attachments=extras,
+            **thread,
         )
         delivery = record_email_delivery(
             "cotizacion", str(cotizacion.get("id") or folio),
             recipients=result.get("recipients") or [], cc=result.get("cc") or [],
             client_name=str(cotizacion.get("cliente") or ""), folio=folio,
+            message_id=result.get("message_id") or "",
         )
         copy_warning = result.get("sent_copy_saved") is False
         response = jsonify({

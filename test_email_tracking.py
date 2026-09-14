@@ -18,13 +18,19 @@ class EmailTrackingTests(unittest.TestCase):
                 first = email_tracking.record_email_delivery(
                     "factura", "invoice-1", recipients=["cliente@example.com"],
                     cc=["supervisor@example.com"], client_name="Cliente", folio="1594",
+                    message_id="<primero@example.com>",
                 )
+                thread = email_tracking.email_thread_headers("factura", "invoice-1")
                 second = email_tracking.record_email_delivery(
                     "factura", "invoice-1", recipients=["cliente@example.com"], folio="1594",
+                    message_id="<segundo@example.com>",
                 )
             self.assertTrue(first["sent"])
             self.assertEqual(second["sent_count"], 2)
             self.assertEqual(second["recipients"], ["cliente@example.com"])
+            self.assertEqual(thread["in_reply_to"], "<primero@example.com>")
+            self.assertEqual(thread["references"], ["<primero@example.com>"])
+            self.assertEqual(second["message_id"], "<segundo@example.com>")
             self.assertEqual(backup.call_count, 2)
 
 

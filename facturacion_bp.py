@@ -26,7 +26,7 @@ from cfdi_drive import (
     load_json_file, load_payments_index, move_pending_documents,
 )
 from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config, trusted_device_token
-from email_tracking import delivery_status, read_email_deliveries, record_email_delivery
+from email_tracking import delivery_status, email_thread_headers, read_email_deliveries, record_email_delivery
 from factura_pdf_hsc import build_invoice_pdf_bytes, parse_cfdi
 import notification_center as notices
 
@@ -2492,12 +2492,14 @@ def _stamp_scheduled_invoice(schedule, template, run_key):
         subject = str(schedule.get("subject") or "Factura HSC {folio}").replace("{folio}", folio).replace("{cliente}", str(template.get("client_name") or ""))
         delivery = delivery_status("factura", inv_id)
         if not delivery.get("sent"):
+            thread = email_thread_headers("factura", inv_id)
             mail_result = send_cfdi_email(
                 recipient=schedule.get("recipient") or (template.get("receiver") or {}).get("email") or "",
                 cc=schedule.get("cc") or "", subject=subject, body=schedule.get("message") or "",
                 pdf_bytes=pdf, xml_bytes=xml, folio=folio,
+                **thread,
             )
-            record_email_delivery("factura", inv_id, recipients=mail_result.get("recipients") or [], cc=mail_result.get("cc") or [], folio=folio)
+            record_email_delivery("factura", inv_id, recipients=mail_result.get("recipients") or [], cc=mail_result.get("cc") or [], folio=folio, message_id=mail_result.get("message_id") or "")
         data["email_sent"] = True
     return data
 
@@ -2712,6 +2714,7 @@ def api_invoice_email(inv_id):
         else:
             pdf = _fa_get_binary(f"/invoices/{inv_id}/pdf", "application/pdf")
             xml = _fa_get_binary(f"/invoices/{inv_id}/xml", "application/xml")
+        thread = email_thread_headers("factura", inv_id)
         result = send_cfdi_email(
             recipient=recipient,
             cc=body.get("cc", ""),
@@ -2721,10 +2724,12 @@ def api_invoice_email(inv_id):
             xml_bytes=xml,
             folio=folio,
             extra_attachments=extras,
+            **thread,
         )
         delivery = record_email_delivery(
             "factura", inv_id, recipients=result.get("recipients") or [], cc=result.get("cc") or [],
             folio=folio,
+            message_id=result.get("message_id") or "",
         )
         copy_warning = result.get("sent_copy_saved") is False
         response = jsonify({

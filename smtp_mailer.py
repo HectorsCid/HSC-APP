@@ -84,6 +84,16 @@ def _safe_header(value, fallback):
     return cleaned[:240] or fallback
 
 
+def _message_ids(value):
+    values = value if isinstance(value, (list, tuple)) else [value]
+    found = []
+    for item in values:
+        for message_id in re.findall(r"<[^<>\s]+@[^<>\s]+>", str(item or "")):
+            if message_id not in found:
+                found.append(message_id)
+    return found
+
+
 def _save_sent_copy(message, cfg):
     host = os.getenv("IMAP_HOST", cfg["host"]).strip()
     try:
@@ -105,7 +115,7 @@ def _save_sent_copy(message, cfg):
         return False
 
 
-def send_email_with_attachments(*, recipient, subject, body, attachments, cc="", from_name=""):
+def send_email_with_attachments(*, recipient, subject, body, attachments, cc="", from_name="", in_reply_to="", references=None):
     cfg = smtp_config()
     if not cfg["configured"]:
         raise RuntimeError("Falta configurar el correo de salida de HSC en Render.")
@@ -131,6 +141,14 @@ def send_email_with_attachments(*, recipient, subject, body, attachments, cc="",
     message["Reply-To"] = cfg["from_email"]
     message["Date"] = formatdate(localtime=True)
     message["Message-ID"] = make_msgid(domain=cfg["from_email"].partition("@")[2] or None)
+    parent_ids = _message_ids(in_reply_to)
+    reference_ids = _message_ids(references or [])
+    if parent_ids:
+        parent_id = parent_ids[-1]
+        if parent_id not in reference_ids:
+            reference_ids.append(parent_id)
+        message["In-Reply-To"] = parent_id
+        message["References"] = " ".join(reference_ids[-50:])
     message["Subject"] = _safe_header(subject, "Documento de HSC Refrigeración")
     plain_body = str(body).strip()
     message.set_content(plain_body)
@@ -169,10 +187,11 @@ def send_email_with_attachments(*, recipient, subject, body, attachments, cc="",
         "from_name": sender_name,
         "attachments": len(attachments),
         "sent_copy_saved": sent_copy_saved,
+        "message_id": str(message["Message-ID"]),
     }
 
 
-def send_cfdi_email(*, recipient, subject, body, pdf_bytes, xml_bytes, folio, extra_attachments=None, cc=""):
+def send_cfdi_email(*, recipient, subject, body, pdf_bytes, xml_bytes, folio, extra_attachments=None, cc="", in_reply_to="", references=None):
     if not pdf_bytes or not xml_bytes:
         raise ValueError("No se pudieron preparar el PDF y XML de la factura.")
 
@@ -195,10 +214,12 @@ def send_cfdi_email(*, recipient, subject, body, pdf_bytes, xml_bytes, folio, ex
         attachments=attachments,
         cc=cc,
         from_name="HSC Facturación",
+        in_reply_to=in_reply_to,
+        references=references,
     )
 
 
-def send_quote_email(*, recipient, subject, body, pdf_bytes, folio, extra_attachments=None, cc=""):
+def send_quote_email(*, recipient, subject, body, pdf_bytes, folio, extra_attachments=None, cc="", in_reply_to="", references=None):
     if not pdf_bytes:
         raise ValueError("No se pudo preparar el PDF de la cotización.")
     safe_folio = re.sub(r"[^A-Za-z0-9._-]+", "-", str(folio or "Cotizacion")).strip("-.") or "Cotizacion"
@@ -215,4 +236,6 @@ def send_quote_email(*, recipient, subject, body, pdf_bytes, folio, extra_attach
         attachments=attachments,
         cc=cc,
         from_name="Hector Silva Cid",
+        in_reply_to=in_reply_to,
+        references=references,
     )
