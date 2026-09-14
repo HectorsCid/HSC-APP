@@ -684,8 +684,29 @@
     let state=isQuote?(item.status||'Disponible'):isInvoice?(cancellationState==='pending'?'Cancelación en proceso':cancellationState==='rejected'?'Cancelación rechazada':cancellationState==='canceled'||!item.active?'Cancelada':item.paid?'Pagada':Number(item.remaining_balance)>0?'Pendiente de pago':'Vigente'):'Aplicado';
     const stateClass=/cancel/i.test(state)?'cancelled':/pend/i.test(state)?'pending':'';
     const files=`<a class="mini-btn" target="_blank" rel="noopener" href="${escapeHtml(item.pdf_url)}">PDF</a>${item.xml_url?`<a class="mini-btn" target="_blank" rel="noopener" href="${escapeHtml(item.xml_url)}">XML</a>`:''}`;
-    const description=isQuote&&item.description?`<small class="partner-doc-description">${escapeHtml(item.description)}</small>`:'';
+    const description=(isQuote||isInvoice)?`<small class="partner-doc-description" ${isInvoice?`data-invoice-description="${escapeHtml(item.id)}"`:''}>${escapeHtml(item.description||(isInvoice?'Descripción pendiente de consultar':''))}</small>`:'';
     return `<article class="partner-doc-card"><span class="partner-doc-icon">${partnerDocumentIcon(type)}</span><span class="partner-doc-copy"><b>${escapeHtml(title)}</b>${description}<small>${escapeHtml(detail)}</small><span class="partner-doc-state ${stateClass}">${escapeHtml(state)}</span></span><span class="partner-doc-files">${files}</span></article>`;
+  }
+  const invoiceDescriptionJobs=new Set();
+  async function hydrateInvoiceDescriptions(){
+    if(partnerDocumentTab!=='invoices'||!navigator.onLine)return;
+    const clientId=partnerDocumentsClient,payload=partnerDocuments;
+    if(!payload||invoiceDescriptionJobs.has(clientId))return;
+    invoiceDescriptionJobs.add(clientId);
+    try{for(const item of payload.invoices||[]){
+      if(selectedClient!==clientId||partnerDocumentTab!=='invoices'||current!=='partnerDocuments')break;
+      if(item.description)continue;
+      try{
+        const response=await fetch(`/api/operaciones/partner-documents/invoice-description/${encodeURIComponent(item.id)}?client_id=${encodeURIComponent(clientId)}`,{headers:{Accept:'application/json'}}),data=await response.json();
+        if(!response.ok||!data.ok)continue;
+        item.description=data.description||'Sin descripción en el comprobante';
+        const latest=readPartnerDocumentCache(clientId)||payload;
+        const cachedItem=(latest.invoices||[]).find(row=>row.id===item.id);if(cachedItem)cachedItem.description=item.description;
+        writePartnerDocumentCache(clientId,latest);
+        if(partnerDocumentsClient===clientId){const live=(partnerDocuments.invoices||[]).find(row=>row.id===item.id);if(live)live.description=item.description;
+          for(const node of $$('[data-invoice-description]'))if(node.dataset.invoiceDescription===item.id)node.textContent=item.description;}
+      }catch(_){}
+    }}finally{invoiceDescriptionJobs.delete(clientId)}
   }
   function renderPartnerDocuments(){
     const payload=partnerDocuments||{quotes:[],invoices:[],complements:[],summary:{}};
@@ -695,6 +716,7 @@
     $('#partnerDocumentsTitle').textContent=labels[partnerDocumentTab];
     $('#partnerDocumentsList').innerHTML=rows.length?rows.map(item=>partnerDocumentCard(item,partnerDocumentTab)).join(''):`<div class="empty">Todavía no hay ${labels[partnerDocumentTab].toLowerCase()} disponibles para este cliente.</div>`;
     $$('[data-partner-doc-tab]').forEach(button=>button.classList.toggle('active',button.dataset.partnerDocTab===partnerDocumentTab));
+    hydrateInvoiceDescriptions();
   }
   async function loadPartnerDocuments(force=false){
     const requestedClient=selectedClient,memory=!force&&partnerDocumentsClient===requestedClient?partnerDocuments:null,cached=memory||readPartnerDocumentCache(requestedClient);
@@ -703,6 +725,8 @@
     try{
       const response=await fetch(`/api/operaciones/partner-documents?client_id=${encodeURIComponent(requestedClient)}${force?'&refresh=1':''}`,{headers:{Accept:'application/json'}}),payload=await response.json();
       if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudieron consultar los documentos.');
+      const previous=readPartnerDocumentCache(requestedClient)||cached;
+      for(const item of payload.invoices||[])if(!item.description)item.description=(previous?.invoices||[]).find(row=>row.id===item.id)?.description||'';
       writePartnerDocumentCache(requestedClient,payload);
       if(selectedClient===requestedClient){partnerDocuments=payload;partnerDocumentsClient=requestedClient;renderPartnerDocuments()}
       if(account.isOwner)warmPartnerDocumentCache(requestedClient);

@@ -1,0 +1,10 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const text=fs.readFileSync('templates/app_operativa_demo.html','utf8');
+const body=text.slice(text.indexOf('  function partnerDocumentCard('),text.indexOf('  const invoiceDescriptionJobs='));
+const ns={partnerDocumentDate:v=>v,partnerDocumentIcon:()=>'',escapeHtml:v=>String(v||'').replaceAll('<','&lt;'),money:v=>v};
+vm.runInNewContext(body,ns);
+const html=ns.partnerDocumentCard({id:'i1',date:'2026-08-11',description:'Cambio de compresor <script>',active:true,total:123},'invoices');
+assert(html.includes('Cambio de compresor &lt;script>'));
+assert(html.includes('2026-08-11'));
+assert(html.includes('data-invoice-description="i1"'));
+console.log('OK: factura muestra descripción escapada sin perder fecha ni identificación.');

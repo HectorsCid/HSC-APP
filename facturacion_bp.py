@@ -6,6 +6,7 @@ from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from base64 import b64decode
 from threading import Lock
+from functools import lru_cache
 from uuid import uuid4
 from xml.etree import ElementTree as ET
 import hashlib
@@ -800,6 +801,27 @@ def _reconcile_pending_cancellation_cache(pending_keys):
                 _CFDI_CANCELLATION_CACHE.pop(key, None)
 
 
+def _invoice_concept_description(inv):
+    descriptions = []
+    for item in _pick(inv, 'Items', 'Conceptos') or []:
+        if not isinstance(item, dict):
+            continue
+        value = ' '.join(str(_pick(item, 'Description', 'Descripcion') or '').split())
+        if value and value not in descriptions:
+            descriptions.append(value)
+    return (' · '.join(descriptions[:2]) + (f' · y {len(descriptions)-2} conceptos más' if len(descriptions)>2 else ''))[:400]
+
+
+@lru_cache(maxsize=1024)
+def partner_invoice_description(invoice_id):
+    """Los listados históricos omiten conceptos; leer el XML una vez por factura."""
+    content = _decode_facturama_file(_fm_request('GET', f'/Cfdi/xml/issued/{invoice_id}'))
+    root = ET.fromstring(content)
+    items = [{'Description': node.get('Descripcion', '')} for node in root.iter()
+             if node.tag.rsplit('}', 1)[-1] == 'Concepto']
+    return _invoice_concept_description({'Items': items})
+
+
 def _facturama_invoice_row(inv):
     """Normaliza tanto el resultado plano de búsqueda como el detalle de Facturama."""
     receiver = _pick(inv, "Receiver", "Customer") or {}
@@ -819,6 +841,7 @@ def _facturama_invoice_row(inv):
     payment_method = str(_pick(inv, "PaymentMethod") or "").strip().upper()[:3]
     return {
         "id": inv_id,
+        "description": _invoice_concept_description(inv),
         "uuid": str(uuid or "").strip(),
         "series": str(_pick(inv, "Serie", "Series") or "").strip(),
         "folio": str(_pick(inv, "Folio") or "").strip(),

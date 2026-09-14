@@ -3524,6 +3524,7 @@ def _partner_documents_payload(client, refresh=False):
             invoice_id = str(item.get("id") or "")
             invoices.append({
                 "id": invoice_id, "folio": _partner_document_folio(item),
+                "description": str(item.get("description") or ""),
                 "reference": _partner_document_reference(item),
                 "date": str(item.get("date") or ""), "total": float(item.get("total") or 0),
                 "active": bool(item.get("active")), "paid": bool(item.get("paid")),
@@ -3629,6 +3630,21 @@ def api_operaciones_partner_quote_pdf(quote_id):
     filename = secure_filename(f"Cotizacion-{quote_id}.pdf") or "cotizacion.pdf"
     return send_file(io.BytesIO(content), mimetype="application/pdf", as_attachment=False,
                      download_name=filename)
+
+
+@app.get('/api/operaciones/partner-documents/invoice-description/<invoice_id>')
+def api_operaciones_partner_invoice_description(invoice_id):
+    client, error = _partner_documents_client()
+    if error:
+        return error
+    if not _partner_document_allowed(client, invoice_id, 'invoice'):
+        abort(404)
+    try:
+        from facturacion_bp import partner_invoice_description
+        return jsonify(ok=True, description=partner_invoice_description(invoice_id))
+    except Exception:
+        current_app.logger.exception('No se pudo consultar la descripción de la factura %s', invoice_id)
+        return jsonify(ok=False, error='No se pudo consultar la descripción.'), 502
 
 
 @app.get('/api/operaciones/partner-documents/invoices/<path:invoice_id>/<file_type>')
