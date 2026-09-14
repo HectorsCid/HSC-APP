@@ -235,6 +235,11 @@ class OperationsStore:
                 status TEXT NOT NULL DEFAULT 'Pendiente', completed_at TEXT NOT NULL DEFAULT '',
                 created_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             )""",
+            """CREATE TABLE IF NOT EXISTS operations_task_assignees (
+                task_id TEXT NOT NULL, user_id TEXT NOT NULL,
+                PRIMARY KEY(task_id,user_id),
+                FOREIGN KEY(task_id) REFERENCES operations_tasks(id) ON DELETE CASCADE
+            )""",
             """CREATE TABLE IF NOT EXISTS operations_expenses (
                 id TEXT PRIMARY KEY, user_id TEXT NOT NULL, technician_name TEXT NOT NULL DEFAULT '',
                 client_id TEXT NOT NULL DEFAULT '', equipment_id TEXT NOT NULL DEFAULT '',
@@ -568,6 +573,9 @@ class OperationsStore:
                 "assigned_user_id,priority,status,completed_at,created_by,created_at,updated_at "
                 "FROM operations_tasks ORDER BY scheduled_date,scheduled_time,id"
             ).fetchall()
+            task_assignees = {}
+            for task_id, user_id in conn.execute("SELECT task_id,user_id FROM operations_task_assignees ORDER BY user_id").fetchall():
+                task_assignees.setdefault(task_id, []).append(user_id)
             expenses = conn.execute(
                 "SELECT id,user_id,technician_name,client_id,equipment_id,repair_id,expense_date,amount,"
                 "category,concept,payment_method,reimbursable,status,admin_notes,receipt_ref,created_by,created_at,updated_at "
@@ -607,6 +615,7 @@ class OperationsStore:
             "id": row[0], "title": row[1], "details": row[2], "scheduled_date": row[3],
             "scheduled_time": row[4], "client_id": row[5], "equipment_id": row[6],
             "assigned_user_id": row[7], "priority": row[8], "status": row[9],
+            "assigned_user_ids": task_assignees.get(row[0]) or ([row[7]] if row[7] else []),
             "completed_at": row[10], "created_by": row[11], "created_at": row[12],
             "updated_at": row[13],
         } for row in tasks]
@@ -992,6 +1001,18 @@ class OperationsStore:
         if not title or not _valid_date(scheduled_date):
             raise ValueError("Actividad y fecha son obligatorias.")
         task_id = _text(item.get("id")) or f"TASK_{uuid.uuid4().hex[:16].upper()}"
+        assigned = item.get('assigned_user_ids')
+        if assigned is None:
+            assigned = [_text(item.get('assigned_user_id'))] if item.get('assigned_user_id') else []
+        if not isinstance(assigned, list) or any(not isinstance(value, str) for value in assigned):
+            raise ValueError('Selecciona los técnicos responsables.')
+        assigned = list(dict.fromkeys(value.strip() for value in assigned if value.strip()))
+        if 'assigned_user_ids' in item and not assigned:
+            raise ValueError('Selecciona al menos un responsable.')
+        for user_id in assigned if 'assigned_user_ids' in item else []:
+            user = self.get_user_by_id(user_id) if user_id != 'owner' else {'status':'active','role':'admin'}
+            if not user or user.get('status') != 'active' or user.get('role') not in {'admin','technician'}:
+                raise ValueError('Uno de los responsables no es un técnico activo.')
         status = _text(item.get("status")) or "Pendiente"
         if status not in {"Pendiente", "En curso", "Terminada", "Cancelada"}:
             raise ValueError("El estado de la tarea no es válido.")
@@ -1006,10 +1027,13 @@ class OperationsStore:
                 "scheduled_time=excluded.scheduled_time,client_id=excluded.client_id,equipment_id=excluded.equipment_id,"
                 "assigned_user_id=excluded.assigned_user_id,priority=excluded.priority,status=excluded.status,updated_at=excluded.updated_at",
                 (task_id, title, _text(item.get("details")), scheduled_date, _text(item.get("scheduled_time")),
-                 _text(item.get("client_id")), _text(item.get("equipment_id")), _text(item.get("assigned_user_id")),
+                 _text(item.get("client_id")), _text(item.get("equipment_id")), assigned[0] if assigned else '',
                  _text(item.get("priority")) or "Normal", status, _text(item.get("completed_at")),
                  _text(item.get("created_by")), created_at, stamp),
             )
+            conn.execute(f"DELETE FROM operations_task_assignees WHERE task_id={p}", (task_id,))
+            for user_id in assigned:
+                conn.execute(f"INSERT INTO operations_task_assignees(task_id,user_id) VALUES ({p},{p})", (task_id,user_id))
         return next(task for task in self.snapshot()["tasks"] if task["id"] == task_id)
 
     def complete_task(self, task_id):

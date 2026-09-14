@@ -2983,7 +2983,8 @@ def _scope_operaciones_payload(payload):
         scoped = dict(payload)
         user_id = str(session.get("hsc_user_id") or "").strip()
         scoped["tasks"] = [task for task in payload.get("tasks", [])
-                           if not task.get("assigned_user_id") or task.get("assigned_user_id") == user_id]
+                           if not task.get("assigned_user_ids", [task.get("assigned_user_id")] if task.get("assigned_user_id") else [])
+                           or user_id in task.get("assigned_user_ids", [task.get("assigned_user_id")])]
         scoped["expenses"] = [expense for expense in payload.get("expenses", [])
                               if expense.get("user_id") == user_id]
         return scoped
@@ -3201,6 +3202,10 @@ def api_operaciones_save_task():
     body = dict(request.get_json(silent=True) or {})
     if _operations_role() == "technician":
         body["assigned_user_id"] = str(session.get("hsc_user_id") or "")
+        body["assigned_user_ids"] = [body["assigned_user_id"]]
+        existing = next((task for task in OPERACIONES_STORE.snapshot().get('tasks', []) if task['id'] == body.get('id')), None)
+        if existing and existing.get('created_by') != body['assigned_user_id']:
+            abort(403)
     body["created_by"] = str(session.get("hsc_user_id") or "owner")
     try:
         task = OPERACIONES_STORE.save_task(body)
@@ -3218,7 +3223,8 @@ def api_operaciones_complete_task(task_id):
     task = next((item for item in OPERACIONES_STORE.snapshot().get("tasks", []) if item["id"] == task_id), None)
     if not task:
         abort(404)
-    if _operations_role() == "technician" and task.get("assigned_user_id") not in {"", str(session.get("hsc_user_id") or "")}:
+    assignees = task.get('assigned_user_ids', [task['assigned_user_id']] if task.get('assigned_user_id') else [])
+    if _operations_role() == "technician" and assignees and str(session.get("hsc_user_id") or "") not in assignees:
         abort(404)
     task = OPERACIONES_STORE.complete_task(task_id)
     _invalidate_operations_cache()
