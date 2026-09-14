@@ -104,14 +104,14 @@
       <span id="matrixStatus" hidden>Conectando con la Hoja Matriz…</span>
       <div class="search"><span>⌕</span><input id="clientSearch" type="search" placeholder="Buscar cliente, clave o ubicación"></div>
       <div class="section-head"><h2>Clientes</h2><div><span class="count" id="clientCount"></span> <button class="mini-btn" id="openUsers" data-admin-only>Usuarios</button></div></div>
-      <div class="management-bar"><button class="primary" id="addOperationalClient" data-permission="addClients">＋ Agregar cliente</button><button class="secondary" id="catalogScope">Ver catálogo completo</button><button class="secondary" id="orderClients" data-admin-only>Ordenar clientes</button></div>
+      <div class="management-bar"><button class="primary" id="addOperationalClient" data-permission="addClients">＋ Agregar cliente</button><button class="secondary" id="catalogScope">Ver clientes sin póliza</button><button class="secondary" id="orderClients" data-admin-only>Ordenar clientes</button></div>
       <div class="client-list" id="clientList"></div>
       <p class="editor-note" id="persistenceNotice">Las altas y ediciones se guardan en la base operativa y quedan pendientes de sincronización con Google.</p>
     </section>
 
     <section class="view" data-view="client">
       <article class="hero"><div class="hero-top"><div class="hero-logo">HI</div><div><h2>Holiday Inn Diamante</h2><p>HDI · Santiago de Querétaro</p></div></div><div class="address"><span>⌖</span><span>Anillo Vial Fray Junípero Serra 1500-A, Arboledas, 76140 Santiago de Querétaro, Qro.</span></div><div class="field" style="margin-top:15px"><label for="clientRound">Consultar ronda</label><select id="clientRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div><div class="stats"><div class="stat"><b id="roundLabel">R2</b><span>Ronda</span></div><div class="stat"><b id="roundReports">3</b><span>Atendidos</span></div><div class="stat"><b id="roundEquipment">6</b><span>Equipos</span></div></div><div class="progress"><i id="roundProgress"></i></div><div class="progress-label"><span>Avance del periodo</span><b id="roundProgressText"></b></div></article>
-      <div class="management-bar"><button class="secondary" id="editOperationalClient" data-permission="editClientData">Editar cliente</button><button class="primary" id="addOperationalEquipment" data-permission="addEquipment">＋ Agregar equipo</button></div>
+      <div class="management-bar"><button class="secondary" id="editOperationalClient" data-permission="editClientData">Editar cliente</button><button class="primary" id="addOperationalEquipment" data-permission="addEquipment">＋ Agregar equipo</button><button class="secondary" id="singleWorkReport" data-permission="createReports" data-tech-only>📝 Reporte de trabajo</button></div>
       <div class="section-head"><h2>Equipos</h2><span class="count" id="roundPending"></span></div><div class="filters" id="equipmentFilters"><button class="chip active" data-filter="all">Todos</button><button class="chip" data-filter="pending">Pendientes</button><button class="chip" data-filter="done">Realizados</button></div><div class="equipment-list bounded-list" id="equipmentList" style="margin-top:10px"></div>
       <div class="section-head"><h2>Reportes de la ronda</h2><span class="count" id="roundReportCount"></span></div><div class="report-list bounded-list" id="roundReportList"></div>
     </section>
@@ -453,7 +453,7 @@
   function renderClients(filter=$('#clientSearch').value){
     const q=filter.trim().toLowerCase(),rows=clients.filter(c=>(showCatalog||clientMeta[c[1]].policy)&&`${c[0]} ${c[1]} ${clientMeta[c[1]].address}`.toLowerCase().includes(q));
     $('#clientCount').textContent=`${rows.length} ${showCatalog?'en catálogo':'con póliza'}`;
-    $('#catalogScope').textContent=showCatalog?'Ver sólo clientes con póliza':'Ver catálogo completo';
+    $('#catalogScope').textContent=showCatalog?'Ver sólo clientes con póliza':'Ver clientes sin póliza';
     $('#clientList').classList.toggle('reordering',clientOrderMode);
     $('#orderClients').textContent=clientOrderMode?'Terminar orden':'Ordenar clientes';
     $('#clientList').innerHTML=rows.map((c,index)=>`<div class="client-order-row"><button class="client-card" data-client="${escapeHtml(c[1])}"><span class="client-logo">${photoMarkup(clientMeta[c[1]].photo,c[1].slice(0,2))}</span><span class="card-copy"><span class="card-title">${escapeHtml(c[0])}</span><span class="card-sub">${escapeHtml(c[1])} · ${equipment.filter(e=>equipmentMeta[e[0]].client===c[1]).length} equipos${clientMeta[c[1]].photoAvailable?' · Foto registrada':''} · ${clientMeta[c[1]].policy?'Con póliza':'Sin póliza'}</span></span><span class="chevron">›</span></button><span class="client-order-actions"><button class="mini-btn" type="button" data-move-client="${escapeHtml(c[1])}" data-direction="-1" ${index===0?'disabled':''} aria-label="Subir ${escapeHtml(c[0])}">↑</button><button class="mini-btn" type="button" data-move-client="${escapeHtml(c[1])}" data-direction="1" ${index===rows.length-1?'disabled':''} aria-label="Bajar ${escapeHtml(c[0])}">↓</button></span></div>`).join('')||'<div class="empty">No hay clientes que coincidan.</div>';
@@ -508,7 +508,7 @@
     $('#equipmentStatus').style.color=done?'#61e5a7':'#ff9da2';
     if(!meta.active){$('#equipmentStatus').textContent='Equipo inactivo · historial conservado';$('#equipmentStatus').style.color='#9fb0c7';}
     $('#toggleOperationalEquipment').textContent=meta.active?'Desactivar equipo':'Reactivar equipo';
-    $('#newReport').disabled=!meta.active||!clientMeta[meta.client].policy;
+    const policyReport=Boolean(clientMeta[meta.client].policy);$('#newReport').disabled=!meta.active;$('#newReport').textContent=policyReport?`＋ Nuevo reporte R${selectedRound}`:'📝 Generar reporte único';
     $('#equipmentReportCount').textContent=done?'1 reporte':'0 reportes';
     $('#equipmentReportList').innerHTML=reportCards(done?[e]:[]);
     views.equipment[1]=e[1];if(current==='equipment')$('#screenTitle').textContent=e[1];
@@ -670,7 +670,7 @@
   function refreshRound(){
     $$('[data-round-select]').forEach(select=>select.value=selectedRound);renderEquipment();renderPartnerDashboard();
   }
-  $('#clientSearch').oninput=e=>renderClients(e.target.value);$('#backBtn').onclick=goBack;$('#newReport').onclick=()=>showView('report');$('#criticalFault').onclick=()=>$('#faultModal').classList.add('open');$('#closeFault').onclick=()=>$('#faultModal').classList.remove('open');$('#sendFault').onclick=()=>{if(!$('#faultText').value.trim()){toast('Describe la falla antes de reportarla');return}$('#faultModal').classList.remove('open');toast('Falla agregada a HSC Partner')};
+  $('#clientSearch').oninput=e=>renderClients(e.target.value);$('#backBtn').onclick=goBack;$('#criticalFault').onclick=()=>$('#faultModal').classList.add('open');$('#closeFault').onclick=()=>$('#faultModal').classList.remove('open');$('#sendFault').onclick=()=>{if(!$('#faultText').value.trim()){toast('Describe la falla antes de reportarla');return}$('#faultModal').classList.remove('open');toast('Falla agregada a HSC Partner')};
   const localDate=value=>{const date=value?new Date(`${value}T12:00:00`):new Date();return Number.isNaN(date.getTime())?new Date():date};
   const dateKey=date=>{const local=new Date(date.getTime()-date.getTimezoneOffset()*60000);return local.toISOString().slice(0,10)};
   let agendaDate=dateKey(new Date());
@@ -794,13 +794,21 @@
   $$('[data-round-select]').forEach(select=>select.onchange=()=>{selectedRound=select.value;refreshRound();saveOperationalNavigation();});
   const draftKey=()=>`hsc-report-demo-${selectedEquipment}-R${selectedRound}`;let activeDraftId='';
   function fillReportFields(values){for(const [name,value] of Object.entries(values||{})){const field=$('#reportForm').elements.namedItem(name);if(field)field.value=value??'';}}
+  function openStandaloneReport(type,equipmentId=''){
+    const params=new URLSearchParams({tipo:type,origin:'operations',cliente:clientName(selectedClient),direccion:clientMeta[selectedClient]?.address||'',tecnico_responsable:account.name});
+    const row=equipment.find(item=>item[0]===equipmentId),meta=row?equipmentMeta[row[0]]:null;if(row&&meta){params.set('equipo',row[1]);params.set('ubicacion',meta.location||'');params.set('departamento',meta.department||'');params.set('marca',row[2]||'');params.set('modelo',meta.model||'');params.set('no_serie',meta.serial||'');params.set('no_inventario',row[0]);}
+    window.open(`/reportes/diag/nuevo?${params.toString()}`,'_blank','noopener');
+  }
+  $('#singleWorkReport').onclick=()=>openStandaloneReport('trabajo');
   $('#newReport').onclick=async()=>{
     const e=equipment.find(row=>row[0]===selectedEquipment),form=$('#reportForm');form.reset();
+    if(!clientMeta[equipmentMeta[e[0]].client].policy){openStandaloneReport('refrigeracion',e[0]);return false;}
     const fixed=[...form.querySelectorAll('input[readonly]')];fixed[0].value=clientName(equipmentMeta[e[0]].client);fixed[1].value=e[0];fixed[2].value=`R${selectedRound}`;
     $('[data-view="report"] .form-intro span').textContent=`${clientName(equipmentMeta[e[0]].client)} · ${e[0]} · ${e[1]} · R${selectedRound}`;
     activeDraftId='';try{fillReportFields(JSON.parse(localStorage.getItem(draftKey())||'{}'))}catch(_){}
     showView('report');
     try{const response=await fetch(`/api/operaciones/reports/draft?equipment_id=${encodeURIComponent(selectedEquipment)}&round=${encodeURIComponent(selectedRound)}`,{headers:{Accept:'application/json'}}),payload=await response.json();if(response.ok&&payload.ok&&payload.draft){activeDraftId=payload.draft.id;fillReportFields(payload.draft.payload);toast('Borrador recuperado de la base')}}catch(_){}
+    return true;
   };
   $('#saveDraft').onclick=async()=>{const data=Object.fromEntries(new FormData($('#reportForm'))),button=$('#saveDraft');try{localStorage.setItem(draftKey(),JSON.stringify(data))}catch(_){}button.disabled=true;try{const result=await operationsPost('/api/operaciones/reports/draft',{id:activeDraftId,client_id:equipmentMeta[selectedEquipment].client,equipment_id:selectedEquipment,round:selectedRound,report_type:'refrigeration',payload:data});activeDraftId=result.draft.id;toast(`Borrador guardado en la base · ${selectedEquipment} · R${selectedRound}`)}catch(error){toast(`Borrador conservado en este dispositivo · ${error.message}`)}finally{button.disabled=false}};
   $('#reportForm').onsubmit=async event=>{
@@ -997,7 +1005,7 @@
     try{await persistEvidence()}catch(_){if(key===draftKey())error.textContent='Las fotos siguen abiertas, pero el dispositivo no pudo guardar su respaldo sin conexión.';}
     finally{evidenceBusy=false;input.disabled=false;}
   };
-  const openReportWithEvidence=$('#newReport').onclick;$('#newReport').onclick=async()=>{await openReportWithEvidence();$('#evidenceError').textContent='';try{await restoreEvidence()}catch(_){$('#evidenceError').textContent='No se pudo recuperar el respaldo de fotos de este dispositivo.';}renderEvidence();};
+  const openReportWithEvidence=$('#newReport').onclick;$('#newReport').onclick=async()=>{if(await openReportWithEvidence()===false)return;$('#evidenceError').textContent='';try{await restoreEvidence()}catch(_){$('#evidenceError').textContent='No se pudo recuperar el respaldo de fotos de este dispositivo.';}renderEvidence();};
   const saveTextDraft=$('#saveDraft').onclick;$('#saveDraft').onclick=()=>{saveTextDraft();if(evidenceForReport().length)toast('Borrador y fotos conservados en este dispositivo');};
   $('#inviteClientSelect').innerHTML=clients.map(client=>`<option value="${escapeHtml(client[1])}">${escapeHtml(client[0])}</option>`).join('');
   window.addEventListener('online',()=>{toast('Conexión recuperada · sincronizando pendientes');loadMatrixData().finally(resumePendingReportUploads)});

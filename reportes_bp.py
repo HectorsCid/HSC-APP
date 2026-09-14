@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, abort, jsonify, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, abort, jsonify, current_app, session
 import os, io, re, time, json, random, threading, base64, socket, ssl
 import requests
 import httplib2
@@ -1035,6 +1035,8 @@ def _get_ultimos_10_items_cached(force_refresh: bool = False):
 
 @reportes_bp.route("/reportes", methods=["GET", "POST"])
 def reportes_inicio():
+    if str(session.get("hsc_role") or "").strip().lower() == "technician":
+        return redirect(url_for("hsc_tecnico"))
     if request.method == "POST":
         id_reporte = (request.form.get("id_reporte") or "").strip()
         if not id_reporte:
@@ -1732,6 +1734,16 @@ def _diag_type(value):
     return "refrigeracion" if str(value or "").strip().lower() == "refrigeracion" else "trabajo"
 
 
+def _diag_return_to(value=""):
+    """Regresa a la app técnica sin aceptar destinos externos en el formulario."""
+    candidate = str(value or "").strip()
+    if candidate.startswith("/hsc-tecnico/") and not candidate.startswith("//"):
+        return candidate
+    if str(session.get("hsc_role") or "").strip().lower() == "technician":
+        return url_for("hsc_tecnico")
+    return url_for("reportes.reportes_inicio")
+
+
 def _diag_records_path():
     path = Path(current_app.root_path) / "data" / DIAG_RECORDS_FILENAME
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1886,20 +1898,21 @@ def _diag_refrigeration_data(payload):
 
 def _diag_render(payload, *, show_toolbar, embed_for_pdf):
     logo_web, logo_fs = _logo_paths()
+    back_url = _diag_return_to(payload.get("return_to"))
     if _diag_type(payload.get("report_type")) == "refrigeracion":
         photos = [photo.get("fs_uri") if embed_for_pdf else photo.get("web_path")
                   for photo in payload.get("fotos", []) if isinstance(photo, dict)]
         return render_template(
             "reporte_formato.html", datos=_diag_refrigeration_data(payload), fotos=photos,
             embed_for_pdf=embed_for_pdf, logo_web=logo_web, logo_fs=logo_fs,
-            show_toolbar=show_toolbar, manual_token=payload.get("token"),
+            show_toolbar=show_toolbar, manual_token=payload.get("token"), back_url=back_url,
         )
     return render_template(
         "reporte_diag_pdf.html", show_toolbar=show_toolbar, embed_for_pdf=embed_for_pdf,
         token=payload.get("token"), folio=payload.get("folio", ""),
         datos=payload.get("datos", {}), partes=payload.get("partes", []),
         total_partes_fmt=_mxn(payload.get("total_partes", 0)), fotos=payload.get("fotos", []),
-        logo_web=logo_web, logo_fs=logo_fs,
+        logo_web=logo_web, logo_fs=logo_fs, back_url=back_url,
     )
 
 def _diag_paths():
@@ -2025,6 +2038,14 @@ def diag_nuevo():
     token = (request.args.get("token") or "").strip()
     payload = _diag_payload_temporal(token) if token else None
     report_type = _diag_type((payload or {}).get("report_type") or request.args.get("tipo"))
+    if payload:
+        form_data = payload.get("datos", {})
+        return_to = _diag_return_to(payload.get("return_to"))
+    else:
+        form_data = _diag_clean_data({key: request.args.get(key, "") for key in _DIAG_DATA_FIELDS})
+        if not form_data.get("tecnico_responsable"):
+            form_data["tecnico_responsable"] = str(session.get("hsc_user_name") or "Ing. Héctor Silva Cid")
+        return_to = _diag_return_to(url_for("hsc_tecnico") if request.args.get("origin") == "operations" else "")
     if token and not payload:
         flash("La vista previa anterior ya vencio. Inicia nuevamente el reporte.", "warning")
     return render_template(
@@ -2033,10 +2054,11 @@ def diag_nuevo():
         edit_token=token if payload else "",
         report_type=report_type,
         report_folio=(payload or {}).get("folio", "Nuevo borrador"),
-        form_data=(payload or {}).get("datos", {}),
+        form_data=form_data,
         form_partes=(payload or {}).get("partes", []),
         form_fotos=(payload or {}).get("fotos", []),
         clientes_catalogo=_diag_clientes_catalogo(),
+        back_url=return_to,
     )
 
 
@@ -2050,6 +2072,7 @@ def diag_guardar_borrador():
         "token": body.get("token"), "report_type": _diag_type(body.get("report_type")),
         "datos": data, "partes": parts, "total_partes": 0,
         "fotos": (previous or {}).get("fotos", []),
+        "return_to": _diag_return_to(body.get("return_to") or (previous or {}).get("return_to")),
     }
     record = _diag_store_payload(payload, status="draft")
     return jsonify({
@@ -2153,6 +2176,7 @@ def diag_prev():
         "partes": partes,
         "total_partes": total_partes,
         "fotos": fotos_meta,
+        "return_to": _diag_return_to(request.form.get("return_to") or (previous_payload or {}).get("return_to")),
         "ts": datetime.utcnow().isoformat() + "Z",
     }
     payload = _diag_store_payload(payload, status="draft")
@@ -2254,7 +2278,7 @@ def diag_pdf(token):
         except Exception:
             pass
         flash(f"✅ {folio} finalizado y guardado en Drive.", "success")
-        return redirect(url_for("reportes.reportes_inicio"))
+        return redirect(_diag_return_to(payload.get("return_to")))
     except Exception as exc:
         flash(f"No se pudo guardar en Drive: {type(exc).__name__}: {exc}. Se descargó una copia para no perderla.", "error")
         return send_file(

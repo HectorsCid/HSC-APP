@@ -36,6 +36,33 @@ class ManualReportsTests(unittest.TestCase):
         self.assertIn('name="presion_cto1"', text)
         self.assertIn('name="obs_electronico"', text)
 
+    def test_operations_report_prefills_client_equipment_and_technician(self):
+        with (
+            patch.object(reports, "_diag_clientes_catalogo", return_value=[]),
+            self.client.session_transaction() as session,
+        ):
+            session["hsc_role"] = "technician"
+            session["hsc_user_name"] = "Carlos Técnico"
+        with patch.object(reports, "_diag_clientes_catalogo", return_value=[]):
+            response = self.client.get(
+                "/reportes/diag/nuevo?tipo=refrigeracion&origin=operations&"
+                "cliente=Cliente+Ocasional&direccion=Parque+1&equipo=Cámara+1&"
+                "marca=Bohn&modelo=M1&no_serie=S1"
+            )
+        text = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('value="Cliente Ocasional"', text)
+        self.assertIn('value="Cámara 1"', text)
+        self.assertIn('value="Carlos Técnico"', text)
+        self.assertIn('name="return_to" value="/hsc-tecnico/"', text)
+
+    def test_technician_cannot_open_admin_report_history(self):
+        with self.client.session_transaction() as session:
+            session["hsc_role"] = "technician"
+        response = self.client.get("/reportes")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.headers["Location"].endswith("/hsc-tecnico/"))
+
     def test_both_forms_use_the_unified_clients_catalog(self):
         catalog = {
             "CLIENTE NUEVO": {

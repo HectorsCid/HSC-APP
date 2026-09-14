@@ -69,7 +69,7 @@
 <body>
   <div class="wrap">
     <div class="report-nav">
-      <a class="btn btn-secondary" href="{{ url_for('reportes.reportes_inicio') }}" data-leave>← Reportes</a>
+      <a class="btn btn-secondary" href="{{ back_url or url_for('reportes.reportes_inicio') }}" data-leave>← Regresar</a>
       <div class="report-meta">
         <span class="status-pill type">{{ 'Refrigeración' if report_type == 'refrigeracion' else 'Trabajo general' }}</span>
         <span class="status-pill" id="reportFolio">{{ report_folio }}</span>
@@ -88,6 +88,7 @@
       <form method="post" action="{{ url_for('reportes.diag_prev') }}" enctype="multipart/form-data">
         <input type="hidden" name="edit_token" value="{{ edit_token or '' }}">
         <input type="hidden" name="report_type" value="{{ report_type }}">
+        <input type="hidden" name="return_to" value="{{ back_url or url_for('reportes.reportes_inicio') }}">
         <div class="grid grid-2">
           <!-- Columna izquierda -->
           <div class="grid">
@@ -268,7 +269,7 @@
         <div class="actions">
           <button class="btn btn-secondary" id="saveDraft" type="button">Guardar borrador</button>
           <button class="btn" type="submit">Vista previa del PDF</button>
-          <a class="btn btn-secondary" href="{{ url_for('reportes.reportes_inicio') }}" data-leave>← Volver al panel</a>
+          <a class="btn btn-secondary" href="{{ back_url or url_for('reportes.reportes_inicio') }}" data-leave>← Regresar</a>
         </div>
       </form>
     </div>
@@ -356,7 +357,7 @@
     function reportPayload(){
       const datos = {};
       [...reportForm.elements].forEach(field => {
-        if(!field.name || ['edit_token','report_type','fotos','reemplazar_fotos','part_cant[]','part_desc[]','part_precio[]'].includes(field.name)) return;
+        if(!field.name || ['edit_token','report_type','return_to','fotos','reemplazar_fotos','part_cant[]','part_desc[]','part_precio[]'].includes(field.name)) return;
         if(['button','submit','file'].includes(field.type)) return;
         datos[field.name] = field.value || '';
       });
@@ -364,7 +365,7 @@
         cantidad: row.querySelector('[name="part_cant[]"]')?.value || '',
         descripcion: row.querySelector('[name="part_desc[]"]')?.value || '',
       })).filter(row => row.cantidad || row.descripcion);
-      return {token:tokenField.value || '', report_type:reportType, datos, partes};
+      return {token:tokenField.value || '', report_type:reportType, return_to:reportForm.elements.return_to.value, datos, partes};
     }
 
     function saveLocal(){
