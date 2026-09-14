@@ -159,6 +159,31 @@ def test_report_draft_is_durable_and_does_not_queue_google(tmp_path):
     assert store.pending_sync() == []
 
 
+def test_report_draft_cannot_be_reassigned_to_another_round(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+    draft = store.save_report_draft({"client_id": "UVMQ", "equipment_id": "UVMQ1",
+                                     "round": "3", "payload": {"inicio": "2026-09-12"}})
+    try:
+        store.save_report_draft({"id": draft["id"], "client_id": "UVMQ",
+                                 "equipment_id": "UVMQ1", "round": "4", "payload": {}})
+        assert False, "El mismo ID no debe poder cambiar de equipo o ronda"
+    except ValueError as exc:
+        assert "otro equipo o a otra ronda" in str(exc)
+
+
+def test_report_draft_can_be_discarded_without_touching_completed_reports(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+    draft = store.save_report_draft({"client_id": "UVMQ", "equipment_id": "UVMQ1",
+                                     "round": "3", "payload": {"inicio": "2026-09-12"}})
+
+    assert store.delete_report_draft(draft["id"]) is True
+    assert store.get_report_draft("UVMQ1", "3") is None
+    assert store.delete_report_draft("UVMQ1_R 2") is False
+    assert store.get_report_detail("UVMQ1_R 2")["completed"] is True
+
+
 def test_thumbnail_cache_is_persistent_and_invalidates_when_photo_changes(tmp_path):
     database = tmp_path / "operations.sqlite3"
     store = OperationsStore(local_path=database)
@@ -217,6 +242,23 @@ def test_report_draft_can_be_finalized(tmp_path):
     assert report["sync_status"] == "pending"
     assert report["payload"]["p1"] == "120"
     assert any(item["entity_type"] == "report" for item in store.pending_sync())
+
+
+def test_finalized_report_grows_shared_observation_history(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
+    store.import_matrix_snapshot(_payload())
+    draft = store.save_report_draft({
+        "client_id": "UVMQ", "equipment_id": "UVMQ1", "round": "3",
+        "payload": {"inicio": "2026-09-12", "fin": "2026-09-12",
+                    "electrico": "Apretar terminales\nLimpiar tablero",
+                    "electronico": "Revisar controlador", "mecanico": "Lubricar motor"},
+    })
+    store.finalize_report(draft["id"])
+
+    options = store.snapshot()["observation_options"]
+    assert {item["value"] for item in options if item["category"] == "electrico"} == {
+        "Apretar terminales", "Limpiar tablero"
+    }
 
 
 def test_report_evidence_keeps_positions_and_is_included_on_finalize(tmp_path):

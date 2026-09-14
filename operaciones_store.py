@@ -18,7 +18,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "13"
+SCHEMA_VERSION = "14"
 
 
 def _now():
@@ -195,6 +195,11 @@ class OperationsStore:
                 byte_size INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL,
                 PRIMARY KEY(kind, record_id)
             )""",
+            """CREATE TABLE IF NOT EXISTS operations_observation_options (
+                category TEXT NOT NULL, normalized_value TEXT NOT NULL,
+                value TEXT NOT NULL, use_count INTEGER NOT NULL DEFAULT 1,
+                last_used_at TEXT NOT NULL, PRIMARY KEY(category, normalized_value)
+            )""",
             "CREATE INDEX IF NOT EXISTS idx_operations_equipment_client ON operations_equipment(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_equipment ON operations_reports(equipment_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_client ON operations_reports(client_id)",
@@ -219,6 +224,7 @@ class OperationsStore:
             self._ensure_column(conn, "operations_faults", "resolved_at", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_faults", "resolved_by", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_faults", "resolution_notes", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "operations_users", "photo_ref", "TEXT NOT NULL DEFAULT ''")
             self._remove_legacy_fault_duplicates(conn)
             self._upsert_meta(conn, "schema_version", SCHEMA_VERSION)
         self._initialized = True
@@ -489,6 +495,10 @@ class OperationsStore:
             meta_rows = conn.execute("SELECT key,value FROM operations_meta").fetchall()
             pending = conn.execute("SELECT COUNT(*) FROM operations_sync_outbox WHERE status!='synced'").fetchone()[0]
             cached_thumbnails = conn.execute("SELECT COUNT(*) FROM operations_media_cache").fetchone()[0]
+            observation_rows = conn.execute(
+                "SELECT category,value,use_count,last_used_at FROM operations_observation_options "
+                "ORDER BY category,use_count DESC,last_used_at DESC,value"
+            ).fetchall()
         result_clients = [{
             "id": row[0], "name": row[1], "address": row[2], "matrix_id": row[3],
             "billing_rfc": row[4], "selected_round": row[5], "sort_order": int(row[6] or 0),
@@ -547,8 +557,25 @@ class OperationsStore:
                 "expenses": len(result_expenses),
                 "pending_expenses": sum(item["status"] == "Pendiente" for item in result_expenses),
             },
+            "observation_options": [{"category": row[0], "value": row[1], "use_count": int(row[2] or 0),
+                                     "last_used_at": row[3]} for row in observation_rows],
             "meta": dict(meta_rows),
         }
+
+    def _remember_observations(self, conn, payload):
+        p, stamp = self.placeholder, _now()
+        for category in ("electrico", "electronico", "mecanico"):
+            raw = _text((payload or {}).get(category))
+            for value in (line.strip(" •-\t") for line in raw.splitlines()):
+                if not value:
+                    continue
+                normalized = re.sub(r"\s+", " ", value).casefold()
+                conn.execute(
+                    f"INSERT INTO operations_observation_options(category,normalized_value,value,use_count,last_used_at) "
+                    f"VALUES ({p},{p},{p},1,{p}) ON CONFLICT(category,normalized_value) DO UPDATE SET "
+                    "value=excluded.value,use_count=operations_observation_options.use_count+1,last_used_at=excluded.last_used_at",
+                    (category, normalized, value[:500], stamp),
+                )
 
     def status(self):
         if not self.enabled:
@@ -564,7 +591,9 @@ class OperationsStore:
     def get_media_ref(self, kind, record_id):
         """Obtiene la referencia original sin depender del caché en memoria del proceso."""
         self.initialize()
-        table = "operations_clients" if kind == "client" else "operations_equipment"
+        table = {"client": "operations_clients", "equipment": "operations_equipment", "user": "operations_users"}.get(kind)
+        if not table:
+            return ""
         p = self.placeholder
         with self.connection() as conn:
             row = conn.execute(
@@ -736,11 +765,13 @@ class OperationsStore:
         with self.connection() as conn:
             if report_id:
                 found = conn.execute(
-                    f"SELECT id FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
+                    f"SELECT id,equipment_id,client_id,round_number FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
                     (report_id,),
                 ).fetchone()
                 if not found:
                     raise ValueError("El borrador indicado ya no existe o ya fue finalizado.")
+                if found[1] != equipment_id or found[2] != client_id or found[3] != round_number:
+                    raise ValueError("Ese borrador pertenece a otro equipo o a otra ronda.")
             else:
                 found = conn.execute(
                     f"SELECT id FROM operations_reports WHERE equipment_id={p} AND round_number={p} "
@@ -955,7 +986,7 @@ class OperationsStore:
         self.initialize()
         with self.connection() as conn:
             rows = conn.execute(
-                "SELECT id,name,email,phone,role,client_id,status,permissions_json,created_at,updated_at "
+                "SELECT id,name,email,phone,role,client_id,status,permissions_json,created_at,updated_at,photo_ref "
                 "FROM operations_users ORDER BY name,id"
             ).fetchall()
         result = []
@@ -966,7 +997,8 @@ class OperationsStore:
                 permissions = {}
             result.append({"id": row[0], "name": row[1], "email": row[2], "phone": row[3],
                            "role": row[4], "client_id": row[5], "status": row[6],
-                           "permissions": permissions, "created_at": row[8], "updated_at": row[9]})
+                           "permissions": permissions, "created_at": row[8], "updated_at": row[9],
+                           "has_photo": bool(row[10]), "photo_ref": row[10]})
         return result
 
     def get_user_by_email(self, email):
@@ -992,7 +1024,7 @@ class OperationsStore:
         p = self.placeholder
         with self.connection() as conn:
             row = conn.execute(
-                f"SELECT id,name,email,phone,role,client_id,status,permissions_json "
+                f"SELECT id,name,email,phone,role,client_id,status,permissions_json,photo_ref "
                 f"FROM operations_users WHERE id={p}", (_text(user_id),),
             ).fetchone()
         if not row:
@@ -1002,7 +1034,30 @@ class OperationsStore:
         except (TypeError, json.JSONDecodeError):
             permissions = {}
         return {"id": row[0], "name": row[1], "email": row[2], "phone": row[3], "role": row[4],
-                "client_id": row[5], "status": row[6], "permissions": permissions}
+                "client_id": row[5], "status": row[6], "permissions": permissions,
+                "has_photo": bool(row[8]), "photo_ref": row[8]}
+
+    def save_user_profile(self, user_id, name, *, photo_ref=None):
+        """Permite que una cuenta cambie sólo su nombre visible y su fotografía."""
+        self.initialize()
+        user_id, name = _text(user_id), _text(name)
+        if not user_id or not name or len(name) > 100:
+            raise ValueError("Escribe un nombre de máximo 100 caracteres.")
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            if photo_ref is None:
+                cursor = conn.execute(
+                    f"UPDATE operations_users SET name={p},updated_at={p} WHERE id={p}",
+                    (name, stamp, user_id),
+                )
+            else:
+                cursor = conn.execute(
+                    f"UPDATE operations_users SET name={p},photo_ref={p},updated_at={p} WHERE id={p}",
+                    (name, _text(photo_ref), stamp, user_id),
+                )
+            if cursor.rowcount != 1:
+                raise ValueError("La cuenta ya no existe.")
+        return self.get_user_by_id(user_id)
 
     def create_invite(self, item):
         self.initialize()
@@ -1133,6 +1188,21 @@ class OperationsStore:
             "updated_at": row[7],
         }
 
+    def delete_report_draft(self, report_id):
+        """Elimina únicamente un borrador; un reporte finalizado nunca entra aquí."""
+        self.initialize()
+        report_id, p = _text(report_id), self.placeholder
+        with self.connection() as conn:
+            found = conn.execute(
+                f"SELECT id FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
+                (report_id,),
+            ).fetchone()
+            if not found:
+                return False
+            conn.execute(f"DELETE FROM operations_evidence WHERE report_id={p}", (report_id,))
+            conn.execute(f"DELETE FROM operations_reports WHERE id={p}", (report_id,))
+        return True
+
     def finalize_report(self, report_id):
         """Finaliza un borrador sin perderlo y lo deja listo para sincronización."""
         self.initialize()
@@ -1161,6 +1231,7 @@ class OperationsStore:
                 f"sync_status='pending',updated_at={p} WHERE id={p}",
                 (start_at, end_at, stamp, report_id),
             )
+            self._remember_observations(conn, payload)
         detail = self.get_report_detail(report_id)
         self.queue_sync("report", report_id, "sheets", "upsert", {
             "client_id": row[1], "equipment_id": row[2], "round": row[3],

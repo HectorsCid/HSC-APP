@@ -82,7 +82,8 @@
     html[data-style="classic"]{--bg:#122136;--surface:#202d3d;--surface-2:#111b28;--deep:#172231;--line:#566577;--text:#f4f7fb;--muted:#bdc7d1;--brand:#46a6ff;--brand-2:#a9d8ff;--topbar:rgba(15,22,31,.94);--nav:rgba(18,27,39,.97);--sticky:rgba(29,42,58,.96);--shadow:0 8px 20px rgba(0,0,0,.35),inset 0 1px rgba(255,255,255,.15)}html[data-theme="light"][data-style="classic"]{--bg:#d6e8ff;--surface:#fffef8;--surface-2:#ece9d8;--deep:#f6f4ea;--line:#9b9b86;--text:#1b1b1b;--muted:#56564c;--brand:#1769c2;--brand-2:#0e4f9b;--topbar:#1769c2;--nav:#ece9d8;--sticky:#fffef8;--shadow:2px 2px 7px rgba(0,0,0,.24)}html[data-style="classic"] body{font-family:"Segoe UI",Tahoma,Verdana,sans-serif}html[data-theme="light"][data-style="classic"] body{background:#3a6ea5}html[data-style="classic"] .app{background:var(--surface-2)}html[data-style="classic"] .topbar{background:linear-gradient(180deg,#596878,#202a36 48%,#121820 52%,#313e4d);border-bottom:1px solid #010409;box-shadow:inset 0 1px rgba(255,255,255,.35),0 3px 8px rgba(0,0,0,.35);backdrop-filter:blur(12px)}html[data-theme="light"][data-style="classic"] .topbar{background:linear-gradient(180deg,#3a98ef 0,#176dcc 47%,#0756ad 52%,#2d83da 100%);color:#fff;border-bottom-color:#003c87}html[data-style="classic"] .brand{border:1px solid rgba(255,255,255,.65);border-radius:7px;background:linear-gradient(180deg,#56b2ff,#0957ad);box-shadow:inset 0 1px #dff3ff,1px 2px 4px rgba(0,0,0,.4)}html[data-style="classic"] :is(.client-card,.equipment-card,.report-card,.task-card,.user-card,.quick-card,.fault-card,.workspace-panel,.round-panel,.profile-card,.appearance-panel,.form-section,.hero,.equipment-hero){border-radius:5px;box-shadow:var(--shadow)}html[data-style="classic"] :is(.icon-btn,.back,.primary,.secondary,.danger,.mini-btn,.chip){border-radius:4px;border-color:#6b7a89;box-shadow:inset 1px 1px rgba(255,255,255,.32),inset -1px -1px rgba(0,0,0,.18)}html[data-theme="light"][data-style="classic"] :is(.icon-btn,.back,.secondary,.mini-btn,.chip){background:linear-gradient(#fff,#ece9d8);border:2px outset #ece9d8;color:#111}html[data-style="classic"] .primary{background:linear-gradient(180deg,#75c7ff,#1976cf 48%,#0754a6 52%,#398fdf);border:1px solid #bce7ff;text-shadow:0 1px 1px #003b77}html[data-style="classic"] .bottom-nav{background:linear-gradient(180deg,var(--surface),var(--surface-2));box-shadow:inset 0 1px rgba(255,255,255,.35)}html[data-theme="light"][data-style="classic"] .bottom-nav{border-top:2px groove #fff}html[data-style="classic"] .section-head h2{font-weight:600}html[data-style="classic"] .profile-avatar{border-radius:7px;border:1px solid #fff;box-shadow:2px 2px 5px rgba(0,0,0,.35)}
     @media(max-width:520px){.style-grid{grid-template-columns:1fr 1fr}.style-option{padding:9px}.style-preview{height:40px}}
     [hidden]{display:none!important}.user-card[type="button"]{width:100%;color:var(--text);text-align:left;cursor:pointer}
-  </style>
+    .profile-avatar{position:relative;overflow:hidden}.profile-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .18s ease}.profile-avatar img.loaded{opacity:1}#reportForm .form-actions{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:520px){#reportForm .form-actions{grid-template-columns:1fr 1fr}#reportForm .form-actions .primary{grid-column:1/-1}}
+</style>
 </head>
 <body data-operations-shell="true" data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-pwa-install-disabled="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-app-kind="{{ operations_app_kind|default('technician') }}" data-user-id="{{ operations_user_id|default('owner') }}" data-user-name="{{ operations_user_name|default('Héctor Silva Cid') }}" data-permissions="{{ operations_permissions|default({})|tojson|forceescape }}">
 <div class="app">
@@ -173,7 +174,7 @@
         <details class="form-section"><summary>3. Revisión del sistema</summary><div class="section-body"><div class="field"><label>Observaciones eléctricas</label><textarea name="electrico" placeholder="Describe lo revisado o agrega varios puntos"></textarea></div><div class="field"><label>Observaciones electrónicas</label><textarea name="electronico"></textarea></div><div class="field"><label>Observaciones mecánicas</label><textarea name="mecanico"></textarea></div></div></details>
         <details class="form-section"><summary>4. Correctivo y partes</summary><div class="section-body"><div class="field"><label>Rutina de mantenimiento correctivo</label><textarea name="correctivo"></textarea></div><div class="field"><label>Partes utilizadas</label><textarea name="partes"></textarea></div><div class="field"><label>Observaciones y recomendaciones</label><textarea name="notas"></textarea></div></div></details>
         <details class="form-section"><summary>5. Evidencia y cierre</summary><div class="section-body"><div class="field"><label for="reportEvidence">Agregar evidencias · selecciona varias fotografías</label><input id="reportEvidence" type="file" multiple accept="image/jpeg,image/png,image/webp"><p class="editor-note">Hasta 6 fotos, máximo 15 MB por foto y 60 MB en total. El orden mostrado corresponde a Foto1–Foto6. Puedes moverlas o quitarlas antes de guardar.</p><p class="editor-note">Mientras trabajas quedan resguardadas en este dispositivo. Al finalizar regresarás enseguida a los equipos y las fotos continuarán subiendo en segundo plano.</p><p id="evidenceStatus" aria-live="polite" class="editor-note">0 de 6 fotos</p><div id="evidenceError" role="alert" class="editor-error"></div><div id="evidenceList" class="equipment-list"></div></div><div class="field"><label>Nombre de quien revisa</label><input name="revisor"></div></div></details>
-        <div class="form-actions"><button class="secondary" type="button" id="saveDraft">Guardar borrador</button><button class="primary" type="submit">Finalizar reporte</button></div>
+        <div class="form-actions"><button class="secondary" type="button" id="discardDraft" hidden>Descartar borrador</button><button class="secondary" type="button" id="saveDraft">Guardar borrador</button><button class="primary" type="submit">Finalizar reporte</button></div>
       </form>
     </section>
 
@@ -277,6 +278,7 @@
 <div class="modal" id="partnerAppearanceModal"><div class="sheet"><div class="eyebrow">HSC Partner</div><h2>Mi apariencia</h2><p>Elige cómo quieres ver la aplicación en este dispositivo.</p><button class="secondary wide" id="partnerThemeToggle" type="button">Cambiar a modo claro</button><div class="style-grid" role="radiogroup" aria-label="Estilo visual de HSC Partner"><button class="style-option" type="button" data-style-option="corporate" role="radio"><span class="style-preview"><i></i><i></i></span><b>Corporativo</b><small>Sobrio, ordenado y ejecutivo</small></button><button class="style-option" type="button" data-style-option="fusion" role="radio"><span class="style-preview"><i></i><i></i></span><b>Mezcla</b><small>Moderno con tarjetas hundidas</small></button><button class="style-option" type="button" data-style-option="glass" role="radio"><span class="style-preview"><i></i><i></i></span><b>Cristal</b><small>Transparencias y profundidad</small></button><button class="style-option" type="button" data-style-option="classic" role="radio"><span class="style-preview"><i></i><i></i></span><b>Oldschool</b><small>XP claro · Vista oscuro</small></button></div><div class="style-theme-note" id="partnerStyleThemeNote">Corporativo · modo oscuro</div><button class="primary wide" style="margin-top:14px" id="closePartnerAppearance" type="button">Listo</button></div></div>
 <div class="toast" id="toast"></div>
 
+<div class="modal" id="profileEditModal"><div class="sheet"><div class="eyebrow">Mi cuenta</div><h2>Editar perfil</h2><div class="field"><label for="ownProfileName">Nombre visible</label><input id="ownProfileName" maxlength="100" autocomplete="name"></div><div class="field" id="ownProfilePhotoField" style="margin-top:12px"><label for="ownProfilePhoto">Fotografía opcional</label><input id="ownProfilePhoto" type="file" accept="image/jpeg,image/png,image/webp"><p class="editor-note">JPG, PNG o WebP de máximo 8 MB.</p></div><div class="sheet-actions"><button class="secondary" id="closeOwnProfile" type="button">Cancelar</button><button class="primary" id="saveOwnProfile" type="button">Guardar perfil</button></div></div></div>
 <script>
   const clients=[['Holiday Inn Diamante','HDI','43 equipos'],['Travers Tool','TT','12 equipos'],['Visscher Caravelle','VC','18 equipos'],['Universidad de Arkansas','UDA','9 equipos'],['Fiesta Inn Querétaro','FIQ','16 equipos'],['UVM Querétaro','UVMQ','21 equipos'],['IHOP Esfera','IHPE','8 equipos']];
   const equipment=[['HDI1','Fábrica de hielo grande','Monitowac',true],['HDI2','Restaurante','Cámara de conservación',true],['HDI3','Lobby','Unidad paquete',false],['HDI4','Lavandería','Extractor',false],['HDI5','Cocina','Cámara de congelación',true],['HDI6','Salón Diamante','Minisplit',false]];
@@ -291,7 +293,7 @@
   let activePermissions=account.isOwner?{...defaultPermissions,...sessionPermissions}:{...sessionPermissions};
   let selectedRound='2', selectedEquipment='HDI1';
   let selectedClient='HDI',showCatalog=false,clientOrderMode=false;
-  let matrixReports=[],matrixFaults=[],matrixTasks=[],matrixExpenses=[],operationUsers=[],userStatusFilter='all',matrixLoaded=false,selectedFault='',selectedTask='',selectedExpense='',selectedPermissionUser='',partnerDocuments=null,partnerDocumentsClient='',partnerDocumentTab='quotes',partnerDocumentCacheWarming=false;
+  let matrixReports=[],matrixFaults=[],matrixTasks=[],matrixExpenses=[],matrixObservationOptions=[],operationUsers=[],userStatusFilter='all',matrixLoaded=false,selectedFault='',selectedTask='',selectedExpense='',selectedPermissionUser='',partnerDocuments=null,partnerDocumentsClient='',partnerDocumentTab='quotes',partnerDocumentCacheWarming=false;
   const clientMeta=Object.fromEntries(clients.map((c,index)=>[c[1],{policy:true,matrixId:c[1],sortOrder:index+1,address:c[1]==='HDI'?'Anillo Vial Fray Junípero Serra 1500-A, Arboledas, Querétaro':'',photo:''}]));
   const equipmentMeta=Object.fromEntries(equipment.map(e=>[e[0],{client:'HDI',active:true,type:'Refrigeración',location:'',model:'',serial:'',notes:'',photo:''}]));
   const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -354,6 +356,7 @@
     matrixFaults=Array.isArray(payload.faults)?payload.faults:[];
     matrixTasks=Array.isArray(payload.tasks)?payload.tasks:[];
     matrixExpenses=Array.isArray(payload.expenses)?payload.expenses:[];
+    matrixObservationOptions=Array.isArray(payload.observation_options)?payload.observation_options:[];renderObservationPickers();
     for(const round of ['1','2','3','4']){
       const completed=matrixReports.filter(report=>report.round===round&&report.completed).map(report=>report.equipment_id).filter(Boolean);
       demoRounds[round].done=[...new Set(completed)];
@@ -384,8 +387,13 @@
     }catch(error){let saved=null;try{saved=JSON.parse(localStorage.getItem(`hsc-operaciones-data-${account.id}-${appKind}`)||'null')}catch(_){}if(saved?.payload&&applyMatrixBootstrap(saved.payload,true)){$('#matrixStatus').textContent='Sin conexión · mostrando la última información guardada';if($('#operationsNoticeText'))$('#operationsNoticeText').textContent='Puedes consultar la información descargada y conservar borradores con fotos en este dispositivo. Las acciones pendientes se enviarán cuando vuelva la conexión.';toast('Modo sin conexión activado')}else{$('#matrixStatus').textContent='Sin conexión · todavía no hay datos guardados en este dispositivo';if($('#operationsNoticeText'))$('#operationsNoticeText').textContent='Conéctate una vez para descargar los clientes, equipos y reportes de esta cuenta.';}console.warn('Operaciones bootstrap:',error);}
   }
   const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+  function renderObservationPickers(){for(const select of $$('[data-observation-picker]')){const category=select.dataset.observationPicker,items=matrixObservationOptions.filter(item=>item.category===category);select.innerHTML=`<option value="">Agregar una observación anterior…</option>`+items.map(item=>`<option value="${escapeHtml(item.value)}">${escapeHtml(item.value)}</option>`).join('')}}
+  function rememberObservationValues(payload){for(const category of ['electrico','electronico','mecanico'])for(const value of String(payload?.[category]||'').split(/\r?\n/).map(item=>item.replace(/^[ •-]+/,'').trim()).filter(Boolean)){if(!matrixObservationOptions.some(item=>item.category===category&&item.value.toLocaleLowerCase()===value.toLocaleLowerCase()))matrixObservationOptions.push({category,value,use_count:1})}renderObservationPickers()}
+  function setupObservationPickers(){for(const category of ['electrico','electronico','mecanico']){const textarea=$('#reportForm').elements.namedItem(category),select=document.createElement('select');select.dataset.observationPicker=category;select.setAttribute('aria-label',`Historial de observaciones ${category}`);select.style.marginBottom='8px';select.onchange=()=>{if(!select.value)return;const lines=textarea.value.split(/\r?\n/).map(value=>value.trim());if(!lines.includes(select.value))textarea.value=[textarea.value.trim(),select.value].filter(Boolean).join('\n');select.value=''};textarea.parentElement.insertBefore(select,textarea)}renderObservationPickers()}
+  setupObservationPickers();
   function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2300)}
   async function operationsPost(url,body){const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)});let payload={};try{payload=await response.json()}catch(_){}if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudo guardar.');return payload;}
+  async function operationsDelete(url){const response=await fetch(url,{method:'DELETE',headers:{Accept:'application/json'}});let payload={};try{payload=await response.json()}catch(_){}if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudo eliminar.');return payload;}
   function navMode(mode){const set=(el,view,icon,label)=>{el.dataset.nav=view;el.querySelector('span').textContent=icon;el.querySelector('em').textContent=label};if(mode==='partner'){set($('#navOne'),'partner','⌂','Inicio');set($('#navTwo'),'partnerEquipment','❄','Equipos');set($('#navThree'),'partnerFaults','⚠','Fallas')}else{set($('#navOne'),'agenda','▦','Agenda');set($('#navTwo'),'clients','♙','Clientes');set($('#navThree'),'profile','◎','Perfil')}}
   function can(permission){return account.isOwner||Boolean(activePermissions[permission]);}
   function visibleExpenses(){return account.isOwner?matrixExpenses:matrixExpenses.filter(item=>item.user_id===account.id)}
@@ -394,6 +402,8 @@
     const fresh=pending.filter(item=>!seen.includes(item.id));if(fresh.length){const latest=fresh[0],message=fresh.length===1?`Nuevo gasto de ${latest.technician_name||'un técnico'} por ${money(latest.amount)}`:`${fresh.length} gastos nuevos esperan revisión`;toast(message);if('Notification'in window&&Notification.permission==='granted')new Notification('Gastos por revisar',{body:message,tag:'hsc-gastos-pendientes'});}
     try{localStorage.setItem(key,JSON.stringify(pending.map(item=>item.id)))}catch(_){}
   }
+  let profilePhotoUrl='';
+  function renderProfileIdentity(){const avatar=$('#profileAvatar'),fallback=account.name.split(/\s+/).map(part=>part[0]).join('').slice(0,2).toUpperCase();avatar.innerHTML=photoMarkup(profilePhotoUrl,fallback);hydratePhotos(avatar,1);$('#profileName').textContent=account.name;}
   function applyAccess(){
     document.body.dataset.activeMode=currentMode;
     $$('[data-admin-only]').forEach(el=>el.dataset.roleHidden=account.isOwner?'false':'true');
@@ -402,7 +412,7 @@
     $('#partnerClientChooser').hidden=!account.isOwner||currentMode!=='partner';
     $('#searchToggle').dataset.roleHidden=account.isOwner||can('switchViews')?'false':'true';
     $$('#appMenu .app-option.admin').forEach(el=>el.dataset.roleHidden=account.isOwner?'false':'true');
-    $('#profileName').textContent=account.name;$('#profileAvatar').textContent=account.name.split(/\s+/).map(part=>part[0]).join('').slice(0,2).toUpperCase();$('#profileRole').textContent=account.isOwner?'Propietario · Cuenta activa':`${serverRole==='client'?'Cliente':'Técnico'} · Cuenta activa`;
+    renderProfileIdentity();$('#profileRole').textContent=account.isOwner?'Propietario · Cuenta activa':`${serverRole==='client'?'Cliente':'Técnico'} · Cuenta activa`;
     $('#profileTasks').textContent=matrixTasks.filter(task=>task.scheduled_date===dateKey(new Date())&&task.status!=='Terminada'&&task.status!=='Cancelada').length;$('#profileReports').textContent=matrixReports.length;$('#profileClients').textContent=clients.length;const pendingExpenses=visibleExpenses().filter(expense=>expense.status==='Pendiente'),pendingTotal=pendingExpenses.reduce((sum,item)=>sum+Number(item.amount||0),0);$('#profileExpenseState').textContent=pendingExpenses.length?`${pendingExpenses.length} · ${money(pendingTotal)}`:'Sin pendientes';$('#profileExpenseState').classList.toggle('pending',pendingExpenses.length>0);const expenseBadge=$('#pendingExpenseNavBadge');expenseBadge.hidden=!account.isOwner||!pendingExpenses.length;expenseBadge.textContent=pendingExpenses.length>99?'99+':String(pendingExpenses.length);$('#profileExpenseTitle').textContent=account.isOwner?'Gastos de técnicos':'Mis gastos';$('#profileExpenseDescription').textContent=account.isOwner?'Revisar, aprobar y marcar como liquidados':'Tickets, compras y reembolsos';$('#profileControlHeading').textContent=account.isOwner?'Administración y preferencias':'Preferencias';
   }
   async function syncGoogleNow(button,state){button.disabled=true;if(state)state.textContent='Sincronizando…';else button.textContent='Sincronizando…';try{await operationsPost('/api/operaciones/sync',{apply:true,limit:100});await loadMatrixData(true)}catch(error){toast(error.message||'No se pudo completar la sincronización')}finally{button.disabled=false;if(!state)button.textContent='Sincronizar Google'}}
@@ -425,18 +435,25 @@
   function browserNavigationState(guard=false,view=current,stack=historyStack){return {hscOperations:true,guard,view,stack:[...stack],client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode};}
   function browserNavigationUrl(view=current,guard=false){const url=new URL(location.href);url.hash=guard?'hsc-proteccion':`hsc-${view}`;return `${url.pathname}${url.search}${url.hash}`;}
   function writeBrowserNavigation(replace=false,guard=false,view=current,stack=historyStack){if(!browserHistoryReady)return;const state=browserNavigationState(guard,view,stack),url=browserNavigationUrl(view,guard);if(replace)window.history.replaceState(state,'',url);else window.history.pushState(state,'',url);}
+  function canonicalPath(view){
+    const paths={client:['clients','client'],equipment:currentMode==='partner'?['partner','partnerEquipment','equipment']:['clients','client','equipment'],report:['clients','client','equipment','report'],agenda:['clients','agenda'],profile:['clients','profile'],expenses:['clients','profile','expenses'],task:['clients','agenda','task'],users:['clients','users'],userPermissions:['clients','users','userPermissions'],clientEditor:['clients','clientEditor'],equipmentEditor:['clients','client','equipmentEditor'],partnerEquipment:['partner','partnerEquipment'],partnerReports:['partner','partnerReports'],partnerFaults:['partner','partnerFaults'],partnerDocuments:['partner','partnerDocuments'],reportView:currentMode==='partner'?['partner','partnerReports','reportView']:['clients','client','equipment','reportView']};
+    return paths[view]||[view];
+  }
+  function parentView(view){
+    const parents={client:'clients',equipment:currentMode==='partner'?'partnerEquipment':'client',report:'equipment',reportView:currentMode==='partner'?'partnerReports':'equipment',agenda:'clients',profile:'clients',expenses:'profile',task:'agenda',users:'clients',userPermissions:'users',clientEditor:'clients',equipmentEditor:'client',partnerEquipment:'partner',partnerReports:'partner',partnerFaults:'partner',partnerDocuments:'partner'};
+    return parents[view]||view;
+  }
   function initializeBrowserNavigation(){
     if(browserHistoryReady)return;
     browserHistoryReady=true;
-    const restoredStack=historyStack.length?[...historyStack]:[current],root=restoredStack[0];
-    writeBrowserNavigation(true,true,root,[root]);
-    writeBrowserNavigation(false,false,root,[root]);
-    for(let index=1;index<restoredStack.length;index++)writeBrowserNavigation(false,false,restoredStack[index],restoredStack.slice(0,index+1));
+    historyStack=canonicalPath(current);
+    writeBrowserNavigation(true,true,historyStack[0],[historyStack[0]]);
+    writeBrowserNavigation(false,false,current,historyStack);
     $('#backBtn').hidden=false;
   }
-  function showView(name,push=true){if(name===current){$('#backBtn').hidden=false;applyAccess();saveOperationalNavigation();if(name==='partnerDocuments')loadPartnerDocuments();return;}if(push)historyStack.push(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=false;navMode(currentMode);$('.bottom-nav').hidden=currentMode==='partner'||name==='inviteAccept';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();saveOperationalNavigation();if(name==='agenda')renderAgenda();if(name==='expenses')renderExpenses();if(name==='users')loadUsers();if(name==='partnerDocuments')loadPartnerDocuments();if(push&&!handlingHistoryPop)writeBrowserNavigation();scrollTo({top:0,behavior:'smooth'});}
-  function goBack(){if(browserHistoryReady){window.history.back();return;}if(historyStack.length<=1)return;historyStack.pop();showView(historyStack.at(-1),false)}
-  function openRoot(name){if(name===current)return;historyStack=[name];showView(name,false);writeBrowserNavigation();}
+  function showView(name,push=true){if(name===current){$('#backBtn').hidden=false;applyAccess();saveOperationalNavigation();if(name==='partnerDocuments')loadPartnerDocuments();return;}if(push)historyStack=canonicalPath(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=false;navMode(currentMode);$('.bottom-nav').hidden=currentMode==='partner'||name==='inviteAccept';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();saveOperationalNavigation();if(name==='agenda')renderAgenda();if(name==='expenses')renderExpenses();if(name==='users')loadUsers();if(name==='partnerDocuments')loadPartnerDocuments();if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,name,historyStack);scrollTo({top:0,behavior:'smooth'});}
+  function goBack(){const target=parentView(current);if(target===current)return;if(current==='report'&&activeReportContext)saveActiveReportDraft(false);historyStack=canonicalPath(target);showView(target,false);if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,target,historyStack)}
+  function openRoot(name){if(name===current)return;historyStack=[name];showView(name,false);if(browserHistoryReady)writeBrowserNavigation(true,false,name,historyStack);}
   function restoreOperationalNavigation(){
     let state={};try{state=JSON.parse(localStorage.getItem(navigationStorageKey)||'{}')}catch(_){}
     if(state.client&&clientMeta[state.client])selectedClient=state.client;
@@ -449,25 +466,18 @@
     if(account.isOwner)allowedRoots.push('users','userPermissions','clientEditor','equipmentEditor');
     if(account.isOwner&&new URLSearchParams(location.search).get('open')==='expenses')state.view='expenses';
     const target=allowedRoots.includes(state.view)?state.view:(currentMode==='partner'?'partner':'clients');
-    const paths={client:['clients','client'],equipment:currentMode==='partner'?['partner','partnerEquipment','equipment']:['clients','client','equipment'],report:['clients','client','equipment','report'],agenda:['clients','agenda'],profile:['clients','profile'],expenses:['clients','profile','expenses'],task:['clients','agenda','task'],userPermissions:['users','userPermissions'],clientEditor:['clients','clientEditor'],equipmentEditor:['clients','client','equipmentEditor'],partnerEquipment:['partner','partnerEquipment'],partnerReports:['partner','partnerReports'],partnerFaults:['partner','partnerFaults'],partnerDocuments:['partner','partnerDocuments'],reportView:currentMode==='partner'?['partner','partnerReports','reportView']:['clients','client','equipment','reportView']};
-    historyStack=paths[target]||[target];current='__restore__';refreshRound();
-    if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=paths.reportView;initializeBrowserNavigation();return;}}
+    historyStack=canonicalPath(target);current='__restore__';refreshRound();
+    if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=canonicalPath('reportView');initializeBrowserNavigation();return;}}
     showView(target,false);
     if(target==='report')setTimeout(()=>$('#newReport').click(),0);
     initializeBrowserNavigation();
   }
-  window.addEventListener('popstate',event=>{
-    const state=event.state;
-    if(!state?.hscOperations||state.guard){writeBrowserNavigation();return;}
-    if(['clientEditor','equipmentEditor'].includes(current)&&editorDirty&&!confirm('¿Salir sin guardar estos cambios?')){window.history.forward();return;}
-    editorDirty=false;handlingHistoryPop=true;
-    if(state.client&&clientMeta[state.client])selectedClient=state.client;
-    if(state.equipment&&equipmentMeta[state.equipment]){selectedEquipment=state.equipment;selectedClient=equipmentMeta[state.equipment].client;}
-    selectClientRound(selectedClient);
-    if(['1','2','3','4'].includes(String(state.round))){selectedRound=String(state.round);rememberClientRound(selectedClient,selectedRound,false);}
-    if(state.mode==='partner')currentMode='partner';else currentMode='tech';
-    historyStack=Array.isArray(state.stack)&&state.stack.length?state.stack:[state.view];
-    current='__history__';refreshRound();showView(state.view||historyStack.at(-1),false);handlingHistoryPop=false;
+  window.addEventListener('popstate',()=>{
+    if(['clientEditor','equipmentEditor'].includes(current)&&editorDirty&&!confirm('¿Salir sin guardar estos cambios?')){writeBrowserNavigation(false,false,current,historyStack);return;}
+    editorDirty=false;handlingHistoryPop=true;goBack();handlingHistoryPop=false;
+    // El gesto de Android/iOS siempre queda dentro de la aplicación. La ruta
+    // anterior se calcula por jerarquía, no por la cronología del navegador.
+    writeBrowserNavigation(false,false,current,historyStack);
   });
   function renderClients(filter=$('#clientSearch').value){
     const q=filter.trim().toLowerCase(),rows=clients.filter(c=>(showCatalog||clientMeta[c[1]].policy)&&`${c[0]} ${c[1]} ${clientMeta[c[1]].address}`.toLowerCase().includes(q));
@@ -736,6 +746,9 @@
     $('#expenseDetailTechnician').textContent=item.technician_name||'Técnico HSC';$('#expenseDetailConcept').textContent=item.concept;$('#expenseDetailMeta').textContent=[item.expense_date,item.category,client,equipmentRow?.[1]].filter(Boolean).join(' · ');$('#expenseDetailAmount').textContent=money(item.amount);$('#expenseDetailStatus').textContent=item.status;$('#expenseDetailPayment').textContent=item.payment_method;$('#expenseAdminNotes').value=item.admin_notes||'';
     const receipt=$('#expenseReceiptPreview');receipt.hidden=!item.has_receipt;if(item.has_receipt)receipt.src=`/api/operaciones/expenses/${encodeURIComponent(item.id)}/receipt?v=${encodeURIComponent(item.updated_at||'1')}`;$('#expenseDetailModal').classList.add('open');applyAccess();
   }
+  const profileExpenseShortcut=$('#openExpenses'),profileCard=$('[data-view="profile"] .profile-card');profileExpenseShortcut.style.marginTop='14px';profileCard.after(profileExpenseShortcut);const editProfileButton=document.createElement('button');editProfileButton.type='button';editProfileButton.className='mini-btn';editProfileButton.textContent='Editar perfil';editProfileButton.style.marginTop='14px';profileCard.append(editProfileButton);
+  async function loadOwnProfile(){try{const response=await fetch('/api/operaciones/profile',{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)return;account.name=payload.profile.name||account.name;profilePhotoUrl=payload.profile.photo_url||'';renderProfileIdentity()}catch(_){}}
+  editProfileButton.onclick=()=>{$('#ownProfileName').value=account.name;$('#ownProfilePhoto').value='';$('#ownProfilePhotoField').hidden=account.isOwner;$('#profileEditModal').classList.add('open')};$('#closeOwnProfile').onclick=()=>$('#profileEditModal').classList.remove('open');$('#saveOwnProfile').onclick=async()=>{const name=$('#ownProfileName').value.trim(),file=$('#ownProfilePhoto').files[0],button=$('#saveOwnProfile');if(!name){toast('Escribe tu nombre');return}button.disabled=true;try{const saved=await operationsPost('/api/operaciones/profile',{name});account.name=saved.profile.name||name;if(file){const formData=new FormData();formData.append('file',file,file.name);const response=await fetch('/api/operaciones/profile/photo',{method:'POST',body:formData,headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudo guardar la fotografía');profilePhotoUrl=payload.photo_url||''}renderProfileIdentity();$('#profileEditModal').classList.remove('open');toast('Perfil actualizado')}catch(error){toast(error.message)}finally{button.disabled=false}};loadOwnProfile();
   $('#openExpenses').onclick=()=>showView('expenses');if($('#openUsersProfile'))$('#openUsersProfile').onclick=()=>showView('users');$('#openExpenseForm').onclick=openExpenseForm;$('#closeExpenseForm').onclick=()=>$('#expenseModal').classList.remove('open');$('#expenseClient').onchange=refreshExpenseEquipment;$('#closeExpenseDetail').onclick=()=>$('#expenseDetailModal').classList.remove('open');
   $('#saveExpense').onclick=async()=>{
     const amount=Number($('#expenseAmount').value),concept=$('#expenseConcept').value.trim(),file=$('#expenseReceipt').files[0];if(!amount||amount<=0){toast('Escribe un importe válido');return}if(!concept){toast('Escribe el concepto de la compra');return}if(file&&(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>15*1024*1024)){toast('El ticket debe ser JPG, PNG o WebP de máximo 15 MB');return}
@@ -828,8 +841,12 @@
   $('#copyInvite').onclick=async()=>{if(!createdInviteUrl)return;try{await navigator.clipboard.writeText(createdInviteUrl);toast('Enlace copiado')}catch(_){toast('Mantén presionado el enlace para copiarlo')}};
   $('#finishInvite').onclick=()=>{$('#inviteModal').classList.remove('open');loadUsers()};
   $$('[data-round-select]').forEach(select=>select.onchange=()=>{selectedRound=select.value;rememberClientRound(selectedClient,selectedRound);refreshRound();saveOperationalNavigation();});
-  const draftKey=()=>`hsc-report-demo-${selectedEquipment}-R${selectedRound}`;let activeDraftId='';
+  let activeReportContext=null,reportOpenSequence=0;
+  const reportKey=(equipmentId,round)=>`hsc-report-demo-${equipmentId}-R${round}`;
+  const draftKey=()=>activeReportContext?.key||reportKey(selectedEquipment,selectedRound);
   function fillReportFields(values){for(const [name,value] of Object.entries(values||{})){const field=$('#reportForm').elements.namedItem(name);if(field)field.value=value??'';}}
+  function ensureReportDates(){const form=$('#reportForm'),today=dateKey(new Date());if(!form.elements.inicio.value)form.elements.inicio.value=today;if(!form.elements.fin.value)form.elements.fin.value=form.elements.inicio.value;previousReportStart=form.elements.inicio.value;}
+  let previousReportStart='';$('#reportForm').elements.inicio.addEventListener('focus',event=>{previousReportStart=event.target.value});$('#reportForm').elements.inicio.addEventListener('change',event=>{const end=$('#reportForm').elements.fin;if(!end.value||end.value===previousReportStart)end.value=event.target.value;previousReportStart=event.target.value});
   function openStandaloneReport(type,equipmentId='',prefillClient=true){
     const params=new URLSearchParams({tipo:type,origin:'operations',tecnico_responsable:account.name});if(prefillClient){params.set('cliente',clientName(selectedClient));params.set('direccion',clientMeta[selectedClient]?.address||'');}
     const row=equipment.find(item=>item[0]===equipmentId),meta=row?equipmentMeta[row[0]]:null;if(row&&meta){params.set('equipo',row[1]);params.set('ubicacion',meta.location||'');params.set('departamento',meta.department||'');params.set('marca',row[2]||'');params.set('modelo',meta.model||'');params.set('no_serie',meta.serial||'');params.set('no_inventario',row[0]);}
@@ -840,31 +857,36 @@
   $('#newReport').onclick=async()=>{
     const e=equipment.find(row=>row[0]===selectedEquipment),form=$('#reportForm');form.reset();
     if(!clientMeta[equipmentMeta[e[0]].client].policy){openStandaloneReport('refrigeracion',e[0]);return false;}
-    const fixed=[...form.querySelectorAll('input[readonly]')];fixed[0].value=clientName(equipmentMeta[e[0]].client);fixed[1].value=e[0];fixed[2].value=`R${selectedRound}`;
-    $('[data-view="report"] .form-intro span').textContent=`${clientName(equipmentMeta[e[0]].client)} · ${e[0]} · ${e[1]} · R${selectedRound}`;
-    activeDraftId='';try{fillReportFields(JSON.parse(localStorage.getItem(draftKey())||'{}'))}catch(_){}
+    const context={client:equipmentMeta[e[0]].client,equipment:e[0],round:String(selectedRound),key:reportKey(e[0],selectedRound),draftId:'',requestId:++reportOpenSequence};activeReportContext=context;
+    if(pendingReportUploads()[context.key]){activeReportContext=null;toast('Este reporte ya está finalizando sus fotos en segundo plano');resumePendingReportUploads();return false;}
+    const fixed=[...form.querySelectorAll('input[readonly]')];fixed[0].value=clientName(context.client);fixed[1].value=context.equipment;fixed[2].value=`R${context.round}`;
+    $('[data-view="report"] .form-intro span').textContent=`${clientName(context.client)} · ${e[0]} · ${e[1]} · R${context.round}`;
+    const today=dateKey(new Date());form.elements.inicio.value=today;form.elements.fin.value=today;
+    $$('[data-view="report"] details.form-section').forEach(section=>section.open=true);
+    let localDraft={};try{localDraft=JSON.parse(localStorage.getItem(context.key)||'{}')||{};fillReportFields(localDraft)}catch(_){}ensureReportDates();$('#discardDraft').hidden=!Object.keys(localDraft).length;
     showView('report');
-    try{const response=await fetch(`/api/operaciones/reports/draft?equipment_id=${encodeURIComponent(selectedEquipment)}&round=${encodeURIComponent(selectedRound)}`,{headers:{Accept:'application/json'}}),payload=await response.json();if(response.ok&&payload.ok&&payload.draft){activeDraftId=payload.draft.id;fillReportFields(payload.draft.payload);toast('Borrador recuperado de la base')}}catch(_){}
+    try{const response=await fetch(`/api/operaciones/reports/draft?equipment_id=${encodeURIComponent(context.equipment)}&round=${encodeURIComponent(context.round)}`,{headers:{Accept:'application/json'}}),payload=await response.json();if(activeReportContext?.requestId!==context.requestId||current!=='report')return true;if(response.ok&&payload.ok&&payload.draft&&payload.draft.equipment_id===context.equipment&&String(payload.draft.round)===context.round){context.draftId=payload.draft.id;fillReportFields(payload.draft.payload);ensureReportDates();$('#discardDraft').hidden=false;toast('Borrador recuperado de la base')}}catch(_){}
     return true;
   };
-  $('#saveDraft').onclick=async()=>{const data=Object.fromEntries(new FormData($('#reportForm'))),button=$('#saveDraft');try{localStorage.setItem(draftKey(),JSON.stringify(data))}catch(_){}button.disabled=true;try{const result=await operationsPost('/api/operaciones/reports/draft',{id:activeDraftId,client_id:equipmentMeta[selectedEquipment].client,equipment_id:selectedEquipment,round:selectedRound,report_type:'refrigeration',payload:data});activeDraftId=result.draft.id;toast(`Borrador guardado en la base · ${selectedEquipment} · R${selectedRound}`)}catch(error){toast(`Borrador conservado en este dispositivo · ${error.message}`)}finally{button.disabled=false}};
+  async function saveActiveReportDraft(showMessage=true){const context=activeReportContext;if(!context)return null;const data=Object.fromEntries(new FormData($('#reportForm'))),button=$('#saveDraft');try{localStorage.setItem(context.key,JSON.stringify(data))}catch(_){}$('#discardDraft').hidden=false;button.disabled=true;try{const result=await operationsPost('/api/operaciones/reports/draft',{id:context.draftId,client_id:context.client,equipment_id:context.equipment,round:context.round,report_type:'refrigeration',payload:data});if(activeReportContext?.requestId===context.requestId)context.draftId=result.draft.id;if(showMessage)toast(`Borrador guardado · ${context.equipment} · R${context.round}`);return result.draft}catch(error){if(showMessage)toast(`Borrador conservado en este dispositivo · ${error.message}`);return null}finally{button.disabled=false}}
+  $('#saveDraft').onclick=()=>saveActiveReportDraft(true);
+  $('#discardDraft').onclick=async()=>{const context=activeReportContext;if(!context||!confirm(`¿Descartar el borrador de ${context.equipment} · R${context.round}?`))return;const button=$('#discardDraft');button.disabled=true;try{if(context.draftId)await operationsDelete(`/api/operaciones/reports/draft/${encodeURIComponent(context.draftId)}`);try{localStorage.removeItem(context.key)}catch(_){}await clearEvidenceDraft(context.key);reportEvidenceByKey.delete(context.key);loadedEvidenceKeys.delete(context.key);activeReportContext=null;historyStack=canonicalPath('equipment');current='__discarded_report__';showView('equipment',false);if(browserHistoryReady)writeBrowserNavigation(true,false,'equipment',historyStack);toast('Borrador descartado')}catch(error){toast(error.message)}finally{button.disabled=false}};
   $('#reportForm').onsubmit=async event=>{
     event.preventDefault();
     const photos=[...evidenceForReport()];
     if(!confirm('¿Finalizar este reporte y marcar el equipo como realizado?'))return;
-    const data=Object.fromEntries(new FormData($('#reportForm'))),button=event.submitter||$('#reportForm button[type="submit"]'),keepClient=selectedClient,keepEquipment=selectedEquipment,keepRound=selectedRound,keepDraftKey=draftKey();button.disabled=true;button.textContent='Guardando…';
+    const context=activeReportContext;if(!context){toast('Vuelve a abrir el equipo antes de finalizar');return;}const data=Object.fromEntries(new FormData($('#reportForm'))),button=event.submitter||$('#reportForm button[type="submit"]'),keepClient=context.client,keepEquipment=context.equipment,keepRound=context.round,keepDraftKey=context.key;button.disabled=true;button.textContent='Guardando…';
     try{
-      const draftResult=await operationsPost('/api/operaciones/reports/draft',{id:activeDraftId,client_id:equipmentMeta[selectedEquipment].client,equipment_id:selectedEquipment,round:selectedRound,report_type:'refrigeration',payload:data});
-      activeDraftId=draftResult.draft.id;
-      const upload={id:activeDraftId,client:keepClient,equipment:keepEquipment,round:keepRound,key:keepDraftKey,data,photos};
+      const draftResult=await operationsPost('/api/operaciones/reports/draft',{id:context.draftId,client_id:keepClient,equipment_id:keepEquipment,round:keepRound,report_type:'refrigeration',payload:data});
+      context.draftId=draftResult.draft.id;
+      const upload={id:context.draftId,client:keepClient,equipment:keepEquipment,round:keepRound,key:keepDraftKey,data,photos};
+      rememberObservationValues(data);
       rememberPendingReportUpload(upload);
       backgroundReportUploads.set(keepDraftKey,upload);
       // La captura ya quedó entregada. Se reemplaza en el historial para que
       // Atrás continúe hacia el cliente y nunca reabra el formulario cerrado.
-      historyStack=historyStack.at(-1)==='report'?historyStack.slice(0,-1):historyStack.filter(view=>view!=='report');
-      if(historyStack.at(-1)!=='equipment')historyStack.push('equipment');
-      current='__completed_report__';showView('equipment',false);
-      if(browserHistoryReady){writeBrowserNavigation(true,false,'equipment',historyStack);window.history.back();}
+      activeReportContext=null;historyStack=canonicalPath('equipment');current='__completed_report__';showView('equipment',false);
+      if(browserHistoryReady)writeBrowserNavigation(true,false,'equipment',historyStack);
       toast(photos.length?`Reporte guardado · ${photos.length} foto(s) subiendo`:'Reporte guardado · finalizando');
       finishReportInBackground(upload);
     }catch(error){toast(error.message||'No se pudo finalizar el reporte')}

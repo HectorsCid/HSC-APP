@@ -60,6 +60,7 @@ from reportes_bp import (
     find_client_reports_folder_url,
     store_operations_evidence,
     store_operations_expense_receipt,
+    _optimize_photo_bytes,
 )
 from operaciones_matrix import read_operaciones_matrix
 from operaciones_store import OperationsStore
@@ -3069,6 +3070,80 @@ def api_operaciones_users():
     return jsonify({"ok": True, "users": OPERACIONES_STORE.list_users()})
 
 
+@app.route('/api/operaciones/profile', methods=['GET', 'POST'])
+def api_operaciones_profile():
+    denied = _operations_forbidden("admin", "technician", "client")
+    if denied:
+        return denied
+    user_id = str(session.get("hsc_user_id") or "").strip()
+    if user_id == "owner":
+        if request.method == "POST":
+            name = str((request.get_json(silent=True) or {}).get("name") or "").strip()
+            if not name or len(name) > 100:
+                return jsonify({"ok": False, "error": "Escribe un nombre de máximo 100 caracteres."}), 400
+            session["hsc_user_name"] = name
+        return jsonify({"ok": True, "profile": {"id": "owner", "name": str(session.get("hsc_user_name") or "Héctor Silva Cid"), "has_photo": False}})
+    try:
+        user = OPERACIONES_STORE.get_user_by_id(user_id)
+        if not user:
+            abort(404)
+        if request.method == "POST":
+            user = OPERACIONES_STORE.save_user_profile(user_id, (request.get_json(silent=True) or {}).get("name"))
+            session["hsc_user_name"] = user["name"]
+        photo_ref = user.pop("photo_ref", "")
+        if user.get("has_photo"):
+            user["photo_url"] = url_for(
+                "api_operaciones_profile_photo",
+                v=hashlib.sha1(photo_ref.encode("utf-8")).hexdigest()[:10],
+            )
+        return jsonify({"ok": True, "profile": user})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post('/api/operaciones/profile/photo')
+def api_operaciones_profile_photo_upload():
+    denied = _operations_forbidden("technician", "client")
+    if denied:
+        return denied
+    upload = request.files.get("file")
+    if not upload or not upload.filename:
+        return jsonify({"ok": False, "error": "Selecciona una fotografía."}), 400
+    if upload.mimetype not in {"image/jpeg", "image/png", "image/webp"}:
+        return jsonify({"ok": False, "error": "Usa una imagen JPG, PNG o WebP."}), 400
+    content = upload.stream.read(8 * 1024 * 1024 + 1)
+    if not content or len(content) > 8 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "La fotografía debe pesar máximo 8 MB."}), 400
+    user_id = str(session.get("hsc_user_id") or "").strip()
+    try:
+        optimized, mime_type = _optimize_photo_bytes(content)
+        from PIL import Image
+        with Image.open(io.BytesIO(optimized)) as image:
+            width, height = image.size
+        source_ref = f"profile:{user_id}:{secrets.token_hex(8)}"
+        OPERACIONES_STORE.save_cached_thumbnail("user", user_id, source_ref, optimized, mime_type, width, height)
+        user = OPERACIONES_STORE.get_user_by_id(user_id)
+        user = OPERACIONES_STORE.save_user_profile(user_id, user["name"], photo_ref=source_ref)
+        return jsonify({"ok": True, "photo_url": url_for("api_operaciones_profile_photo", v=user.get("updated_at") or source_ref)})
+    except (ValueError, OSError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.get('/api/operaciones/profile/photo')
+def api_operaciones_profile_photo():
+    denied = _operations_forbidden("technician", "client")
+    if denied:
+        return denied
+    user_id = str(session.get("hsc_user_id") or "").strip()
+    source_ref = OPERACIONES_STORE.get_media_ref("user", user_id)
+    cached = OPERACIONES_STORE.get_cached_thumbnail("user", user_id, source_ref) if source_ref else None
+    if not cached:
+        abort(404)
+    response = send_file(io.BytesIO(cached["content"]), mimetype=cached["mime_type"])
+    response.headers["Cache-Control"] = "private, max-age=2592000, immutable"
+    return response
+
+
 @app.post('/api/operaciones/users/<path:user_id>/permissions')
 def api_operaciones_user_permissions(user_id):
     denied = _operations_forbidden("admin")
@@ -4013,6 +4088,23 @@ def api_operaciones_save_report_draft():
     except Exception as exc:
         current_app.logger.exception("No se pudo guardar el borrador operativo: %s", exc)
         return jsonify({"ok": False, "error": "No se pudo guardar el borrador."}), 500
+
+
+@app.delete('/api/operaciones/reports/draft/<path:report_id>')
+def api_operaciones_delete_report_draft(report_id):
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
+    permission_denied = _operations_permission_forbidden("createReports")
+    if permission_denied:
+        return permission_denied
+    try:
+        deleted = OPERACIONES_STORE.delete_report_draft(report_id)
+        _invalidate_operations_cache()
+        return jsonify({"ok": True, "deleted": deleted})
+    except Exception as exc:
+        current_app.logger.exception("No se pudo descartar el borrador %s: %s", report_id, exc)
+        return jsonify({"ok": False, "error": "No se pudo descartar el borrador."}), 500
 
 
 @app.post('/api/operaciones/reports/finalize')
