@@ -3254,6 +3254,60 @@ def api_operaciones_save_task():
         return jsonify({"ok": False, "error": str(exc)}), 400
 
 
+@app.post('/api/operaciones/visit-requests')
+def api_operaciones_request_visit():
+    denied=_operations_forbidden('client')
+    if denied:return denied
+    body=request.get_json(silent=True) or {}
+    user_id=str(session.get('hsc_user_id') or '')
+    client_id=str(session.get('hsc_client_id') or '')
+    if not user_id or not client_id:abort(403)
+    request_id=str(body.get('id') or '')
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',request_id):
+        return jsonify(ok=False,error='La solicitud requiere un identificador válido.'),400
+    task_id=f'VISIT_{user_id}_{request_id}'
+    try:
+        task=next((row for row in OPERACIONES_STORE.snapshot().get('tasks',[]) if row['id']==task_id),None)
+        if task and task.get('client_id')!=client_id:abort(403)
+        if not task:
+            task=OPERACIONES_STORE.save_task({'id':task_id,'title':str(body.get('title') or '').strip(),
+                'details':str(body.get('details') or '').strip(),'scheduled_date':body.get('scheduled_date'),
+                'scheduled_time':body.get('scheduled_time') or '', 'client_id':client_id,
+                'assigned_user_ids':['owner'],'created_by':user_id,'status':'Solicitada'})
+        _invalidate_operations_cache()
+        from notification_delivery import enqueue
+        from urllib.parse import urlencode
+        enqueue('Solicitud de visita',f"{client_id} · {task['title']} · {task['scheduled_date']} · {task.get('scheduled_time') or 'Sin hora'}",
+                '/hsc-tecnico/?'+urlencode({'open':'calendar','date':task['scheduled_date']}),f"visit-request:{task_id}",category='agenda')
+        return jsonify(ok=True,task=task),201
+    except ValueError as exc:return jsonify(ok=False,error=str(exc)),400
+
+
+@app.post('/api/operaciones/visit-requests/<task_id>/confirm')
+def api_operaciones_confirm_visit(task_id):
+    denied=_operations_forbidden('admin')
+    if denied:return denied
+    original=next((row for row in OPERACIONES_STORE.snapshot().get('tasks',[]) if row['id']==task_id),None)
+    if not original or not task_id.startswith('VISIT_'):abort(404)
+    body=dict(request.get_json(silent=True) or {})
+    try:
+        task=original
+        if original['status']=='Solicitada':
+            if not body.get('assigned_user_ids'):raise ValueError('Selecciona al menos un responsable.')
+            body.update(id=task_id,client_id=original['client_id'],status='Pendiente',created_by=original.get('created_by'))
+            task=OPERACIONES_STORE.save_task(body)
+        elif original['status']!='Pendiente':
+            return jsonify(ok=False,error='Esta solicitud ya no está pendiente de confirmación.'),409
+        _invalidate_operations_cache()
+        from notification_delivery import enqueue
+        from urllib.parse import urlencode
+        enqueue('Visita confirmada',f"{task['title']} · {task['scheduled_date']} · {task.get('scheduled_time') or 'Sin hora definida'}",
+                '/hsc-partner/?'+urlencode({'client':task['client_id'],'open':'calendar','date':task['scheduled_date']}),
+                f'visit-confirmed:{task_id}',category='agenda',audience='client',client_id=task['client_id'])
+        return jsonify(ok=True,task=task)
+    except ValueError as exc:return jsonify(ok=False,error=str(exc)),400
+
+
 @app.post('/api/operaciones/tasks/<path:task_id>/complete')
 def api_operaciones_complete_task(task_id):
     denied = _operations_forbidden("admin", "technician")
@@ -3262,6 +3316,8 @@ def api_operaciones_complete_task(task_id):
     task = next((item for item in OPERACIONES_STORE.snapshot().get("tasks", []) if item["id"] == task_id), None)
     if not task:
         abort(404)
+    if task.get('status')=='Solicitada':
+        return jsonify(ok=False,error='Primero debe confirmarse la visita.'),409
     assignees = task.get('assigned_user_ids', [task['assigned_user_id']] if task.get('assigned_user_id') else [])
     if _operations_role() == "technician" and assignees and str(session.get("hsc_user_id") or "") not in assignees:
         abort(404)

@@ -1026,7 +1026,7 @@ class OperationsStore:
             if not user or user.get('status') != 'active' or user.get('role') not in {'admin','technician'}:
                 raise ValueError('Uno de los responsables no es un técnico activo.')
         status = _text(item.get("status")) or "Pendiente"
-        if status not in {"Pendiente", "En curso", "Terminada", "Cancelada"}:
+        if status not in {"Solicitada", "Pendiente", "En curso", "Terminada", "Cancelada"}:
             raise ValueError("El estado de la tarea no es válido.")
         stamp, p = _now(), self.placeholder
         with self.connection() as conn:
