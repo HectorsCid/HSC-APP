@@ -1,0 +1,11 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync('templates/app_operativa_demo.html','utf8');
+const body=source.slice(source.indexOf('  function sizePartnerPreviews(){'),source.indexOf('  function renderPartnerFaults(){'));
+const list=heights=>({children:heights.map(height=>({getBoundingClientRect:()=>({height})})),getClientRects:()=>[{}],style:{}});
+const nodes={'#partnerFaultPreview':list([110,130,150,160]),'#partnerEquipmentPreview':list([80,90,100,110,120,130])};
+vm.runInNewContext(body+';sizePartnerPreviews();',{$:key=>nodes[key],getComputedStyle:()=>({rowGap:'10px',paddingTop:'0px',paddingBottom:'0px'})});
+assert.equal(nodes['#partnerFaultPreview'].style.maxHeight,'250px');
+assert.equal(nodes['#partnerEquipmentPreview'].style.maxHeight,'290px');
+assert(source.includes("$('#partnerFaultPreview').innerHTML=markup"));
+assert(!source.includes('faultCards(rows.slice(0,2))'));
+console.log('OK: dos fallas y tres equipos visibles; el resto permanece disponible para desplazamiento.');

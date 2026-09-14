@@ -35,7 +35,7 @@ def configured():
 
 
 NOTICE_OPTIONS = {
-    'admin': {'fallas':'Fallas nuevas y resueltas','gastos':'Gastos nuevos de técnicos','correo':'Correos nuevos','facturas':'Facturas programadas','respaldos':'Respaldos','reportes':'Reportes y generación de PDF'},
+    'admin': {'fallas':'Fallas nuevas y resueltas','gastos':'Gastos nuevos de técnicos','facturas':'Facturas programadas','respaldos':'Respaldos','reportes':'Reportes y generación de PDF'},
     'technician': {'fallas':'Fallas por atender','pagos':'Estado de mis gastos y reembolsos'},
     'client': {'fallas':'Fallas resueltas','cotizaciones':'Cotizaciones disponibles','facturas':'Facturas y cambios de estado','complementos':'Complementos de pago','reportes':'Reportes terminados'},
 }
@@ -47,6 +47,8 @@ def notification_preferences(user_id):
 
 
 def accepts_notice(user_id, category):
+    if category == 'correo':
+        return False  # Módulo retirado; tampoco entregar avisos IMAP que quedaron en cola.
     return notification_preferences(user_id).get(category, True) is not False
 
 
@@ -276,7 +278,7 @@ def inbox():
     who = identity()
     result = notices.snapshot(**who)
     preferences=notification_preferences(who['user_id'])
-    result['items']=[row for row in result['items'] if preferences.get(row.get('category'),True) is not False]
+    result['items']=[row for row in result['items'] if row.get('category') != 'correo' and preferences.get(row.get('category'),True) is not False]
     result['unread']=sum(not row.get('read') for row in result['items'])
     with notices.LOCK:
         state = notices._read()

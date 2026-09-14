@@ -68,17 +68,13 @@ from operaciones_sync import sync_operations_outbox
 
 from facturacion_bp import facturacion_bp, billing_client_groups, api_invoice_pdf, api_invoice_xml
 app.register_blueprint(facturacion_bp)
-from mail_bp import mail_bp
-app.register_blueprint(mail_bp)
 from notification_delivery import bp as notifications_bp, start as start_notifications
 app.register_blueprint(notifications_bp)
-from mail_idle import start_mail_idle_listener
 
 
 @app.before_request
-def ensure_mail_idle_listener():
-    """Arranca IDLE cuando Gunicorn ya termino de cargar la aplicacion."""
-    start_mail_idle_listener(app)
+def ensure_notifications_worker():
+    """Conserva los avisos operativos sin mantener un lector de correo IMAP."""
     start_notifications(app)
 
 

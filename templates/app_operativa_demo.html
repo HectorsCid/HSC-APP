@@ -93,6 +93,9 @@
     .equipment-card .card-title,.equipment-card .card-sub{white-space:normal;overflow-wrap:anywhere;line-height:1.35}
     .equipment-card .status-dot,.equipment-card .chevron{flex-shrink:0}
     @media(max-width:480px){.equipment-card{gap:10px;padding:12px}.equipment-card .equipment-photo{flex-basis:54px;width:54px;height:60px}}
+    #partnerFaultPreview,#partnerEquipmentPreview{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;min-width:0;align-content:start}
+    #partnerFaultPreview{max-height:280px;padding-right:4px}
+    #partnerEquipmentPreview{max-height:320px}
 </style>
 </head>
 <body data-operations-shell="true" data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-pwa-install-disabled="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-app-kind="{{ operations_app_kind|default('technician') }}" data-user-id="{{ operations_user_id|default('owner') }}" data-user-name="{{ operations_user_name|default('Héctor Silva Cid') }}" data-permissions="{{ operations_permissions|default({})|tojson|forceescape }}">
@@ -629,13 +632,23 @@
       $('#faultDetailModal').classList.add('open');
     });
   }
+  function sizePartnerPreviews(){
+    for(const [id,count] of [['partnerFaultPreview',2],['partnerEquipmentPreview',3]]){
+      const list=$('#'+id);if(!list||!list.getClientRects().length)continue;
+      const rows=[...list.children].slice(0,count);if(!rows.length)continue;
+      const style=getComputedStyle(list),gap=parseFloat(style.rowGap)||0;
+      const height=rows.reduce((sum,row)=>sum+row.getBoundingClientRect().height,0)+gap*(rows.length-1)+(parseFloat(style.paddingTop)||0)+(parseFloat(style.paddingBottom)||0);
+      list.style.maxHeight=Math.ceil(height)+'px';
+    }
+  }
   function renderPartnerFaults(){
     const rows=matrixFaults.filter(fault=>fault.client_id===selectedClient||equipmentMeta[fault.equipment_id]?.client===selectedClient);
     const markup=faultCards(rows);
-    $('#partnerFaultPreview').innerHTML=faultCards(rows.slice(0,2));
+    $('#partnerFaultPreview').innerHTML=markup;
     $('#partnerFaultFull').innerHTML=markup;
     $('#partnerFaultCount').textContent=`${rows.length} registrada${rows.length===1?'':'s'}`;
     bindPartnerFaults();
+    requestAnimationFrame(sizePartnerPreviews);
   }
   function renderClientFaults(){
     const rows=matrixFaults.filter(fault=>fault.client_id===selectedClient||equipmentMeta[fault.equipment_id]?.client===selectedClient);
@@ -1166,6 +1179,8 @@
   window.addEventListener('online',()=>{updateOfflineSyncUi();if(shouldSyncNow()){toast('Conexión recuperada · sincronizando pendientes');loadMatrixData().finally(()=>resumePendingReportUploads())}else toast(offlineSyncMode()==='offline'?'Conexión disponible · continúas trabajando sin conexión':'Conexión disponible · esperando Wi‑Fi')});
   window.addEventListener('offline',()=>{updateOfflineSyncUi();toast('Sin conexión · los reportes quedarán en este dispositivo')});
   const networkConnection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;if(networkConnection?.addEventListener)networkConnection.addEventListener('change',()=>{updateOfflineSyncUi();if(shouldSyncNow())resumePendingReportUploads()});
+  if(typeof ResizeObserver!=='undefined'){const previewObserver=new ResizeObserver(sizePartnerPreviews);for(const id of ['partnerFaultPreview','partnerEquipmentPreview'])previewObserver.observe($('#'+id));}
+  window.addEventListener('resize',sizePartnerPreviews);
   applyAccess();updateOfflineSyncUi();if(typeof fetch==='function')loadMatrixData().finally(()=>{initializeBrowserNavigation();resumePendingReportUploads()});else initializeBrowserNavigation();
 </script>
 </body>
