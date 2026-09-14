@@ -94,6 +94,7 @@
   }
 
   function updateStatus(message){
+    window.dispatchEvent(new CustomEvent('hsc-push-status',{detail:message}));
     document.querySelectorAll('[data-pwa-status]').forEach(element => {
       element.textContent = message;
     });
@@ -107,7 +108,7 @@
 
   async function subscribeForServerNotifications(){
     if(!registration || !('PushManager' in window) || Notification.permission !== 'granted') return false;
-    const configResponse = await fetch('/api/push/config', {headers:{'Accept':'application/json'}});
+    const configResponse = await fetch('/api/operaciones/avisos/config', {headers:{'Accept':'application/json'}});
     const config = await configResponse.json();
     if(!configResponse.ok || !config.enabled || !config.public_key) return false;
     let subscription = await registration.pushManager.getSubscription();
@@ -117,7 +118,7 @@
         applicationServerKey:decodePushKey(config.public_key)
       });
     }
-    const response = await fetch('/api/push/subscribe', {
+    const response = await fetch('/api/operaciones/avisos/subscribe', {
       method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
       body:JSON.stringify({subscription:subscription.toJSON()})
     });
@@ -170,21 +171,20 @@
       return;
     }
     registration = registration || await navigator.serviceWorker.ready;
-    await registration.showNotification('HSC está listo', {
-      body:'Las notificaciones funcionan correctamente en este dispositivo.',
-      icon:'/static/img/hsc-app-192.png',
-      badge:'/static/img/hsc-app-192.png',
-      tag:'hsc-aviso-local',
-      data:{url:'/inicio-app'}
-    });
     try{
       const subscribed = await subscribeForServerNotifications();
-      updateStatus(subscribed ? 'Notificaciones y recordatorios activados.' : 'Aviso enviado. Falta configurar los avisos del servidor.');
+      if(!subscribed)throw Error('No se pudo activar el canal del servidor.');
+      const subscription=await registration.pushManager.getSubscription();
+      const response=await fetch('/api/operaciones/avisos/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:subscription.endpoint})});
+      const result=await response.json();if(!response.ok||!result.ok)throw Error(result.error||'No se pudo solicitar la prueba.');
+      const message='Prueba solicitada al servidor. Confirma que recibes el aviso; puedes revisar su estado en la campana.';updateStatus(message);window.dispatchEvent(new CustomEvent('hsc-push-status',{detail:message}));
     }catch(error){
       console.warn('HSC: no se pudo activar el canal de avisos.', error);
-      updateStatus('Aviso enviado; el canal de recordatorios todavía no está disponible.');
+      updateStatus(error.message);window.dispatchEvent(new CustomEvent('hsc-push-status',{detail:error.message}));
     }
   }
+
+  window.hscTestServerNotification=testNotification;
 
   function bindPanelActions(){
     document.querySelectorAll('[data-pwa-install]').forEach(button => button.addEventListener('click', requestInstall));

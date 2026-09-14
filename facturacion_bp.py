@@ -312,36 +312,8 @@ def _push_configured():
 
 
 def _send_push_notifications(title, body, url="/facturacion?tab=plantillas", tag="hsc-facturas", category="facturas"):
-    notices.publish(title, body, category=category, key=tag, url=url)
-    subscriptions = _read_push_subscriptions()
-    if not subscriptions or not _push_configured():
-        return {"sent": 0, "configured": _push_configured(), "devices": len(subscriptions)}
-    try:
-        from pywebpush import webpush
-    except ImportError:
-        current_app.logger.error("Falta instalar pywebpush para enviar notificaciones.")
-        return {"sent": 0, "configured": False, "devices": len(subscriptions)}
-    payload = json.dumps({"title": title, "body": body, "url": url, "tag": tag}, ensure_ascii=False)
-    kept, sent = [], 0
-    for item in subscriptions:
-        try:
-            webpush(
-                subscription_info=item.get("subscription") or {},
-                data=payload,
-                vapid_private_key=os.getenv("VAPID_PRIVATE_KEY", "").strip(),
-                vapid_claims={"sub": os.getenv("VAPID_SUBJECT", "mailto:hectors@hscrefrigeracion.com")},
-                ttl=86400,
-            )
-            kept.append(item)
-            sent += 1
-        except Exception as exc:
-            status = getattr(getattr(exc, "response", None), "status_code", None)
-            if status not in {404, 410}:
-                kept.append(item)
-                current_app.logger.warning("No se pudo enviar una notificación push: %s", exc)
-    if len(kept) != len(subscriptions):
-        _write_push_subscriptions(kept)
-    return {"sent": sent, "configured": True, "devices": len(subscriptions)}
+    from notification_delivery import enqueue
+    return enqueue(title, body, url, tag, category=category)
 
 
 def _stamp_fingerprint(payload):

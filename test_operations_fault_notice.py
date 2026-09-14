@@ -34,7 +34,7 @@ class FaultNoticeTests(unittest.TestCase):
             self.assertEqual(status,201)
             self.assertTrue(result['ok'])
             self.assertEqual(push.call_args.kwargs['category'],'fallas')
-            self.assertEqual(push.call_args.kwargs['url'],'/hsc-tecnico/?client=B+%26+C')
+            self.assertEqual(push.call_args.kwargs['url'],'/hsc-tecnico/?client=B+%26+C&fault=F1')
             push.side_effect = RuntimeError('Push no disponible')
             result,status = namespace['api_operaciones_save_fault']()
             self.assertEqual(status,201,'Un error de push no debe provocar un registro duplicado')

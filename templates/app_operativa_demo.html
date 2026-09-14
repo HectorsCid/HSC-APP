@@ -487,6 +487,8 @@
     historyStack=canonicalPath(target);current='__restore__';refreshRound();
     if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=canonicalPath('reportView');initializeBrowserNavigation();return;}}
     showView(target,false);
+    const linkedFault=new URLSearchParams(location.search).get('fault');
+    if(linkedFault){const fault=matrixFaults.find(item=>item.id===linkedFault&&item.client_id===selectedClient);if(fault){if(currentMode==='partner')showView('partnerFaults');const button=$$('[data-fault-id]').find(item=>item.dataset.faultId===linkedFault);button?.click();}}
     if(target==='report')setTimeout(async()=>{restoringReportOpen=true;try{await $('#newReport').onclick()}finally{restoringReportOpen=false}},0);
     initializeBrowserNavigation();
   }

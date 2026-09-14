@@ -1,0 +1,83 @@
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+from flask import Flask
+
+with patch.dict('sys.modules', {'cfdi_drive':SimpleNamespace(backup_json_file=Mock(),load_json_file=lambda *a,**k:{})}):
+    import notification_center as notices
+    import notification_delivery as delivery
+
+
+class NotificationsTest(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path=patch.object(notices,'PATH',Path(self.temp.name)/'notices.json')
+        self.path.start();self.addCleanup(self.path.stop)
+        self.backup=patch.object(notices,'backup_json_file',Mock())
+        self.backup.start();self.addCleanup(self.backup.stop)
+        self.app=Flask(__name__);self.app.config.update(TESTING=True,SECRET_KEY='test')
+        self.app.register_blueprint(delivery.bp);self.client=self.app.test_client()
+
+    def login(self, role='admin', user='owner', company=''):
+        with self.client.session_transaction() as session:
+            session.update(hsc_authenticated=True,hsc_role=role,hsc_user_id=user,hsc_client_id=company)
+
+    def subscribe(self, endpoint='https://fcm.googleapis.com/test'):
+        return self.client.post('/api/operaciones/avisos/subscribe',json={'subscription':{
+            'endpoint':endpoint,'keys':{'auth':'test','p256dh':'test'}}})
+
+    def test_inbox_and_mark_read_are_scoped(self):
+        notices.publish('Admin','private',key='admin')
+        notices.publish('Client A','a',key='a',audience='client',client_id='A')
+        self.login('client','user-a','A')
+        result=self.client.get('/api/operaciones/avisos').get_json()
+        self.assertEqual([r['title'] for r in result['items']],['Client A'])
+        admin_id=notices.snapshot()['items'][0]['id']
+        self.assertEqual(self.client.post(f'/api/operaciones/avisos/{admin_id}/read').status_code,404)
+
+    def test_subscription_identity_cannot_be_forged(self):
+        self.login('client','user-a','A');self.subscribe()
+        device=notices._read()['push_devices'][0]
+        self.assertEqual((device['role'],device['client_id']),('client','A'))
+        delivery.enqueue('Admin','private','/inicio-app','admin')
+        self.assertEqual(notices._read()['push_queue'][0]['targets'],[])
+
+    def test_retries_and_success_not_resent(self):
+        self.login();self.subscribe()
+        delivery.enqueue('Falla','body','/inicio-app','fault:1')
+        push=Mock(side_effect=[RuntimeError('offline'),None])
+        with patch.object(delivery,'configured',return_value=True),patch.dict('sys.modules',{'pywebpush':SimpleNamespace(webpush=push)}):
+            delivery.drain()
+            state=notices._read();target=state['push_queue'][0]['targets'][0]
+            self.assertEqual(target['status'],'pending');target['next_at']=0;notices._write_local(state)
+            delivery.drain();delivery.drain()
+        self.assertEqual(push.call_count,2)
+        self.assertEqual(notices._read()['push_queue'][0]['targets'][0]['status'],'accepted')
+
+    def test_changed_account_cancels_pending_admin_delivery(self):
+        self.login();self.subscribe();delivery.enqueue('Admin','secret','/inicio-app','admin')
+        self.login('client','user-a','A');self.subscribe()
+        push=Mock()
+        with patch.object(delivery,'configured',return_value=True),patch.dict('sys.modules',{'pywebpush':SimpleNamespace(webpush=push)}):
+            delivery.drain()
+        push.assert_not_called()
+        self.assertEqual(notices._read()['push_queue'][0]['targets'][0]['status'],'cancelled')
+
+    def test_real_test_requires_own_device(self):
+        self.login();self.subscribe()
+        self.assertTrue(self.client.post('/api/operaciones/avisos/test',json={'endpoint':'https://fcm.googleapis.com/test'}).get_json()['queued'])
+        self.login('client','other','B')
+        self.assertEqual(self.client.post('/api/operaciones/avisos/test',json={'endpoint':'https://fcm.googleapis.com/test'}).status_code,400)
+
+    def test_queue_persists_and_duplicate_event_is_not_requeued(self):
+        self.login();self.subscribe()
+        delivery.enqueue('Falla','body','/inicio-app','fault:1')
+        delivery.enqueue('Falla','body','/inicio-app','fault:1')
+        self.assertEqual(len(notices._read()['push_queue']),1)
+        self.assertTrue(notices.PATH.exists())
+
+
+if __name__=='__main__':unittest.main()

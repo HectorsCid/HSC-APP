@@ -46,7 +46,7 @@ def _write(state):
         return False
 
 
-def publish(title, body, *, category="sistema", key=None, url="/inicio-app", level="info"):
+def publish(title, body, *, category="sistema", key=None, url="/inicio-app", level="info", audience="admin", client_id="", user_id=""):
     """Idempotencia por evento; volver a consultar no crea avisos duplicados."""
     try:
         with LOCK:
@@ -59,6 +59,7 @@ def publish(title, body, *, category="sistema", key=None, url="/inicio-app", lev
                 "body": str(body)[:800], "category": category, "level": level,
                 "url": url if url.startswith("/") and not url.startswith("//") else "/inicio-app",
                 "created_at": datetime.now(timezone.utc).isoformat(), "read": False,
+                "audience": audience, "client_id": client_id, "user_id": user_id,
             })
             # Retención acotada por cantidad, sin prometer un plazo de conservación.
             state["items"] = items[:2000]
@@ -69,20 +70,26 @@ def publish(title, body, *, category="sistema", key=None, url="/inicio-app", lev
         return False
 
 
-def snapshot():
+def visible(row, role="admin", client_id="", user_id=""):
+    return (row.get("audience", "admin") == role
+            and (not row.get("client_id") or row.get("client_id") == client_id)
+            and (not row.get("user_id") or row.get("user_id") == user_id))
+
+
+def snapshot(role="admin", client_id="", user_id=""):
     with LOCK:
         state = _read()
-        items = state.get("items", [])
+        items = [row for row in state.get("items", []) if visible(row, role, client_id, user_id)]
         return {"items": items, "unread": sum(not row.get("read") for row in items),
-                "jobs": state.get("jobs", {})}
+                "jobs": state.get("jobs", {}) if role == "admin" else {}}
 
 
-def mark_read(item_id):
+def mark_read(item_id, role="admin", client_id="", user_id=""):
     with LOCK:
         state = _read()
         found = False
         for row in state.get("items", []):
-            if row["id"] == item_id:
+            if row["id"] == item_id and visible(row, role, client_id, user_id):
                 row["read"] = True
                 found = True
         return found, _write(state) if found else True

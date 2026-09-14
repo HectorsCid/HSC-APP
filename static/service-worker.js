@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hsc-shell-v18';
+const CACHE_NAME = 'hsc-shell-v19';
 const SAFE_ASSETS = [
   '/static/hsc_theme.css',
   '/static/hsc_theme.js',
@@ -58,13 +58,14 @@ self.addEventListener('fetch', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || '/inicio-app';
+  const target = new URL(event.notification.data?.url || '/inicio-app',self.location.origin);
+  if(target.origin!==self.location.origin)return;
+  const targetUrl=target.href;
   event.waitUntil(
     self.clients.matchAll({type:'window', includeUncontrolled:true}).then(clients => {
-      const openClient = clients.find(client => new URL(client.url).origin === self.location.origin);
+      const openClient = clients.find(client => {const url=new URL(client.url);return url.origin===target.origin&&url.pathname===target.pathname;});
       if(openClient){
-        openClient.navigate(targetUrl);
-        return openClient.focus();
+        return openClient.navigate(targetUrl).then(()=>openClient.focus());
       }
       return self.clients.openWindow(targetUrl);
     })

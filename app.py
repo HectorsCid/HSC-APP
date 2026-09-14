@@ -70,6 +70,8 @@ from facturacion_bp import facturacion_bp, billing_client_groups, api_invoice_pd
 app.register_blueprint(facturacion_bp)
 from mail_bp import mail_bp
 app.register_blueprint(mail_bp)
+from notification_delivery import bp as notifications_bp, start as start_notifications
+app.register_blueprint(notifications_bp)
 from mail_idle import start_mail_idle_listener
 
 
@@ -77,6 +79,7 @@ from mail_idle import start_mail_idle_listener
 def ensure_mail_idle_listener():
     """Arranca IDLE cuando Gunicorn ya termino de cargar la aplicacion."""
     start_mail_idle_listener(app)
+    start_notifications(app)
 
 
 print(">>> Blueprint facturacion registrado")
@@ -322,6 +325,8 @@ def acceso():
 
 @app.get("/cerrar-sesion")
 def cerrar_sesion():
+    from notification_delivery import revoke_session_devices
+    revoke_session_devices()
     session.clear()
     return redirect(url_for("acceso"))
 
@@ -4158,6 +4163,7 @@ def api_operaciones_finalize_report():
                 description=payload.get("falla_descripcion"),
                 priority=payload.get("falla_prioridad") or "Alta",
             )
+            _notify_operations_fault(fault)
         _invalidate_operations_cache()
         _schedule_operations_sync(force=True)
         return jsonify({"ok": True, "report": report, "fault": fault, "sync_status": "pending"})
@@ -4239,7 +4245,7 @@ def _notify_operations_fault(fault):
             "Nueva falla reportada",
             f"{fault.get('client_id') or 'Cliente'} · {fault.get('equipment_id') or 'Equipo'}: "
             f"{fault.get('description') or 'Revisar falla'}",
-            url="/hsc-tecnico/?" + urlencode({"client": fault.get("client_id") or ""}),
+            url="/hsc-tecnico/?" + urlencode({"client": fault.get("client_id") or "", "fault": fault.get("id") or ""}),
             tag=f"fault:{fault.get('id')}", category="fallas",
         )
     except Exception:
@@ -4371,6 +4377,16 @@ def api_operaciones_resolve_fault(fault_id):
             fault_id, resolved_by=actor,
             resolution_notes=str(body.get("resolution_notes") or "").strip(),
         )
+        try:
+            from notification_delivery import enqueue
+            from urllib.parse import urlencode
+            query = urlencode({"client": fault.get("client_id") or "", "fault": fault.get("id") or ""})
+            message = f"{fault.get('equipment_id') or 'Equipo'} · {fault.get('description') or 'Falla atendida'}"
+            enqueue('Falla resuelta', message, '/hsc-tecnico/?'+query, f"resolved-admin:{fault_id}", category='fallas')
+            enqueue('Tu falla fue resuelta', message, '/hsc-partner/?'+query, f"resolved-client:{fault_id}",
+                    category='fallas', audience='client', client_id=fault.get('client_id') or '')
+        except Exception:
+            current_app.logger.exception('No se pudo crear el aviso de resolución %s', fault_id)
         _invalidate_operations_cache()
         _schedule_operations_sync(force=True)
         return jsonify({"ok": True, "fault": fault, "sync_status": "pending"})

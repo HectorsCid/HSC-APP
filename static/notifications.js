@@ -1,13 +1,19 @@
 /* Bandeja compartida del panel administrativo; no envía ni timbra documentos. */
 (()=>{
-  const button=document.querySelector('[data-hsc-notices]');
-  if(!button) return;
+  if(window.hscNoticesLoaded)return;window.hscNoticesLoaded=true;
+  let button=document.querySelector('[data-hsc-notices]');
+  if(!button){const target=document.querySelector('.topbar,.st-actions');if(!target)return;button=document.createElement('button');button.type='button';button.className='icon-btn';button.dataset.hscNotices='';button.innerHTML='🔔 <span data-notice-count></span>';target.append(button);}
+  const api='/api/operaciones/avisos';
   const style=document.createElement('style');
   style.textContent=`.hsc-notices{box-sizing:border-box;width:min(640px,calc(100vw - 24px));max-height:85dvh;overflow:auto;border:1px solid #475569;border-radius:18px;background:#111d30;color:#eef5ff;padding:22px;font:15px/1.5 system-ui}.hsc-notices::backdrop{background:#020617b8}.hsc-notices h2{font-size:23px;margin:0}.hsc-notices header{display:flex;justify-content:space-between;align-items:center;gap:12px}.hsc-notices button,.hsc-notices select,.hsc-notices a{background:#203452;color:#eef5ff;border:1px solid #526987;border-radius:9px;padding:8px 11px;cursor:pointer;font:inherit}.hsc-notices article{padding:14px 0;border-bottom:1px solid #334155}.hsc-notices p{margin:6px 0;overflow-wrap:anywhere}.hsc-notices small{color:#b6c6da}.hsc-notices .unread{border-left:3px solid #60a5fa;padding-left:12px}.hsc-notices nav{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.hsc-notices details{margin:12px 0;padding:12px;background:#182940;border-radius:10px}.hsc-notices .notice-actions{display:flex;gap:8px;margin-top:9px}`;
   document.head.append(style);
   const dialog=document.createElement('dialog');dialog.className='hsc-notices';dialog.setAttribute('aria-label','Centro de avisos HSC');
   dialog.innerHTML='<header><h2>Centro de avisos</h2><button type="button" aria-label="Cerrar avisos">×</button></header><p><small>Bandeja compartida de administración HSC.</small></p><nav><select aria-label="Filtrar avisos"><option value="">Todos</option><option value="unread">Sin leer</option><option value="gastos">Gastos de técnicos</option><option value="facturas">Facturas</option><option value="pagos">Pagos y complementos</option><option value="respaldos">Respaldos</option><option value="reportes">Reportes</option></select><button type="button" data-refresh>Actualizar</button></nav><details><summary>Estado de procesos y próximas facturas</summary><div data-jobs></div></details><div data-items aria-live="polite"></div>';
   document.body.append(dialog);
+  dialog.querySelector('header+p small').textContent='Avisos de tu cuenta HSC.';
+  const faultOption=document.createElement('option');faultOption.value='fallas';faultOption.textContent='Fallas y resoluciones';dialog.querySelector('select').append(faultOption);
+  const pushStatus=document.createElement('p');pushStatus.setAttribute('aria-live','polite');dialog.querySelector('nav').after(pushStatus);
+  const activate=document.createElement('button');activate.type='button';activate.textContent='Activar y probar en este dispositivo';activate.onclick=()=>window.hscTestServerNotification?.();dialog.querySelector('nav').append(activate);
   let data={items:[]};
   const el=(tag,text)=>{const node=document.createElement(tag);node.textContent=text;return node};
   const date=value=>value?new Date(value).toLocaleString('es-MX'):'Sin registro';
@@ -21,10 +27,12 @@
       article.append(el('strong',row.title),el('p',row.body),el('small',date(row.created_at)));
       const actions=el('div','');actions.className='notice-actions';
       if(row.url?.startsWith('/')&&!row.url.startsWith('//')){const link=el('a','Abrir');link.href=row.url;actions.append(link);}
-      if(!row.read){const read=el('button','Marcar leído');read.onclick=async()=>{read.disabled=true;try{const result=await fetch(`/api/notifications/${encodeURIComponent(row.id)}/read`,{method:'POST'});if(!result.ok)throw Error();row.read=true;data.unread=Math.max(0,data.unread-1);updateButton();render();}catch{read.textContent='No se guardó. Reintentar';read.disabled=false;}};actions.append(read);}
+      if(!row.read){const read=el('button','Marcar leído');read.onclick=async()=>{read.disabled=true;try{const result=await fetch(`${api}/${encodeURIComponent(row.id)}/read`,{method:'POST'});if(!result.ok)throw Error();row.read=true;data.unread=Math.max(0,data.unread-1);updateButton();render();}catch{read.textContent='No se guardó. Reintentar';read.disabled=false;}};actions.append(read);}
       article.append(actions);list.append(article);
     }
     const jobs=dialog.querySelector('[data-jobs]');jobs.replaceChildren();
+    pushStatus.textContent=!data.push?.configured?'Falta configurar el envío en el servidor.':`Dispositivos vinculados: ${data.push.devices}. Permiso aquí: ${typeof Notification==='undefined'?'no disponible':Notification.permission}.`;
+    for(const delivery of data.push?.deliveries||[]){const labels={accepted:'Aceptado por el servicio push (no confirma que se haya visto)',pending:'Pendiente de reintento',failed:'No enviado',expired:'Suscripción vencida',cancelled:'Cancelado'};jobs.append(el('p',`${delivery.title}: ${labels[delivery.status]||delivery.status} · ${delivery.attempts} intento(s). ${delivery.error||''}`));}
     for(const [key,label] of [['facturas_programadas','Revisión de facturas'],['reportes_automaticos','Reportes automáticos']]){
       const job=data.jobs?.[key];jobs.append(el('p',`${label}: ${job?`${status(job.status)} · ${date(job.checked_at)}`:'sin comprobación registrada todavía'}`));
       if(job?.last_error)jobs.append(el('small',job.last_error));
@@ -39,8 +47,12 @@
     button.setAttribute('aria-label',unread?`Abrir centro de avisos, ${unread} sin leer`:'Abrir centro de avisos');
     if(count)count.textContent=unread>99?'99+':String(unread||'');
   }
-  async function load(){try{const response=await fetch('/api/notifications');if(response.status===401||response.status===403){button.hidden=true;return;}const result=await response.json();if(!response.ok||!result.ok)throw Error(result.error||'No se pudieron cargar los avisos.');data=result;updateButton();render();}catch(error){dialog.querySelector('[data-items]').replaceChildren(el('p',error.message));}}
+  let loading=false;
+  async function load(){if(loading)return;loading=true;try{const response=await fetch(api,{cache:'no-store'});if(response.status===401||response.status===403){button.hidden=true;return;}const result=await response.json();if(!response.ok||!result.ok)throw Error(result.error||'No se pudieron cargar los avisos.');data=result;updateButton();render();}catch(error){dialog.querySelector('[data-items]').replaceChildren(el('p',error.message));}finally{loading=false}}
   button.onclick=()=>{dialog.showModal();load();};dialog.querySelector('header button').onclick=()=>dialog.close();dialog.querySelector('[data-refresh]').onclick=load;dialog.querySelector('select').onchange=render;
-  // Sin solicitudes continuas en segundo plano ni avisos mensuales repetidos.
+  setInterval(()=>{if(!document.hidden&&navigator.onLine)load()},30000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)load()});
+  window.addEventListener('online',load);
+  window.addEventListener('hsc-push-status',event=>{pushStatus.textContent=event.detail;});
   load();
 })();
