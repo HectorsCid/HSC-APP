@@ -48,3 +48,4 @@ weasyprint==66.0
 webencodings==0.5.1
 Werkzeug==3.1.3
 zopfli==0.2.3.post1
+tzdata>=2025.2

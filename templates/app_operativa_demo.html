@@ -503,13 +503,14 @@
     if(currentMode==='partner'&&requestedSection==='documents')state.view='partnerDocuments';
     if(currentMode==='partner'&&requestedSection==='reports')state.view='partnerReports';
     if(currentMode==='partner'&&requestedSection==='calendar')state.view='partner';
+    if(currentMode!=='partner'&&requestedSection==='calendar')state.view='agenda';
     const linkedClient=entryParams.get('client');
     if((account.isOwner||serverRole==='technician')&&linkedClient&&clientMeta[linkedClient]){selectedClient=linkedClient;selectedEquipment=equipment.find(item=>equipmentMeta[item[0]]?.client===selectedClient)?.[0]||'';selectClientRound(selectedClient);if(!requestedSection)state.view='client';}
     const target=allowedRoots.includes(state.view)?state.view:(currentMode==='partner'?'partner':'clients');
     historyStack=canonicalPath(target);current='__restore__';refreshRound();
     if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=canonicalPath('reportView');initializeBrowserNavigation();return;}}
     showView(target,false);
-    if(currentMode==='partner'&&requestedSection==='calendar'){
+    if(requestedSection==='calendar'){
       const day=entryParams.get('date');if(/^\d{4}-\d{2}-\d{2}$/.test(day||''))agendaDate=day;
       setTimeout(openMonthCalendar,0);
     }

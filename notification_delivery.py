@@ -3,6 +3,8 @@ import json
 import os
 import threading
 import time
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from uuid import uuid4
 
 from flask import Blueprint, current_app, jsonify, request, session
@@ -14,6 +16,7 @@ _DRAIN_LOCK = threading.Lock()
 _STARTED = False
 _WAKE = threading.Event()
 _DOCUMENT_SCAN_AT = 0
+_TASK_REMINDER_SCAN_AT = 0
 
 
 def identity():
@@ -35,8 +38,8 @@ def configured():
 
 
 NOTICE_OPTIONS = {
-    'admin': {'fallas':'Fallas nuevas y resueltas','gastos':'Gastos nuevos de técnicos','facturas':'Facturas programadas','respaldos':'Respaldos','reportes':'Reportes y generación de PDF'},
-    'technician': {'fallas':'Fallas por atender','pagos':'Estado de mis gastos y reembolsos'},
+    'admin': {'agenda':'Recordatorios de pendientes','fallas':'Fallas nuevas y resueltas','gastos':'Gastos nuevos de técnicos','facturas':'Facturas programadas','respaldos':'Respaldos','reportes':'Reportes y generación de PDF'},
+    'technician': {'agenda':'Recordatorios de mis pendientes','fallas':'Fallas por atender','pagos':'Estado de mis gastos y reembolsos'},
     'client': {'fallas':'Fallas resueltas','agenda':'Actividades y visitas programadas','cotizaciones':'Cotizaciones disponibles','facturas':'Facturas y cambios de estado','complementos':'Complementos de pago','reportes':'Reportes terminados'},
 }
 
@@ -180,6 +183,7 @@ def start(app):
         while True:
             try:
                 with app.app_context():
+                    scan_task_reminders(app)
                     drain()
                 scan_partner_documents(app)
             except Exception:
@@ -187,6 +191,62 @@ def start(app):
             _WAKE.wait(30)
             _WAKE.clear()
     threading.Thread(target=run, daemon=True, name='hsc-push-delivery').start()
+
+
+def send_task_reminders(store, now):
+    """Resumen diario por destinatario, con registro persistente entre reinicios."""
+    if now.hour < 8:
+        return
+    day = now.date().isoformat()
+    users = {u['id']:u for u in store.list_users() if u.get('status')=='active'}
+    partner_clients = {u.get('client_id') for u in users.values() if u.get('role')=='client' and u.get('client_id')}
+    groups = {}
+    for task in store.tasks_for_reminders(day):
+        client_id = task.get('client_id')
+        if client_id in partner_clients:
+            groups.setdefault(('client',client_id), {})[task['id']] = task
+        recipients = set(task.get('assigned_user_ids') or [])
+        if task.get('created_by'):
+            recipients.add(task['created_by'])
+        for user_id in recipients:
+            role = 'admin' if user_id=='owner' else users.get(user_id,{}).get('role')
+            if role in {'admin','technician'}:
+                groups.setdefault((role,user_id), {})[task['id']] = task
+    from urllib.parse import urlencode
+    for (role,recipient), indexed in groups.items():
+        tag=f'task-reminder:{day}:{role}:{recipient}'
+        with notices.LOCK:
+            if tag in notices._read().get('task_reminder_days',{}):
+                continue
+        tasks=list(indexed.values())
+        title=('Hoy tienes visita' if len(tasks)==1 else f'Hoy tienes {len(tasks)} visitas programadas') if role=='client' else ('Hoy tienes un pendiente' if len(tasks)==1 else f'Hoy tienes {len(tasks)} pendientes')
+        body=' · '.join(f"{t.get('scheduled_time') or 'Sin hora'}: {t['title']}" for t in tasks[:5])
+        if len(tasks)>5:
+            body+=f' · y {len(tasks)-5} más. Consulta tu calendario.'
+        params={'open':'calendar','date':day}
+        if role=='client':params['client']=recipient
+        enqueue(title,body,('/hsc-partner/?' if role=='client' else '/hsc-tecnico/?')+urlencode(params),tag,
+                category='agenda',audience=role,client_id=recipient if role=='client' else '',user_id='' if role=='client' else recipient)
+        with notices.LOCK:
+            state=notices._read()
+            ledger=state.setdefault('task_reminder_days',{})
+            ledger[tag]=day
+            cutoff=(now.date()-timedelta(days=14)).isoformat()
+            state['task_reminder_days']={key:date for key,date in ledger.items() if date>=cutoff}
+            notices._write(state)
+
+
+def scan_task_reminders(app):
+    global _TASK_REMINDER_SCAN_AT
+    if time.time() < _TASK_REMINDER_SCAN_AT:
+        return
+    _TASK_REMINDER_SCAN_AT=time.time()+60
+    try:
+        from app import OPERACIONES_STORE
+        if OPERACIONES_STORE.enabled:
+            send_task_reminders(OPERACIONES_STORE,datetime.now(ZoneInfo('America/Mexico_City')))
+    except Exception:
+        app.logger.exception('No se pudieron preparar los recordatorios de agenda')
 
 
 def observe_partner_documents(client_id, payload):

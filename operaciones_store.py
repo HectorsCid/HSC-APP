@@ -1036,6 +1036,18 @@ class OperationsStore:
                 conn.execute(f"INSERT INTO operations_task_assignees(task_id,user_id) VALUES ({p},{p})", (task_id,user_id))
         return next(task for task in self.snapshot()["tasks"] if task["id"] == task_id)
 
+    def tasks_for_reminders(self, scheduled_date):
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            rows = conn.execute(f"SELECT id,title,scheduled_time,client_id,assigned_user_id,created_by FROM operations_tasks WHERE scheduled_date={p} AND status IN ('Pendiente','En curso') ORDER BY scheduled_time,id", (scheduled_date,)).fetchall()
+            assignments = conn.execute(f"SELECT a.task_id,a.user_id FROM operations_task_assignees a JOIN operations_tasks t ON t.id=a.task_id WHERE t.scheduled_date={p}", (scheduled_date,)).fetchall()
+        users = {}
+        for task_id,user_id in assignments:
+            users.setdefault(task_id, []).append(user_id)
+        return [{'id':r[0],'title':r[1],'scheduled_time':r[2],'client_id':r[3],
+                 'assigned_user_ids':users.get(r[0]) or ([r[4]] if r[4] else []),'created_by':r[5]} for r in rows]
+
     def complete_task(self, task_id):
         self.initialize()
         p, stamp = self.placeholder, _now()

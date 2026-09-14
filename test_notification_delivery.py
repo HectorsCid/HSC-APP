@@ -136,6 +136,28 @@ class NotificationsTest(unittest.TestCase):
         self.assertEqual([t['user_id'] for t in targets],['T1'])
         self.assertEqual(self.client.get('/api/operaciones/avisos').get_json()['items'],[])
 
+    def test_daily_task_reminders_are_scoped_and_not_repeated(self):
+        from datetime import datetime, timezone, timedelta
+        store=Mock()
+        store.list_users.return_value=[{'id':'T1','role':'technician','status':'active'},{'id':'T2','role':'technician','status':'active'},
+            {'id':'C1','role':'client','status':'active','client_id':'A'},{'id':'C2','role':'client','status':'active','client_id':'B'}]
+        store.tasks_for_reminders.return_value=[{'id':'M1','title':'Mantenimiento','scheduled_time':'09:00','client_id':'A','assigned_user_ids':['T1'],'created_by':'owner'},
+            {'id':'M2','title':'Reparación','scheduled_time':'12:30','client_id':'A','assigned_user_ids':['T1'],'created_by':'owner'}]
+        now=datetime(2026,9,18,7,59,tzinfo=timezone(timedelta(hours=-6)))
+        delivery.send_task_reminders(store,now)
+        store.tasks_for_reminders.assert_not_called()
+        delivery.send_task_reminders(store,now.replace(hour=8,minute=0))
+        delivery.send_task_reminders(store,now.replace(hour=9))
+        jobs=notices._read()['push_queue']
+        self.assertEqual(len(jobs),3)
+        self.assertEqual(len(notices._read()['task_reminder_days']),3)
+        for role,user,company,count in [('technician','T1','',1),('technician','T2','',0),('client','C1','A',1),('client','C2','B',0),('admin','owner','',1)]:
+            self.login(role,user,company)
+            rows=self.client.get('/api/operaciones/avisos').get_json()['items']
+            agenda=[r for r in rows if r['category']=='agenda']
+            self.assertEqual(len(agenda),count)
+            if count:self.assertIn('12:30',agenda[0]['body'])
+
     def test_quote_notifications_only_target_own_partner(self):
         self.login('client','user-a','A');self.subscribe('https://fcm.googleapis.com/a')
         self.login('client','user-b','B');self.subscribe('https://fcm.googleapis.com/b')
