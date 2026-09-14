@@ -23,6 +23,7 @@ _STATE = {
     "last_event_at": "",
     "last_connected_at": "",
     "last_error": "",
+    "stage": "waiting",
 }
 
 
@@ -59,6 +60,18 @@ def _latest_uid(mailbox):
         return 0
     values = [int(value) for value in data[0].split() if value.isdigit()]
     return max(values, default=0)
+
+
+def _initial_uid(mailbox):
+    """Usa UIDNEXT anunciado por SELECT y evita buscar toda la bandeja."""
+    _, data = mailbox.response("UIDNEXT")
+    for value in data or []:
+        if isinstance(value, bytes):
+            value = value.decode("ascii", "ignore")
+        digits = "".join(character for character in str(value) if character.isdigit())
+        if digits:
+            return max(0, int(digits) - 1)
+    return _latest_uid(mailbox)
 
 
 def _new_uids(mailbox, last_uid):
@@ -119,7 +132,7 @@ def _notify_new_message(app, uid):
 def _run(app):
     backoff = 5
     last_uid = 0
-    _update(enabled=True, running=True)
+    _update(enabled=True, running=True, stage="configuring")
     while True:
         cfg = mail_client.mail_config()
         if not cfg["configured"]:
@@ -128,17 +141,22 @@ def _run(app):
             continue
         mailbox = None
         try:
+            _update(stage="connecting")
             mailbox = imaplib.IMAP4_SSL(cfg["imap_host"], cfg["imap_port"], timeout=30)
+            _update(stage="authenticating")
             mailbox.login(cfg["username"], cfg["password"])
+            _update(stage="selecting_inbox")
             status, _ = mailbox.select(mail_client._imap_quote("INBOX"), readonly=True)
             if status != "OK":
                 raise RuntimeError("No se pudo vigilar la bandeja de entrada.")
-            current_uid = _latest_uid(mailbox)
+            _update(stage="checkpoint")
+            current_uid = _initial_uid(mailbox)
             if last_uid == 0:
                 last_uid = current_uid
             _update(
                 connected=True, last_uid=last_uid, last_error="",
                 last_connected_at=datetime.now(timezone.utc).isoformat(),
+                stage="idle",
             )
             backoff = 5
             while True:
@@ -151,7 +169,7 @@ def _run(app):
                         _update(last_uid=last_uid)
         except Exception as exc:
             LOG.warning("Listener IMAP desconectado; se reintentara: %s", exc)
-            _update(connected=False, last_error=str(exc)[:300])
+            _update(connected=False, last_error=str(exc)[:300], stage="retry_wait")
             time.sleep(backoff)
             backoff = min(120, backoff * 2)
         finally:

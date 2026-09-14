@@ -16,9 +16,16 @@ class MailIdleTests(unittest.TestCase):
         with patch.object(mail_idle, "_STATE", {
             "enabled": True, "running": True, "connected": False,
             "last_uid": 0, "last_event_at": "", "last_connected_at": "",
-            "last_error": "temporary failure",
+            "last_error": "temporary failure", "stage": "retry_wait",
         }):
             self.assertEqual(mail_idle.listener_status()["phase"], "retrying")
+
+    def test_initial_uid_uses_uidnext_without_searching_mailbox(self):
+        mailbox = Mock()
+        mailbox.response.return_value = ("UIDNEXT", [b"431"])
+
+        self.assertEqual(mail_idle._initial_uid(mailbox), 430)
+        mailbox.uid.assert_not_called()
 
     def test_idle_detects_exists_and_closes_command(self):
         mailbox = Mock()
