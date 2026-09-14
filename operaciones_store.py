@@ -834,7 +834,7 @@ class OperationsStore:
             raise ValueError("Técnico, concepto, fecha e importe mayor a cero son obligatorios.")
         expense_id = _text(item.get("id")) or f"GASTO_{uuid.uuid4().hex[:16].upper()}"
         status = _text(item.get("status")) or "Pendiente"
-        if status not in {"Pendiente", "Aprobado", "Rechazado", "Reembolsado"}:
+        if status not in {"Pendiente", "Aprobado", "Rechazado", "Reembolsado", "Liquidado"}:
             raise ValueError("El estado del gasto no es válido.")
         client_id, equipment_id = _text(item.get("client_id")), _text(item.get("equipment_id"))
         if equipment_id:
@@ -884,7 +884,7 @@ class OperationsStore:
     def update_expense_status(self, expense_id, status, *, admin_notes=""):
         self.initialize()
         status = _text(status)
-        if status not in {"Pendiente", "Aprobado", "Rechazado", "Reembolsado"}:
+        if status not in {"Pendiente", "Aprobado", "Rechazado", "Reembolsado", "Liquidado"}:
             raise ValueError("El estado del gasto no es válido.")
         p, stamp = self.placeholder, _now()
         with self.connection() as conn:

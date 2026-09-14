@@ -3093,6 +3093,18 @@ def api_operaciones_save_expense():
     try:
         expense = OPERACIONES_STORE.save_expense(body)
         _invalidate_operations_cache()
+        if role == "technician":
+            try:
+                from notification_center import publish
+                publish(
+                    "Nuevo gasto por revisar",
+                    f"{expense.get('technician_name') or 'Un técnico'} registró "
+                    f"${float(expense.get('amount') or 0):,.2f}: {expense.get('concept') or 'Gasto de campo'}.",
+                    category="gastos", key=f"expense:{expense.get('id')}",
+                    url="/hsc-tecnico/?open=expenses", level="warning",
+                )
+            except Exception:
+                current_app.logger.exception("No se pudo crear el aviso del gasto %s", expense.get("id"))
         return jsonify({"ok": True, "expense": expense}), 201
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400

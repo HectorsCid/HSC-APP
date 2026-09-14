@@ -283,5 +283,7 @@ def test_technician_expenses_keep_receipt_and_reimbursement_status(tmp_path):
 
     approved = store.update_expense_status(expense["id"], "Aprobado", admin_notes="Ticket correcto")
     assert approved["status"] == "Aprobado"
+    liquidated = store.update_expense_status(expense["id"], "Liquidado", admin_notes="Pagado al técnico")
+    assert liquidated["status"] == "Liquidado"
     assert approved["admin_notes"] == "Ticket correcto"
     assert store.snapshot()["stats"]["pending_expenses"] == 0
