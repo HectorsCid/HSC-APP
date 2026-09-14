@@ -446,7 +446,7 @@
   function selectClientRound(clientId){selectedRound=roundForClient(clientId);rememberClientRound(clientId,selectedRound,false);}
   let browserHistoryReady=false,handlingHistoryPop=false;
   function saveOperationalNavigation(){if(!matrixLoaded)return;try{localStorage.setItem(navigationStorageKey,JSON.stringify({view:current,client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode}))}catch(_){}}
-  function browserNavigationState(guard=false,view=current,stack=historyStack){return {hscOperations:true,guard,view,stack:[...stack],client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode};}
+  function browserNavigationState(guard=false,view=current,stack=historyStack){return {hscOperations:true,userId:account.id,guard,view,stack:[...stack],client:selectedClient,equipment:selectedEquipment,round:selectedRound,mode:currentMode};}
   function browserNavigationUrl(view=current,guard=false){const url=new URL(location.href);url.hash=guard?'hsc-proteccion':`hsc-${view}`;return `${url.pathname}${url.search}${url.hash}`;}
   function writeBrowserNavigation(replace=false,guard=false,view=current,stack=historyStack){if(!browserHistoryReady)return;const state=browserNavigationState(guard,view,stack),url=browserNavigationUrl(view,guard);if(replace)window.history.replaceState(state,'',url);else window.history.pushState(state,'',url);}
   function canonicalPath(view){
@@ -466,31 +466,34 @@
     $('#backBtn').hidden=false;
   }
   function showView(name,push=true){if(name===current){$('#backBtn').hidden=false;applyAccess();saveOperationalNavigation();if(name==='partnerDocuments')loadPartnerDocuments();return;}if(push)historyStack=canonicalPath(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=false;navMode(currentMode);$('.bottom-nav').hidden=currentMode==='partner'||name==='inviteAccept';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();saveOperationalNavigation();if(name==='agenda')renderAgenda();if(name==='expenses')renderExpenses();if(name==='users')loadUsers();if(name==='partnerDocuments')loadPartnerDocuments();if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,name,historyStack);scrollTo({top:0,behavior:'smooth'});}
-  function goBack(){const target=parentView(current);if(target===current)return;if(current==='report'&&activeReportContext)saveActiveReportDraft(false);historyStack=canonicalPath(target);showView(target,false);if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,target,historyStack)}
+  function goBack(){const modal=document.querySelector('.modal.open');if(modal){modal.classList.remove('open');return;}const target=parentView(current);if(target===current)return;if(current==='report'&&activeReportContext)saveActiveReportDraft(false);historyStack=canonicalPath(target);showView(target,false);if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,target,historyStack)}
   function openRoot(name){if(name===current)return;historyStack=[name];showView(name,false);if(browserHistoryReady)writeBrowserNavigation(true,false,name,historyStack);}
   let restoringReportOpen=false;
+  function consumeNotificationDestination(){const url=new URL(location.href),params=new URLSearchParams(url.search);if(['open','client','fault'].some(key=>params.has(key))){for(const key of ['open','client','fault'])url.searchParams.delete(key);window.history.replaceState(window.history.state,'',`${url.pathname}${url.search}${url.hash}`);}return params;}
   function restoreOperationalNavigation(){
+    const entryParams=consumeNotificationDestination();
     let state={};try{state=JSON.parse(localStorage.getItem(navigationStorageKey)||'{}')}catch(_){}
+    const tabState=window.history.state;if(tabState?.hscOperations&&!tabState.guard&&tabState.userId===account.id)state={...tabState};
     if(state.client&&clientMeta[state.client])selectedClient=state.client;
     if(state.equipment&&equipmentMeta[state.equipment]?.client===selectedClient)selectedEquipment=state.equipment;
     else selectedEquipment=equipment.find(item=>equipmentMeta[item[0]]?.client===selectedClient)?.[0]||'';
     selectClientRound(selectedClient);
     if(['1','2','3','4'].includes(String(state.round))){selectedRound=String(state.round);rememberClientRound(selectedClient,selectedRound,false);}
-    if(appKind==='partner'||serverRole==='client')currentMode='partner';
+    if(appKind==='partner'||serverRole==='client'||(account.isOwner&&state.mode==='partner'))currentMode='partner';
     else currentMode='tech';
     const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','equipment','partnerReports','partnerFaults','partnerDocuments','reportView']:['clients','client','equipment','report','reportView','agenda','profile','expenses'];
     if(account.isOwner)allowedRoots.push('users','userPermissions','clientEditor','equipmentEditor');
-    const requestedSection=new URLSearchParams(location.search).get('open');
+    const requestedSection=entryParams.get('open');
     if(currentMode!=='partner'&&requestedSection==='expenses')state.view='expenses';
     if(currentMode==='partner'&&requestedSection==='documents')state.view='partnerDocuments';
     if(currentMode==='partner'&&requestedSection==='reports')state.view='partnerReports';
-    const linkedClient=new URLSearchParams(location.search).get('client');
+    const linkedClient=entryParams.get('client');
     if((account.isOwner||serverRole==='technician')&&linkedClient&&clientMeta[linkedClient]){selectedClient=linkedClient;selectedEquipment=equipment.find(item=>equipmentMeta[item[0]]?.client===selectedClient)?.[0]||'';selectClientRound(selectedClient);if(!requestedSection)state.view='client';}
     const target=allowedRoots.includes(state.view)?state.view:(currentMode==='partner'?'partner':'clients');
     historyStack=canonicalPath(target);current='__restore__';refreshRound();
     if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=canonicalPath('reportView');initializeBrowserNavigation();return;}}
     showView(target,false);
-    const linkedFault=new URLSearchParams(location.search).get('fault');
+    const linkedFault=entryParams.get('fault');
     if(linkedFault){const fault=matrixFaults.find(item=>item.id===linkedFault&&item.client_id===selectedClient);if(fault){if(currentMode==='partner')showView('partnerFaults');const button=$$('[data-fault-id]').find(item=>item.dataset.faultId===linkedFault);button?.click();}}
     if(target==='report')setTimeout(async()=>{restoringReportOpen=true;try{await $('#newReport').onclick()}finally{restoringReportOpen=false}},0);
     initializeBrowserNavigation();

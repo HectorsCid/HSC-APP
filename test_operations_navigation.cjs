@@ -34,3 +34,33 @@ assert.match(html,/const clients=\[\];/);
 assert.match(html,/body:not\(\.operations-ready\) main/);
 assert.match(html,/navigation-v2-\$\{account.id\}/);
 console.log('OK: recargas conservan empresa/equipo/ronda, navegación por cuenta y arranque sin catálogo ilustrativo.');
+
+const restoreSource=html.slice(html.indexOf('  let restoringReportOpen=false;'),html.indexOf("  window.addEventListener('popstate'"));
+let address=new URL('https://hsc.test/hsc-partner/?client=B&fault=F1&v=release#hsc-partner');
+const nav=vm.createContext({URL,URLSearchParams,location:{get href(){return address.href},get search(){return address.search}},
+  account:{id:'C1',isOwner:false},appKind:'partner',serverRole:'client',navigationStorageKey:'nav',
+  localStorage:{getItem:()=>JSON.stringify({view:'partner',client:'B',equipment:'B1',round:'3',mode:'partner'})},
+  clientMeta:{B:{}},equipmentMeta:{B1:{client:'B'}},equipment:[['B1']],selectedClient:'B',selectedEquipment:'B1',selectedRound:'3',currentMode:'partner',
+  matrixFaults:[{id:'F1',client_id:'B'}],opened:0,historyStack:[],current:'partner',
+  selectClientRound(){},rememberClientRound(){},refreshRound(){},canonicalPath:view=>[view],
+  showView(view){nav.current=view},initializeBrowserNavigation(){},$:()=>({}),
+  $$:selector=>selector==='[data-fault-id]'?[{dataset:{faultId:'F1'},click(){nav.opened++}}]:[],setTimeout(){},
+});
+nav.window={history:{state:null,replaceState(state,unused,url){this.state=state;address=new URL(url,address)}}};
+vm.runInContext(restoreSource,nav);
+nav.restoreOperationalNavigation();assert.equal(nav.opened,1);assert.equal(nav.current,'partnerFaults');
+assert.equal(address.searchParams.has('fault'),false);assert.equal(address.searchParams.has('client'),false);assert.equal(address.searchParams.get('v'),'release');
+nav.window.history.state={hscOperations:true,userId:'C1',view:'partnerDocuments',client:'B',equipment:'B1',round:'3',mode:'partner'};
+nav.restoreOperationalNavigation();assert.equal(nav.current,'partnerDocuments');assert.equal(nav.opened,1,'Recargar no debe volver a abrir el aviso anterior');
+nav.account.isOwner=true;nav.appKind='technician';nav.serverRole='admin';nav.restoreOperationalNavigation();assert.equal(nav.currentMode,'partner');assert.equal(nav.current,'partnerDocuments');
+console.log('OK: destino de notificación de un solo uso y recarga en la misma pantalla, incluida vista Partner administrativa.');
+const backSource=html.slice(html.indexOf('  function parentView('),html.indexOf('  function initializeBrowserNavigation('));
+const goBackSource=html.split(/\r?\n/).find(line=>line.trim().startsWith('function goBack('));
+let modalOpen=true;
+Object.assign(nav,{document:{querySelector:()=>modalOpen?{classList:{remove(){modalOpen=false}}}:null},browserHistoryReady:false,handlingHistoryPop:false,activeReportContext:null});
+vm.runInContext(backSource+'\n'+goBackSource,nav);
+nav.currentMode='tech';nav.current='reportView';nav.goBack();assert.equal(nav.current,'reportView','Atrás primero cierra la ventana');
+nav.goBack();assert.equal(nav.current,'equipment');nav.goBack();assert.equal(nav.current,'client');nav.goBack();assert.equal(nav.current,'clients');nav.goBack();assert.equal(nav.current,'clients');
+nav.currentMode='partner';nav.current='reportView';nav.goBack();assert.equal(nav.current,'partnerReports');nav.goBack();assert.equal(nav.current,'partner');
+assert.ok(!['report','clientEditor','equipmentEditor'].includes(nav.current));
+console.log('OK: Atrás cierra ventanas y sigue reporte → equipo → cliente, sin reabrir formularios.');
