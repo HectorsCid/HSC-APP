@@ -86,6 +86,13 @@
     @media(max-width:520px){.style-grid{grid-template-columns:1fr 1fr}.style-option{padding:9px}.style-preview{height:40px}}
     [hidden]{display:none!important}.user-card[type="button"]{width:100%;color:var(--text);text-align:left;cursor:pointer}
     .profile-avatar{position:relative;overflow:hidden}.profile-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .18s ease}.profile-avatar img.loaded{opacity:1}#reportForm .form-actions{grid-template-columns:repeat(3,minmax(0,1fr))}@media(max-width:520px){ #reportForm .form-actions{grid-template-columns:1fr 1fr}#reportForm .form-actions .primary{grid-column:1/-1}}
+    /* El contenido no debe imponer su ancho mínimo a las pistas del listado. */
+    .equipment-list,.report-list{grid-template-columns:minmax(0,1fr);min-width:0;max-width:100%}
+    .equipment-card,.report-card{min-width:0;max-width:100%}
+    .equipment-card .card-copy{flex:1 1 0;min-width:0}
+    .equipment-card .card-title,.equipment-card .card-sub{white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+    .equipment-card .status-dot,.equipment-card .chevron{flex-shrink:0}
+    @media(max-width:480px){.equipment-card{gap:10px;padding:12px}.equipment-card .equipment-photo{flex-basis:54px;width:54px;height:60px}}
 </style>
 </head>
 <body data-operations-shell="true" data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-pwa-install-disabled="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-app-kind="{{ operations_app_kind|default('technician') }}" data-user-id="{{ operations_user_id|default('owner') }}" data-user-name="{{ operations_user_name|default('Héctor Silva Cid') }}" data-permissions="{{ operations_permissions|default({})|tojson|forceescape }}">
