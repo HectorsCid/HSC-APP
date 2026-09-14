@@ -358,7 +358,7 @@ def _require_app_login():
                 last_check = float(session.get("hsc_account_checked_at") or 0)
             except (TypeError, ValueError):
                 last_check = 0
-            if time.time() - last_check >= 30:
+            if session_role == 'client' or time.time() - last_check >= 30:
                 try:
                     current_user = OPERACIONES_STORE.get_user_by_id(session.get("hsc_user_id"))
                     if not current_user or current_user.get("status") != "active":
@@ -374,6 +374,8 @@ def _require_app_login():
                 except Exception:
                     # Un fallo temporal de la base no debe cerrar cuentas válidas.
                     current_app.logger.exception("No se pudo verificar el estado de la sesión operativa")
+                    if session_role == 'client':
+                        return jsonify(ok=False,error='No se pudo verificar la empresa de tu cuenta. Intenta de nuevo.'),503
         if session_role == "client":
             allowed_partner_path = (
                 request.path.startswith("/hsc-partner/")
@@ -3173,6 +3175,33 @@ def api_operaciones_user_permissions(user_id):
         return jsonify({"ok": True, "user": user})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
+
+
+@app.post('/api/operaciones/users/<user_id>/company')
+def api_operaciones_change_user_company(user_id):
+    denied = _operations_forbidden('admin')
+    if denied:
+        return denied
+    body = request.get_json(silent=True) or {}
+    if body.get('confirm_change') is not True or body.get('confirm_access') is not True:
+        return jsonify(ok=False,error='Confirma dos veces el cambio de empresa.'),400
+    try:
+        user = OPERACIONES_STORE.change_client_user_company(user_id,str(body.get('client_id') or '').strip(),str(body.get('expected_client_id') or ''))
+        _invalidate_operations_cache()
+        import notification_center as notices
+        with notices.LOCK:
+            state=notices._read()
+            for device in state.get('push_devices',[]):
+                if device.get('user_id')==user_id:
+                    device['client_id']=user['client_id']
+            for job in state.get('push_queue',[]):
+                for target in job.get('targets',[]):
+                    if target.get('user_id')==user_id and target.get('client_id')!=user['client_id'] and target.get('status')=='pending':
+                        target['status']='cancelled'
+            notices._write(state)
+        return jsonify(ok=True,user=user)
+    except ValueError as exc:
+        return jsonify(ok=False,error=str(exc)),400
 
 
 @app.delete('/api/operaciones/users/<user_id>')

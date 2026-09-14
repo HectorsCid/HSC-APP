@@ -217,6 +217,7 @@
     </section>
 
     <section class="view editor" data-view="userPermissions">
+      <div class="form-section" id="userCompanyEditor" hidden><div class="section-body"><div class="field"><label for="userCompanySelect">Empresa de la cuenta Partner</label><select id="userCompanySelect"></select><p class="editor-note" id="userCompanyCurrent"></p></div><button type="button" class="secondary" id="changeUserCompany">Cambiar empresa</button></div></div>
       <div class="form-intro"><b id="permissionUserName">Permisos de Carlos Ramírez</b><span>Los cambios afectan únicamente lo que esta cuenta puede consultar o modificar.</span></div>
       <div class="form-section"><div class="section-body" style="padding-top:16px"><div class="field" style="margin-bottom:16px"><label for="permissionUserStatus">Estado de la cuenta</label><select id="permissionUserStatus"><option value="active">Activa</option><option value="suspended">Suspendida</option></select><p class="editor-note" id="permissionStatusNote">Una cuenta suspendida ya no podrá entrar y su sesión abierta se cerrará automáticamente.</p></div><div class="permission-list">
         <label class="permission"><input type="checkbox" data-tech-permission="createReports"><span class="permission-copy"><b>Crear reportes</b><small>Capturar mediciones, evidencias y finalizar servicios.</small></span></label>
@@ -370,6 +371,11 @@
   }
   function applyMatrixBootstrap(payload,preferLocalRounds=false){
     if(!Array.isArray(payload.clients)||!payload.clients.length||!Array.isArray(payload.equipment))return false;
+    if(typeof serverRole!=='undefined'&&serverRole==='client'&&!preferLocalRounds){
+      const company=payload.clients[0].id;
+      if(partnerDocumentsClient&&partnerDocumentsClient!==company){partnerDocuments=null;partnerDocumentsClient='';}
+      try{const prefix=`hsc-partner-documents-v6-${account.id}-`;for(const key of Object.keys(localStorage))if(key.startsWith(prefix)&&key!==prefix+company)localStorage.removeItem(key);}catch(_){}
+    }
     const wasLoaded=matrixLoaded,keepClient=selectedClient,keepEquipment=selectedEquipment,keepRound=selectedRound;
     clients.splice(0,clients.length,...payload.clients.map(client=>[client.name,client.id,'']));
     for(const key of Object.keys(clientMeta))delete clientMeta[key];
@@ -926,6 +932,22 @@
   }
   function refreshTaskEquipment(){const clientId=$('#taskClient').value;$('#taskEquipmentSelect').innerHTML='<option value="">Sin equipo específico</option>'+equipment.filter(row=>!clientId||equipmentMeta[row[0]]?.client===clientId).sort(byEquipmentId).map(row=>`<option value="${escapeHtml(row[0])}">${escapeHtml(row[0])} · ${escapeHtml(row[1])}</option>`).join('')}
   $('#taskClient').onchange=refreshTaskEquipment;$('#openTask').onclick=async()=>{const button=$('#openTask');button.disabled=true;try{taskFromCalendar=false;await populateTaskForm();$('#taskModal').classList.add('open')}catch(error){toast(error.message)}finally{button.disabled=false}};$('#closeTask').onclick=returnToMonthCalendar;
+  function renderUserCompanyEditor(user){
+    $('#userCompanyEditor').hidden=user.role!=='client';
+    $('#userCompanySelect').innerHTML=clients.map(row=>`<option value="${escapeHtml(row[1])}">${escapeHtml(row[0])} (${escapeHtml(row[1])})</option>`).join('');
+    $('#userCompanySelect').value=user.client_id||'';
+    $('#userCompanyCurrent').textContent=`Empresa actual: ${clientName(user.client_id)||user.client_id||'Sin empresa'}. Esto cambia su acceso, no mueve documentos ni equipos.`;
+  }
+  $('#changeUserCompany').onclick=async()=>{
+    const user=operationUsers.find(row=>row.id===selectedPermissionUser),target=$('#userCompanySelect').value;
+    if(!account.isOwner||!user||user.role!=='client')return;
+    if(!target||target===user.client_id){toast('Selecciona una empresa diferente');return;}
+    const label=`${clientName(target)} (${target})`;
+    if(!confirm(`¿Seguro que quieres cambiar a ${user.name} (${user.email}) de ${clientName(user.client_id)||user.client_id} a ${label}?`))return;
+    if(!confirm(`Confirmación final: ${user.name} (${user.email}) tendrá acceso a ${label} y dejará de acceder a la empresa anterior. ¿Aplicar el cambio?`))return;
+    const button=$('#changeUserCompany');button.disabled=true;
+    try{const result=await operationsPost(`/api/operaciones/users/${encodeURIComponent(user.id)}/company`,{client_id:target,expected_client_id:user.client_id||'',confirm_change:true,confirm_access:true});operationUsers=operationUsers.map(row=>row.id===user.id?result.user:row);renderUserCompanyEditor(result.user);renderUsers();toast('Empresa actualizada. Recarga Partner en la cuenta cliente.');}catch(error){toast(error.message)}finally{button.disabled=false}
+  };
   function renderUsers(){
     const rows=operationUsers.filter(user=>userStatusFilter==='all'||user.status===userStatusFilter),showOwner=userStatusFilter!=='suspended';
     $('#usersCount').textContent=`${rows.length+(showOwner?1:0)} cuenta${rows.length+(showOwner?1:0)===1?'':'s'}`;
@@ -988,7 +1010,7 @@
   $('#saveTask').onclick=async()=>{const title=$('#taskTitle').value.trim(),scheduledDate=$('#taskDate').value;if(!title||!scheduledDate){toast('Escribe la actividad y su fecha');return}const button=$('#saveTask');button.disabled=true;try{const body={title,details:$('#taskDetails').value.trim(),scheduled_date:scheduledDate,scheduled_time:$('#taskTime').value,client_id:$('#taskClient').value,equipment_id:$('#taskEquipmentSelect').value,assigned_user_ids:$$('#taskTechnician input:checked').map(input=>input.value),priority:$('#taskPriority').value,notify_client:$('#taskNotifyClient').checked};if(!body.assigned_user_ids.length){toast('Selecciona al menos un responsable');return}if(body.notify_client&&!body.client_id){toast('Elige un cliente para enviar el aviso');return}body.id=`TASK_${crypto.randomUUID()}`;await queueFieldAction({id:body.id,url:'/api/operaciones/tasks',body,files:[],label:'Guardar tarea'});calendarPendingTasks.set(body.id,body);agendaDate=body.scheduled_date;returnToMonthCalendar();renderAgenda();toast('Tarea guardada en el dispositivo · envío pendiente');drainFieldActions()}catch(error){toast(error.message)}finally{button.disabled=false}};
   $('#taskComplete').onclick=async()=>{const task=matrixTasks.find(item=>item.id===selectedTask);if(!task)return;const button=$('#taskComplete');button.disabled=true;try{await queueFieldAction({id:`complete:${task.id}`,url:`/api/operaciones/tasks/${encodeURIComponent(task.id)}/complete`,body:{},files:[],label:'Completar tarea'});goBack();toast('Tarea pendiente de confirmación');drainFieldActions()}catch(error){toast(error.message)}finally{button.disabled=false}};
   let permissionDraft=null;
-  function bindUserPermissions(){$$('[data-user-permissions]').forEach(button=>button.onclick=()=>{if(button.dataset.userPermissions==='owner'){toast('La cuenta propietaria conserva acceso completo');return;}const user=operationUsers.find(item=>item.id===button.dataset.userPermissions);if(!user)return;selectedPermissionUser=user.id;permissionDraft={...user.permissions};$('#permissionUserName').textContent=`Permisos de ${user.name}`;$('#permissionUserStatus').value=user.status==='suspended'?'suspended':'active';$$('[data-tech-permission]').forEach(input=>{input.checked=Boolean(permissionDraft[input.dataset.techPermission]);input.disabled=user.role==='client'});showView('userPermissions')})}
+  function bindUserPermissions(){$$('[data-user-permissions]').forEach(button=>button.onclick=()=>{if(button.dataset.userPermissions==='owner'){toast('La cuenta propietaria conserva acceso completo');return;}const user=operationUsers.find(item=>item.id===button.dataset.userPermissions);if(!user)return;selectedPermissionUser=user.id;renderUserCompanyEditor(user);permissionDraft={...user.permissions};$('#permissionUserName').textContent=`Permisos de ${user.name}`;$('#permissionUserStatus').value=user.status==='suspended'?'suspended':'active';$$('[data-tech-permission]').forEach(input=>{input.checked=Boolean(permissionDraft[input.dataset.techPermission]);input.disabled=user.role==='client'});showView('userPermissions')})}
   $('#cancelPermissions').onclick=goBack;
   const notificationPanel=document.createElement('section');notificationPanel.className='form-section';notificationPanel.style.padding='18px';notificationPanel.innerHTML='<h2>Avisos que recibe esta cuenta</h2><p class="editor-note">Estas opciones controlan la campana y el envío al teléfono. Cada dispositivo debe activar sus notificaciones.</p><div id="userNoticeOptions"></div><button class="primary" type="button" id="saveUserNotices">Guardar avisos</button><p id="userNoticeResult" role="status"></p><hr><button class="danger" type="button" id="deleteUserAccount">Eliminar cuenta definitivamente</button><p id="deleteUserHint" class="editor-note">Elimina el acceso y sus invitaciones. Conserva la empresa, equipos, reportes y gastos históricos.</p>';$('[data-view="userPermissions"] .form-actions').before(notificationPanel);
   async function openNoticeSettings(id){selectedPermissionUser=id;const owner=id==='owner',user=operationUsers.find(item=>item.id===id);$('#permissionUserName').textContent=owner?'Mi cuenta · Administración':`Permisos de ${user?.name||''}`;$('#permissionUserStatus').closest('.form-section').hidden=owner;$('#savePermissions').hidden=owner;$('#deleteUserAccount').hidden=$('#deleteUserHint').hidden=owner;$('#userNoticeOptions').textContent='Cargando avisos…';$('#saveUserNotices').disabled=true;$('#userNoticeResult').textContent='';try{const response=await fetch(`/api/operaciones/avisos/preferences/${encodeURIComponent(id)}`,{cache:'no-store'}),data=await response.json();if(!response.ok)throw Error(data.error);if(selectedPermissionUser!==id)return;$('#userNoticeOptions').innerHTML=Object.entries(data.options).map(([key,label])=>`<label class="permission"><input type="checkbox" data-notice-category="${escapeHtml(key)}" ${data.notifications[key]!==false?'checked':''}><span>${escapeHtml(label)}</span></label>`).join('');$('#saveUserNotices').disabled=false;}catch(error){$('#userNoticeOptions').textContent=error.message}showView('userPermissions')}

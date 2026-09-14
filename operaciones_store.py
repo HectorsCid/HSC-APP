@@ -1306,6 +1306,22 @@ class OperationsStore:
             conn.execute(f'DELETE FROM operations_users WHERE id={p}', (user_id,))
         return True
 
+    def change_client_user_company(self, user_id, client_id, expected_client_id):
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            user = conn.execute(f"SELECT role,client_id FROM operations_users WHERE id={p}", (user_id,)).fetchone()
+            if not user or user[0] != 'client':
+                raise ValueError('Sólo se puede cambiar la empresa de una cuenta cliente.')
+            if user[1] != expected_client_id:
+                raise ValueError('La empresa de esta cuenta cambió. Actualiza y vuelve a confirmar.')
+            if not conn.execute(f"SELECT id FROM operations_clients WHERE id={p}",(client_id,)).fetchone():
+                raise ValueError('La empresa destino no existe.')
+            changed=conn.execute(f"UPDATE operations_users SET client_id={p},updated_at={p} WHERE id={p} AND client_id={p}",(client_id,_now(),user_id,expected_client_id))
+            if not changed.rowcount:
+                raise ValueError('La empresa cambió durante la confirmación. Actualiza la cuenta.')
+        return self.get_user_by_id(user_id)
+
     def save_user_permissions(self, user_id, permissions, *, status=None):
         self.initialize()
         p, stamp = self.placeholder, _now()
