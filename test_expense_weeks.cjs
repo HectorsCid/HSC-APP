@@ -4,15 +4,17 @@ const start=source.indexOf('  let expensePage=0;'),end=source.indexOf('  async f
 const elements=new Map();
 const $=id=>{if(!elements.has(id))elements.set(id,{value:'',innerHTML:'',textContent:'',hidden:false,parentElement:{},nextElementSibling:{}});return elements.get(id)};
 const rows=[{id:'a',user_id:'T1',technician_name:'Uno',expense_date:'2026-09-14',amount:100,status:'Pendiente',reimbursable:true},
-{id:'b',user_id:'T2',technician_name:'Dos',expense_date:'2026-09-20',amount:200,status:'Liquidado',reimbursable:true},
-{id:'old',user_id:'T1',technician_name:'Uno',expense_date:'2026-09-13',amount:50,status:'Pendiente',reimbursable:true}];
+{id:'b',user_id:'T2',technician_name:'Dos',expense_date:'2026-09-19',amount:200,status:'Liquidado',reimbursable:true},
+{id:'old',user_id:'T1',technician_name:'Uno',expense_date:'2026-09-12',amount:50,status:'Pendiente',reimbursable:true}];
 const context={$,$$:()=>[],visibleExpenses:()=>rows,account:{isOwner:true},localDate:s=>new Date(s+'T12:00:00'),dateKey:d=>d.toISOString().slice(0,10),money:n=>String(n),escapeHtml:s=>String(s||''),clientName:()=>'',equipment:[],expenseStatusClass:()=>'',openExpenseDetail:()=>{}};
 vm.createContext(context);vm.runInContext(source.slice(start,end),context);
-assert.deepEqual(Array.from(vm.runInContext("expenseWeekBounds('2026-09-20')",context)),['2026-09-14','2026-09-20']);
-assert.deepEqual(Array.from(vm.runInContext("expenseWeekBounds('2027-01-01')",context)),['2026-12-28','2027-01-03']);
+assert.deepEqual(Array.from(vm.runInContext("expenseWeekBounds('2026-09-19')",context)),['2026-09-13','2026-09-19']);
+assert.deepEqual(Array.from(vm.runInContext("expenseWeekBounds('2026-09-20')",context)),['2026-09-20','2026-09-26']);
+assert.deepEqual(Array.from(vm.runInContext("expenseWeekBounds('2027-01-01')",context)),['2026-12-27','2027-01-02']);
 $('#expensePeriod').value='history';$('#expenseWeekDate').value='2026-09-19';
 vm.runInContext('renderExpenses()',context);
 assert.equal($('#expenseMonthTotal').textContent,'300');assert.equal($('#expensePendingTotal').textContent,'100');assert.equal($('#expensePaidTotal').textContent,'200');
+assert($('#expensePeriodLabel').textContent.includes('pago el sábado'));
 assert($('#expenseOtherDebt').textContent.includes('50'));assert($('#expenseList').innerHTML.includes('Selecciona un técnico'));
 $('#expenseTechnicianFilter').value='T1';vm.runInContext('renderExpenses()',context);
 assert.equal($('#expenseMonthTotal').textContent,'100');assert(!$('#expenseList').innerHTML.includes('data-expense-id="old"'));

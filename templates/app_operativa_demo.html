@@ -917,12 +917,12 @@
   const money=value=>new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:2}).format(Number(value)||0);
   function expenseStatusClass(status){return ['Reembolsado','Liquidado'].includes(status)?'paid':status==='Aprobado'?'approved':status==='Rechazado'?'rejected':''}
   let expensePage=0;
-  function expenseWeekBounds(value){const monday=localDate(value);monday.setDate(monday.getDate()-((monday.getDay()+6)%7));const sunday=new Date(monday);sunday.setDate(monday.getDate()+6);return [dateKey(monday),dateKey(sunday)];}
+  function expenseWeekBounds(value){const sunday=localDate(value);sunday.setDate(sunday.getDate()-sunday.getDay());const saturday=new Date(sunday);saturday.setDate(sunday.getDate()+6);return [dateKey(sunday),dateKey(saturday)];}
   function renderExpenses(){
     const allRows=visibleExpenses(),filter=$('#expenseTechnicianFilter'),selected=filter?.value||'';
     if(account.isOwner&&filter){const technicians=[...new Map(allRows.map(item=>[item.user_id,item.technician_name||'Técnico HSC'])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'es'));filter.innerHTML='<option value="">Todos los técnicos</option>'+technicians.map(([id,name])=>`<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`).join('');filter.value=technicians.some(([id])=>id===selected)?selected:''}
     const history=$('#expensePeriod').value==='history',date=history?($('#expenseWeekDate').value||dateKey(new Date())):dateKey(new Date()),[weekStart,weekEnd]=expenseWeekBounds(date),selectedRows=filter?.value?allRows.filter(item=>item.user_id===filter.value):allRows,rows=selectedRows.filter(item=>item.expense_date>=weekStart&&item.expense_date<=weekEnd),weekRows=rows,isOwed=item=>item.reimbursable&&!['Rechazado','Reembolsado','Liquidado'].includes(item.status);
-    $('#expenseWeekField').hidden=!history;$('#expensePeriodLabel').textContent=`Semana del ${weekStart} al ${weekEnd} · lunes a domingo`;$('#expenseOtherDebt').textContent=`Por pagar de otras semanas: ${money(selectedRows.filter(item=>isOwed(item)&&(item.expense_date<weekStart||item.expense_date>weekEnd)).reduce((sum,item)=>sum+Number(item.amount||0),0))}`;
+    $('#expenseWeekField').hidden=!history;$('#expensePeriodLabel').textContent=`Semana del ${weekStart} al ${weekEnd} · domingo a sábado · pago el sábado`;$('#expenseOtherDebt').textContent=`Por pagar de otras semanas: ${money(selectedRows.filter(item=>isOwed(item)&&(item.expense_date<weekStart||item.expense_date>weekEnd)).reduce((sum,item)=>sum+Number(item.amount||0),0))}`;
     $('#expenseMonthTotal').nextElementSibling.textContent=history?'Semana consultada':'Esta semana';
     $('#expensesHeading').textContent=account.isOwner?'Gastos de técnicos':'Mis gastos';
     $('#expenseMonthTotal').textContent=money(weekRows.reduce((sum,item)=>sum+Number(item.amount||0),0));
