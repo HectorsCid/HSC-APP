@@ -255,14 +255,14 @@ def _write_plan(service, spreadsheet_id, plan):
 
 
 def sync_operations_outbox(
-    store, service, spreadsheet_id, *, limit=25, dry_run=False, max_attempts=6,
+    store, service, spreadsheet_id, *, limit=25, dry_run=False, max_attempts=None,
     allowed_client_ids=None,
 ):
     """Procesa la cola; en dry-run sólo lee y devuelve el plan."""
     candidates = [
         row for row in store.pending_sync(limit)
         if row.get("destination") == "sheets"
-        and (dry_run or int(row.get("attempts") or 0) < int(max_attempts))
+        and (dry_run or max_attempts is None or int(row.get("attempts") or 0) < int(max_attempts))
     ]
     allowed = {_text(value).upper() for value in (allowed_client_ids or []) if _text(value)}
     operations = [

@@ -83,7 +83,7 @@ DEFAULT_OBSERVATION_OPTIONS = {
 
 
 def _now():
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 def _text(value):
@@ -393,9 +393,53 @@ class OperationsStore:
         """Importa el batch de Sheets en una transacción, conservando sus IDs."""
         self.initialize()
         stamp = _now()
+        # A confirmed export releases the old app-only protection. Pending edits
+        # remain authoritative; a stale acknowledgement cannot release a new edit.
+        with self.connection() as conn:
+            for kind, table in (("client", "operations_clients"), ("equipment", "operations_equipment"),
+                                ("report", "operations_reports"), ("fault", "operations_faults")):
+                extra = " AND state!='draft'" if kind == "report" else ""
+                conn.execute(
+                    f"UPDATE {table} SET source='sheets' WHERE source='app'{extra} AND EXISTS ("
+                    f"SELECT 1 FROM operations_sync_outbox o WHERE o.entity_type='{kind}' "
+                    f"AND o.entity_id={table}.id AND o.destination='sheets' AND o.status='synced' "
+                    f"AND o.updated_at>={table}.updated_at AND o.updated_at<{self.placeholder})",
+                    (_text(payload.get('_read_started_at')) or stamp,),
+                )
+            client_map = {}
+            for local_id, matrix_id in conn.execute(
+                "SELECT id,matrix_id FROM operations_clients WHERE matrix_id!=''"
+            ).fetchall():
+                if matrix_id in client_map and client_map[matrix_id] != local_id:
+                    raise ValueError(f"Cliente de matriz ambiguo: {matrix_id}")
+                client_map[matrix_id] = local_id
+            report_map = {}
+            for local_id, matrix_id in conn.execute(
+                "SELECT id,matrix_id FROM operations_reports WHERE matrix_id!='' AND state!='draft'"
+            ).fetchall():
+                if matrix_id in report_map and report_map[matrix_id] != local_id:
+                    raise ValueError(f"Folio de matriz ambiguo: {matrix_id}")
+                report_map[matrix_id] = local_id
+        payload = dict(payload)
+        for collection in ("clients", "equipment", "reports", "faults"):
+            transformed = []
+            for original in payload.get(collection, []):
+                item = dict(original)
+                if collection == "clients":
+                    item["_matrix_id"] = item.get("id")
+                    item["id"] = client_map.get(item.get("id"), item.get("id"))
+                if "client_id" in item:
+                    item["client_id"] = client_map.get(item["client_id"], item["client_id"])
+                if collection == "reports":
+                    item["_matrix_id"] = item.get("id")
+                    item["id"] = report_map.get(item.get("id"), item.get("id"))
+                if item.get("report_id"):
+                    item["report_id"] = report_map.get(item["report_id"], item["report_id"])
+                transformed.append(item)
+            payload[collection] = transformed
         clients = [(
             _text(item.get("id")), _text(item.get("name")) or _text(item.get("id")),
-            _text(item.get("address")), _text(item.get("id")), _text(item.get("selected_round")),
+            _text(item.get("address")), _text(item.get("_matrix_id") or item.get("id")), _text(item.get("selected_round")),
             int(item.get("policy_active", True) is not False),
             int(bool(item.get("has_photo"))), _text(item.get("_photo_ref")), "sheets",
             json.dumps(item.get("_raw") or {}, ensure_ascii=False), stamp,
@@ -413,7 +457,7 @@ class OperationsStore:
         reports = [(
             _text(item.get("id")), _text(item.get("equipment_id")), _text(item.get("client_id")),
             _text(item.get("round")), _text(item.get("start")), _text(item.get("end")),
-            int(bool(item.get("completed"))), "sheets", _text(item.get("id")),
+            int(bool(item.get("completed"))), "sheets", _text(item.get("_matrix_id") or item.get("id")),
             "refrigeration", json.dumps(item.get("_raw") or {}, ensure_ascii=False),
             "completed" if item.get("completed") else "imported",
             "synced", stamp,
@@ -433,7 +477,7 @@ class OperationsStore:
                 update_where="operations_clients.source='sheets'")
             self._upsert_many(conn, "operations_equipment",
                 ["id","client_id","name","brand","model","serial","status","location","department","equipment_type","notes","has_photo","photo_ref","source","raw_json","updated_at"], equipment,
-                ["client_id","name","brand","model","serial","status","location","department","equipment_type","notes","has_photo","photo_ref","source","raw_json","updated_at"],
+                ["client_id","name","brand","model","serial","status","location","department","has_photo","photo_ref","source","raw_json","updated_at"],
                 update_where="operations_equipment.source='sheets'")
             self._upsert_many(conn, "operations_reports",
                 ["id","equipment_id","client_id","round_number","start_at","end_at","completed","source","matrix_id","report_type","payload_json","state","sync_status","updated_at"], reports,
@@ -841,16 +885,22 @@ class OperationsStore:
         return [item for item in current if item["id"] in request_ids]
 
     def save_equipment_photo(self, equipment_id, photo_ref):
+        return self.save_entity_photo("equipment", equipment_id, photo_ref)
+
+    def save_entity_photo(self, kind, equipment_id, photo_ref):
         self.initialize()
+        table = {"equipment": "operations_equipment", "client": "operations_clients"}.get(kind)
+        if not table:
+            raise ValueError("Tipo de fotografía inválido.")
         p = self.placeholder
         with self.connection() as conn:
             result = conn.execute(
-                f"UPDATE operations_equipment SET photo_ref={p},has_photo={p},source='app',updated_at={p} WHERE id={p}",
+                f"UPDATE {table} SET photo_ref={p},has_photo={p},source='app',updated_at={p} WHERE id={p}",
                 (_text(photo_ref), int(bool(photo_ref)), _now(), _text(equipment_id)),
             )
             if result.rowcount != 1:
-                raise ValueError("El ID_Equipo no existe.")
-        self.queue_sync("equipment", equipment_id, "sheets", "upsert")
+                raise ValueError("El ID no existe.")
+        self.queue_sync(kind, equipment_id, "sheets", "upsert")
 
     def save_report_draft(self, item):
         """Guarda el texto del reporte; las evidencias se almacenan por separado."""
@@ -880,19 +930,25 @@ class OperationsStore:
                 payload["_edit_report_id"] = edit_report_id
             if report_id:
                 found = conn.execute(
-                    f"SELECT id,equipment_id,client_id,round_number FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
+                    f"SELECT id,equipment_id,client_id,round_number,payload_json FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
                     (report_id,),
                 ).fetchone()
                 if not found:
                     raise ValueError("El borrador indicado ya no existe o ya fue finalizado.")
                 if found[1] != equipment_id or found[2] != client_id or found[3] != round_number:
                     raise ValueError("Ese borrador pertenece a otro equipo o a otra ronda.")
+                # Legacy uploads already carry their exact random draft ID. They
+                # may finish it, but unowned drafts are never auto-discovered.
+                draft_owner = json.loads(found[4] or '{}').get('_draft_user_id')
+                if payload.get('_draft_user_id') and draft_owner and draft_owner != payload['_draft_user_id']:
+                    raise ValueError("Ese borrador pertenece a otra cuenta.")
             else:
-                found = conn.execute(
-                    f"SELECT id FROM operations_reports WHERE equipment_id={p} AND round_number={p} "
-                    "AND source='app' AND state='draft' ORDER BY updated_at DESC LIMIT 1",
+                candidates = conn.execute(
+                    f"SELECT id,payload_json FROM operations_reports WHERE equipment_id={p} AND round_number={p} "
+                    "AND source='app' AND state='draft' ORDER BY updated_at DESC",
                     (equipment_id, round_number),
-                ).fetchone()
+                ).fetchall()
+                found = next((row for row in candidates if json.loads(row[1] or '{}').get('_draft_user_id') == payload.get('_draft_user_id')), None)
                 report_id = found[0] if found else f"RPT_{uuid.uuid4().hex[:16].upper()}"
             stamp = _now()
             conn.execute(
@@ -905,7 +961,7 @@ class OperationsStore:
                  _text(payload.get("fin")), 0, "app", matrix_id, _text(item.get("report_type")) or "refrigeration",
                  json.dumps(payload, ensure_ascii=False), "draft", "local_only", stamp),
             )
-        return self.get_report_draft(equipment_id, round_number)
+        return self.get_report_draft(equipment_id, round_number, user_id=payload.get('_draft_user_id'))
 
     def ensure_report_fault(self, report_id, *, client_id, equipment_id, description, priority="Alta"):
         """Crea o actualiza la falla grave vinculada al reporte de forma idempotente."""
@@ -1399,16 +1455,17 @@ class OperationsStore:
         })
         return next(row for row in self.snapshot()["faults"] if row["id"] == fault_id)
 
-    def get_report_draft(self, equipment_id, round_number):
+    def get_report_draft(self, equipment_id, round_number, user_id=None):
         self.initialize()
         p = self.placeholder
         with self.connection() as conn:
-            row = conn.execute(
+            rows = conn.execute(
                 f"SELECT id,client_id,equipment_id,round_number,matrix_id,report_type,payload_json,updated_at "
                 f"FROM operations_reports WHERE equipment_id={p} AND round_number={p} "
-                "AND source='app' AND state='draft' ORDER BY updated_at DESC LIMIT 1",
+                "AND source='app' AND state='draft' ORDER BY updated_at DESC",
                 (_text(equipment_id), _text(round_number)),
-            ).fetchone()
+            ).fetchall()
+        row = next((r for r in rows if json.loads(r[6] or '{}').get('_draft_user_id') == user_id), None)
         if not row:
             return None
         return {
@@ -1417,15 +1474,17 @@ class OperationsStore:
             "updated_at": row[7],
         }
 
-    def delete_report_draft(self, report_id):
+    def delete_report_draft(self, report_id, user_id=None):
         """Elimina únicamente un borrador; un reporte finalizado nunca entra aquí."""
         self.initialize()
         report_id, p = _text(report_id), self.placeholder
         with self.connection() as conn:
             found = conn.execute(
-                f"SELECT id FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
+                f"SELECT id,payload_json FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
                 (report_id,),
             ).fetchone()
+            if found and user_id is not None and json.loads(found[1] or '{}').get('_draft_user_id') != user_id:
+                raise ValueError('Ese borrador pertenece a otra cuenta.')
             if not found:
                 return False
             conn.execute(f"DELETE FROM operations_evidence WHERE report_id={p}", (report_id,))
@@ -1452,6 +1511,14 @@ class OperationsStore:
             except (TypeError, json.JSONDecodeError):
                 payload = {}
             edit_report_id = _text(payload.pop("_edit_report_id", ""))
+            if not edit_report_id:
+                existing = conn.execute(
+                    f"SELECT id FROM operations_reports WHERE equipment_id={p} AND client_id={p} "
+                    f"AND round_number={p} AND completed=1 AND id!={p}",
+                    (row[2], row[1], row[3], report_id),
+                ).fetchone()
+                if existing:
+                    raise ValueError("Este equipo ya tiene reporte en esa ronda. Abre Editar reporte; tu borrador se conserva.")
             start_at = _text(payload.get("inicio"))
             end_at = _text(payload.get("fin"))
             if not start_at or not end_at:
@@ -1468,7 +1535,7 @@ class OperationsStore:
                 final_report_id = edit_report_id
                 conn.execute(
                     f"UPDATE operations_reports SET start_at={p},end_at={p},payload_json={p},"
-                    f"completed=1,state='completed',sync_status='pending',updated_at={p} WHERE id={p}",
+                    f"completed=1,source='app',state='completed',sync_status='pending',updated_at={p} WHERE id={p}",
                     (start_at, end_at, json.dumps(payload, ensure_ascii=False), stamp, final_report_id),
                 )
                 draft_evidence = conn.execute(
@@ -1488,7 +1555,7 @@ class OperationsStore:
             else:
                 conn.execute(
                     f"UPDATE operations_reports SET start_at={p},end_at={p},payload_json={p},"
-                    f"completed=1,state='completed',sync_status='pending',updated_at={p} WHERE id={p}",
+                    f"completed=1,source='app',state='completed',sync_status='pending',updated_at={p} WHERE id={p}",
                     (start_at, end_at, json.dumps(payload, ensure_ascii=False), stamp, report_id),
                 )
             self._remember_observations(conn, payload)
@@ -1560,6 +1627,13 @@ class OperationsStore:
             payload = json.loads(row[9] or "{}")
         except (TypeError, json.JSONDecodeError):
             payload = {}
+        aliases = {"inicio": "FechaInicio", "fin": "FechaFin", "p1": "PresionCto1", "p2": "PresionCto2",
+                   "t1": "TempCto1", "t2": "TempCto2", "a1": "Amperaje1", "a2": "Amperaje2",
+                   "electrico": "ObsElectrico", "electronico": "OBsElectrónico", "mecanico": "ObsMecanico",
+                   "notas": "Comentarios", "correctivo": "MtoCorrectivo", "partes": "PartesUtilizadas", "revisor": "Responsable"}
+        for name, column in aliases.items():
+            if name not in payload and column in payload:
+                payload[name] = payload[column]
         return {
             "id": row[0], "client_id": row[1], "equipment_id": row[2], "round": row[3],
             "start": row[4], "end": row[5], "completed": bool(row[6]), "matrix_id": row[7],
@@ -1593,7 +1667,7 @@ class OperationsStore:
                 f"INSERT INTO operations_sync_outbox"
                 f"(id,entity_type,entity_id,destination,action,payload_json,status,attempts,last_error,created_at,updated_at) "
                 f"VALUES ({','.join([p] * 11)}) ON CONFLICT(entity_type,entity_id,destination,action) "
-                "DO UPDATE SET payload_json=excluded.payload_json,status='pending',attempts=0,last_error='',updated_at=excluded.updated_at",
+                "DO UPDATE SET id=excluded.id,payload_json=excluded.payload_json,status='pending',attempts=0,last_error='',updated_at=excluded.updated_at",
                 (operation_id, _text(entity_type), _text(entity_id), _text(destination),
                  _text(action), json.dumps(payload or {}, ensure_ascii=False), "pending", 0, "", stamp, stamp),
             )
@@ -1605,7 +1679,7 @@ class OperationsStore:
         with self.connection() as conn:
             rows = conn.execute(
                 f"SELECT id,entity_type,entity_id,destination,action,payload_json,attempts,last_error "
-                f"FROM operations_sync_outbox WHERE status!='synced' ORDER BY created_at LIMIT {p}",
+                f"FROM operations_sync_outbox WHERE status!='synced' ORDER BY updated_at,created_at LIMIT {p}",
                 (max(1, min(int(limit), 200)),),
             ).fetchall()
         return [{
@@ -1619,11 +1693,13 @@ class OperationsStore:
         self.initialize()
         p, stamp = self.placeholder, _now()
         with self.connection() as conn:
-            conn.execute(
+            confirmed = conn.execute(
                 f"UPDATE operations_sync_outbox SET status='synced',attempts=attempts+1,"
                 f"last_error='',updated_at={p} WHERE id={p}",
                 (stamp, _text(operation_id)),
             )
+            if confirmed.rowcount != 1:
+                return False  # A newer edit replaced this operation while Google was writing.
             table = {
                 "report": "operations_reports",
                 "fault": "operations_faults",
@@ -1633,6 +1709,7 @@ class OperationsStore:
                     f"UPDATE {table} SET sync_status='synced',updated_at={p} WHERE id={p}",
                     (stamp, _text(entity_id)),
                 )
+        return True
 
     def mark_sync_failure(self, operation_id, error, entity_type="", entity_id=""):
         """Conserva la operación para reintento sin perder el error anterior."""
@@ -1640,11 +1717,13 @@ class OperationsStore:
         p, stamp = self.placeholder, _now()
         message = _text(error)[:1000]
         with self.connection() as conn:
-            conn.execute(
+            changed = conn.execute(
                 f"UPDATE operations_sync_outbox SET status='failed',attempts=attempts+1,"
                 f"last_error={p},updated_at={p} WHERE id={p}",
                 (message, stamp, _text(operation_id)),
             )
+            if changed.rowcount != 1:
+                return False
             table = {
                 "report": "operations_reports",
                 "fault": "operations_faults",

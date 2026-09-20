@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime, timezone
 
 
 # Se leen columnas abiertas para no truncar datos nuevos agregados a la matriz.
@@ -252,6 +253,7 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
 
 
 def read_operaciones_matrix(service, spreadsheet_id, *, include_media_refs=False, include_raw=False):
+    read_started_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
     ranges = list(MATRIX_RANGES)
     try:
         metadata = service.spreadsheets().get(
@@ -272,10 +274,12 @@ def read_operaciones_matrix(service, spreadsheet_id, *, include_media_refs=False
         ranges=ranges,
         majorDimension="ROWS",
     ).execute()
-    return build_operaciones_bootstrap(
+    payload = build_operaciones_bootstrap(
         response.get("valueRanges") or [], include_media_refs=include_media_refs,
         include_raw=include_raw,
     )
+    payload['_read_started_at'] = read_started_at
+    return payload
 
 
 def delete_operaciones_client_rows(service, spreadsheet_id, client_ids):

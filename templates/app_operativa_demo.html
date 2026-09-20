@@ -370,10 +370,10 @@
   const photoObserver='IntersectionObserver' in window?new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting){photoObserver.unobserve(entry.target);queuePhoto(entry.target)}}),{rootMargin:'1200px'}):null;
   function hydratePhotos(root=document,immediateLimit=0){root.querySelectorAll('img[data-photo-src]:not([data-queued])').forEach((img,index)=>index<immediateLimit?queuePhoto(img):photoObserver?photoObserver.observe(img):queuePhoto(img));}
   views.clientEditor=['Administración','Cliente'];views.equipmentEditor=['Administración','Equipo'];
-  // Datos ilustrativos: la ronda consultada no modifica la ronda operativa real.
+  // Sin datos de ejemplo: el avance se calcula con los reportes de la matriz.
   const demoRounds={
-    '1':{done:equipment.map(e=>e[0]),date:'15 mayo 2026'},
-    '2':{done:equipment.filter(e=>e[3]).map(e=>e[0]),date:'11 septiembre 2026'},
+    '1':{done:[],date:''},
+    '2':{done:[],date:''},
     '3':{done:[],date:''},
     '4':{done:[],date:''}
   };
@@ -1035,8 +1035,6 @@
     }catch(error){toast(error.message||'No se pudo actualizar la falla')}
     finally{button.disabled=false;button.textContent='Guardar atención'}
   };
-  $('#saveDraft').onclick=()=>{localStorage.setItem('hsc-report-demo',JSON.stringify(Object.fromEntries(new FormData($('#reportForm')))));toast('Borrador guardado en este dispositivo')};$('#reportForm').onsubmit=e=>{e.preventDefault();if(!confirm('¿Finalizar este reporte y marcar el equipo como realizado?'))return;localStorage.removeItem('hsc-report-demo');toast('Reporte finalizado · equipo marcado en verde');setTimeout(()=>showView('equipment'),700)};
-  const saved=localStorage.getItem('hsc-report-demo');if(saved){try{const d=JSON.parse(saved);Object.entries(d).forEach(([k,v])=>{const f=$(`[name="${k}"]`);if(f)f.value=v})}catch(_){}}
   $('#sendFault').onclick=async()=>{
     const description=$('#faultText').value.trim(),outsidePolicy=$('#faultEquipment').value==='__outside_policy__',equipmentId=outsidePolicy?'':$('#faultEquipment').value,files=[...$('#faultEvidence').files];
     const equipmentName=$('#faultExternalName').value.trim(),equipmentLocation=$('#faultExternalLocation').value.trim();
@@ -1079,7 +1077,7 @@
   $$('[data-round-select]').forEach(select=>select.onchange=()=>{selectedRound=select.value;rememberClientRound(selectedClient,selectedRound);refreshRound();saveOperationalNavigation();});
   let activeReportContext=null,reportOpenSequence=0;
   const defaultReportNotes='Se realizó mantenimiento preventivo y chequeo de parámetros. Se deja el equipo trabajando bien.';
-  const reportKey=(equipmentId,round)=>`hsc-report-demo-${equipmentId}-R${round}`;
+  const reportKey=(equipmentId,round)=>`hsc-report-${encodeURIComponent(account.id)}-${equipmentId}-R${round}`;
   const draftKey=()=>activeReportContext?.key||reportKey(selectedEquipment,selectedRound);
   function addReportPart(value='',quantity='1'){$('#reportPartsList').insertAdjacentHTML('beforeend',`<div class="field-row report-part-row" style="margin-bottom:8px"><div class="field"><input data-report-part placeholder="Nombre de la parte" value="${escapeHtml(value)}"></div><div class="field"><input data-report-part-quantity type="number" min="1" step="1" inputmode="numeric" value="${escapeHtml(quantity||'1')}" aria-label="Cantidad"><button class="mini-btn" type="button" data-remove-report-part>Quitar</button></div></div>`)}
   function setReportParts(value=''){const list=$('#reportPartsList');list.innerHTML='';for(const line of String(value||'').split(/\r?\n/).map(item=>item.trim()).filter(Boolean)){const match=line.match(/^\[(\d+)\]\s*(.+)$/);addReportPart(match?match[2]:line,match?match[1]:'1')}if(!list.children.length)addReportPart()}
@@ -1184,11 +1182,14 @@
     if(!$('#catalogChoice').hidden&&!$('#catalogClient').value){error.textContent='Selecciona un cliente del catálogo o la opción Crear cliente nuevo.';return;}
     if(!name){error.textContent='Escribe el nombre del cliente.';return;}
     if(clients.some(c=>c[1]!==editingClient&&normalizedName(c[0])===normalizedName(name))){error.textContent='Ese cliente ya existe. Selecciónalo en el catálogo para evitar duplicarlo.';return;}
-    if(matrixId&&Object.entries(clientMeta).some(([id,m])=>id!==editingClient&&m.matrixId.toUpperCase()===matrixId)){error.textContent='Esa clave de matriz ya está vinculada a otro cliente de ejemplo.';return;}
+    if(matrixId&&Object.entries(clientMeta).some(([id,m])=>id!==editingClient&&m.matrixId.toUpperCase()===matrixId)){error.textContent='Esa clave de matriz ya está vinculada a otro cliente.';return;}
     const id=editingClient||nextClientId(),submit=event.submitter;submit.disabled=true;error.textContent='';
     try{
       await operationsPost('/api/operaciones/clients',{id,name,matrix_id:matrixId,billing_rfc:$('#opBillingRfc').value,address:$('#opClientAddress').value.trim(),policy_active:$('#opClientPolicy').checked,selected_round:clientMeta[editingClient]?.selectedRound||''});
-      editorDirty=false;await loadMatrixData();selectedClient=id;refreshRound();showView('client');historyStack=['clients','client'];toast('Cliente guardado · sincronización con Google pendiente');
+      editingClient=id;
+      const photoFile=$('#opClientPhoto').files[0],removePhoto=!clientPhoto&&Boolean(clientMeta[id]?.photo);
+      if(photoFile||removePhoto){const form=new FormData();if(photoFile)form.append('file',photoFile,photoFile.name);else form.append('remove','1');const response=await fetch(`/api/operaciones/clients/${encodeURIComponent(id)}/photo`,{method:'POST',body:form}),result=await response.json();if(!response.ok||!result.ok)throw Error(result.error||'Los datos se guardaron, pero falta confirmar la foto');}
+      editorDirty=false;if(!await loadMatrixData())throw Error('Cliente guardado, pero no se pudo actualizar la vista.');selectedClient=id;refreshRound();showView('client');historyStack=['clients','client'];toast('Cliente guardado · sincronización con Google pendiente');
     }catch(saveError){error.textContent=saveError.message}finally{submit.disabled=false}
   };
   function openEquipmentEditor(edit=false){

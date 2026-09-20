@@ -4073,8 +4073,8 @@ def api_operaciones_sync_status():
         return jsonify({"ok": False, "error": "La base operativa no está conectada."}), 503
     pending = OPERACIONES_STORE.pending_sync(50)
     return jsonify({
-        "ok": True, "automatic_enabled": OPERACIONES_SHEETS_SYNC_ENABLED,
-        "pilot_clients": sorted(OPERACIONES_SYNC_CLIENT_ALLOWLIST),
+        "ok": True, "automatic_enabled": OPERACIONES_SHEETS_SYNC_ENABLED or OPERACIONES_MATRIX_AUTO_SYNC,
+        "pilot_clients": [] if OPERACIONES_MATRIX_AUTO_SYNC else sorted(OPERACIONES_SYNC_CLIENT_ALLOWLIST),
         "pending": len(pending),
         "items": [{
             "entity_type": item["entity_type"], "entity_id": item["entity_id"],
@@ -4103,7 +4103,7 @@ def api_operaciones_sync():
         result = sync_operations_outbox(
             OPERACIONES_STORE, service, SHEET_ID,
             limit=max(1, min(int(body.get("limit") or 25), 100)), dry_run=dry_run,
-            allowed_client_ids=OPERACIONES_SYNC_CLIENT_ALLOWLIST,
+            allowed_client_ids=None if OPERACIONES_MATRIX_AUTO_SYNC else OPERACIONES_SYNC_CLIENT_ALLOWLIST,
         )
         if not dry_run:
             _invalidate_operations_cache()
@@ -4209,14 +4209,15 @@ def api_operaciones_save_equipment():
         return jsonify({"ok": False, "error": "No se pudieron guardar los equipos."}), 500
 
 
-@app.post('/api/operaciones/equipment/<path:equipment_id>/photo')
-def api_operaciones_equipment_photo_save(equipment_id):
-    denied = _operations_forbidden("admin", "technician") or _operations_permission_forbidden("editEquipment")
+@app.post('/api/operaciones/clients/<path:equipment_id>/photo', defaults={"kind": "client"})
+@app.post('/api/operaciones/equipment/<path:equipment_id>/photo', defaults={"kind": "equipment"})
+def api_operaciones_equipment_photo_save(equipment_id, kind="equipment"):
+    denied = _operations_forbidden("admin", "technician") or _operations_permission_forbidden("editClientData" if kind == "client" else "editEquipment")
     if denied:
         return denied
     if not OPERACIONES_STORE.enabled:
         return jsonify(ok=False, error="Base operativa no disponible."), 503
-    equipment = next((row for row in OPERACIONES_STORE.snapshot()["equipment"] if row["id"] == equipment_id), None)
+    equipment = next((row for row in OPERACIONES_STORE.snapshot()["clients" if kind == "client" else "equipment"] if row["id"] == equipment_id), None)
     if not equipment:
         abort(404)
     try:
@@ -4229,10 +4230,10 @@ def api_operaciones_equipment_photo_save(equipment_id):
             content = upload.stream.read(5 * 1024 * 1024 + 1)
             if not content or len(content) > 5 * 1024 * 1024:
                 raise ValueError("La foto debe pesar máximo 5 MB.")
-            stored = store_operations_evidence(equipment["client_id"],
-                "Equipo_" + equipment_id + "_" + secrets.token_hex(8), 1, content)
+            stored = store_operations_evidence(equipment["id"] if kind == "client" else equipment["client_id"],
+                kind + "_" + equipment_id + "_" + secrets.token_hex(8), 1, content)
             reference = stored["storage_ref"]
-        OPERACIONES_STORE.save_equipment_photo(equipment_id, reference)
+        OPERACIONES_STORE.save_entity_photo(kind, equipment_id, reference)
         _invalidate_operations_cache()
         _schedule_operations_sync(force=True)
         return jsonify(ok=True)
@@ -4255,7 +4256,8 @@ def api_operaciones_get_report_draft():
         return jsonify({"ok": True, "configured": False, "draft": None})
     try:
         draft = OPERACIONES_STORE.get_report_draft(
-            request.args.get("equipment_id"), request.args.get("round")
+            request.args.get("equipment_id"), request.args.get("round"),
+            user_id=str(session.get('hsc_user_id') or 'owner')
         )
         return jsonify({"ok": True, "configured": True, "draft": draft})
     except Exception as exc:
@@ -4308,7 +4310,10 @@ def api_operaciones_save_report_draft():
             "error": "La base operativa todavía no está conectada en Render.",
         }), 503
     try:
-        draft = OPERACIONES_STORE.save_report_draft(request.get_json(silent=True) or {})
+        body = request.get_json(silent=True) or {}
+        body['payload'] = dict(body.get('payload') or {})
+        body['payload']['_draft_user_id'] = str(session.get('hsc_user_id') or 'owner')
+        draft = OPERACIONES_STORE.save_report_draft(body)
         _invalidate_operations_cache()
         return jsonify({"ok": True, "draft": draft, "sync_status": "local_only"})
     except ValueError as exc:
@@ -4327,7 +4332,7 @@ def api_operaciones_delete_report_draft(report_id):
     if permission_denied:
         return permission_denied
     try:
-        deleted = OPERACIONES_STORE.delete_report_draft(report_id)
+        deleted = OPERACIONES_STORE.delete_report_draft(report_id, user_id=str(session.get('hsc_user_id') or 'owner'))
         _invalidate_operations_cache()
         return jsonify({"ok": True, "deleted": deleted})
     except Exception as exc:
@@ -4347,6 +4352,8 @@ def api_operaciones_finalize_report():
         return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
     body = request.get_json(silent=True) or {}
     try:
+        body['payload'] = dict(body.get('payload') or {})
+        body['payload']['_draft_user_id'] = str(session.get('hsc_user_id') or 'owner')
         draft = OPERACIONES_STORE.save_report_draft(body)
         report = OPERACIONES_STORE.finalize_report(draft["id"])
         try:

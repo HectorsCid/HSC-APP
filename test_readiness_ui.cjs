@@ -1,0 +1,17 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const vm=require('node:vm');
+const source=fs.readFileSync('templates/app_operativa_demo.html','utf8');
+const keyCode=source.match(/const reportKey=([^;]+);/)[1];
+const key=id=>vm.runInNewContext(`(${keyCode})('UDA14','1')`,{account:{id}});
+assert.notEqual(key('tech1'),key('tech2'));
+assert.equal(key('tech1'),key('tech1'));
+assert(!source.includes("localStorage.getItem('hsc-report-demo')"));
+assert(!source.includes("localStorage.setItem('hsc-report-demo'"));
+assert(!source.includes("date:'15 mayo 2026'"));
+const clientSave=source.slice(source.indexOf("$('#clientEditorForm').onsubmit="),source.indexOf('function openEquipmentEditor'));
+assert(clientSave.includes('/api/operaciones/clients/${encodeURIComponent(id)}/photo'));
+assert(clientSave.includes("form.append('file',photoFile,photoFile.name)"));
+assert(clientSave.includes("form.append('remove','1')"));
+assert(clientSave.includes('if(!await loadMatrixData())throw'));
+console.log('OK: borradores por cuenta, sin carga global de ejemplo y foto de cliente conectada.');
