@@ -1,13 +1,21 @@
 """Isolated, loopback-only UI fixture. No credentials, production writes or Google."""
 from pathlib import Path
+import sys
+import tempfile
 from flask import Flask, jsonify, render_template, request
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from operaciones_store import OperationsStore
+fixture_folder = tempfile.TemporaryDirectory(prefix='hsc-worklists-test-')
+store = OperationsStore(local_path=Path(fixture_folder.name) / 'fixture.db')
 app = Flask(__name__, template_folder=str(ROOT / 'templates'), static_folder=str(ROOT / 'static'))
 state = {'fail': False}
 data = dict(ok=True, source='database', clients=[dict(id='TEST', name='Cliente local', policy_active=True, selected_round='1')],
             equipment=[dict(id='TEST1', client_id='TEST', name='Refrigerador local', status='Activo')],
             reports=[], tasks=[], expenses=[], faults=[], observation_options=[], stats={})
+data['equipment'].append(dict(id='TEST2', client_id='TEST', name='Cámara local', status='Activo'))
+store.import_matrix_snapshot(data)
 
 @app.get('/hsc-tecnico/')
 def shell():
@@ -28,7 +36,14 @@ def api(path):
     if state['fail']:
         return jsonify(ok=False, error='Servidor no disponible (prueba local)'), 503
     if path == 'bootstrap':
+        data['worklists'] = store.snapshot()['worklists']
         return jsonify(data)
+    if path == 'worklists' and request.method == 'POST':
+        try:
+            result = store.save_worklist(request.json, actor_id='offline-fixture', is_admin=True)
+            return jsonify(ok=True, worklist=result)
+        except (ValueError, PermissionError) as exc:
+            return jsonify(ok=False, error=str(exc)), 409
     if path == 'equipment' and request.method == 'POST':
         for row in request.json['items']:
             old = next((item for item in data['equipment'] if item['id'] == row['id']), None)

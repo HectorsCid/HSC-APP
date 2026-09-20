@@ -1,10 +1,11 @@
-const CACHE_NAME = 'hsc-shell-v20';
+const CACHE_NAME = 'hsc-shell-v21';
 const SAFE_ASSETS = [
   '/static/hsc_theme.css',
   '/static/hsc_theme.js',
   '/static/hsc_inputs.js',
   '/static/pwa.js',
   '/static/operations_offline.js',
+  '/static/operations_worklists.js',
   '/static/img/hsc-app-192.png',
   '/static/img/hsc-app-512.png',
   '/manifest.webmanifest',

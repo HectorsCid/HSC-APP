@@ -3001,6 +3001,7 @@ def _scope_operaciones_payload(payload):
                            or user_id in task.get("assigned_user_ids", [task.get("assigned_user_id")])]
         scoped["expenses"] = [expense for expense in payload.get("expenses", [])
                               if expense.get("user_id") == user_id]
+        scoped["worklists"] = [row for row in payload.get("worklists", []) if row.get("assigned_user_id") == user_id]
         return scoped
     if role != "client":
         return payload
@@ -3016,7 +3017,7 @@ def _scope_operaciones_payload(payload):
     tasks = [{key: item.get(key) for key in ('id','title','scheduled_date','scheduled_time','client_id','equipment_id','status')}
              for item in payload.get('tasks', []) if client_id and
              (item.get('client_id') == client_id or (not item.get('client_id') and item.get('equipment_id') in equipment_ids))]
-    scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults, tasks=tasks, expenses=[])
+    scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults, tasks=tasks, expenses=[], worklists=[])
     scoped["stats"] = {
         "clients": len(clients), "equipment": len(equipment), "reports": len(reports),
         "client_photos": sum(bool(item.get("has_photo")) for item in clients),
@@ -3236,6 +3237,30 @@ def api_operaciones_delete_user(user_id):
         state.get('notification_preferences',{}).pop(user_id,None)
         notices._write(state)
     return jsonify(ok=True)
+
+
+@app.post('/api/operaciones/worklists')
+def api_operaciones_save_worklist():
+    denied = _operations_forbidden('admin', 'technician')
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify(ok=False, error='La base operativa no está disponible.'), 503
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(ok=False, error='Lista no válida.'), 400
+    try:
+        result = OPERACIONES_STORE.save_worklist(body, actor_id=str(session.get('hsc_user_id') or 'owner'),
+                                                is_admin=_operations_role() == 'admin')
+        _invalidate_operations_cache()
+        return jsonify(ok=True, worklist=result)
+    except PermissionError as exc:
+        return jsonify(ok=False, error=str(exc)), 403
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 409
+    except Exception:
+        current_app.logger.exception('No se pudo guardar la jornada')
+        return jsonify(ok=False, error='No se confirmó el guardado. Tu lista local se conserva.'), 503
 
 
 @app.post('/api/operaciones/tasks')

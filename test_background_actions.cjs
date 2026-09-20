@@ -8,6 +8,10 @@ const find=name=>html.split(/\r?\n/).find(line=>line.trim().startsWith(`async fu
   vm.runInContext(html.slice(html.indexOf('  async function drainFieldActions('),html.indexOf('  const connectionBanner=')),ctx);
   await ctx.drainFieldActions();assert.equal(jobs.length,1);assert.equal(jobs[0].error,'Sin conexión');
   fail=false;await ctx.drainFieldActions();assert.equal(jobs.length,0);assert.deepEqual(posts,['fixed-fault','fixed-fault']);
+  jobs=[{id:'list-change',url:'/api/operaciones/worklists',body:{id:'L1'}},{id:'expense',url:'/api/operaciones/expenses',body:{id:'E1'}}];
+  posts=[];ctx.operationsPost=async(url,body)=>{posts.push(body.id);if(body.id==='L1')throw Object.assign(Error('Conflicto'),{status:409});return {expense:{id:body.id}}};
+  await ctx.drainFieldActions();assert.equal(jobs.length,1);assert.equal(jobs[0].blocked,true);assert.deepEqual(posts,['L1','E1']);
+  await ctx.drainFieldActions();assert.deepEqual(posts,['L1','E1'],'Un conflicto de lista no se reenvía automáticamente ni bloquea otros gastos');
   let saved={},left=false,allowStorage=false;
   Object.assign(ctx,{persistEvidence:async()=>allowStorage,rememberObservationValues:()=>{},rememberPendingReportUpload:u=>saved[u.key]=u,pendingReportUploads:()=>saved,leaveFinishedReport:()=>left=true});
   vm.runInContext(find('queueReportOnDevice'),ctx);

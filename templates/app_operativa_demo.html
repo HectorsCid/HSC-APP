@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>{{ operations_app_name|default('HSC Operaciones') }}</title>
-  <meta name="hsc-operations-build" content="offline-local-20260920">
+  <meta name="hsc-operations-build" content="worklists-20260920">
   <script>
     (() => {
       const saved = localStorage.getItem('hsc-theme');
@@ -209,6 +209,7 @@
     </section>
 
     <section class="view" data-view="agenda">
+      <button class="user-card" id="openWorklists" type="button"><span class="reminder-icon">☑</span><span class="card-copy"><b>Mi jornada</b><small id="worklistSummary">Organizar los equipos que quiero trabajar</small></span><span class="chevron">›</span></button>
       <div class="agenda-date"><div><div class="eyebrow">Agenda del técnico</div><h2 id="agendaDateTitle">Agenda</h2><p id="agendaDateSummary">Cargando pendientes…</p></div><div class="agenda-actions"><button class="mini-btn" id="openMonthCalendar" title="Calendario del mes" aria-label="Abrir calendario del mes">▦</button><button class="mini-btn" id="openTask">＋</button></div></div>
       <div class="calendar-strip" id="agendaDays"></div>
       <div class="reminder"><div class="reminder-icon">♢</div><div class="reminder-copy"><b>Resumen “Tareas para hoy”</b><span>Las tareas ya se guardan en la cuenta y quedan listas para conectarse al aviso matutino.</span></div></div>
@@ -261,6 +262,7 @@
       <article class="profile-card"><div class="profile-avatar" id="profileAvatar">HS</div><h2 id="profileName">Héctor Silva Cid</h2><p id="profileRole">Propietario · Cuenta activa</p></article><div class="section-head"><h2>Resumen</h2></div><div class="stats"><div class="stat"><b id="profileTasks">0</b><span>Tareas hoy</span></div><div class="stat"><b id="profileReports">0</b><span>Reportes</span></div><div class="stat"><b id="profileClients">0</b><span>Clientes</span></div></div><div class="section-head"><h2>Apariencia</h2></div><section class="appearance-panel"><div class="appearance-head"><div><b>Estilo de la aplicación</b><small>El cambio se aplica al instante y queda guardado en este dispositivo.</small></div><button class="mini-btn" id="profileThemeToggle" type="button">Modo claro</button></div><div class="style-grid" role="radiogroup" aria-label="Estilo visual"><button class="style-option" type="button" data-style-option="corporate" role="radio"><span class="style-preview"><i></i><i></i></span><b>Corporativo</b><small>Sobrio, ordenado y ejecutivo</small></button><button class="style-option" type="button" data-style-option="fusion" role="radio"><span class="style-preview"><i></i><i></i></span><b>Mezcla</b><small>Moderno con tarjetas hundidas</small></button><button class="style-option" type="button" data-style-option="glass" role="radio"><span class="style-preview"><i></i><i></i></span><b>Cristal</b><small>Transparencias y profundidad</small></button><button class="style-option" type="button" data-style-option="classic" role="radio"><span class="style-preview"><i></i><i></i></span><b>Oldschool</b><small>XP claro · Vista oscuro</small></button></div><div class="style-theme-note" id="styleThemeNote">Corporativo · modo oscuro</div></section><div class="section-head"><h2>Conexión y envío</h2></div><section class="appearance-panel"><div class="appearance-head"><div><b>Cómo trabajar</b><small id="offlineSyncDescription">Los reportes pendientes se enviarán automáticamente al recuperar conexión.</small></div><span class="access-state" id="offlineSyncState">En línea</span></div><div class="field"><label for="offlineSyncMode">Preferencia de sincronización</label><select id="offlineSyncMode"><option value="auto">Automático con cualquier conexión</option><option value="wifi">Automático sólo al detectar Wi‑Fi</option><option value="offline">Trabajar sin conexión</option></select></div><div class="form-actions"><button class="primary" id="syncPendingNow" type="button">↻ Sincronizar ahora</button></div><p class="editor-note">En iPhone el navegador no siempre informa si la conexión es Wi‑Fi. Si eliges sólo Wi‑Fi y no puede reconocerla, usa “Sincronizar ahora”.</p></section><div class="section-head"><h2 id="profileControlHeading">Preferencias</h2></div><div class="user-list"><button class="user-card" id="openExpenses" type="button"><div class="reminder-icon">$</div><div><b id="profileExpenseTitle">Mis gastos</b><small id="profileExpenseDescription">Tickets, compras y reembolsos</small></div><span class="access-state pending" id="profileExpenseState">Sin pendientes</span></button><button class="user-card" id="openUsersProfile" type="button" data-admin-only><div class="reminder-icon">♙</div><div><b>Usuarios y permisos</b><small>Invitaciones y accesos de técnicos y clientes</small></div><span class="chevron">›</span></button><article class="user-card"><div class="reminder-icon">♢</div><div><b>Notificaciones</b><small>Resumen matutino, agenda y gastos nuevos</small></div><span class="chevron">›</span></article><button class="user-card" id="syncGoogleProfile" type="button" data-admin-only><div class="reminder-icon">↻</div><div><b>Sincronizar Google</b><small>Traer ahora los cambios de la Hoja Matriz</small></div><span class="access-state" id="profileSyncState">Al día</span></button></div>
     </section>
 
+    {% include '_operations_worklists.html' %}
     <section class="view" data-view="expenses">
       <div class="section-head"><div><div class="eyebrow">Control de campo</div><h2 id="expensesHeading">Mis gastos</h2></div><button class="primary" id="openExpenseForm" type="button">＋ Registrar</button></div>
       <div class="field" id="expenseTechnicianFilterField" data-admin-only><label for="expenseTechnicianFilter">Ver gastos por técnico</label><select id="expenseTechnicianFilter"><option value="">Todos los técnicos</option></select></div>
@@ -324,7 +326,9 @@
 <div class="toast" id="toast"></div>
 
 <div class="modal" id="profileEditModal"><div class="sheet"><div class="eyebrow">Mi cuenta</div><h2>Editar perfil</h2><div class="field"><label for="ownProfileName">Nombre visible</label><input id="ownProfileName" maxlength="100" autocomplete="name"></div><div class="field" id="ownProfilePhotoField" style="margin-top:12px"><label for="ownProfilePhoto">Fotografía opcional</label><input id="ownProfilePhoto" type="file" accept="image/jpeg,image/png,image/webp"><p class="editor-note">JPG, PNG o WebP de máximo 8 MB.</p></div><div class="sheet-actions"><button class="secondary" id="closeOwnProfile" type="button">Cancelar</button><button class="primary" id="saveOwnProfile" type="button">Guardar perfil</button></div></div></div>
-<script src="/static/operations_offline.js?v=20260920"></script>
+{% include '_operations_worklist_editor.html' %}
+<script src="/static/operations_worklists.js?v=1"></script>
+<script src="/static/operations_offline.js?v=20260920-worklists"></script>
 <script>
   const clients=[];
   const equipment=[];
@@ -408,6 +412,7 @@
     for(const saved of Object.values(pendingReportUploads()))if(saved?.equipment&&saved?.round&&!matrixReports.some(item=>item.id===`offline:${saved.key}`))matrixReports.push(localPendingReport(saved));
     matrixFaults=Array.isArray(payload.faults)?payload.faults:[];
     matrixTasks=Array.isArray(payload.tasks)?payload.tasks:[];
+    matrixWorklists=Array.isArray(payload.worklists)?payload.worklists:[];
     matrixExpenses=Array.isArray(payload.expenses)?payload.expenses:[];
     matrixObservationOptions=Array.isArray(payload.observation_options)?payload.observation_options:[];renderObservationPickers();
     for(const round of ['1','2','3','4']){
@@ -432,6 +437,8 @@
   }
   let lastServerPayload=null,bootstrapRequest=null,fieldRevision=0,serverConnection='checking',pendingFieldCount=0;
   const localPhotoUrls=new Map();
+  let matrixWorklists=[],journeyUi=null;
+  views.worklists=['Agenda','Mi jornada'];views.worklist=['Mi jornada','Mi lista de equipos'];
   async function hscFetch(url,options={},timeout=20000){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);try{const response=await fetch(url,{...options,signal:controller.signal});serverConnection=response.status===401||response.redirected?'auth':response.ok?'online':'server';const body=await response.text();return {ok:response.ok,status:response.status,redirected:response.redirected,json:async()=>JSON.parse(body)}}catch(error){serverConnection='unreachable';throw Error(error.name==='AbortError'?'El servidor tardó demasiado; tu trabajo local se conserva.':'No se pudo contactar HSC; tu trabajo local se conserva.')}finally{clearTimeout(timer)}}
   function cacheServerPayload(){localStorage.setItem(`hsc-operaciones-data-${account.id}-${appKind}`,JSON.stringify({savedAt:Date.now(),payload:lastServerPayload}));}
   async function repaintPendingState(){
@@ -479,7 +486,7 @@
   function setupObservationPickers(){for(const category of ['electrico','electronico','mecanico','notas']){const textarea=$('#reportForm').elements.namedItem(category),select=document.createElement('select');select.dataset.observationPicker=category;select.setAttribute('aria-label',`Historial de observaciones ${category}`);select.style.marginBottom='8px';select.onchange=()=>{if(!select.value)return;const lines=textarea.value.split(/\r?\n/).map(value=>value.trim());if(!lines.includes(select.value))textarea.value=[textarea.value.trim(),select.value].filter(Boolean).join('\n');select.value=''};textarea.parentElement.insertBefore(select,textarea)}renderObservationPickers()}
   setupObservationPickers();
   function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2300)}
-  async function operationsPost(url,body){const response=await hscFetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)},45000);let payload={};try{payload=await response.json()}catch(_){}if(response.status===401||response.redirected)throw Error('Sesión vencida. Inicia sesión en la misma cuenta; los pendientes se conservan.');if(!response.ok||!payload.ok)throw Error(payload.error||`HSC no confirmó el guardado (${response.status}).`);return payload;}
+  async function operationsPost(url,body){const response=await hscFetch(url,{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)},45000);let payload={};try{payload=await response.json()}catch(_){}if(response.status===401||response.redirected)throw Error('Sesión vencida. Inicia sesión en la misma cuenta; los pendientes se conservan.');if(!response.ok||!payload.ok){const error=Error(payload.error||`HSC no confirmó el guardado (${response.status}).`);error.status=response.status;throw error;}return payload;}
   async function operationsDelete(url){const response=await fetch(url,{method:'DELETE',headers:{Accept:'application/json'}});let payload={};try{payload=await response.json()}catch(_){}if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudo eliminar.');return payload;}
   function navMode(mode){const set=(el,view,icon,label)=>{el.dataset.nav=view;el.querySelector('span').textContent=icon;el.querySelector('em').textContent=label};if(mode==='partner'){set($('#navOne'),'partner','⌂','Inicio');set($('#navTwo'),'partnerEquipment','❄','Equipos');set($('#navThree'),'partnerFaults','⚠','Fallas')}else{set($('#navOne'),'agenda','▦','Agenda');set($('#navTwo'),'clients','♙','Clientes');set($('#navThree'),'profile','◎','Perfil')}}
   function can(permission){return account.isOwner||Boolean(activePermissions[permission]);}
@@ -530,10 +537,14 @@
   function browserNavigationUrl(view=current,guard=false){const url=new URL(location.href);url.hash=guard?'hsc-proteccion':`hsc-${view}`;return `${url.pathname}${url.search}${url.hash}`;}
   function writeBrowserNavigation(replace=false,guard=false,view=current,stack=historyStack){if(!browserHistoryReady)return;const state=browserNavigationState(guard,view,stack),url=browserNavigationUrl(view,guard);if(replace)window.history.replaceState(state,'',url);else window.history.pushState(state,'',url);}
   function canonicalPath(view){
+    if(view==='worklists')return ['clients','agenda','worklists'];
+    if(view==='worklist')return ['clients','agenda','worklists','worklist'];
     const paths={client:['clients','client'],equipment:currentMode==='partner'?['partner','partnerEquipment','equipment']:['clients','client','equipment'],report:['clients','client','equipment','report'],agenda:['clients','agenda'],profile:['clients','profile'],expenses:['clients','profile','expenses'],task:['clients','agenda','task'],users:['clients','users'],userPermissions:['clients','users','userPermissions'],clientEditor:['clients','clientEditor'],equipmentEditor:['clients','client','equipmentEditor'],partnerEquipment:['partner','partnerEquipment'],partnerReports:['partner','partnerReports'],partnerFaults:['partner','partnerFaults'],partnerDocuments:['partner','partnerDocuments'],reportView:currentMode==='partner'?['partner','partnerReports','reportView']:['clients','client','equipment','reportView']};
     return paths[view]||[view];
   }
   function parentView(view){
+    if(view==='worklist')return 'worklists';
+    if(view==='worklists')return 'agenda';
     const parents={client:'clients',equipment:currentMode==='partner'?'partnerEquipment':'client',report:'equipment',reportView:currentMode==='partner'?'partnerReports':'equipment',agenda:'clients',profile:'clients',expenses:'profile',task:'agenda',users:'clients',userPermissions:'users',clientEditor:'clients',equipmentEditor:'client',partnerEquipment:'partner',partnerReports:'partner',partnerFaults:'partner',partnerDocuments:'partner'};
     return parents[view]||view;
   }
@@ -561,7 +572,7 @@
     if(['1','2','3','4'].includes(String(state.round))){selectedRound=String(state.round);rememberClientRound(selectedClient,selectedRound,false);}
     if(appKind==='partner'||serverRole==='client'||(account.isOwner&&state.mode==='partner'))currentMode='partner';
     else currentMode='tech';
-    const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','equipment','partnerReports','partnerFaults','partnerDocuments','reportView']:['clients','client','equipment','report','reportView','agenda','profile','expenses'];
+    const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','equipment','partnerReports','partnerFaults','partnerDocuments','reportView']:['clients','client','equipment','report','reportView','agenda','profile','expenses','worklists','worklist'];
     if(account.isOwner)allowedRoots.push('users','userPermissions','clientEditor','equipmentEditor');
     const requestedSection=entryParams.get('open');
     if(currentMode!=='partner'&&requestedSection==='expenses')state.view='expenses';
@@ -571,6 +582,7 @@
     if(currentMode!=='partner'&&requestedSection==='calendar')state.view='agenda';
     const linkedClient=entryParams.get('client');
     if((account.isOwner||serverRole==='technician')&&linkedClient&&clientMeta[linkedClient]){selectedClient=linkedClient;selectedEquipment=equipment.find(item=>equipmentMeta[item[0]]?.client===selectedClient)?.[0]||'';selectClientRound(selectedClient);if(!requestedSection)state.view='client';}
+    if(['worklists','worklist'].includes(state.view)&&(typeof journeyUi==='undefined'||!journeyUi))state.view='agenda';
     const target=allowedRoots.includes(state.view)?state.view:(currentMode==='partner'?'partner':'clients');
     historyStack=canonicalPath(target);current='__restore__';refreshRound();
     if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=canonicalPath('reportView');initializeBrowserNavigation();return;}}
@@ -930,6 +942,7 @@
     bindPartnerFaults();
   }
   function renderAgenda(){
+    if(typeof journeyUi!=='undefined'&&journeyUi)journeyUi.render();
     const chosen=localDate(agendaDate),start=new Date(chosen);start.setDate(chosen.getDate()-3);
     $('#agendaDays').innerHTML=Array.from({length:7},(_,index)=>{const day=new Date(start);day.setDate(start.getDate()+index);const key=dateKey(day),count=matrixTasks.filter(task=>task.scheduled_date===key&&task.status!=='Cancelada').length;return `<button type="button" class="day ${key===agendaDate?'today':''}" data-agenda-date="${key}"><span>${day.toLocaleDateString('es-MX',{weekday:'short'})}</span><b>${day.getDate()}</b>${count?'<i></i>':''}</button>`}).join('');
     $$('[data-agenda-date]').forEach(button=>button.onclick=()=>{agendaDate=button.dataset.agendaDate;renderAgenda()});
@@ -1063,12 +1076,12 @@
   async function queueFieldAction(action){if((await fieldActionStorage('list')).some(row=>row.id===action.id))throw Error('Esta acción ya está pendiente. Reintenta desde el aviso de envíos.');await fieldActionStorage('save',{...action,createdAt:Date.now(),error:''});fieldRevision++;await repaintPendingState();await updateFieldActionStatus()}
   const fieldActionBanner=document.createElement('div');fieldActionBanner.className='scope';fieldActionBanner.hidden=true;fieldActionBanner.style.margin='12px';fieldActionBanner.innerHTML='<b data-action-status></b><span data-action-error></span><button class="mini-btn" type="button">Reintentar envíos</button>';$('.topbar').after(fieldActionBanner);fieldActionBanner.querySelector('button').onclick=()=>drainFieldActions(true);
   async function updateFieldActionStatus(){try{const rows=await fieldActionStorage('list');fieldActionBanner.hidden=!rows.length;fieldActionBanner.querySelector('[data-action-status]').textContent=`${rows.length} acción(es) pendientes de envío`;fieldActionBanner.querySelector('[data-action-error]').textContent=rows.find(row=>row.error)?.error||'Guardadas en este dispositivo. Puedes seguir trabajando.';fieldActionBanner.querySelector('button').disabled=fieldActionsBusy}catch(_){}}
-  async function drainFieldActions(manual=false){if(fieldActionsBusy||!shouldSyncNow(manual))return;fieldActionsBusy=true;try{const actions=(await fieldActionStorage('list')).sort((a,b)=>a.createdAt-b.createdAt);if(!actions.length)return;for(const action of actions){try{await updateFieldActionStatus();const result=await operationsPost(action.url,action.body);
+  async function drainFieldActions(manual=false){if(fieldActionsBusy||!shouldSyncNow(manual))return;fieldActionsBusy=true;try{const actions=(await fieldActionStorage('list')).sort((a,b)=>a.createdAt-b.createdAt);if(!actions.length)return;const blockedLists=new Set(actions.filter(a=>a.url==='/api/operaciones/worklists'&&a.blocked).map(a=>a.body.id));for(const action of actions){if(action.url==='/api/operaciones/worklists'&&blockedLists.has(action.body.id))continue;try{await updateFieldActionStatus();const result=await operationsPost(action.url,action.body);
       if(action.entityPhoto){const ids=action.entityPhoto==='equipment'?action.body.items.map(item=>item.id):[action.body.id];if(action.files?.length||action.removePhoto)for(const id of ids){const body=new FormData();if(action.files?.[0])body.append('file',action.files[0],action.files[0].name);else body.append('remove','1');const response=await hscFetch(`/api/operaciones/${action.entityPhoto==='equipment'?'equipment':'clients'}/${encodeURIComponent(id)}/photo`,{method:'POST',body},45000),payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error||'Foto pendiente de confirmar');}}
       else for(let i=0;i<(action.files||[]).length;i++){const body=new FormData();body.append('file',action.files[i],action.files[i].name);const response=await hscFetch(action.receipt?`/api/operaciones/expenses/${encodeURIComponent(result.expense.id)}/receipt`:`/api/operaciones/faults/${encodeURIComponent(result.fault.id)}/evidence/${i+1}`,{method:'POST',body},45000),payload=await response.json();if(!response.ok||!payload.ok)throw Error(payload.error||'Foto pendiente de subir');}
-      fieldRevision++;if(lastServerPayload){lastServerPayload=HscOffline.overlay(lastServerPayload,[action],false);if(action.entityPhoto&&action.files?.length){const rows=action.entityPhoto==='equipment'?action.body.items:[action.body];for(const row of rows){const saved=lastServerPayload[action.entityPhoto==='equipment'?'equipment':'clients'].find(item=>item.id===row.id);if(saved){saved.photo_url=`/api/operaciones/photo/${action.entityPhoto}/${encodeURIComponent(row.id)}?v=${Date.now()}`;saved.has_photo=true;}}}for(const [key,list] of [['task','tasks'],['expense','expenses'],['fault','faults']])if(result[key]){lastServerPayload[list]=[result[key],...(lastServerPayload[list]||[]).filter(item=>item.id!==result[key].id)];}cacheServerPayload();}
+      fieldRevision++;if(lastServerPayload){lastServerPayload=HscOffline.overlay(lastServerPayload,[action],false);if(action.entityPhoto&&action.files?.length){const rows=action.entityPhoto==='equipment'?action.body.items:[action.body];for(const row of rows){const saved=lastServerPayload[action.entityPhoto==='equipment'?'equipment':'clients'].find(item=>item.id===row.id);if(saved){saved.photo_url=`/api/operaciones/photo/${action.entityPhoto}/${encodeURIComponent(row.id)}?v=${Date.now()}`;saved.has_photo=true;}}}for(const [key,list] of [['task','tasks'],['expense','expenses'],['fault','faults'],['worklist','worklists']])if(result[key]){lastServerPayload[list]=[result[key],...(lastServerPayload[list]||[]).filter(item=>item.id!==result[key].id)];}cacheServerPayload();}
       await fieldActionStorage('delete',action);toast(`${action.label}: confirmado`);
-    }catch(error){action.error=error.message||'No se pudo confirmar. Se conserva para reintentar.';await fieldActionStorage('save',action);break;}}await repaintPendingState();loadMatrixData().catch(()=>{});}catch(error){toast(error.message||'No se pudo recuperar la cola pendiente.');}finally{fieldActionsBusy=false;await updateFieldActionStatus();updateOfflineSyncUi()}}
+    }catch(error){action.error=error.message||'No se pudo confirmar. Se conserva para reintentar.';if(action.url==='/api/operaciones/worklists'&&[400,403,409].includes(error.status)){action.blocked=true;blockedLists.add(action.body.id);await fieldActionStorage('save',action);continue;}await fieldActionStorage('save',action);break;}}await repaintPendingState();loadMatrixData().catch(()=>{});}catch(error){toast(error.message||'No se pudo recuperar la cola pendiente.');}finally{fieldActionsBusy=false;await updateFieldActionStatus();updateOfflineSyncUi()}}
   const connectionBanner=document.createElement('div');connectionBanner.id='syncConnectionBanner';connectionBanner.className='appearance-panel';connectionBanner.innerHTML='<span></span> <button type="button" class="mini-btn">Enviar ahora</button>';document.querySelector('.view').parentElement.prepend(connectionBanner);connectionBanner.querySelector('button').onclick=()=>$('#syncPendingNow').click();
   window.addEventListener('online',()=>drainFieldActions());setInterval(()=>{if(!document.hidden){if(!['report','equipmentEditor','clientEditor'].includes(current))loadMatrixData();drainFieldActions();if(typeof resumePendingReportUploads==='function')resumePendingReportUploads();updateOfflineSyncUi();}},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(!['report','equipmentEditor','clientEditor'].includes(current))loadMatrixData();drainFieldActions();resumePendingReportUploads()}});setTimeout(()=>{updateFieldActionStatus();drainFieldActions()},1500);
   $('#resolveFault').onclick=async()=>{
@@ -1402,6 +1415,13 @@
   const networkConnection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;if(networkConnection?.addEventListener)networkConnection.addEventListener('change',()=>{updateOfflineSyncUi();if(shouldSyncNow())resumePendingReportUploads()});
   if(typeof ResizeObserver!=='undefined'){const previewObserver=new ResizeObserver(sizePartnerPreviews);for(const id of ['partnerFaultPreview','partnerEquipmentPreview'])previewObserver.observe($('#'+id));}
   window.addEventListener('resize',sizePartnerPreviews);
+  if(typeof HscWorklists!=='undefined')journeyUi=HscWorklists.mount({account,escape:escapeHtml,toast,show:name=>{showView(name);journeyUi.render()},round:roundForClient,
+    state:()=>({worklists:matrixWorklists,reports:matrixReports,clients:clients.map(c=>({id:c[1],name:c[0]})),equipment:equipment.map(e=>({id:e[0],name:e[1],...equipmentMeta[e[0]],client_id:equipmentMeta[e[0]]?.client})),users:operationUsers,selectedClient,selectedEquipment}),
+    loadUsers:async()=>{if(!account.isOwner)return;const response=await hscFetch('/api/operaciones/users',{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error('No se pudieron cargar los técnicos.');operationUsers=payload.users||[];},save:queueFieldAction,send:drainFieldActions,
+    discardProposal:async id=>{if(fieldActionsBusy)throw Error('Espera a que termine el envío actual.');if(!await loadMatrixData())throw Error('Primero necesitamos consultar la versión confirmada; tu propuesta se conserva.');const actions=await fieldActionStorage('list');for(const action of actions)if(action.url==='/api/operaciones/worklists'&&action.body.id===id)await fieldActionStorage('delete',action);fieldRevision++;await repaintPendingState();await updateFieldActionStatus();},
+    openEquipment:(client,id,round)=>{if(!equipmentMeta[id]){toast('El equipo ya no está disponible.');return;}selectedClient=client;selectedEquipment=id;selectedRound=String(round);refreshRound();showView('equipment')}
+  });
+  if(!journeyUi)$('#openWorklists').onclick=()=>toast('No se pudo cargar Mi jornada. Puedes seguir haciendo reportes desde Clientes.');
   applyAccess();updateOfflineSyncUi();if(typeof fetch==='function')loadMatrixData().finally(()=>{initializeBrowserNavigation();resumePendingReportUploads()});else initializeBrowserNavigation();
 </script>
 </body>

@@ -278,6 +278,9 @@ class OperationsStore:
                 last_used_at TEXT NOT NULL, PRIMARY KEY(category, normalized_value)
             )""",
             "CREATE INDEX IF NOT EXISTS idx_operations_equipment_client ON operations_equipment(client_id)",
+            "CREATE TABLE IF NOT EXISTS operations_worklists (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload_json TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS operations_worklist_changes (id TEXT PRIMARY KEY, list_id TEXT NOT NULL, actor_id TEXT NOT NULL, saved_at TEXT NOT NULL, payload_json TEXT NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS idx_worklist_changes_list ON operations_worklist_changes(list_id,saved_at)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_equipment ON operations_reports(equipment_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_client ON operations_reports(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_faults_client ON operations_faults(client_id)",
@@ -638,6 +641,7 @@ class OperationsStore:
                 "FROM operations_expenses ORDER BY expense_date DESC,created_at DESC,id DESC"
             ).fetchall()
             meta_rows = conn.execute("SELECT key,value FROM operations_meta").fetchall()
+            worklists = [json.loads(row[0]) for row in conn.execute("SELECT payload_json FROM operations_worklists").fetchall()]
             pending = conn.execute("SELECT COUNT(*) FROM operations_sync_outbox WHERE status!='synced'").fetchone()[0]
             cached_thumbnails = conn.execute("SELECT COUNT(*) FROM operations_media_cache").fetchone()[0]
             observation_rows = conn.execute(
@@ -688,6 +692,7 @@ class OperationsStore:
         return {
             "clients": result_clients, "equipment": result_equipment, "reports": result_reports,
             "faults": result_faults, "tasks": result_tasks, "expenses": result_expenses,
+            "worklists": worklists,
             "stats": {
                 "clients": len(result_clients), "equipment": len(result_equipment), "reports": len(result_reports),
                 "client_photos": sum(item["has_photo"] for item in result_clients),
@@ -707,6 +712,10 @@ class OperationsStore:
                                      "last_used_at": row[3]} for row in observation_rows],
             "meta": dict(meta_rows),
         }
+
+    def save_worklist(self, body, *, actor_id, is_admin=False):
+        from operation_worklists import save_worklist
+        return save_worklist(self, body, actor_id=actor_id, is_admin=is_admin)
 
     def _remember_observations(self, conn, payload):
         p, stamp = self.placeholder, _now()

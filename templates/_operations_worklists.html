@@ -1,0 +1,16 @@
+<section class="view" data-view="worklists">
+  <div class="section-head"><h2>Mi jornada</h2><button class="primary" id="newWorklist" type="button">＋ Crear lista</button></div>
+  <p class="muted">Un recorrido flexible, no una cita ni una obligación. Las listas abiertas no vencen al terminar el día.</p>
+  <div class="field"><label for="worklistFilter">Mostrar</label><select id="worklistFilter"><option value="active">Listas abiertas · cualquier fecha</option><option value="completed">Listas cerradas</option></select></div>
+  <div class="user-list" id="worklistCards"></div>
+</section>
+<section class="view" data-view="worklist">
+  <div id="worklistMissing" hidden><p>Esta lista no está disponible.</p><button id="backToWorklists" class="secondary" type="button">Ver mis listas</button></div>
+  <div id="worklistDetailContent">
+    <h2 id="worklistTitle"></h2><p id="worklistInfo" class="muted"></p>
+    <div id="worklistConflict" hidden><p id="worklistConflictText" role="alert"></p><button id="worklistRestoreServer" class="secondary" type="button">Descartar propuesta local y cargar versión confirmada</button></div>
+    <div class="work-actions"><button id="worklistEdit" class="secondary" type="button">Editar / ordenar</button><button id="worklistTomorrow" class="secondary" type="button">Pasar a mañana</button><button id="worklistClose" class="secondary" type="button">Cerrar lista</button><button id="worklistDelete" class="secondary" type="button">Eliminar lista</button></div>
+    <p class="muted">Toca un equipo para abrirlo en la ronda indicada. El avance muestra si ya tiene reporte; no atribuye autoría ni genera bonos.</p>
+    <div class="user-list" id="worklistItems"></div>
+  </div>
+</section>

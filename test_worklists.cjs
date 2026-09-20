@@ -1,0 +1,21 @@
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const {progress}=require('./static/operations_worklists.js'),{overlay}=require('./static/operations_offline.js');
+const list={id:'L',items:[{id:'i1',equipment_id:'A1',round:'1'},{id:'i2',equipment_id:'A2',round:'2'}]};
+const reports=[{id:'old',equipment_id:'A1',round:'2',completed:true},{id:'draft',equipment_id:'A2',round:'2',completed:false}];
+assert.equal(progress(list,reports).filter(i=>i.done).length,0);
+reports.push({id:'local',equipment_id:'A1',round:'1',completed:true,pending_upload:true});
+assert.equal(progress(list,reports)[0].pending_upload,true);
+reports.push({id:'confirmed',equipment_id:'A1',round:'1',completed:true});
+assert.equal(progress(list,reports)[0].report_id,'confirmed');
+assert.equal(progress(list,reports)[0].pending_upload,false);
+const queued=[{url:'/api/operaciones/worklists',createdAt:1,body:{...list,expected_revision:0,title:'Primera'}},
+{url:'/api/operaciones/worklists',createdAt:2,body:{...list,expected_revision:1,title:'Segunda'}}];
+assert.equal(overlay({worklists:[]},queued).worklists[0].title,'Segunda');
+assert.equal(overlay({worklists:[]},queued).worklists[0].revision,2);
+assert.equal(overlay({worklists:[{...list,title:'Vieja'}]},queued).worklists[0].title,'Segunda');
+queued[0].blocked=true;queued[0].error='Conflicto';
+assert.equal(overlay({},queued).worklists[0].sync_error,'Conflicto');
+const html=fs.readFileSync('templates/app_operativa_demo.html','utf8');
+assert(html.includes("if(view==='worklist')return 'worklists'"));
+assert(html.includes("if(view==='worklists')return 'agenda'"));
+console.log('OK: jornada por ID/ronda, progreso sin duplicar, pendientes locales, revisión y navegación jerárquica.');

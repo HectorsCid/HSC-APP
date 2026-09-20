@@ -5,6 +5,7 @@ const html = fs.readFileSync('templates/app_operativa_demo.html', 'utf8');
 const source = html.slice(html.indexOf('  function applyMatrixBootstrap('), html.indexOf('  async function loadMatrixData('));
 const element = {classList:{toggle(){},add(){}},textContent:'',innerHTML:''};
 const context = vm.createContext({
+  views:{},
   clients:[],equipment:[],clientMeta:{B:{}},equipmentMeta:{B1:{client:'B'}},
   matrixLoaded:true,selectedClient:'B',selectedEquipment:'B1',selectedRound:'3',
   matrixReports:[],matrixFaults:[],matrixTasks:[],matrixExpenses:[],matrixObservationOptions:[],

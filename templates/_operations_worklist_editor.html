@@ -1,0 +1,16 @@
+<div class="modal" id="worklistEditor"><div class="sheet">
+  <h2>Organizar mi jornada</h2>
+  <form id="worklistForm">
+    <div class="field"><label for="worklistName">Nombre de la lista</label><input id="worklistName" maxlength="120" required placeholder="Arkansas · cocina"></div>
+    <div class="field-row"><div class="field"><label for="worklistDate">Fecha prevista</label><input id="worklistDate" type="date" required></div><div class="field" id="worklistAssigneeField"><label for="worklistAssignee">Responsable</label><select id="worklistAssignee"></select></div></div>
+    <div class="field-row"><div class="field"><label for="worklistClient">Cliente</label><select id="worklistClient" required></select></div><div class="field"><label for="worklistRound">Ronda de los equipos que agregues</label><select id="worklistRound"><option value="1">R1</option><option value="2">R2</option><option value="3">R3</option><option value="4">R4</option></select></div></div>
+    <h3 id="worklistSelectedCount">Tu orden de trabajo</h3><div id="worklistSelected" class="work-scroll"></div>
+    <div class="field"><label for="worklistSearch">Buscar equipos para agregar</label><input id="worklistSearch" type="search" placeholder="Clave o nombre del equipo"></div>
+    <div id="worklistChoices" class="work-scroll"></div>
+    <p id="worklistEditorError" role="alert"></p>
+    <div class="work-actions"><button id="closeWorklistEditor" class="secondary" type="button">Cancelar</button><button id="saveWorklist" class="primary" type="submit">Guardar lista</button></div>
+  </form>
+</div></div>
+<style>
+.work-actions,.work-order{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.work-selected{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid var(--line)}.work-selected>.card-copy{flex:1;min-width:0;overflow-wrap:anywhere}.work-selected small,#worklistItems small{display:block;color:var(--muted);margin-top:4px}.work-order{flex-shrink:0}.work-order button{min-width:44px;min-height:44px}.work-scroll{max-height:280px;overflow:auto;overscroll-behavior:contain}.work-choice{display:block;width:100%;text-align:left;margin:6px 0;white-space:normal;overflow-wrap:anywhere}#worklistEditor .sheet{max-height:90dvh;overflow:auto}#worklistEditorError{color:var(--danger)}#worklistCards b,#worklistItems b{white-space:normal;overflow-wrap:anywhere}#worklistCards .card-copy{min-width:0;flex:1}#worklistCards small{display:block}#worklistTomorrow,#worklistEdit,#worklistClose,#worklistDelete{white-space:normal}
+</style>
