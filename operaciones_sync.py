@@ -51,6 +51,7 @@ def _entity_snapshot(store, operation):
             "ID_Cliente": sheet_id,
             "NombreCliente": item.get("name"),
             "Direccion": item.get("address"),
+            "Foto": item.get("_photo_ref", ""),
             "RondaSeleccionadaCliente": _round_label(item.get("selected_round")),
         }
     if entity_type == "equipment":
@@ -65,6 +66,7 @@ def _entity_snapshot(store, operation):
             "Modelo": item.get("model"), "NoSerie": item.get("serial"),
             "Estatus": item.get("status"), "Ubicacion": item.get("location"),
             "Departamento": item.get("department"),
+            "Foto": item.get("_photo_ref", ""),
         }
     if entity_type == "report":
         item = store.get_report_detail(entity_id)
@@ -197,6 +199,8 @@ def _plan_operation(store, operation, service, spreadsheet_id, titles, indexes):
         if column is not None:
             resolved.append((column, headers[column], "" if value is None else value))
     required = {_key(id_header), _key("ID_Cliente") if operation["entity_type"] != "client" else _key(id_header)}
+    if operation["entity_type"] == "report":
+        required.add(_key("ID_Equipo"))
     present = {_key(header) for _, header, _ in resolved}
     if not required.issubset(present):
         raise ValueError(f"Faltan encabezados obligatorios en {title}.")

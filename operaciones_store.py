@@ -805,6 +805,7 @@ class OperationsStore:
             raise ValueError("Debes enviar entre 1 y 100 equipos.")
         snapshot = self.snapshot()
         client_ids = {client["id"] for client in snapshot["clients"]}
+        existing_clients = {row["id"]: row["client_id"] for row in snapshot["equipment"]}
         request_ids = set()
         prepared = []
         stamp = _now()
@@ -816,6 +817,8 @@ class OperationsStore:
                 raise ValueError("ID, cliente y nombre son obligatorios para cada equipo.")
             if client_id not in client_ids:
                 raise ValueError("El cliente seleccionado no existe en la base operativa.")
+            if equipment_id in existing_clients and existing_clients[equipment_id] != client_id:
+                raise ValueError("Ese ID_Equipo ya pertenece a otro cliente; no se reasignó.")
             if equipment_id in request_ids:
                 raise ValueError("El lote contiene un ID de equipo repetido.")
             request_ids.add(equipment_id)
@@ -836,6 +839,18 @@ class OperationsStore:
             self.queue_sync("equipment", equipment_id, "sheets", "upsert")
         current = self.snapshot()["equipment"]
         return [item for item in current if item["id"] in request_ids]
+
+    def save_equipment_photo(self, equipment_id, photo_ref):
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            result = conn.execute(
+                f"UPDATE operations_equipment SET photo_ref={p},has_photo={p},source='app',updated_at={p} WHERE id={p}",
+                (_text(photo_ref), int(bool(photo_ref)), _now(), _text(equipment_id)),
+            )
+            if result.rowcount != 1:
+                raise ValueError("El ID_Equipo no existe.")
+        self.queue_sync("equipment", equipment_id, "sheets", "upsert")
 
     def save_report_draft(self, item):
         """Guarda el texto del reporte; las evidencias se almacenan por separado."""

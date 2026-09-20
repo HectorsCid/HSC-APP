@@ -210,11 +210,13 @@ AUTO_SYNC_FROM_DRIVE = True  # si no quieres en local, pon False
 OPERACIONES_STORE = OperationsStore.from_environment(
     is_render=IS_RENDER, project_root=Path(__file__).resolve().parent
 )
+OPERACIONES_MATRIX_AUTO_SYNC = os.environ.get("OPERACIONES_MATRIX_AUTO_SYNC", "1").lower() in {"1", "true", "yes"}
 OPERACIONES_SHEETS_SYNC_ENABLED = str(
     os.environ.get("OPERACIONES_SHEETS_SYNC_ENABLED", "0")
 ).strip().lower() in {"1", "true", "yes", "si", "sí"}
 _OPERACIONES_SYNC_LOCK = threading.Lock()
 _OPERACIONES_SYNC_LAST_ATTEMPT = 0.0
+_OPERACIONES_IMPORT_STATUS = {"error": "", "last_success": ""}
 OPERACIONES_SYNC_RETRY_SECONDS = max(
     60.0, float(os.environ.get("OPERACIONES_SYNC_RETRY_SECONDS", "120"))
 )
@@ -3766,7 +3768,7 @@ def api_operaciones_bootstrap():
     with _OPERACIONES_MATRIX_CACHE_LOCK:
         cached = _OPERACIONES_MATRIX_CACHE["payload"]
         fresh = cached is not None and now - _OPERACIONES_MATRIX_CACHE["ts"] < _OPERACIONES_MATRIX_TTL
-        if fresh and not refresh:
+        if fresh and not refresh and not OPERACIONES_STORE.enabled:
             visible = _scope_operaciones_payload(cached)
             return jsonify({
                 "ok": True, "read_only": not OPERACIONES_STORE.enabled, "cached": True,
@@ -3784,6 +3786,7 @@ def api_operaciones_bootstrap():
                     return jsonify({
                         "ok": True, "read_only": False, "cached": False,
                         "source": "database", **visible,
+                        "warning": _OPERACIONES_IMPORT_STATUS["error"],
                     })
             payload = read_operaciones_matrix(
                 get_sheets_service(timeout=15), SHEET_ID, include_media_refs=True,
@@ -3964,6 +3967,7 @@ def api_operaciones_migrate():
             }), 409
         source = _complete_legacy_operations_relations(source)
         imported = OPERACIONES_STORE.import_matrix_snapshot(source)
+        _invalidate_operations_cache()
         stored = OPERACIONES_STORE.snapshot()
         source_stats = source.get("stats") or {}
         stored_stats = stored.get("stats") or {}
@@ -4001,10 +4005,24 @@ def _invalidate_operations_cache():
 
 def _operations_sync_worker(app_obj):
     try:
+        if OPERACIONES_MATRIX_AUTO_SYNC:
+            try:
+                with app_obj.app_context():
+                    incoming = read_operaciones_matrix(get_sheets_service(timeout=20), SHEET_ID,
+                                                      include_media_refs=True, include_raw=True)
+                    checks = _operations_migration_checks(incoming.get("stats") or {})
+                    if not checks["ready"]:
+                        raise ValueError("La matriz contiene IDs duplicados; importación detenida.")
+                    OPERACIONES_STORE.import_matrix_snapshot(_complete_legacy_operations_relations(incoming))
+                    _OPERACIONES_IMPORT_STATUS.update(error="", last_success=datetime.now().isoformat())
+                    _invalidate_operations_cache()
+            except Exception:
+                _OPERACIONES_IMPORT_STATUS["error"] = "Google no confirmó la actualización automática; se conservan los datos de HSC y se reintentará."
+                app_obj.logger.exception("Importación automática de matriz pendiente; se reintentará")
         with app_obj.app_context():
             result = sync_operations_outbox(
                 OPERACIONES_STORE, get_sheets_write_service(timeout=30), SHEET_ID, limit=25,
-                allowed_client_ids=OPERACIONES_SYNC_CLIENT_ALLOWLIST,
+                allowed_client_ids=None if OPERACIONES_MATRIX_AUTO_SYNC else OPERACIONES_SYNC_CLIENT_ALLOWLIST,
             )
             if result.get("failed"):
                 current_app.logger.warning("Sincronización operativa con errores: %s", result)
@@ -4020,7 +4038,7 @@ def _operations_sync_worker(app_obj):
 def _schedule_operations_sync(*, force=False):
     """Agrupa cambios y evita dos escritores simultáneos dentro del proceso."""
     global _OPERACIONES_SYNC_LAST_ATTEMPT
-    if not OPERACIONES_SHEETS_SYNC_ENABLED or not OPERACIONES_STORE.enabled:
+    if not (OPERACIONES_SHEETS_SYNC_ENABLED or OPERACIONES_MATRIX_AUTO_SYNC) or not OPERACIONES_STORE.enabled:
         return False
     now = time.monotonic()
     if not force and now - _OPERACIONES_SYNC_LAST_ATTEMPT < OPERACIONES_SYNC_RETRY_SECONDS:
@@ -4075,7 +4093,7 @@ def api_operaciones_sync():
         return jsonify({"ok": False, "error": "La base operativa no está conectada."}), 503
     body = request.get_json(silent=True) or {}
     dry_run = body.get("apply") is not True
-    if not dry_run and not OPERACIONES_SHEETS_SYNC_ENABLED:
+    if not dry_run and not (OPERACIONES_SHEETS_SYNC_ENABLED or OPERACIONES_MATRIX_AUTO_SYNC):
         return jsonify({
             "ok": False, "code": "sync_not_enabled",
             "error": "La escritura a la Hoja Matriz sigue en modo seguro.",
@@ -4189,6 +4207,40 @@ def api_operaciones_save_equipment():
     except Exception as exc:
         current_app.logger.exception("No se pudieron guardar los equipos operativos: %s", exc)
         return jsonify({"ok": False, "error": "No se pudieron guardar los equipos."}), 500
+
+
+@app.post('/api/operaciones/equipment/<path:equipment_id>/photo')
+def api_operaciones_equipment_photo_save(equipment_id):
+    denied = _operations_forbidden("admin", "technician") or _operations_permission_forbidden("editEquipment")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify(ok=False, error="Base operativa no disponible."), 503
+    equipment = next((row for row in OPERACIONES_STORE.snapshot()["equipment"] if row["id"] == equipment_id), None)
+    if not equipment:
+        abort(404)
+    try:
+        if (request.form.get("remove") or "") == "1":
+            reference = ""
+        else:
+            upload = request.files.get("file")
+            if not upload or upload.mimetype not in {"image/jpeg", "image/png", "image/webp"}:
+                raise ValueError("Selecciona una foto JPG, PNG o WebP.")
+            content = upload.stream.read(5 * 1024 * 1024 + 1)
+            if not content or len(content) > 5 * 1024 * 1024:
+                raise ValueError("La foto debe pesar máximo 5 MB.")
+            stored = store_operations_evidence(equipment["client_id"],
+                "Equipo_" + equipment_id + "_" + secrets.token_hex(8), 1, content)
+            reference = stored["storage_ref"]
+        OPERACIONES_STORE.save_equipment_photo(equipment_id, reference)
+        _invalidate_operations_cache()
+        _schedule_operations_sync(force=True)
+        return jsonify(ok=True)
+    except (ValueError, OSError) as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    except Exception:
+        current_app.logger.exception("No se pudo guardar la foto de %s", equipment_id)
+        return jsonify(ok=False, error="La foto no se confirmó. Conserva el formulario y reintenta."), 502
 
 
 @app.get('/api/operaciones/reports/draft')
@@ -4625,9 +4677,8 @@ def api_operaciones_photo(kind, record_id):
             )
         if not allowed:
             abort(404)
-    photo_ref = _OPERACIONES_MEDIA_REFS.get((kind, record_id))
-    if not photo_ref and OPERACIONES_STORE.enabled:
-        photo_ref = OPERACIONES_STORE.get_media_ref(kind, record_id)
+    photo_ref = (OPERACIONES_STORE.get_media_ref(kind, record_id) if OPERACIONES_STORE.enabled
+                 else _OPERACIONES_MEDIA_REFS.get((kind, record_id)))
     if not photo_ref:
         abort(404)
     return _serve_operations_thumbnail(kind, record_id, photo_ref)

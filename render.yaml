@@ -5,6 +5,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn --workers 1 --threads 2 app:app
     envVars:
+      - key: OPERACIONES_MATRIX_AUTO_SYNC
+        value: "1"
       - key: PYTHON_VERSION
         value: 3.11
       - key: REPORTES_AUTO_PDF
