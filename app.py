@@ -3763,9 +3763,9 @@ def api_operaciones_bootstrap():
         try:
             if OPERACIONES_STORE.enabled and OPERACIONES_STORE.has_data() and not refresh:
                 database_snapshot = OPERACIONES_STORE.snapshot()
-                # La primera ejecución del esquema con fallas debe importar esa pestaña
-                # una sola vez; después la app vuelve a leer exclusivamente PostgreSQL.
-                if database_snapshot.get("meta", {}).get("faults_matrix_import"):
+                # La importación se reintenta en segundo plano: Google no debe
+                # bloquear la lectura de los datos que ya tiene la base operativa.
+                if database_snapshot:
                     payload = _prepare_operaciones_payload(database_snapshot)
                     _OPERACIONES_MATRIX_CACHE.update(ts=now, payload=payload, source="database")
                     visible = _scope_operaciones_payload(payload)

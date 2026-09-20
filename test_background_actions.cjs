@@ -4,7 +4,8 @@ const find=name=>html.split(/\r?\n/).find(line=>line.trim().startsWith(`async fu
 (async()=>{
   let jobs=[{id:'fixed-fault',url:'/api/operaciones/faults',body:{id:'fixed-fault'},files:[],label:'Falla'}],fail=true,posts=[];
   const ctx=vm.createContext({fieldActionsBusy:false,shouldSyncNow:()=>true,updateFieldActionStatus:async()=>{},toast:()=>{},loadMatrixData:async()=>{},fieldActionStorage:async(mode,item)=>{if(mode==='list')return structuredClone(jobs);if(mode==='delete')jobs=jobs.filter(j=>j.id!==item.id);if(mode==='save')jobs=jobs.map(j=>j.id===item.id?structuredClone(item):j);},operationsPost:async(url,body)=>{posts.push(body.id);if(fail)throw Error('Sin conexión');return {fault:{id:body.id}}}});
-  vm.runInContext(find('drainFieldActions'),ctx);
+  Object.assign(ctx,{fieldRevision:0,lastServerPayload:null,repaintPendingState:async()=>{},updateOfflineSyncUi:()=>{}});
+  vm.runInContext(html.slice(html.indexOf('  async function drainFieldActions('),html.indexOf('  const connectionBanner=')),ctx);
   await ctx.drainFieldActions();assert.equal(jobs.length,1);assert.equal(jobs[0].error,'Sin conexión');
   fail=false;await ctx.drainFieldActions();assert.equal(jobs.length,0);assert.deepEqual(posts,['fixed-fault','fixed-fault']);
   let saved={},left=false,allowStorage=false;

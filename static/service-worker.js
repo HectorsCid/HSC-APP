@@ -1,9 +1,10 @@
-const CACHE_NAME = 'hsc-shell-v19';
+const CACHE_NAME = 'hsc-shell-v20';
 const SAFE_ASSETS = [
   '/static/hsc_theme.css',
   '/static/hsc_theme.js',
   '/static/hsc_inputs.js',
   '/static/pwa.js',
+  '/static/operations_offline.js',
   '/static/img/hsc-app-192.png',
   '/static/img/hsc-app-512.png',
   '/manifest.webmanifest',
@@ -20,7 +21,15 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
+      .then(async keys => {
+        const current=await caches.open(CACHE_NAME);
+        // Preserve the last authenticated shell when the update is installed offline.
+        for(const path of ['/hsc-tecnico/','/hsc-partner/']){
+          const previous=await caches.match(path);
+          if(previous&&!await current.match(path))await current.put(path,previous);
+        }
+        return Promise.all(keys.filter(key => key.startsWith('hsc-shell-') && key !== CACHE_NAME).map(key => caches.delete(key)));
+      })
       .then(() => self.clients.claim())
   );
 });
@@ -35,21 +44,23 @@ self.addEventListener('fetch', event => {
   );
   if(operationsShell){
     const shellKey = new Request(url.origin + url.pathname, {method:'GET'});
-    event.respondWith(fetch(request).then(response => {
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+    event.respondWith(fetch(request,{signal:controller.signal}).then(async response => {
+      if(response.status>=500){const cached=await caches.match(shellKey);if(cached)return cached;}
       if(response.ok && !response.redirected && new URL(response.url).pathname === url.pathname){
         const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(shellKey, copy));
+        event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(shellKey, copy)));
       }
       return response;
-    }).catch(() => caches.match(shellKey)));
+    }).catch(async() => await caches.match(shellKey)||new Response('HSC no respondió. Reintenta al recuperar conexión; no borres los datos del dispositivo.',{status:503,headers:{'Content-Type':'text/plain;charset=utf-8'}})).finally(()=>clearTimeout(timer)));
     return;
   }
   if(!SAFE_PATHS.has(url.pathname)) return;
   event.respondWith(
-    caches.match(request).then(cached => cached || fetch(request).then(response => {
+    caches.match(url.pathname).then(cached => cached || fetch(request).then(response => {
       if(response.ok){
         const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+        event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(url.pathname, copy)));
       }
       return response;
     }))
