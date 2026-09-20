@@ -250,6 +250,11 @@ class OperationsStore:
                 admin_notes TEXT NOT NULL DEFAULT '', receipt_ref TEXT NOT NULL DEFAULT '',
                 created_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
             )""",
+            """CREATE TABLE IF NOT EXISTS operations_notice_outbox (
+                id TEXT PRIMARY KEY, payload_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            )""",
             """CREATE TABLE IF NOT EXISTS operations_sync_outbox (
                 id TEXT PRIMARY KEY, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
                 destination TEXT NOT NULL, action TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}',
@@ -284,6 +289,7 @@ class OperationsStore:
             "CREATE INDEX IF NOT EXISTS idx_operations_expenses_user ON operations_expenses(user_id,expense_date)",
             "CREATE INDEX IF NOT EXISTS idx_operations_expenses_status ON operations_expenses(status,expense_date)",
             "CREATE INDEX IF NOT EXISTS idx_operations_outbox_status ON operations_sync_outbox(status)",
+            "CREATE INDEX IF NOT EXISTS idx_operations_notice_status ON operations_notice_outbox(status,updated_at)",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_clients_matrix_id ON operations_clients(matrix_id) WHERE matrix_id <> ''",
         ]
         with self.connection() as conn:
@@ -297,6 +303,10 @@ class OperationsStore:
             self._ensure_column(conn, "operations_faults", "resolved_by", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_faults", "resolution_notes", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_users", "photo_ref", "TEXT NOT NULL DEFAULT ''")
+            added_task_notice_choice = self._ensure_column(conn, "operations_tasks", "notify_client", "INTEGER NOT NULL DEFAULT 0")
+            if added_task_notice_choice:
+                conn.execute("UPDATE operations_tasks SET notify_client=1 WHERE id LIKE 'VISIT_%' AND status!='Solicitada'")
+            self._ensure_column(conn, "operations_tasks", "notice_state", "TEXT NOT NULL DEFAULT ''")
             self._seed_observation_options(conn)
             self._remove_legacy_fault_duplicates(conn)
             self._upsert_meta(conn, "schema_version", SCHEMA_VERSION)
@@ -314,6 +324,8 @@ class OperationsStore:
             found = next((row for row in conn.execute(f"PRAGMA table_info({table})") if row[1] == column), None)
         if not found:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            return True
+        return False
 
     def _upsert_meta(self, conn, key, value):
         p = self.placeholder
@@ -614,7 +626,7 @@ class OperationsStore:
             ).fetchall()
             tasks = conn.execute(
                 "SELECT id,title,details,scheduled_date,scheduled_time,client_id,equipment_id,"
-                "assigned_user_id,priority,status,completed_at,created_by,created_at,updated_at "
+                "assigned_user_id,priority,status,completed_at,created_by,created_at,updated_at,notify_client "
                 "FROM operations_tasks ORDER BY scheduled_date,scheduled_time,id"
             ).fetchall()
             task_assignees = {}
@@ -661,7 +673,7 @@ class OperationsStore:
             "assigned_user_id": row[7], "priority": row[8], "status": row[9],
             "assigned_user_ids": task_assignees.get(row[0]) or ([row[7]] if row[7] else []),
             "completed_at": row[10], "created_by": row[11], "created_at": row[12],
-            "updated_at": row[13],
+            "updated_at": row[13], "notify_client": bool(row[14]),
         } for row in tasks]
         result_expenses = [{
             "id": row[0], "user_id": row[1], "technician_name": row[2], "client_id": row[3],
@@ -1077,7 +1089,7 @@ class OperationsStore:
             ).fetchone()
         return {"client_id": row[0], "photo_ref": _text(row[2]) or _text(row[1])} if row else None
 
-    def save_task(self, item):
+    def save_task(self, item, *, _completing_existing=False):
         """Crea o edita un pendiente de agenda conservando su ID."""
         self.initialize()
         title, scheduled_date = _text(item.get("title")), _text(item.get("scheduled_date"))
@@ -1092,7 +1104,7 @@ class OperationsStore:
         assigned = list(dict.fromkeys(value.strip() for value in assigned if value.strip()))
         if 'assigned_user_ids' in item and not assigned:
             raise ValueError('Selecciona al menos un responsable.')
-        for user_id in assigned if 'assigned_user_ids' in item else []:
+        for user_id in assigned if 'assigned_user_ids' in item and not _completing_existing else []:
             user = self.get_user_by_id(user_id) if user_id != 'owner' else {'status':'active','role':'admin'}
             if not user or user.get('status') != 'active' or user.get('role') not in {'admin','technician'}:
                 raise ValueError('Uno de los responsables no es un técnico activo.')
@@ -1101,14 +1113,19 @@ class OperationsStore:
             raise ValueError("El estado de la tarea no es válido.")
         stamp, p = _now(), self.placeholder
         with self.connection() as conn:
-            existing = conn.execute(f"SELECT created_at FROM operations_tasks WHERE id={p}", (task_id,)).fetchone()
+            existing = conn.execute(f"SELECT created_at,notify_client,notice_state FROM operations_tasks WHERE id={p}", (task_id,)).fetchone()
             created_at = existing[0] if existing else stamp
+            notify_client = bool(item.get('notify_client', bool(existing[1]) if existing else False))
+            before = json.loads(existing[2]) if existing and existing[2] else ({'legacy': True} if existing else {})
+            after = {key: _text(item.get(key)) for key in ('title','details','scheduled_date','scheduled_time','client_id','equipment_id')}
+            after.update(id=task_id, status=status, assigned_user_ids=sorted(assigned), notify_client=notify_client,
+                         priority=_text(item.get('priority')) or 'Normal')
             conn.execute(
                 f"INSERT INTO operations_tasks(id,title,details,scheduled_date,scheduled_time,client_id,equipment_id,assigned_user_id,priority,status,completed_at,created_by,created_at,updated_at) "
                 f"VALUES ({','.join([p] * 14)}) ON CONFLICT(id) DO UPDATE SET "
                 "title=excluded.title,details=excluded.details,scheduled_date=excluded.scheduled_date,"
                 "scheduled_time=excluded.scheduled_time,client_id=excluded.client_id,equipment_id=excluded.equipment_id,"
-                "assigned_user_id=excluded.assigned_user_id,priority=excluded.priority,status=excluded.status,updated_at=excluded.updated_at",
+                "assigned_user_id=excluded.assigned_user_id,priority=excluded.priority,status=excluded.status,completed_at=excluded.completed_at,updated_at=excluded.updated_at",
                 (task_id, title, _text(item.get("details")), scheduled_date, _text(item.get("scheduled_time")),
                  _text(item.get("client_id")), _text(item.get("equipment_id")), assigned[0] if assigned else '',
                  _text(item.get("priority")) or "Normal", status, _text(item.get("completed_at")),
@@ -1117,31 +1134,48 @@ class OperationsStore:
             conn.execute(f"DELETE FROM operations_task_assignees WHERE task_id={p}", (task_id,))
             for user_id in assigned:
                 conn.execute(f"INSERT INTO operations_task_assignees(task_id,user_id) VALUES ({p},{p})", (task_id,user_id))
+            conn.execute(f"UPDATE operations_tasks SET notify_client={p},notice_state={p} WHERE id={p}",
+                         (int(notify_client), json.dumps(after, ensure_ascii=False), task_id))
+            if before != after:
+                self._queue_notice_event(conn, {'kind':'task', 'before':before, 'after':after,
+                    'actor_id':_text(item.get('actor_id') or item.get('created_by'))}, stamp)
         return next(task for task in self.snapshot()["tasks"] if task["id"] == task_id)
+
+    def _queue_notice_event(self, conn, payload, stamp):
+        p = self.placeholder
+        conn.execute(f"INSERT INTO operations_notice_outbox(id,payload_json,created_at,updated_at) VALUES ({p},{p},{p},{p})",
+                     (uuid.uuid4().hex, json.dumps(payload, ensure_ascii=False), stamp, stamp))
+
+    def pending_notice_events(self, limit=25):
+        self.initialize()
+        with self.connection() as conn:
+            rows = conn.execute(f"SELECT id,payload_json FROM operations_notice_outbox WHERE status='pending' ORDER BY updated_at,id LIMIT {self.placeholder}", (limit,)).fetchall()
+        return [{'id':row[0], 'payload':json.loads(row[1])} for row in rows]
+
+    def finish_notice_event(self, event_id, error=''):
+        p = self.placeholder
+        with self.connection() as conn:
+            conn.execute(f"UPDATE operations_notice_outbox SET status={p},attempts=attempts+1,last_error={p},updated_at={p} WHERE id={p}",
+                         ('pending' if error else 'sent', str(error)[:500], _now(), event_id))
 
     def tasks_for_reminders(self, scheduled_date):
         self.initialize()
         p = self.placeholder
         with self.connection() as conn:
-            rows = conn.execute(f"SELECT id,title,scheduled_time,client_id,assigned_user_id,created_by FROM operations_tasks WHERE scheduled_date={p} AND status IN ('Pendiente','En curso') ORDER BY scheduled_time,id", (scheduled_date,)).fetchall()
+            rows = conn.execute(f"SELECT id,title,scheduled_time,client_id,assigned_user_id,created_by,notify_client FROM operations_tasks WHERE scheduled_date={p} AND status IN ('Pendiente','En curso') ORDER BY scheduled_time,id", (scheduled_date,)).fetchall()
             assignments = conn.execute(f"SELECT a.task_id,a.user_id FROM operations_task_assignees a JOIN operations_tasks t ON t.id=a.task_id WHERE t.scheduled_date={p}", (scheduled_date,)).fetchall()
         users = {}
         for task_id,user_id in assignments:
             users.setdefault(task_id, []).append(user_id)
         return [{'id':r[0],'title':r[1],'scheduled_time':r[2],'client_id':r[3],
-                 'assigned_user_ids':users.get(r[0]) or ([r[4]] if r[4] else []),'created_by':r[5]} for r in rows]
+                 'assigned_user_ids':users.get(r[0]) or ([r[4]] if r[4] else []),'created_by':r[5], 'notify_client':bool(r[6])} for r in rows]
 
-    def complete_task(self, task_id):
-        self.initialize()
-        p, stamp = self.placeholder, _now()
-        with self.connection() as conn:
-            cursor = conn.execute(
-                f"UPDATE operations_tasks SET status='Terminada',completed_at={p},updated_at={p} WHERE id={p}",
-                (stamp, stamp, _text(task_id)),
-            )
-            if not cursor.rowcount:
-                return None
-        return next(task for task in self.snapshot()["tasks"] if task["id"] == _text(task_id))
+    def complete_task(self, task_id, actor_id=''):
+        task = next((t for t in self.snapshot()['tasks'] if t['id'] == _text(task_id)), None)
+        if not task or task['status'] == 'Terminada':
+            return task
+        task.update(status='Terminada', completed_at=_now(), actor_id=actor_id)
+        return self.save_task(task, _completing_existing=True)
 
     def save_expense(self, item):
         """Registra un gasto de campo conservando responsable y vínculos operativos."""
@@ -1167,7 +1201,9 @@ class OperationsStore:
             client_id = equipment["client_id"]
         p, stamp = self.placeholder, _now()
         with self.connection() as conn:
-            existing = conn.execute(f"SELECT created_at,receipt_ref FROM operations_expenses WHERE id={p}", (expense_id,)).fetchone()
+            existing = conn.execute(f"SELECT created_at,receipt_ref,user_id FROM operations_expenses WHERE id={p}", (expense_id,)).fetchone()
+            if existing and existing[2] != user_id:
+                raise ValueError('Ese gasto pertenece a otra cuenta.')
             created_at, receipt_ref = (existing[0], existing[1]) if existing else (stamp, "")
             conn.execute(
                 f"INSERT INTO operations_expenses(id,user_id,technician_name,client_id,equipment_id,repair_id,expense_date,amount,category,concept,payment_method,reimbursable,status,admin_notes,receipt_ref,created_by,created_at,updated_at) "
@@ -1181,6 +1217,10 @@ class OperationsStore:
                  1 if item.get("reimbursable", True) else 0, status, _text(item.get("admin_notes")),
                  receipt_ref, _text(item.get("created_by")), created_at, stamp),
             )
+            if not existing:
+                self._queue_notice_event(conn, {'kind':'expense_created','actor_id':_text(item.get('created_by')),
+                    'after':{'id':expense_id,'user_id':user_id,'technician_name':_text(item.get('technician_name')),
+                             'concept':concept,'amount':amount,'status':status}}, stamp)
         return next(row for row in self.snapshot()["expenses"] if row["id"] == expense_id)
 
     def save_expense_receipt(self, expense_id, drive_ref):
@@ -1204,19 +1244,25 @@ class OperationsStore:
             ).fetchone()
         return {"user_id": row[0], "photo_ref": _text(row[1])} if row and _text(row[1]) else None
 
-    def update_expense_status(self, expense_id, status, *, admin_notes=""):
+    def update_expense_status(self, expense_id, status, *, admin_notes="", actor_id='owner'):
         self.initialize()
         status = _text(status)
         if status not in {"Pendiente", "Aprobado", "Rechazado", "Reembolsado", "Liquidado"}:
             raise ValueError("El estado del gasto no es válido.")
         p, stamp = self.placeholder, _now()
         with self.connection() as conn:
+            previous = conn.execute(f"SELECT user_id,concept,amount,status,admin_notes FROM operations_expenses WHERE id={p}", (_text(expense_id),)).fetchone()
+            if not previous:
+                return None
             cursor = conn.execute(
                 f"UPDATE operations_expenses SET status={p},admin_notes={p},updated_at={p} WHERE id={p}",
                 (status, _text(admin_notes), stamp, _text(expense_id)),
             )
             if not cursor.rowcount:
                 return None
+            if previous[3] != status or previous[4] != _text(admin_notes):
+                self._queue_notice_event(conn, {'kind':'expense_status','actor_id':actor_id,
+                    'after':{'id':expense_id,'user_id':previous[0],'concept':previous[1],'amount':previous[2],'status':status}}, stamp)
         return next(row for row in self.snapshot()["expenses"] if row["id"] == _text(expense_id))
 
     def delete_expense(self, expense_id):

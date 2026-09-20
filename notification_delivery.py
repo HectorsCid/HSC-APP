@@ -19,6 +19,10 @@ _DOCUMENT_SCAN_AT = 0
 _TASK_REMINDER_SCAN_AT = 0
 
 
+def wake_delivery():
+    _WAKE.set()
+
+
 def identity():
     role = str(session.get('hsc_role') or '').strip().lower()
     if role not in {'admin','client','technician'}:
@@ -183,6 +187,7 @@ def start(app):
         while True:
             try:
                 with app.app_context():
+                    drain_operation_events(app)
                     scan_task_reminders(app)
                     drain()
                 scan_partner_documents(app)
@@ -193,19 +198,40 @@ def start(app):
     threading.Thread(target=run, daemon=True, name='hsc-push-delivery').start()
 
 
+def drain_operation_events(app):
+    from app import OPERACIONES_STORE
+    from task_notices import plan_task_notices
+    store = OPERACIONES_STORE
+    if not store.enabled:
+        return
+    for event in store.pending_notice_events():
+        try:
+            payload = event['payload']
+            actor = store.get_user_by_id(payload.get('actor_id')) or {}
+            payload['actor_name'] = actor.get('name') or ('Administrador' if payload.get('actor_id')=='owner' else 'Técnico')
+            for notice in plan_task_notices(event['id'], payload):
+                enqueue(**notice)
+            store.finish_notice_event(event['id'])
+        except Exception as exc:
+            store.finish_notice_event(event['id'], str(exc))
+            app.logger.exception('Aviso de agenda pendiente de reintento: %s', event['id'])
+
+
 def send_task_reminders(store, now):
     """Resumen diario por destinatario, con registro persistente entre reinicios."""
-    if now.hour < 8:
-        return
     day = now.date().isoformat()
     users = {u['id']:u for u in store.list_users() if u.get('status')=='active'}
     partner_clients = {u.get('client_id') for u in users.values() if u.get('role')=='client' and u.get('client_id')}
     groups = {}
     for task in store.tasks_for_reminders(day):
+        if now.hour < 8 and (not task.get('scheduled_time') or task['scheduled_time'] > now.strftime('%H:%M')):
+            continue
         client_id = task.get('client_id')
-        if client_id in partner_clients:
+        if client_id in partner_clients and task.get('notify_client'):
             groups.setdefault(('client',client_id), {})[task['id']] = task
         recipients = set(task.get('assigned_user_ids') or [])
+        recipients.add('owner')
+        recipients.update(u['id'] for u in users.values() if u.get('role')=='admin')
         if task.get('created_by'):
             recipients.add(task['created_by'])
         for user_id in recipients:
@@ -214,11 +240,18 @@ def send_task_reminders(store, now):
                 groups.setdefault((role,user_id), {})[task['id']] = task
     from urllib.parse import urlencode
     for (role,recipient), indexed in groups.items():
-        tag=f'task-reminder:{day}:{role}:{recipient}'
+        import hashlib
+        tasks = list(indexed.values())
+        def task_key(task):
+            signature = hashlib.sha256(json.dumps([task['id'],task.get('title'),task.get('scheduled_time')],ensure_ascii=False).encode()).hexdigest()[:20]
+            return f'task-reminder:{day}:{role}:{recipient}:{signature}'
         with notices.LOCK:
-            if tag in notices._read().get('task_reminder_days',{}):
-                continue
-        tasks=list(indexed.values())
+            ledger = notices._read().get('task_reminder_days',{})
+            tasks = [task for task in tasks if task_key(task) not in ledger]
+        if not tasks:
+            continue
+        keys = sorted(task_key(task) for task in tasks)
+        tag = 'task-summary:'+hashlib.sha256('|'.join(keys).encode()).hexdigest()
         title=('Hoy tienes visita' if len(tasks)==1 else f'Hoy tienes {len(tasks)} visitas programadas') if role=='client' else ('Hoy tienes un pendiente' if len(tasks)==1 else f'Hoy tienes {len(tasks)} pendientes')
         body=' · '.join(f"{t.get('scheduled_time') or 'Sin hora'}: {t['title']}" for t in tasks[:5])
         if len(tasks)>5:
@@ -230,7 +263,7 @@ def send_task_reminders(store, now):
         with notices.LOCK:
             state=notices._read()
             ledger=state.setdefault('task_reminder_days',{})
-            ledger[tag]=day
+            ledger.update({key:day for key in keys})
             cutoff=(now.date()-timedelta(days=14)).isoformat()
             state['task_reminder_days']={key:date for key,date in ledger.items() if date>=cutoff}
             notices._write(state)

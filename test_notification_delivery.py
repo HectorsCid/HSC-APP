@@ -141,16 +141,16 @@ class NotificationsTest(unittest.TestCase):
         store=Mock()
         store.list_users.return_value=[{'id':'T1','role':'technician','status':'active'},{'id':'T2','role':'technician','status':'active'},
             {'id':'C1','role':'client','status':'active','client_id':'A'},{'id':'C2','role':'client','status':'active','client_id':'B'}]
-        store.tasks_for_reminders.return_value=[{'id':'M1','title':'Mantenimiento','scheduled_time':'09:00','client_id':'A','assigned_user_ids':['T1'],'created_by':'owner'},
-            {'id':'M2','title':'Reparación','scheduled_time':'12:30','client_id':'A','assigned_user_ids':['T1'],'created_by':'owner'}]
+        store.tasks_for_reminders.return_value=[{'id':'M1','title':'Mantenimiento','scheduled_time':'09:00','client_id':'A','assigned_user_ids':['T1'],'created_by':'owner','notify_client':True},
+            {'id':'M2','title':'Reparación','scheduled_time':'12:30','client_id':'A','assigned_user_ids':['T1'],'created_by':'owner','notify_client':True}]
         now=datetime(2026,9,18,7,59,tzinfo=timezone(timedelta(hours=-6)))
         delivery.send_task_reminders(store,now)
-        store.tasks_for_reminders.assert_not_called()
+        self.assertEqual(notices._read().get('push_queue', []), [])
         delivery.send_task_reminders(store,now.replace(hour=8,minute=0))
         delivery.send_task_reminders(store,now.replace(hour=9))
         jobs=notices._read()['push_queue']
         self.assertEqual(len(jobs),3)
-        self.assertEqual(len(notices._read()['task_reminder_days']),3)
+        self.assertEqual(len(notices._read()['task_reminder_days']),6)
         for role,user,company,count in [('technician','T1','',1),('technician','T2','',0),('client','C1','A',1),('client','C2','B',0),('admin','owner','',1)]:
             self.login(role,user,company)
             rows=self.client.get('/api/operaciones/avisos').get_json()['items']

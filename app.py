@@ -78,6 +78,16 @@ def ensure_notifications_worker():
     start_notifications(app)
 
 
+@app.after_request
+def wake_operational_notifications(response):
+    if request.method == 'POST' and response.status_code < 400 and request.path.startswith((
+        '/api/operaciones/tasks', '/api/operaciones/visit-requests', '/api/operaciones/expenses'
+    )):
+        from notification_delivery import wake_delivery
+        wake_delivery()
+    return response
+
+
 print(">>> Blueprint facturacion registrado")
 print(app.url_map)
 
@@ -3241,28 +3251,11 @@ def api_operaciones_save_task():
         if existing and existing.get('created_by') != body['assigned_user_id']:
             abort(403)
     body["created_by"] = str(session.get("hsc_user_id") or "owner")
+    body['actor_id'] = body['created_by']
     try:
         task = OPERACIONES_STORE.save_task(body)
         _invalidate_operations_cache()
-        if _operations_role() == 'technician':
-            try:
-                from notification_delivery import enqueue
-                from urllib.parse import urlencode
-                actor_id = str(session.get('hsc_user_id') or '')
-                actor = OPERACIONES_STORE.get_user_by_id(actor_id) or {}
-                enqueue('Nuevo pendiente de técnico',
-                        f"{actor.get('name') or 'Técnico'} · {task['title']} · {task['scheduled_date']} · {task.get('scheduled_time') or 'Sin hora definida'}",
-                        '/hsc-tecnico/?'+urlencode({'open':'calendar','date':task['scheduled_date']}),
-                        f"task-admin:{task['id']}", category='agenda', audience='admin', exclude_user_id=actor_id)
-            except Exception:
-                current_app.logger.exception('No se pudo preparar el aviso administrativo del pendiente %s', task['id'])
-        if body.get('notify_client') is True and task.get('client_id'):
-            from notification_delivery import enqueue
-            from urllib.parse import urlencode
-            enqueue('Actividad programada', f"{task['title']} · {task['scheduled_date']} · {task.get('scheduled_time') or 'Sin hora definida'}",
-                    '/hsc-partner/?'+urlencode({'client':task['client_id'],'open':'calendar','date':task['scheduled_date']}),
-                    f"task-client:{task['id']}:{task['scheduled_date']}:{task.get('scheduled_time','')}",
-                    category='agenda',audience='client',client_id=task['client_id'])
+        # The notice event was committed with the task; the worker delivers it.
         return jsonify({"ok": True, "task": task}), 201
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -3289,10 +3282,6 @@ def api_operaciones_request_visit():
                 'scheduled_time':body.get('scheduled_time') or '', 'client_id':client_id,
                 'assigned_user_ids':['owner'],'created_by':user_id,'status':'Solicitada'})
         _invalidate_operations_cache()
-        from notification_delivery import enqueue
-        from urllib.parse import urlencode
-        enqueue('Solicitud de visita',f"{client_id} · {task['title']} · {task['scheduled_date']} · {task.get('scheduled_time') or 'Sin hora'}",
-                '/hsc-tecnico/?'+urlencode({'open':'calendar','date':task['scheduled_date']}),f"visit-request:{task_id}",category='agenda')
         return jsonify(ok=True,task=task),201
     except ValueError as exc:return jsonify(ok=False,error=str(exc)),400
 
@@ -3308,16 +3297,12 @@ def api_operaciones_confirm_visit(task_id):
         task=original
         if original['status']=='Solicitada':
             if not body.get('assigned_user_ids'):raise ValueError('Selecciona al menos un responsable.')
-            body.update(id=task_id,client_id=original['client_id'],status='Pendiente',created_by=original.get('created_by'))
+            body.update(id=task_id,client_id=original['client_id'],status='Pendiente',created_by=original.get('created_by'),
+                        actor_id=str(session.get('hsc_user_id') or 'owner'),notify_client=True)
             task=OPERACIONES_STORE.save_task(body)
         elif original['status']!='Pendiente':
             return jsonify(ok=False,error='Esta solicitud ya no está pendiente de confirmación.'),409
         _invalidate_operations_cache()
-        from notification_delivery import enqueue
-        from urllib.parse import urlencode
-        enqueue('Visita confirmada',f"{task['title']} · {task['scheduled_date']} · {task.get('scheduled_time') or 'Sin hora definida'}",
-                '/hsc-partner/?'+urlencode({'client':task['client_id'],'open':'calendar','date':task['scheduled_date']}),
-                f'visit-confirmed:{task_id}',category='agenda',audience='client',client_id=task['client_id'])
         return jsonify(ok=True,task=task)
     except ValueError as exc:return jsonify(ok=False,error=str(exc)),400
 
@@ -3330,12 +3315,12 @@ def api_operaciones_complete_task(task_id):
     task = next((item for item in OPERACIONES_STORE.snapshot().get("tasks", []) if item["id"] == task_id), None)
     if not task:
         abort(404)
-    if task.get('status')=='Solicitada':
+    if task.get('status') in {'Solicitada','Cancelada'}:
         return jsonify(ok=False,error='Primero debe confirmarse la visita.'),409
     assignees = task.get('assigned_user_ids', [task['assigned_user_id']] if task.get('assigned_user_id') else [])
     if _operations_role() == "technician" and assignees and str(session.get("hsc_user_id") or "") not in assignees:
         abort(404)
-    task = OPERACIONES_STORE.complete_task(task_id)
+    task = OPERACIONES_STORE.complete_task(task_id, actor_id=str(session.get('hsc_user_id') or 'owner'))
     _invalidate_operations_cache()
     return jsonify({"ok": True, "task": task})
 
@@ -3363,6 +3348,13 @@ def api_operaciones_save_expense():
     if role == "technician":
         body["user_id"] = str(session.get("hsc_user_id") or "")
         body["technician_name"] = str(session.get("hsc_user_name") or "Técnico HSC")
+        body['status'] = 'Pendiente'
+        body['admin_notes'] = ''
+        existing = next((row for row in OPERACIONES_STORE.snapshot()['expenses'] if row['id']==body.get('id')), None)
+        if existing:
+            _operations_expense_for_actor(existing['id'])
+            if existing['status'] != 'Pendiente':
+                return jsonify(ok=True, expense=existing), 200  # Retry cannot alter a settled expense.
     else:
         body["user_id"] = str(body.get("user_id") or session.get("hsc_user_id") or "owner")
         if not body.get("technician_name"):
@@ -3372,18 +3364,6 @@ def api_operaciones_save_expense():
     try:
         expense = OPERACIONES_STORE.save_expense(body)
         _invalidate_operations_cache()
-        if role == "technician":
-            try:
-                from notification_delivery import enqueue
-                enqueue(
-                    "Nuevo gasto por revisar",
-                    f"{expense.get('technician_name') or 'Un técnico'} registró "
-                    f"${float(expense.get('amount') or 0):,.2f}: {expense.get('concept') or 'Gasto de campo'}.",
-                    category="gastos", tag=f"expense:{expense.get('id')}",
-                    url="/hsc-tecnico/?open=expenses",
-                )
-            except Exception:
-                current_app.logger.exception("No se pudo crear el aviso del gasto %s", expense.get("id"))
         return jsonify({"ok": True, "expense": expense}), 201
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -3439,16 +3419,10 @@ def api_operaciones_expense_status(expense_id):
     try:
         expense = OPERACIONES_STORE.update_expense_status(
             expense_id, body.get("status"), admin_notes=body.get("admin_notes"),
+            actor_id=str(session.get('hsc_user_id') or 'owner'),
         )
         if not expense:
             abort(404)
-        try:
-            from notification_delivery import enqueue
-            enqueue('Actualización de tu gasto', f"{expense.get('concept','Gasto')}: {expense.get('status','')} · ${float(expense.get('amount') or 0):,.2f}",
-                    '/hsc-tecnico/?open=expenses', f"expense-status:{expense_id}:{expense.get('status')}",
-                    category='pagos', audience='technician', user_id=expense.get('user_id') or '')
-        except Exception:
-            current_app.logger.exception('No se pudo notificar el estado del gasto %s', expense_id)
         _invalidate_operations_cache()
         return jsonify({"ok": True, "expense": expense})
     except ValueError as exc:
