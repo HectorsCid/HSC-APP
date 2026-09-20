@@ -177,7 +177,7 @@
           <div class="field"><label for="opEquipmentSerial">Número de serie</label><input id="opEquipmentSerial" maxlength="100"></div>
           <label class="check-row"><input id="opEquipmentActive" type="checkbox" checked> Equipo activo</label>
           <p class="editor-note">Desactivarlo lo excluye del avance operativo, pero conserva los reportes de cada ronda.</p>
-          <div class="photo-picker"><div class="photo-preview" id="opEquipmentPhotoPreview">❄</div><div class="field"><label for="opEquipmentPhoto">Foto del equipo · máximo 5 MB</label><input id="opEquipmentPhoto" type="file" accept="image/jpeg,image/png,image/webp"><button class="mini-btn" id="removeEquipmentPhoto" type="button">Quitar foto</button></div></div>
+          <div class="photo-picker"><div class="photo-preview" id="opEquipmentPhotoPreview">❄</div><div class="field"><span>Foto del equipo · máximo 5 MB</span><div class="field-row"><label class="secondary" style="cursor:pointer">📷 Tomar foto<input id="opEquipmentCamera" type="file" accept="image/*" capture="environment" aria-label="Tomar foto del equipo" hidden></label><label class="secondary" style="cursor:pointer">▧ Elegir de galería<input id="opEquipmentPhoto" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Elegir foto del equipo" hidden></label></div><button class="mini-btn" id="removeEquipmentPhoto" type="button">Quitar foto</button></div></div>
           <div class="field"><label for="opEquipmentNotes">Notas del equipo</label><textarea id="opEquipmentNotes" maxlength="1000"></textarea></div>
           <div class="editor-error" id="equipmentEditorError" role="alert"></div>
         </div></div>
@@ -1192,7 +1192,7 @@
     const items=ids.map((id,index)=>({id,client_id:selectedClient,name:count>1?`${name} ${index+1}`:name,brand,model:$('#opEquipmentModel').value.trim(),serial,active:$('#opEquipmentActive').checked,location:$('#opEquipmentLocation').value.trim(),equipment_type:$('#opEquipmentType').value,notes:$('#opEquipmentNotes').value.trim()}));
     submit.disabled=true;error.textContent='';
     try{
-      await operationsPost('/api/operaciones/equipment',{items});const photoFile=$('#opEquipmentPhoto').files[0],removePhoto=!equipmentPhoto&&Boolean(equipmentMeta[editingEquipment]?.photo);if(photoFile||removePhoto){for(const id of ids){const form=new FormData();if(photoFile)form.append('file',photoFile,photoFile.name);else form.append('remove','1');const response=await fetch(`/api/operaciones/equipment/${encodeURIComponent(id)}/photo`,{method:'POST',body:form}),result=await response.json();if(!response.ok||!result.ok)throw Error(result.error||'Los datos se guardaron, pero falta confirmar la foto');}}editorDirty=false;if(!await loadMatrixData())throw Error('Los cambios se guardaron, pero no se pudo actualizar la vista. No vuelvas a crear el equipo.');selectedEquipment=ids[0];refreshRound();showView(count>1?'client':'equipment');historyStack=count>1?['clients','client']:['clients','client','equipment'];toast(`${count} equipo(s) guardado(s) · sincronización con Google pendiente`);
+      await operationsPost('/api/operaciones/equipment',{items});const photoFile=$('#opEquipmentPhoto').files[0]||$('#opEquipmentCamera').files[0],removePhoto=!equipmentPhoto&&Boolean(equipmentMeta[editingEquipment]?.photo);if(photoFile||removePhoto){for(const id of ids){const form=new FormData();if(photoFile)form.append('file',photoFile,photoFile.name);else form.append('remove','1');const response=await fetch(`/api/operaciones/equipment/${encodeURIComponent(id)}/photo`,{method:'POST',body:form}),result=await response.json();if(!response.ok||!result.ok)throw Error(result.error||'Los datos se guardaron, pero falta confirmar la foto');}}editorDirty=false;if(!await loadMatrixData())throw Error('Los cambios se guardaron, pero no se pudo actualizar la vista. No vuelvas a crear el equipo.');selectedEquipment=ids[0];refreshRound();showView(count>1?'client':'equipment');historyStack=count>1?['clients','client']:['clients','client','equipment'];toast(`${count} equipo(s) guardado(s) · sincronización con Google pendiente`);
     }catch(saveError){error.textContent=saveError.message}finally{submit.disabled=false}
   };
   $('#toggleOperationalEquipment').onclick=async()=>{
@@ -1217,11 +1217,13 @@
       const url=URL.createObjectURL(file),probe=new Image();probe.src=url;
       try{await probe.decode();}catch(_){URL.revokeObjectURL(url);error.textContent='No se pudo leer esa imagen.';event.target.value='';return;}
       if(event.target.files[0]!==file){URL.revokeObjectURL(url);return;}
+      if(kind==='Equipment')$(event.target.id==='opEquipmentCamera'?'#opEquipmentPhoto':'#opEquipmentCamera').value='';
       if(kind==='Client')clientPhoto=url;else equipmentPhoto=url;
       error.textContent='';editorDirty=true;previewPhoto(kind,url);
     };
-    $(`#remove${kind}Photo`).onclick=()=>{if(kind==='Client')clientPhoto='';else equipmentPhoto='';$(`#op${kind}Photo`).value='';previewPhoto(kind,'');editorDirty=true;};
+    $(`#remove${kind}Photo`).onclick=()=>{if(kind==='Client')clientPhoto='';else {equipmentPhoto='';$('#opEquipmentCamera').value='';}$(`#op${kind}Photo`).value='';previewPhoto(kind,'');editorDirty=true;};
   }
+  $('#opEquipmentCamera').onchange=$('#opEquipmentPhoto').onchange;
   $('#clientEditorForm').oninput=$('#equipmentEditorForm').oninput=()=>{editorDirty=true;};
   const originalShowView=showView;
   showView=function(name,push=true){if(name!==current&&['clientEditor','equipmentEditor'].includes(current)&&editorDirty){if(!confirm('¿Salir sin guardar estos cambios?'))return;editorDirty=false;}return originalShowView(name,push);};

@@ -1,0 +1,27 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync('templates/app_operativa_demo.html','utf8');
+assert.match(source, /id="opEquipmentCamera"[^>]*capture="environment"/);
+assert.match(source, /const photoFile=\$\('#opEquipmentPhoto'\)\.files\[0\]\|\|\$\('#opEquipmentCamera'\)\.files\[0\]/);
+const begin=source.indexOf("  for(const kind of ['Client','Equipment']){");
+const end=source.indexOf("  $('#clientEditorForm').oninput=",begin);
+assert(begin>0&&end>begin);
+const nodes={};
+const $=id=>nodes[id]??=( {id:id.slice(1),files:[],value:'',textContent:''} );
+const ctx={$,URL:{createObjectURL:f=>'blob:'+f.name,revokeObjectURL:()=>{}},Image:class{async decode(){}},previewPhoto:()=>{},clientPhoto:'',equipmentPhoto:'saved',editorDirty:false};
+vm.createContext(ctx);vm.runInContext(source.slice(begin,end),ctx);
+(async()=>{
+ const gallery=$('#opEquipmentPhoto'),camera=$('#opEquipmentCamera');
+ gallery.value='old.jpg';
+ camera.files=[{name:'camera.jpg',type:'image/jpeg',size:100}];
+ await camera.onchange({target:camera});
+ assert.equal(ctx.equipmentPhoto,'blob:camera.jpg');assert.equal(gallery.value,'');
+ camera.value='camera.jpg';gallery.files=[{name:'gallery.jpg',type:'image/jpeg',size:100}];
+ await gallery.onchange({target:gallery});
+ assert.equal(ctx.equipmentPhoto,'blob:gallery.jpg');assert.equal(camera.value,'');
+ camera.files=[];await camera.onchange({target:camera});
+ assert.equal(ctx.equipmentPhoto,'blob:gallery.jpg');
+ camera.value='camera.jpg';gallery.value='gallery.jpg';
+ $('#removeEquipmentPhoto').onclick();
+ assert.equal(camera.value,'');assert.equal(gallery.value,'');assert.equal(ctx.equipmentPhoto,'');
+ console.log('OK: cámara trasera, galería, cambio de origen, cancelar y quitar foto.');
+})().catch(e=>{console.error(e);process.exitCode=1});
