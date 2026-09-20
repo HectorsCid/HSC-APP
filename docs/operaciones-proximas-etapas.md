@@ -21,11 +21,11 @@ Guardar identificadores estables, responsable, autor, versiones, fechas y revisi
 
 La última indicación del usuario es recordar estas ideas, no implementarlas ahora. Prioridad: hacer reportes y que funcionen.
 
-## Propuesta pendiente: bitácora de reparaciones y remisiones
+## Bitácora de reparaciones y remisiones — publicación autorizada
 
 Solicitada después: administrador y técnicos registran intervenciones para clientes existentes o nuevos, equipo, síntoma, diagnóstico, trabajo realizado, piezas, mediciones finales (por ejemplo, 33 psi en baja), resultado y fotos antes/durante/después. Cada intervención tiene su propio registro y no reemplaza el historial por ronda. Listado cronológico por equipo y cliente, búsqueda y borrador offline. Fotos en lotes comprimidos/paginados, sin el límite de seis del reporte preventivo; definir límites por archivo y almacenamiento, sin prometer capacidad infinita.
 
-Nota de remisión vinculada y generada desde la misma captura; proponer precios opcionales y firma/recepción, sin timbrado automático. Pendiente de acordar el alcance y de terminar la confiabilidad de los reportes actuales. No implementar dentro de esta auditoría.
+Autorizada por el usuario con «avientate ese jale de los historiales de reparaciones» y después «Sube la bitácora y empieza con el panel». Implementación y alcance comprobado en `docs/repair-history-validation.md`. Nota de remisión de servicio imprimible vinculada a la captura finalizada, folio REM independiente, nombre de quien recibe y espacio para firma física. Sin importes, timbrado, firma electrónica, nómina ni avisos automáticos nuevos. El nuevo panel de pagos queda fuera de esta publicación.
 
 ## Criterio de salida de AppSheet aclarado por el propietario
 

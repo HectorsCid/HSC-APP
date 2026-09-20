@@ -5810,6 +5810,14 @@ def _start_initial_drive_sync():
 # sus propias páginas. No debe competir con el arranque web ni con reportes.
 
 
+from repair_bp import create_repair_blueprint
+from reportes_bp import store_repair_photo
+app.register_blueprint(create_repair_blueprint(
+    OPERACIONES_STORE, _operations_role, _operations_forbidden,
+    _operations_permission_forbidden, store_repair_photo, _serve_operations_thumbnail,
+    lambda ref: make_response(serve_drive_image_ref_fast(ref)),
+))
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>{{ operations_app_name|default('HSC Operaciones') }}</title>
-  <meta name="hsc-operations-build" content="report-safety-20260920">
+  <meta name="hsc-operations-build" content="repair-history-20260920">
   <script>
     (() => {
       const saved = localStorage.getItem('hsc-theme');
@@ -137,6 +137,7 @@
       <div class="section-head"><h2>Clientes</h2><div><span class="count" id="clientCount"></span> <button class="mini-btn" id="openUsers" data-admin-only>Usuarios</button></div></div>
       <div class="management-bar"><button class="primary" id="openOccasionalReport" data-permission="createReports">📝 Reporte único</button><button class="secondary" id="addOperationalClient" data-permission="addClients">＋ Agregar cliente</button><button class="secondary" id="catalogScope">Ver clientes sin póliza</button><button class="secondary" id="orderClients" data-admin-only>Ordenar clientes</button></div>
       <div class="client-list" id="clientList"></div>
+      <button class="user-card" type="button" data-open-repairs data-tech-only><span class="reminder-icon">🔧</span><span class="card-copy"><b>Reparaciones</b><small data-repair-summary>Historial por cliente y equipo</small></span><span class="chevron">›</span></button>
       <p class="editor-note" id="persistenceNotice">Las altas y ediciones se guardan en la base operativa. La exportación de compatibilidad se procesa en segundo plano.</p>
     </section>
 
@@ -152,6 +153,7 @@
       <div class="field" style="margin-bottom:12px"><label for="equipmentRound">Consultar ronda</label><select id="equipmentRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div>
       <article class="equipment-hero"><div class="equipment-photo">❄</div><div><div class="eyebrow">HDI1</div><h2>Fábrica de hielo grande</h2><p class="card-sub">Monitowac · Holiday Inn Diamante</p><span class="tag" id="equipmentStatus">Realizado en R2</span></div></article>
       <div class="actions"><button class="primary" id="newReport" data-permission="createReports" data-tech-only>＋ Nuevo reporte</button><button class="danger" id="criticalFault" data-permission="reportFaults"><span class="fault-button-icon">!</span><span>Reportar falla</span></button></div>
+      <button class="secondary" type="button" data-open-repairs="equipment" data-tech-only>🔧 Historial de reparaciones</button>
       <div class="management-bar" data-tech-only><button class="secondary" id="editOperationalEquipment" data-permission="editEquipment">Editar equipo</button><button class="secondary" id="toggleOperationalEquipment" data-permission="editEquipment">Desactivar equipo</button></div>
       <div class="section-head"><h2>Reportes de esta ronda</h2><span class="count" id="equipmentReportCount"></span></div>
       <div class="report-list bounded-list" id="equipmentReportList"></div>
@@ -210,6 +212,7 @@
 
     <section class="view" data-view="agenda">
       <button class="user-card" id="openWorklists" type="button"><span class="reminder-icon">☑</span><span class="card-copy"><b>Mi jornada</b><small id="worklistSummary">Organizar los equipos que quiero trabajar</small></span><span class="chevron">›</span></button>
+      <button class="user-card" type="button" data-open-repairs data-tech-only><span class="reminder-icon">🔧</span><span class="card-copy"><b>Reparaciones</b><small data-repair-summary>Historial por cliente y equipo</small></span><span class="chevron">›</span></button>
       <div class="agenda-date"><div><div class="eyebrow">Agenda del técnico</div><h2 id="agendaDateTitle">Agenda</h2><p id="agendaDateSummary">Cargando pendientes…</p></div><div class="agenda-actions"><button class="mini-btn" id="openMonthCalendar" title="Calendario del mes" aria-label="Abrir calendario del mes">▦</button><button class="mini-btn" id="openTask">＋</button></div></div>
       <div class="calendar-strip" id="agendaDays"></div>
       <div class="reminder"><div class="reminder-icon">♢</div><div class="reminder-copy"><b>Resumen “Tareas para hoy”</b><span>Las tareas ya se guardan en la cuenta y quedan listas para conectarse al aviso matutino.</span></div></div>
@@ -263,6 +266,7 @@
     </section>
 
     {% include '_operations_worklists.html' %}
+    {% include '_operations_repairs.html' %}
     <section class="view" data-view="expenses">
       <div class="section-head"><div><div class="eyebrow">Control de campo</div><h2 id="expensesHeading">Mis gastos</h2></div><button class="primary" id="openExpenseForm" type="button">＋ Registrar</button></div>
       <div class="field" id="expenseTechnicianFilterField" data-admin-only><label for="expenseTechnicianFilter">Ver gastos por técnico</label><select id="expenseTechnicianFilter"><option value="">Todos los técnicos</option></select></div>
@@ -328,6 +332,7 @@
 <div class="modal" id="profileEditModal"><div class="sheet"><div class="eyebrow">Mi cuenta</div><h2>Editar perfil</h2><div class="field"><label for="ownProfileName">Nombre visible</label><input id="ownProfileName" maxlength="100" autocomplete="name"></div><div class="field" id="ownProfilePhotoField" style="margin-top:12px"><label for="ownProfilePhoto">Fotografía opcional</label><input id="ownProfilePhoto" type="file" accept="image/jpeg,image/png,image/webp"><p class="editor-note">JPG, PNG o WebP de máximo 8 MB.</p></div><div class="sheet-actions"><button class="secondary" id="closeOwnProfile" type="button">Cancelar</button><button class="primary" id="saveOwnProfile" type="button">Guardar perfil</button></div></div></div>
 {% include '_operations_worklist_editor.html' %}
 <script src="/static/operations_worklists.js?v=1"></script>
+<script src="/static/operations_repairs.js?v=1"></script>
 <script src="/static/operations_offline.js?v=20260920-worklists"></script>
 <script>
   const clients=[];
@@ -438,6 +443,8 @@
   let lastServerPayload=null,bootstrapRequest=null,fieldRevision=0,serverConnection='checking',pendingFieldCount=0;
   const localPhotoUrls=new Map();
   let matrixWorklists=[],journeyUi=null;
+  let repairsUi=null;
+  views.repairs=['HSC Técnico','Reparaciones'];views.repair=['Reparaciones','Historial de la visita'];views.repairEditor=['Reparaciones','Registrar visita'];
   views.worklists=['Agenda','Mi jornada'];views.worklist=['Mi jornada','Mi lista de equipos'];
   async function hscFetch(url,options={},timeout=20000){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);try{const response=await fetch(url,{...options,signal:controller.signal});serverConnection=response.status===401||response.redirected?'auth':response.ok?'online':'server';const body=await response.text();return {ok:response.ok,status:response.status,redirected:response.redirected,json:async()=>JSON.parse(body)}}catch(error){serverConnection='unreachable';throw Error(error.name==='AbortError'?'El servidor tardó demasiado; tu trabajo local se conserva.':'No se pudo contactar HSC; tu trabajo local se conserva.')}finally{clearTimeout(timer)}}
   function cacheServerPayload(){localStorage.setItem(`hsc-operaciones-data-${account.id}-${appKind}`,JSON.stringify({savedAt:Date.now(),payload:lastServerPayload}));}
@@ -538,12 +545,17 @@
   function writeBrowserNavigation(replace=false,guard=false,view=current,stack=historyStack){if(!browserHistoryReady)return;const state=browserNavigationState(guard,view,stack),url=browserNavigationUrl(view,guard);if(replace)window.history.replaceState(state,'',url);else window.history.pushState(state,'',url);}
   function canonicalPath(view){
     if(view==='worklists')return ['clients','agenda','worklists'];
+    if(view==='repairs')return ['clients','repairs'];
+    if(view==='repair')return ['clients','repairs','repair'];
+    if(view==='repairEditor')return ['clients','repairs','repairEditor'];
     if(view==='worklist')return ['clients','agenda','worklists','worklist'];
     const paths={client:['clients','client'],equipment:currentMode==='partner'?['partner','partnerEquipment','equipment']:['clients','client','equipment'],report:['clients','client','equipment','report'],agenda:['clients','agenda'],profile:['clients','profile'],expenses:['clients','profile','expenses'],task:['clients','agenda','task'],users:['clients','users'],userPermissions:['clients','users','userPermissions'],clientEditor:['clients','clientEditor'],equipmentEditor:['clients','client','equipmentEditor'],partnerEquipment:['partner','partnerEquipment'],partnerReports:['partner','partnerReports'],partnerFaults:['partner','partnerFaults'],partnerDocuments:['partner','partnerDocuments'],reportView:currentMode==='partner'?['partner','partnerReports','reportView']:['clients','client','equipment','reportView']};
     return paths[view]||[view];
   }
   function parentView(view){
     if(view==='worklist')return 'worklists';
+    if(['repair','repairEditor'].includes(view))return 'repairs';
+    if(view==='repairs')return 'clients';
     if(view==='worklists')return 'agenda';
     const parents={client:'clients',equipment:currentMode==='partner'?'partnerEquipment':'client',report:'equipment',reportView:currentMode==='partner'?'partnerReports':'equipment',agenda:'clients',profile:'clients',expenses:'profile',task:'agenda',users:'clients',userPermissions:'users',clientEditor:'clients',equipmentEditor:'client',partnerEquipment:'partner',partnerReports:'partner',partnerFaults:'partner',partnerDocuments:'partner'};
     return parents[view]||view;
@@ -572,7 +584,7 @@
     if(['1','2','3','4'].includes(String(state.round))){selectedRound=String(state.round);rememberClientRound(selectedClient,selectedRound,false);}
     if(appKind==='partner'||serverRole==='client'||(account.isOwner&&state.mode==='partner'))currentMode='partner';
     else currentMode='tech';
-    const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','equipment','partnerReports','partnerFaults','partnerDocuments','reportView']:['clients','client','equipment','report','reportView','agenda','profile','expenses','worklists','worklist'];
+    const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','equipment','partnerReports','partnerFaults','partnerDocuments','reportView']:['clients','client','equipment','report','reportView','agenda','profile','expenses','worklists','worklist','repairs','repair','repairEditor'];
     if(account.isOwner)allowedRoots.push('users','userPermissions','clientEditor','equipmentEditor');
     const requestedSection=entryParams.get('open');
     if(currentMode!=='partner'&&requestedSection==='expenses')state.view='expenses';
@@ -583,6 +595,7 @@
     const linkedClient=entryParams.get('client');
     if((account.isOwner||serverRole==='technician')&&linkedClient&&clientMeta[linkedClient]){selectedClient=linkedClient;selectedEquipment=equipment.find(item=>equipmentMeta[item[0]]?.client===selectedClient)?.[0]||'';selectClientRound(selectedClient);if(!requestedSection)state.view='client';}
     if(['worklists','worklist'].includes(state.view)&&(typeof journeyUi==='undefined'||!journeyUi))state.view='agenda';
+    if(state.view==='repairEditor')state.view='repairs';
     const target=allowedRoots.includes(state.view)?state.view:(currentMode==='partner'?'partner':'clients');
     historyStack=canonicalPath(target);current='__restore__';refreshRound();
     if(target==='reportView'){const reportButton=$$('[data-round-report]').find(button=>button.dataset.roundReport===selectedEquipment);if(reportButton){reportButton.click();historyStack=canonicalPath('reportView');initializeBrowserNavigation();return;}}
@@ -1322,7 +1335,7 @@
   async function backupReportBeforeLeaving(){if(evidenceBusy)throw Error('Espera a que termine de preparar las fotografías.');backupReportText();if(!await persistEvidence()&&evidenceForReport().length)throw Error('No se pudieron respaldar las fotos. Mantén abierto el formulario.');}
   $('#reportForm').addEventListener('input',()=>{try{backupReportText()}catch(error){toast(error.message)}});
   const originalShowView=showView;
-  showView=function(name,push=true){if(name!==current&&['clientEditor','equipmentEditor'].includes(current)&&editorDirty){if(!confirm('¿Salir sin guardar estos cambios?'))return;editorDirty=false;}if(name!==current&&current==='report'&&activeReportContext){return (async()=>{try{await backupReportBeforeLeaving();saveActiveReportDraft(false);return originalShowView(name,push)}catch(error){toast(error.message);return false}})();}return originalShowView(name,push);};
+  showView=function(name,push=true){if(name!==current&&current==='repairEditor'&&typeof repairsUi!=='undefined'&&repairsUi){return (async()=>{if(!await repairsUi.leave())return false;const result=originalShowView(name,push);repairsUi.onView(name);return result})()}if(name!==current&&['clientEditor','equipmentEditor'].includes(current)&&editorDirty){if(!confirm('¿Salir sin guardar estos cambios?'))return;editorDirty=false;}if(name!==current&&current==='report'&&activeReportContext){return (async()=>{try{await backupReportBeforeLeaving();saveActiveReportDraft(false);return originalShowView(name,push)}catch(error){toast(error.message);return false}})();}const result=originalShowView(name,push);if(typeof repairsUi!=='undefined'&&repairsUi)repairsUi.onView(name);return result;};
   $('#backBtn').onclick=()=>{if(['clientEditor','equipmentEditor'].includes(current)&&editorDirty){if(!confirm('¿Salir sin guardar estos cambios?'))return;editorDirty=false;}goBack();};
   $$('[data-cancel-editor]').forEach(b=>b.onclick=()=>$('#backBtn').click());
   window.addEventListener('beforeunload',event=>{if(current==='report')try{backupReportText()}catch(_){}if(editorDirty||evidenceBusy||reportLocalBackupFailed){event.preventDefault();event.returnValue='';}});
@@ -1330,6 +1343,9 @@
   const logoutButton=document.createElement('button');logoutButton.type='button';logoutButton.className='app-option';logoutButton.innerHTML='<span class="app-badge">↪</span><span><strong>Cerrar sesión</strong><span>Salir de esta cuenta</span></span>';$('#appMenu .app-menu').append(logoutButton);
   const profileLogout=logoutButton.cloneNode(true);profileLogout.className='secondary wide';profileLogout.style.marginTop='16px';$('[data-view="profile"]').append(profileLogout);
   async function logoutOperations(){
+    if(repairsUi?.isBusy()){toast('Espera a que termine el envío de la reparación antes de cerrar sesión.');return;}
+    if(repairsUi&&!await repairsUi.leave())return;
+    if(repairsUi?.hasPending()&&!confirm('Hay reparaciones o borradores en este dispositivo. Se conservarán para esta cuenta. ¿Cerrar sesión?'))return;
     if(evidenceBusy||fieldActionsBusy||backgroundReportUploads.size){toast('Espera a que termine el envío pendiente antes de cerrar sesión.');return;}
     if((Object.keys(pendingReportUploads()).length||(await fieldActionStorage('list')).length)&&!confirm('Tienes acciones pendientes de enviar. Quedarán en este dispositivo para cuando vuelvas a entrar con esta cuenta. ¿Cerrar sesión?'))return;
     logoutButton.disabled=profileLogout.disabled=true;
@@ -1458,6 +1474,9 @@
     openEquipment:(client,id,round)=>{if(!equipmentMeta[id]){toast('El equipo ya no está disponible.');return;}selectedClient=client;selectedEquipment=id;selectedRound=String(round);refreshRound();showView('equipment')}
   });
   if(!journeyUi)$('#openWorklists').onclick=()=>toast('No se pudo cargar Mi jornada. Puedes seguir haciendo reportes desde Clientes.');
+  if(typeof HscRepairs!=='undefined')repairsUi=HscRepairs.mount({account,role:serverRole,escape:escapeHtml,toast,show:name=>showView(name),current:()=>current,canWrite:()=>can('createReports'),shouldSync:shouldSyncNow,fetch:hscFetch,compress:compressEvidenceFile,
+    state:()=>({clients:clients.map(c=>({id:c[1],name:c[0],address:clientMeta[c[1]]?.address||''})),equipment:equipment.map(e=>({id:e[0],name:e[1],...equipmentMeta[e[0]],client_id:equipmentMeta[e[0]]?.client})),selectedEquipment})});
+  $('#syncPendingNow').addEventListener('click',()=>repairsUi?.sync(true));
   applyAccess();updateOfflineSyncUi();if(typeof fetch==='function')loadMatrixData().finally(()=>{initializeBrowserNavigation();resumePendingReportUploads()});else initializeBrowserNavigation();
 </script>
 </body>

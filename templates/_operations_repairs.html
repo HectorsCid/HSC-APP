@@ -1,0 +1,43 @@
+<link rel="stylesheet" href="/static/operations_repairs.css?v=1">
+<section class="view repairs" data-view="repairs">
+  <div class="section-head"><div><h2>Reparaciones</h2><p class="muted">Cada visita conserva lo que fallaba, lo que hicimos y cómo quedó.</p></div><button class="primary" id="repairNew" type="button" data-permission="createReports">＋ Registrar reparación</button></div>
+  <div class="repair-actions"><input id="repairSearch" type="search" aria-label="Buscar reparaciones" placeholder="Cliente, equipo, serie, falla o trabajo…" maxlength="200"><button class="secondary" id="repairSearchGo" type="button">Buscar</button><button class="secondary" id="repairAll" type="button">Ver todos los equipos</button></div>
+  <p id="repairScope" class="muted"></p><p id="repairConnection" role="status"></p>
+  <div id="repairCards" class="user-list"></div><button class="secondary" id="repairMore" type="button" hidden>Cargar visitas anteriores</button>
+</section>
+<section class="view repairs" data-view="repair">
+  <div id="repairDetail"></div>
+  <div class="repair-actions"><button class="secondary" id="repairEdit" type="button">Editar esta visita</button><button class="primary" id="repairRepeat" type="button">＋ Otra visita a este equipo</button><a class="secondary" id="repairRemision" target="_blank" rel="noopener">Remisión / imprimir</a><button class="secondary" id="repairResolve" type="button" hidden>Comparar con versión del servidor</button></div>
+  <div id="repairCompare" hidden></div>
+  <div id="repairPhotoHistory" class="repair-photos"></div>
+</section>
+<section class="view repairs editor" data-view="repairEditor">
+  <p class="form-intro">Una visita independiente: no cambia la ronda ni crea una póliza. Los borradores se guardan en este dispositivo.</p>
+  <form id="repairForm" autocomplete="off">
+    <fieldset><legend>Cliente y equipo</legend><div class="repair-grid">
+      <label>Cliente<select id="repairClient"></select></label><label>Nombre del cliente<input name="client_name" maxlength="200" required></label>
+      <label class="repair-wide">Dirección<input name="address" maxlength="400"></label>
+      <label>Equipo<select id="repairEquipment"></select></label><label>Nombre del equipo<input name="equipment_name" maxlength="200" required></label>
+      <label>Modelo<input name="model" maxlength="160"></label><label>Número de serie<input name="serial" maxlength="160"></label><label>Ubicación<input name="location" maxlength="200"></label><label>Fecha de la visita<input name="service_date" type="date" required></label>
+    </div><p class="muted">“Nuevo / fuera del catálogo” conserva este cliente o equipo en la bitácora; no lo agrega a la póliza.</p></fieldset>
+    <fieldset><legend>Qué ocurrió y qué hicimos</legend>
+      <label>¿Qué fallaba?<textarea name="symptom" rows="3" maxlength="6000" placeholder="Ej. La cámara no llegaba a su temperatura."></textarea></label>
+      <label>Diagnóstico<textarea name="diagnosis" rows="3" maxlength="6000"></textarea></label>
+      <label>Trabajo realizado<textarea name="work" rows="4" maxlength="10000" placeholder="Qué revisaste, reparaste o cambiaste."></textarea></label>
+      <label>Partes utilizadas<textarea name="parts" rows="2" maxlength="4000" placeholder="Una parte por renglón; incluye cantidad si aplica."></textarea></label>
+    </fieldset>
+    <fieldset><legend>Cómo quedó</legend><label>Estado al terminar<select name="outcome"><option value="working">Trabajando bien</option><option value="follow_up">Requiere seguimiento</option><option value="stopped">Fuera de servicio</option></select></label>
+      <label>Resultado y prueba de funcionamiento<textarea name="result" rows="3" maxlength="6000" placeholder="Ej. Se deja trabajando bien, con 33 psi en baja."></textarea></label>
+      <div class="repair-grid"><label>Refrigerante<input name="refrigerant" maxlength="50" placeholder="Ej. R404A"></label><label>Presión baja · psi<input name="pressure_low" inputmode="decimal" maxlength="40"></label><label>Presión alta · psi<input name="pressure_high" inputmode="decimal" maxlength="40"></label><label>Temperatura · °C<input name="temperature" inputmode="decimal" maxlength="40"></label><label>Amperaje · A<input name="amperage" inputmode="decimal" maxlength="40"></label></div>
+      <label>Condiciones de medición / otros parámetros<textarea name="measurement_notes" rows="2" maxlength="2000" placeholder="Punto medido, circuito, condiciones de operación…"></textarea></label>
+      <label>Recomendaciones / siguiente paso<textarea name="recommendations" rows="3" maxlength="6000"></textarea></label><label>Nombre de quien recibe el servicio · opcional<input name="received_by" maxlength="160"></label>
+    </fieldset>
+    <fieldset><legend>Evidencia fotográfica</legend><p class="muted">Sin límite de seis espacios. Puedes agregar varias de golpe o una por una; se comprimen antes de guardarlas.</p>
+      <label>Etapa para las próximas fotos<select id="repairPhotoStage"><option value="before">Antes</option><option value="during">Durante el trabajo</option><option value="after">Después</option></select></label>
+      <div class="repair-actions"><button class="secondary" id="repairCamera" type="button">📷 Tomar foto</button><button class="secondary" id="repairGallery" type="button">Elegir fotos</button></div>
+      <input id="repairCameraInput" type="file" accept="image/*" capture="environment" hidden><input id="repairGalleryInput" type="file" accept="image/*" multiple hidden>
+      <p id="repairPhotoStatus" role="status"></p><div id="repairEditorPhotos" class="repair-photos"></div>
+    </fieldset>
+    <p id="repairDraftStatus" role="status"></p><div class="repair-actions"><button class="secondary" id="repairSaveDraft" type="button">Guardar borrador y salir</button><button class="primary" id="repairFinish" type="submit">Finalizar visita</button></div>
+  </form>
+</section>

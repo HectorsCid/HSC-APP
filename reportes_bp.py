@@ -947,6 +947,17 @@ def store_operations_evidence(client_name: str, report_id: str, position: int, c
     return {"drive_ref": drive_id, "storage_ref": storage_ref}
 
 
+def store_repair_photo(repair_id: str, photo_id: str, content: bytes) -> str:
+    """Independent repair evidence: stable filenames, no six-slot/round mapping."""
+    if not REPORTES_ROOT_ID:
+        raise RuntimeError("REPORTES_ROOT_ID no configurado")
+    optimized, mimetype = _optimize_photo_bytes(content)
+    root = _ensure_folder(REPORTES_ROOT_ID, "_Historial de reparaciones")
+    folder = _ensure_folder(root, _sanitize_name(repair_id))
+    extension = ".png" if mimetype == "image/png" else ".jpg"
+    return _upsert_bytes(folder, _sanitize_name(photo_id) + extension, optimized, mimetype)
+
+
 def store_operations_expense_receipt(technician_name: str, expense_id: str, content: bytes) -> dict:
     """Guarda un comprobante de gasto fuera de las carpetas de reportes de clientes."""
     if not REPORTES_ROOT_ID:

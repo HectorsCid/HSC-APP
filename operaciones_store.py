@@ -18,7 +18,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "16"
+SCHEMA_VERSION = "17"
 
 
 DEFAULT_OBSERVATION_OPTIONS = {
@@ -281,6 +281,14 @@ class OperationsStore:
             "CREATE TABLE IF NOT EXISTS operations_worklists (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload_json TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS operations_worklist_changes (id TEXT PRIMARY KEY, list_id TEXT NOT NULL, actor_id TEXT NOT NULL, saved_at TEXT NOT NULL, payload_json TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_worklist_changes_list ON operations_worklist_changes(list_id,saved_at)",
+            "CREATE TABLE IF NOT EXISTS operations_repairs (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, owner_id TEXT NOT NULL, client_key TEXT NOT NULL, equipment_key TEXT NOT NULL, service_date TEXT NOT NULL, state TEXT NOT NULL, payload_json TEXT NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS idx_repairs_equipment ON operations_repairs(equipment_key,service_date)",
+            "CREATE INDEX IF NOT EXISTS idx_repairs_date ON operations_repairs(service_date,id)",
+            "CREATE TABLE IF NOT EXISTS operations_repair_sequence (id INTEGER PRIMARY KEY, next_value INTEGER NOT NULL)",
+            "INSERT INTO operations_repair_sequence(id,next_value) VALUES (1,0) ON CONFLICT(id) DO NOTHING",
+            "CREATE TABLE IF NOT EXISTS operations_repair_changes (id TEXT PRIMARY KEY, repair_id TEXT NOT NULL, actor_id TEXT NOT NULL, saved_at TEXT NOT NULL, payload_json TEXT NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS idx_repair_changes ON operations_repair_changes(repair_id,saved_at)",
+            "CREATE TABLE IF NOT EXISTS operations_repair_photos (repair_id TEXT NOT NULL, id TEXT NOT NULL, digest TEXT NOT NULL, drive_ref TEXT NOT NULL, PRIMARY KEY(repair_id,id), FOREIGN KEY(repair_id) REFERENCES operations_repairs(id))",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_equipment ON operations_reports(equipment_id)",
             "CREATE TABLE IF NOT EXISTS operations_report_submissions (draft_id TEXT PRIMARY KEY, report_id TEXT NOT NULL, user_id TEXT NOT NULL, confirmed_at TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_client ON operations_reports(client_id)",

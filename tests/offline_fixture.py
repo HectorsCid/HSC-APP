@@ -2,7 +2,7 @@
 from pathlib import Path
 import sys
 import tempfile
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, session, send_file
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -10,12 +10,33 @@ from operaciones_store import OperationsStore
 fixture_folder = tempfile.TemporaryDirectory(prefix='hsc-worklists-test-')
 store = OperationsStore(local_path=Path(fixture_folder.name) / 'fixture.db')
 app = Flask(__name__, template_folder=str(ROOT / 'templates'), static_folder=str(ROOT / 'static'))
+app.secret_key = 'local-test-only'
 state = {'fail': False}
 data = dict(ok=True, source='database', clients=[dict(id='TEST', name='Cliente local', policy_active=True, selected_round='1')],
             equipment=[dict(id='TEST1', client_id='TEST', name='Refrigerador local', status='Activo')],
             reports=[], tasks=[], expenses=[], faults=[], observation_options=[], stats={})
 data['equipment'].append(dict(id='TEST2', client_id='TEST', name='Cámara local', status='Activo'))
 store.import_matrix_snapshot(data)
+from repair_bp import create_repair_blueprint
+photo_bytes = {}
+
+def store_fixture_photo(repair_id, photo_id, content):
+    key = repair_id + ':' + photo_id
+    photo_bytes[key] = content
+    return key
+
+def fixture_photo(kind, key, ref):
+    import io
+    return send_file(io.BytesIO(photo_bytes[ref]), mimetype='image/jpeg')
+
+@app.before_request
+def fixture_identity():
+    session.update(hsc_user_id='offline-fixture', hsc_user_name='Cuenta de prueba local')
+    if state['fail'] and request.path.startswith('/api/'):
+        return jsonify(ok=False, error='Servidor no disponible (prueba local)'), 503
+
+app.register_blueprint(create_repair_blueprint(store, lambda:'admin', lambda *roles:None,
+                                             lambda permission:None, store_fixture_photo, fixture_photo))
 
 @app.get('/hsc-tecnico/')
 def shell():
