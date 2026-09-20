@@ -18,7 +18,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "17"
+SCHEMA_VERSION = "18"
 
 
 DEFAULT_OBSERVATION_OPTIONS = {
@@ -285,6 +285,10 @@ class OperationsStore:
             "CREATE INDEX IF NOT EXISTS idx_repairs_equipment ON operations_repairs(equipment_key,service_date)",
             "CREATE INDEX IF NOT EXISTS idx_repairs_date ON operations_repairs(service_date,id)",
             "CREATE TABLE IF NOT EXISTS operations_repair_sequence (id INTEGER PRIMARY KEY, next_value INTEGER NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS operations_pay_accounts (user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, name TEXT NOT NULL, plans_json TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS operations_salary_payments (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, week_start TEXT NOT NULL, amount_cents BIGINT NOT NULL, payload_json TEXT NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS idx_salary_payments_user ON operations_salary_payments(user_id,week_start)",
+            "CREATE TABLE IF NOT EXISTS operations_pay_changes (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, fingerprint TEXT NOT NULL, payload_json TEXT NOT NULL)",
             "INSERT INTO operations_repair_sequence(id,next_value) VALUES (1,0) ON CONFLICT(id) DO NOTHING",
             "CREATE TABLE IF NOT EXISTS operations_repair_changes (id TEXT PRIMARY KEY, repair_id TEXT NOT NULL, actor_id TEXT NOT NULL, saved_at TEXT NOT NULL, payload_json TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_repair_changes ON operations_repair_changes(repair_id,saved_at)",
@@ -1452,6 +1456,8 @@ class OperationsStore:
             raise ValueError('No se puede eliminar una cuenta administrativa.')
         p=self.placeholder
         with self.connection() as conn:
+            if conn.execute(f'SELECT 1 FROM operations_pay_accounts WHERE user_id={p}', (user_id,)).fetchone():
+                raise ValueError('Esta cuenta tiene historial de sueldo o pagos. Conserva el historial: suspende el acceso y desactiva su sueldo futuro desde Pagos a técnicos.')
             conn.execute(f'DELETE FROM operations_invites WHERE LOWER(email)=LOWER({p})', (user['email'],))
             conn.execute(f'DELETE FROM operations_users WHERE id={p}', (user_id,))
         return True

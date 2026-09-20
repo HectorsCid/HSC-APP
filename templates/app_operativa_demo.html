@@ -267,6 +267,7 @@
 
     {% include '_operations_worklists.html' %}
     {% include '_operations_repairs.html' %}
+    {% include '_operations_payments.html' %}
     <section class="view" data-view="expenses">
       <div class="section-head"><div><div class="eyebrow">Control de campo</div><h2 id="expensesHeading">Mis gastos</h2></div><button class="primary" id="openExpenseForm" type="button">＋ Registrar</button></div>
       <div class="field" id="expenseTechnicianFilterField" data-admin-only><label for="expenseTechnicianFilter">Ver gastos por técnico</label><select id="expenseTechnicianFilter"><option value="">Todos los técnicos</option></select></div>
@@ -333,6 +334,7 @@
 {% include '_operations_worklist_editor.html' %}
 <script src="/static/operations_worklists.js?v=1"></script>
 <script src="/static/operations_repairs.js?v=1"></script>
+{% if operations_is_owner %}<script src="/static/operations_payments.js?v=1"></script>{% endif %}
 <script src="/static/operations_offline.js?v=20260920-worklists"></script>
 <script>
   const clients=[];
@@ -444,6 +446,8 @@
   const localPhotoUrls=new Map();
   let matrixWorklists=[],journeyUi=null;
   let repairsUi=null;
+  let paymentsUi=null;
+  views.payments=['Administración','Pagos a técnicos'];views.payAccount=['Pagos','Cuenta del técnico'];
   views.repairs=['HSC Técnico','Reparaciones'];views.repair=['Reparaciones','Historial de la visita'];views.repairEditor=['Reparaciones','Registrar visita'];
   views.worklists=['Agenda','Mi jornada'];views.worklist=['Mi jornada','Mi lista de equipos'];
   async function hscFetch(url,options={},timeout=20000){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);try{const response=await fetch(url,{...options,signal:controller.signal});serverConnection=response.status===401||response.redirected?'auth':response.ok?'online':'server';const body=await response.text();return {ok:response.ok,status:response.status,redirected:response.redirected,json:async()=>JSON.parse(body)}}catch(error){serverConnection='unreachable';throw Error(error.name==='AbortError'?'El servidor tardó demasiado; tu trabajo local se conserva.':'No se pudo contactar HSC; tu trabajo local se conserva.')}finally{clearTimeout(timer)}}
@@ -544,6 +548,9 @@
   function browserNavigationUrl(view=current,guard=false){const url=new URL(location.href);url.hash=guard?'hsc-proteccion':`hsc-${view}`;return `${url.pathname}${url.search}${url.hash}`;}
   function writeBrowserNavigation(replace=false,guard=false,view=current,stack=historyStack){if(!browserHistoryReady)return;const state=browserNavigationState(guard,view,stack),url=browserNavigationUrl(view,guard);if(replace)window.history.replaceState(state,'',url);else window.history.pushState(state,'',url);}
   function canonicalPath(view){
+    if(view==='expenses'&&account.isOwner)return ['clients','profile','payments','expenses'];
+    if(view==='payments')return ['clients','profile','payments'];
+    if(view==='payAccount')return ['clients','profile','payments','payAccount'];
     if(view==='worklists')return ['clients','agenda','worklists'];
     if(view==='repairs')return ['clients','repairs'];
     if(view==='repair')return ['clients','repairs','repair'];
@@ -553,6 +560,9 @@
     return paths[view]||[view];
   }
   function parentView(view){
+    if(view==='expenses'&&account.isOwner)return 'payments';
+    if(view==='payAccount')return 'payments';
+    if(view==='payments')return 'profile';
     if(view==='worklist')return 'worklists';
     if(['repair','repairEditor'].includes(view))return 'repairs';
     if(view==='repairs')return 'clients';
@@ -585,7 +595,7 @@
     if(appKind==='partner'||serverRole==='client'||(account.isOwner&&state.mode==='partner'))currentMode='partner';
     else currentMode='tech';
     const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','equipment','partnerReports','partnerFaults','partnerDocuments','reportView']:['clients','client','equipment','report','reportView','agenda','profile','expenses','worklists','worklist','repairs','repair','repairEditor'];
-    if(account.isOwner)allowedRoots.push('users','userPermissions','clientEditor','equipmentEditor');
+    if(account.isOwner)allowedRoots.push('users','userPermissions','clientEditor','equipmentEditor','payments','payAccount');
     const requestedSection=entryParams.get('open');
     if(currentMode!=='partner'&&requestedSection==='expenses')state.view='expenses';
     if(currentMode==='partner'&&requestedSection==='documents')state.view='partnerDocuments';
@@ -1477,6 +1487,14 @@
   if(typeof HscRepairs!=='undefined')repairsUi=HscRepairs.mount({account,role:serverRole,escape:escapeHtml,toast,show:name=>showView(name),current:()=>current,canWrite:()=>can('createReports'),shouldSync:shouldSyncNow,fetch:hscFetch,compress:compressEvidenceFile,
     state:()=>({clients:clients.map(c=>({id:c[1],name:c[0],address:clientMeta[c[1]]?.address||''})),equipment:equipment.map(e=>({id:e[0],name:e[1],...equipmentMeta[e[0]],client_id:equipmentMeta[e[0]]?.client})),selectedEquipment})});
   $('#syncPendingNow').addEventListener('click',()=>repairsUi?.sync(true));
+  if(account.isOwner&&typeof HscPayments!=='undefined'){
+    paymentsUi=HscPayments.mount({account,escape:escapeHtml,toast,fetch:hscFetch,current:()=>current,show:name=>showView(name),expenses:()=>matrixLoaded?matrixExpenses:null,openExpense:openExpenseDetail,
+      newExpense:async id=>{await openExpenseForm();if(id)$('#expenseTechnician').value=id;}});
+    $('#openExpenses').onclick=()=>showView('payments');
+    const payOriginalShow=showView;showView=function(name,push=true){const result=payOriginalShow(name,push);Promise.resolve(result).then(()=>paymentsUi.onView());return result;};
+    const payOriginalExpenses=renderExpenses;renderExpenses=function(){payOriginalExpenses();paymentsUi.changed();};
+    const payOriginalAccess=applyAccess;applyAccess=function(){payOriginalAccess();$('#profileExpenseTitle').textContent='Pagos a técnicos';$('#profileExpenseDescription').textContent='Saldo acumulado, sueldo e historial por semana';$('#profileExpenseState').textContent='Ver saldos';};
+  }
   applyAccess();updateOfflineSyncUi();if(typeof fetch==='function')loadMatrixData().finally(()=>{initializeBrowserNavigation();resumePendingReportUploads()});else initializeBrowserNavigation();
 </script>
 </body>

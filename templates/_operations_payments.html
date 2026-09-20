@@ -1,0 +1,29 @@
+{% if operations_is_owner %}
+<link rel="stylesheet" href="/static/operations_payments.css?v=1">
+<section class="view pay-panel" data-view="payments">
+  <div class="section-head"><div><h2>Pagos a técnicos</h2><p class="muted">Todo lo pendiente, sin importar la semana.</p></div><button class="secondary" id="payRefresh" type="button">↻ Actualizar</button></div>
+  <div class="pay-total"><span>Saldo total por pagar</span><strong id="payGrandTotal">—</strong><small>Gastos por reembolsar + sueldos vencidos. El domingo no borra deudas.</small></div>
+  <p id="payListStatus" role="status"></p>
+  <label class="pay-search">Buscar técnico<input type="search" id="paySearch" placeholder="Nombre del técnico" autocomplete="off"></label>
+  <div id="payAccounts" class="pay-accounts"></div>
+  <div class="pay-actions"><button class="secondary" id="payNewExpense" type="button">＋ Registrar gasto</button><button class="secondary" id="payLegacyExpenses" type="button">Vista de gastos por fecha</button></div>
+</section>
+<section class="view pay-panel" data-view="payAccount">
+  <div class="section-head"><div><p class="muted">Cuenta del técnico</p><h2 id="payName">Cargando…</h2></div><button class="secondary" id="payDetailRefresh" type="button">↻ Actualizar</button></div>
+  <p id="payDetailStatus" role="status"></p><button class="secondary" id="payResumeDetail" type="button" hidden>Ver movimiento sin confirmar</button><div id="paySummary"></div>
+  <div class="pay-actions"><button class="secondary" id="paySalary" type="button">Configurar sueldo semanal</button><button class="secondary" id="payAccountExpense" type="button">＋ Registrar gasto</button></div>
+  <p class="muted">Semanas de domingo a sábado. Los gastos pendientes y aprobados se incluyen hasta liquidarlos; los rechazados o no reembolsables no se deben.</p>
+  <div id="payWeeks" class="pay-weeks"></div><button id="payMore" type="button" class="secondary" hidden>Ver semanas anteriores</button>
+</section>
+<div class="modal" id="payModal"><div class="sheet pay-panel">
+  <h2 id="payFormTitle">Registrar movimiento</h2><p id="payFormDescription" class="muted"></p>
+  <form id="payForm" autocomplete="off">
+    <div id="paySalaryFields"><label>Sueldo semanal (MXN)<input name="weekly_amount" type="number" min="0" max="10000000" step="0.01" inputmode="decimal"></label><label>Aplicar desde la semana<select name="effective_week"></select></label><p class="muted">Cero desactiva el sueldo desde la semana elegida y cancela los aumentos ya programados para después. No borra adeudos anteriores. No calcula bonos, deducciones ni nómina fiscal.</p></div>
+    <div id="payPaymentFields"><label>Importe de sueldo que ya pagaste (MXN)<input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal"></label><label>Fecha del pago<input name="paid_on" type="date"></label><label>Referencia o nota (opcional)<input name="note" maxlength="500" placeholder="Transferencia, efectivo o referencia"></label><p class="muted">Este registro no transfiere dinero ni liquida gastos. Los gastos se revisan por separado con su comprobante.</p></div>
+    <div id="payVoidFields"><label>Motivo de la corrección<input name="reason" maxlength="500"></label><p class="muted">El registro original se conserva y el importe vuelve al saldo pendiente.</p></div>
+    <label class="pay-confirm" id="payConfirmLabel"><input type="checkbox" id="payConfirmCheck"><span id="payConfirmCopy">Confirmo este registro.</span></label>
+    <p id="payFormError" role="alert"></p>
+    <div class="pay-actions"><button class="primary" id="paySubmit" type="submit">Confirmar registro</button><button class="secondary" id="payClose" type="button">Cerrar</button></div>
+  </form>
+</div></div>
+{% endif %}

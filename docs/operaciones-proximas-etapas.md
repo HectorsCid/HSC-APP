@@ -12,14 +12,22 @@ Lista por responsable, cliente y fecha prevista; equipos identificados por ID y 
 
 Guardar identificadores estables, responsable, autor, versiones, fechas y revisiones para permitir reglas futuras. El progreso muestra reportes existentes de la ronda, NO prueba quién los hizo ni cuándo y NO es base suficiente para pagar un bono.
 
-## Ideas pendientes, NO activar ni generar saldos todavía
+## Panel de pagos — primera etapa, publicación autorizada
 
-- Cuenta por técnico: saldo acumulado que no desaparezca el domingo; semanas como historial, sueldo opcional, pagos parciales, anticipos, reembolsos y bonos separados. No desarrollar nómina fiscal sin otro alcance.
+Autorizado después con «Sube la bitácora y empieza con el panel». Perfil → Pagos a técnicos: tarjetas con saldo acumulado de todos los gastos reembolsables no liquidados, detalle por semanas domingo–sábado y sueldo semanal opcional. Una semana nueva nunca pone el adeudo anterior en cero. PostgreSQL en producción / SQLite local, separado de Sheets y de los reportes.
+
+El sueldo sólo se activa por configuración explícita del administrador, sin retroactividad anterior a la semana de inicio. Los sábados se incluye lo devengado según esa configuración; los otros días se distingue la previsión futura de la deuda vencida. Registros manuales de pagos parciales/completos y anulación con motivo, con centavos enteros, revisión de cuenta y claves de reintento para evitar dobles registros. No se envía dinero. Los gastos conservan sus controles anteriores y no se descuentan de nuevo al registrar sueldo.
+
+Alcance, pruebas y límites: `docs/payments-panel-validation.md`. No se han configurado salarios ni registrado pagos reales. Esta etapa no fue incluida en el despliegue de bitácora `597cc80`; después el usuario autorizó «Ciérralo y subelo». Incluye recuperación del pago sin confirmar al cerrar la app y cancelación de aumentos programados al desactivar sueldo.
+
+## Ideas pendientes, NO activar todavía
+
+- Anticipos y pagos globales que distribuyan automáticamente un importe entre sueldo, gastos y bonos: definir reglas antes de implementarlos. No desarrollar nómina fiscal sin otro alcance.
 - Incentivo por productividad: reglas por cliente y escalones alcanzados. Ejemplos conversados, no política definitiva: hasta cinco equipos sin bono; seis a nueve $100; diez o más $400. Validar reportes, actor, fecha, evidencias y duplicados antes de cualquier cálculo; no penalizar automáticamente la sincronización tardía por falta de señal.
 - Vacaciones, permisos y ausencias: solicitudes, aprobación y disponibilidad en ficha del técnico. Sin descontar sueldo ni asumir reglas de acumulación.
 - Posible compensación por adelantar dinero propio para gasolina/piezas: ejemplo de 10%, todavía no aprobado como regla. Registrar por separado del gasto real y su reembolso; definir autorización, límites, qué gastos califican y evitar aplicarla a anticipos del patrón o tarjetas de la empresa.
 
-La última indicación del usuario es recordar estas ideas, no implementarlas ahora. Prioridad: hacer reportes y que funcionen.
+Los incentivos, permisos y vacaciones siguen únicamente en planeación. Prioridad: hacer reportes y que funcionen; el panel de pagos comenzó por autorización posterior explícita.
 
 ## Bitácora de reparaciones y remisiones — publicación autorizada
 

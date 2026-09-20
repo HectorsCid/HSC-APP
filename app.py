@@ -5811,6 +5811,8 @@ def _start_initial_drive_sync():
 
 
 from repair_bp import create_repair_blueprint
+from payment_bp import create_payment_blueprint
+app.register_blueprint(create_payment_blueprint(OPERACIONES_STORE, _operations_forbidden))
 from reportes_bp import store_repair_photo
 app.register_blueprint(create_repair_blueprint(
     OPERACIONES_STORE, _operations_role, _operations_forbidden,
