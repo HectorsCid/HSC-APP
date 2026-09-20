@@ -3244,6 +3244,18 @@ def api_operaciones_save_task():
     try:
         task = OPERACIONES_STORE.save_task(body)
         _invalidate_operations_cache()
+        if _operations_role() == 'technician':
+            try:
+                from notification_delivery import enqueue
+                from urllib.parse import urlencode
+                actor_id = str(session.get('hsc_user_id') or '')
+                actor = OPERACIONES_STORE.get_user_by_id(actor_id) or {}
+                enqueue('Nuevo pendiente de técnico',
+                        f"{actor.get('name') or 'Técnico'} · {task['title']} · {task['scheduled_date']} · {task.get('scheduled_time') or 'Sin hora definida'}",
+                        '/hsc-tecnico/?'+urlencode({'open':'calendar','date':task['scheduled_date']}),
+                        f"task-admin:{task['id']}", category='agenda', audience='admin', exclude_user_id=actor_id)
+            except Exception:
+                current_app.logger.exception('No se pudo preparar el aviso administrativo del pendiente %s', task['id'])
         if body.get('notify_client') is True and task.get('client_id'):
             from notification_delivery import enqueue
             from urllib.parse import urlencode
