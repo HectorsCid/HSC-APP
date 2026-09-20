@@ -19,6 +19,11 @@ class FacturamaIntegrationTests(unittest.TestCase):
     def setUp(self):
         billing._STAMP_RESULTS.clear()
         billing._FISCAL_CATALOG_CACHE.clear()
+        for name in ['_CFDI_CANCELLATION_CACHE', '_BILLING_CLIENT_GROUPS_CACHE']:
+            patcher = patch.dict(getattr(billing, name), {}, clear=True)
+            patcher.start(); self.addCleanup(patcher.stop)
+        patcher = patch.object(billing, '_CFDI_CANCELLATION_LOADED', True)
+        patcher.start(); self.addCleanup(patcher.stop)
         self.app = Flask(__name__)
         self.app.config["TESTING"] = True
         self.app.register_blueprint(billing.facturacion_bp)
@@ -403,7 +408,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
             "date": "2026-10-01T10:00:00", "status": "active",
         }]}}
         with (
-            patch.object(billing, "_fm_request", return_value=rows),
+            patch.object(billing, "_fm_request", side_effect=lambda *a, **kw: [] if (kw.get('params') or {}).get('status') == 'pending' else [dict(row) for row in rows]),
             patch.object(billing, "_read_index", return_value=index),
             patch.object(billing, "read_email_deliveries", return_value={}),
         ):

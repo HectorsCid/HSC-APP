@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>{{ operations_app_name|default('HSC Operaciones') }}</title>
-  <meta name="hsc-operations-build" content="worklists-20260920">
+  <meta name="hsc-operations-build" content="report-safety-20260920">
   <script>
     (() => {
       const saved = localStorage.getItem('hsc-theme');
@@ -557,7 +557,7 @@
     $('#backBtn').hidden=false;
   }
   function showView(name,push=true){if(name===current){$('#backBtn').hidden=false;applyAccess();saveOperationalNavigation();if(name==='partnerDocuments')loadPartnerDocuments();return;}if(push)historyStack=canonicalPath(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=false;navMode(currentMode);$('.bottom-nav').hidden=currentMode==='partner'||name==='inviteAccept';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();saveOperationalNavigation();if(name==='agenda')renderAgenda();if(name==='expenses')renderExpenses();if(name==='users')loadUsers();if(name==='partnerDocuments')loadPartnerDocuments();if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,name,historyStack);scrollTo({top:0,behavior:'smooth'});}
-  function goBack(){const modal=document.querySelector('.modal.open');if(modal){if(modal.id==='visitRequestModal'){closeVisitRequest();return;}if(modal.id==='taskModal'&&taskFromCalendar){returnToMonthCalendar();return;}modal.classList.remove('open');return;}const target=parentView(current);if(target===current)return;if(current==='report'&&activeReportContext)saveActiveReportDraft(false);historyStack=canonicalPath(target);showView(target,false);if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,target,historyStack)}
+  async function goBack(){const modal=document.querySelector('.modal.open');if(modal){if(modal.id==='visitRequestModal'){closeVisitRequest();return;}if(modal.id==='taskModal'&&taskFromCalendar){returnToMonthCalendar();return;}modal.classList.remove('open');return;}const target=parentView(current);if(target===current)return;await showView(target,false);if(current!==target)return;historyStack=canonicalPath(target);if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,target,historyStack)}
   function openRoot(name){if(name===current)return;historyStack=[name];showView(name,false);if(browserHistoryReady)writeBrowserNavigation(true,false,name,historyStack);}
   let restoringReportOpen=false;
   function consumeNotificationDestination(){const url=new URL(location.href),params=new URLSearchParams(url.search);if(['open','client','fault'].some(key=>params.has(key))){for(const key of ['open','client','fault'])url.searchParams.delete(key);window.history.replaceState(window.history.state,'',`${url.pathname}${url.search}${url.hash}`);}return params;}
@@ -596,9 +596,9 @@
     if(target==='report')setTimeout(async()=>{restoringReportOpen=true;try{await $('#newReport').onclick()}finally{restoringReportOpen=false}},0);
     initializeBrowserNavigation();
   }
-  window.addEventListener('popstate',()=>{
+  window.addEventListener('popstate',async()=>{
     if(['clientEditor','equipmentEditor'].includes(current)&&editorDirty&&!confirm('¿Salir sin guardar estos cambios?')){writeBrowserNavigation(false,false,current,historyStack);return;}
-    editorDirty=false;handlingHistoryPop=true;goBack();handlingHistoryPop=false;
+    editorDirty=false;handlingHistoryPop=true;try{await goBack()}finally{handlingHistoryPop=false;}
     // El gesto de Android/iOS siempre queda dentro de la aplicación. La ruta
     // anterior se calcula por jerarquía, no por la cronología del navegador.
     writeBrowserNavigation(false,false,current,historyStack);
@@ -1168,13 +1168,27 @@
     $('[data-view="report"] .form-intro span').textContent=`${clientName(context.client)} · ${e[0]} · ${e[1]} · R${context.round}${completedReport?` · Folio ${completedReport.matrix_id||completedReport.id}`:''}`;
     const today=dateKey(new Date());form.elements.inicio.value=today;form.elements.fin.value=today;form.elements.notas.value=defaultReportNotes;setReportParts();updateSevereFaultFields();
     $$('[data-view="report"] details.form-section').forEach(section=>section.open=!section.hasAttribute('data-default-closed'));
-    if(completedReport){try{const response=await fetch(`/api/operaciones/reports/${encodeURIComponent(completedReport.id)}`,{headers:{Accept:'application/json'}}),payload=await response.json();if(response.ok&&payload.ok&&activeReportContext?.requestId===context.requestId){fillReportFields(payload.report.payload);ensureReportDates();context.existingEvidence=payload.report.evidence||[];renderExistingEvidence()}}catch(_){toast('Se abrió el reporte, pero no se pudo precargar todo el contenido')}}
+    if(completedReport){try{const original=await loadCompletedReportForEdit(completedReport.id);if(activeReportContext?.requestId!==context.requestId)return false;fillReportFields(original.payload);ensureReportDates();context.existingEvidence=original.evidence||[];renderExistingEvidence()}catch(error){if(activeReportContext?.requestId===context.requestId)activeReportContext=null;toast(error.message);return false;}}
     let localDraft={};try{localDraft=JSON.parse(localStorage.getItem(context.key)||'{}')||{};fillReportFields(localDraft)}catch(_){}ensureReportDates();$('#discardDraft').hidden=!Object.keys(localDraft).length;
     showView('report');
     const openedValues=JSON.stringify(collectReportData());
     try{const response=await hscFetch(`/api/operaciones/reports/draft?equipment_id=${encodeURIComponent(context.equipment)}&round=${encodeURIComponent(context.round)}`,{headers:{Accept:'application/json'}}),payload=await response.json();if(activeReportContext?.requestId!==context.requestId||current!=='report')return true;if(response.ok&&payload.ok&&payload.draft&&payload.draft.equipment_id===context.equipment&&String(payload.draft.round)===context.round){context.draftId=payload.draft.id;context.editReportId=payload.draft.payload?._edit_report_id||context.editReportId;if(!Object.keys(localDraft).length&&JSON.stringify(collectReportData())===openedValues){fillReportFields(payload.draft.payload);ensureReportDates();toast('Borrador recuperado de la base')}$('#discardDraft').hidden=false}}catch(_){}
     return true;
   };
+  async function loadCompletedReportForEdit(id){
+    const key=`hsc-report-detail-${account.id}:${id}`;
+    try{
+      if(!shouldSyncNow())throw Error('Envío pausado');
+      const response=await hscFetch(`/api/operaciones/reports/${encodeURIComponent(id)}`,{headers:{Accept:'application/json'}},15000),data=await response.json();
+      if(!response.ok||!data.ok||!data.report?.payload)throw Error('No se recuperó el reporte original');
+      try{localStorage.setItem(key,JSON.stringify(data.report))}catch(_){}
+      return data.report;
+    }catch(error){
+      let saved=null;try{saved=JSON.parse(localStorage.getItem(key)||'null')}catch(_){}
+      if(saved?.id===id&&saved.payload){toast('Editando copia guardada en este dispositivo');return saved;}
+      throw Error('No se pudo recuperar el reporte original. No abrimos una edición vacía para proteger sus datos. Conéctate y vuelve a intentar.');
+    }
+  }
   async function saveActiveReportDraft(showMessage=true){const context=activeReportContext;if(!context)return null;const data=collectReportData(),button=$('#saveDraft');try{localStorage.setItem(context.key,JSON.stringify(data))}catch(_){toast('No se pudo guardar el borrador en este dispositivo. No cierres el formulario.');return null}$('#discardDraft').hidden=false;if(!shouldSyncNow()){if(showMessage)toast('Borrador guardado en este dispositivo');return null}button.disabled=true;try{const result=await operationsPost('/api/operaciones/reports/draft',{id:context.draftId,edit_report_id:context.editReportId,client_id:context.client,equipment_id:context.equipment,round:context.round,report_type:'refrigeration',payload:data});if(activeReportContext?.requestId===context.requestId)context.draftId=result.draft.id;if(showMessage)toast(`Borrador guardado · ${context.equipment} · R${context.round}`);return result.draft}catch(error){if(showMessage)toast(`Borrador conservado en este dispositivo · ${error.message}`);return null}finally{button.disabled=false}}
   $('#saveDraft').onclick=async()=>{try{const context=activeReportContext;if(!context)return;localStorage.setItem(context.key,JSON.stringify(collectReportData()));if(evidenceForReport().length&&!await persistEvidence())throw Error('No se pudieron respaldar las fotos.');toast('Borrador guardado en este dispositivo');saveActiveReportDraft(false)}catch(error){toast(error.message)}};
   $('#discardDraft').onclick=async()=>{const context=activeReportContext;if(!context||!confirm(`¿Descartar el borrador de ${context.equipment} · R${context.round}?`))return;const button=$('#discardDraft');button.disabled=true;try{if(context.draftId)await operationsDelete(`/api/operaciones/reports/draft/${encodeURIComponent(context.draftId)}`);try{localStorage.removeItem(context.key)}catch(_){}await clearEvidenceDraft(context.key);reportEvidenceByKey.delete(context.key);loadedEvidenceKeys.delete(context.key);activeReportContext=null;historyStack=canonicalPath('equipment');current='__discarded_report__';showView('equipment',false);if(browserHistoryReady)writeBrowserNavigation(true,false,'equipment',historyStack);toast('Borrador descartado')}catch(error){toast(error.message)}finally{button.disabled=false}};
@@ -1303,11 +1317,15 @@
   }
   $('#opEquipmentCamera').onchange=$('#opEquipmentPhoto').onchange;
   $('#clientEditorForm').oninput=$('#equipmentEditorForm').oninput=()=>{editorDirty=true;};
+  let reportLocalBackupFailed=false;
+  function backupReportText(){if(!activeReportContext)return;try{localStorage.setItem(activeReportContext.key,JSON.stringify(collectReportData()));reportLocalBackupFailed=false}catch(error){reportLocalBackupFailed=true;throw Error('No se pudo guardar el borrador en este dispositivo. Mantén abierto el formulario.')}}
+  async function backupReportBeforeLeaving(){if(evidenceBusy)throw Error('Espera a que termine de preparar las fotografías.');backupReportText();if(!await persistEvidence()&&evidenceForReport().length)throw Error('No se pudieron respaldar las fotos. Mantén abierto el formulario.');}
+  $('#reportForm').addEventListener('input',()=>{try{backupReportText()}catch(error){toast(error.message)}});
   const originalShowView=showView;
-  showView=function(name,push=true){if(name!==current&&['clientEditor','equipmentEditor'].includes(current)&&editorDirty){if(!confirm('¿Salir sin guardar estos cambios?'))return;editorDirty=false;}return originalShowView(name,push);};
+  showView=function(name,push=true){if(name!==current&&['clientEditor','equipmentEditor'].includes(current)&&editorDirty){if(!confirm('¿Salir sin guardar estos cambios?'))return;editorDirty=false;}if(name!==current&&current==='report'&&activeReportContext){return (async()=>{try{await backupReportBeforeLeaving();saveActiveReportDraft(false);return originalShowView(name,push)}catch(error){toast(error.message);return false}})();}return originalShowView(name,push);};
   $('#backBtn').onclick=()=>{if(['clientEditor','equipmentEditor'].includes(current)&&editorDirty){if(!confirm('¿Salir sin guardar estos cambios?'))return;editorDirty=false;}goBack();};
   $$('[data-cancel-editor]').forEach(b=>b.onclick=()=>$('#backBtn').click());
-  window.addEventListener('beforeunload',event=>{if(editorDirty){event.preventDefault();event.returnValue='';}});
+  window.addEventListener('beforeunload',event=>{if(current==='report')try{backupReportText()}catch(_){}if(editorDirty||evidenceBusy||reportLocalBackupFailed){event.preventDefault();event.returnValue='';}});
   $('#searchToggle').onclick=()=>$('#appMenu').classList.add('open');
   const logoutButton=document.createElement('button');logoutButton.type='button';logoutButton.className='app-option';logoutButton.innerHTML='<span class="app-badge">↪</span><span><strong>Cerrar sesión</strong><span>Salir de esta cuenta</span></span>';$('#appMenu .app-menu').append(logoutButton);
   const profileLogout=logoutButton.cloneNode(true);profileLogout.className='secondary wide';profileLogout.style.marginTop='16px';$('[data-view="profile"]').append(profileLogout);
@@ -1316,7 +1334,7 @@
     if((Object.keys(pendingReportUploads()).length||(await fieldActionStorage('list')).length)&&!confirm('Tienes acciones pendientes de enviar. Quedarán en este dispositivo para cuando vuelvas a entrar con esta cuenta. ¿Cerrar sesión?'))return;
     logoutButton.disabled=profileLogout.disabled=true;
     try{
-      if(current==='report'&&activeReportContext){await saveActiveReportDraft(false);await persistEvidence();}
+      if(current==='report'&&activeReportContext){await backupReportBeforeLeaving();}
       const response=await fetch('/cerrar-sesion',{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw Error('No se pudo cerrar sesión. Revisa tu conexión.');
       if('caches'in window){for(const name of await caches.keys()){const cache=await caches.open(name);for(const request of await cache.keys()){const path=new URL(request.url).pathname;if(path==='/hsc-tecnico/'||path==='/hsc-partner/')await cache.delete(request);}}}
       location.replace('/acceso');
@@ -1328,12 +1346,13 @@
   const pendingUploadStorageKey=`hsc-pending-report-uploads-${typeof account==='undefined'?'test':account.id}-${typeof appKind==='undefined'?'technician':appKind}`;
   function pendingReportUploads(){try{return JSON.parse(localStorage.getItem(pendingUploadStorageKey)||'{}')||{}}catch(_){return {}}}
   function rememberPendingReportUpload(upload){const pending=pendingReportUploads();pending[upload.key]={id:upload.id||'',editReportId:upload.editReportId||'',client:upload.client,equipment:upload.equipment,round:upload.round,key:upload.key,data:upload.data,photoCount:upload.photos.length};localStorage.setItem(pendingUploadStorageKey,JSON.stringify(pending));updateOfflineSyncUi()}
-  function forgetPendingReportUpload(key){const pending=pendingReportUploads();delete pending[key];try{Object.keys(pending).length?localStorage.setItem(pendingUploadStorageKey,JSON.stringify(pending)):localStorage.removeItem(pendingUploadStorageKey)}catch(_){}updateOfflineSyncUi()}
+  function forgetPendingReportUpload(key){const pending=pendingReportUploads();delete pending[key];Object.keys(pending).length?localStorage.setItem(pendingUploadStorageKey,JSON.stringify(pending)):localStorage.removeItem(pendingUploadStorageKey);updateOfflineSyncUi()}
   function openEvidenceDb(){if(typeof indexedDB==='undefined')return Promise.resolve(null);return new Promise((resolve,reject)=>{const request=indexedDB.open('hsc-operaciones-offline',1);request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains('evidence')){const store=db.createObjectStore('evidence',{keyPath:'key'});store.createIndex('draft','draft',{unique:false})}};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})}
-  async function persistEvidence(){const draft=draftKey(),photos=[...evidenceForReport()];const db=await openEvidenceDb();if(!db)return false;await new Promise((resolve,reject)=>{const transaction=db.transaction('evidence','readwrite'),store=transaction.objectStore('evidence'),index=store.index('draft'),cursor=index.openCursor(IDBKeyRange.only(draft));cursor.onsuccess=()=>{const item=cursor.result;if(item){item.delete();item.continue()}else photos.forEach((photo,index)=>{const position=Number(photo.slot)||index+1;store.put({key:`${draft}:${position}`,draft,position,name:photo.file.name,type:photo.file.type,size:photo.file.size,lastModified:photo.file.lastModified,sourceFingerprint:photo.sourceFingerprint||'',blob:photo.file})})};transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error)});db.close();return true}
+  async function persistEvidence(){const draft=draftKey(),photos=[...evidenceForReport()];const db=await openEvidenceDb();if(!db)return false;try{await new Promise((resolve,reject)=>{const transaction=db.transaction('evidence','readwrite'),store=transaction.objectStore('evidence'),index=store.index('draft'),cursor=index.openCursor(IDBKeyRange.only(draft));cursor.onsuccess=()=>{const item=cursor.result;if(item){item.delete();item.continue()}else photos.forEach((photo,index)=>{const position=Number(photo.slot)||index+1;store.put({key:`${draft}:${position}`,draft,position,name:photo.file.name,type:photo.file.type,size:photo.file.size,lastModified:photo.file.lastModified,sourceFingerprint:photo.sourceFingerprint||'',blob:photo.file})})};transaction.oncomplete=resolve;transaction.onerror=transaction.onabort=()=>reject(transaction.error||Error('El respaldo de fotos se interrumpió.'))});return true}finally{db.close()}}
   async function clearEvidenceDraft(key=draftKey()){const db=await openEvidenceDb();if(!db)return;await new Promise((resolve,reject)=>{const transaction=db.transaction('evidence','readwrite'),cursor=transaction.objectStore('evidence').index('draft').openCursor(IDBKeyRange.only(key));cursor.onsuccess=()=>{const item=cursor.result;if(item){item.delete();item.continue()}};transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error)});db.close();}
   async function evidenceRecordsForKey(key){const db=await openEvidenceDb();if(!db)return[];const records=await new Promise((resolve,reject)=>{const request=db.transaction('evidence').objectStore('evidence').index('draft').getAll(IDBKeyRange.only(key));request.onsuccess=()=>resolve(request.result||[]);request.onerror=()=>reject(request.error)});db.close();return records.sort((a,b)=>a.position-b.position)}
   async function completePendingReportUpload(upload){
+    try{localStorage.removeItem(`hsc-report-detail-${account.id}:${upload.editReportId||upload.id}`)}catch(_){}
     try{localStorage.removeItem(upload.key)}catch(_){}
     forgetPendingReportUpload(upload.key);
     await clearEvidenceDraft(upload.key);
@@ -1341,6 +1360,9 @@
   }
   async function finishReportInBackground(upload){
     try{
+      // A lost response is not a failed save. Resolve the same submission
+      // before touching its photos, including edits retaining the old folio.
+      if(await recoverConfirmedReportUpload(upload))return;
       await operationsPost(`/api/operaciones/reports/${encodeURIComponent(upload.id)}/evidence/reset`,{});
       for(let index=0;index<upload.photos.length;index++){
         const formData=new FormData();formData.append('file',upload.photos[index].file,upload.photos[index].file.name);
@@ -1359,14 +1381,28 @@
     }catch(error){
       backgroundReportUploads.delete(upload.key);
       try{
-        const response=await fetch(`/api/operaciones/reports/${encodeURIComponent(upload.id)}`,{headers:{Accept:'application/json'}}),payload=await response.json();
-        if(response.ok&&payload.ok&&payload.report?.state==='completed'){await completePendingReportUpload(upload);return;}
+        if(await recoverConfirmedReportUpload(upload))return;
       }catch(_){}
       toast(`Reporte pendiente de confirmar · ${error.message}. Conservamos el respaldo local.`);
-    }
+    }finally{upload.photos.forEach(photo=>URL.revokeObjectURL(photo.url));}
+  }
+  async function recoverConfirmedReportUpload(upload){
+    const response=await hscFetch(`/api/operaciones/reports/${encodeURIComponent(upload.id)}`,{headers:{Accept:'application/json'}},15000),payload=await response.json();
+    if(!response.ok||!payload.ok||payload.report?.state!=='completed')return false;
+    const confirmed=await operationsPost('/api/operaciones/reports/finalize',{id:upload.id,edit_report_id:upload.editReportId||'',client_id:upload.client,equipment_id:upload.equipment,round:upload.round,report_type:'refrigeration',payload:upload.data});
+    const report=confirmed.report;
+    if(report.client_id!==upload.client||report.equipment_id!==upload.equipment||String(report.round)!==String(upload.round))throw Error('La confirmación no coincide con este equipo y ronda.');
+    fieldRevision++;if(lastServerPayload){lastServerPayload.reports=[report,...(lastServerPayload.reports||[]).filter(item=>item.id!==report.id&&item.matrix_id!==report.matrix_id)];cacheServerPayload();}
+    matrixReports=[report,...matrixReports.filter(item=>item.id!==report.id&&item.matrix_id!==report.matrix_id&&item.id!==`offline:${upload.key}`)];
+    if(confirmed.fault)matrixFaults=[confirmed.fault,...matrixFaults.filter(item=>item.id!==confirmed.fault.id)];
+    await completePendingReportUpload(upload);refreshRound();toast('Reporte confirmado; no se volvió a enviar.');return true;
   }
   async function restoreEvidence(){const key=draftKey();if(loadedEvidenceKeys.has(key))return;loadedEvidenceKeys.add(key);const records=await evidenceRecordsForKey(key);if(!records.length)return;const restored=records.map(record=>{const file=new File([record.blob],record.name,{type:record.type,lastModified:record.lastModified});return {file,url:URL.createObjectURL(file),slot:Number(record.position),sourceFingerprint:record.sourceFingerprint||`${record.name}:${record.size}:${record.lastModified}`}});reportEvidenceByKey.set(key,restored);renderEvidence()}
   async function resumePendingReportUploads(manual=false){
+    if(typeof navigator!=='undefined'&&navigator.locks)return navigator.locks.request(`hsc-report-sync-${account.id}`,{ifAvailable:true},lock=>lock?drainPendingReportUploads(manual):undefined);
+    return drainPendingReportUploads(manual);
+  }
+  async function drainPendingReportUploads(manual=false){
     if(!shouldSyncNow(manual))return;
     for(const saved of Object.values(pendingReportUploads())){
       if(!saved?.key||backgroundReportUploads.has(saved.key))continue;

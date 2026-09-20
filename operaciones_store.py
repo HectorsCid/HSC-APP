@@ -18,7 +18,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "15"
+SCHEMA_VERSION = "16"
 
 
 DEFAULT_OBSERVATION_OPTIONS = {
@@ -282,6 +282,7 @@ class OperationsStore:
             "CREATE TABLE IF NOT EXISTS operations_worklist_changes (id TEXT PRIMARY KEY, list_id TEXT NOT NULL, actor_id TEXT NOT NULL, saved_at TEXT NOT NULL, payload_json TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_worklist_changes_list ON operations_worklist_changes(list_id,saved_at)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_equipment ON operations_reports(equipment_id)",
+            "CREATE TABLE IF NOT EXISTS operations_report_submissions (draft_id TEXT PRIMARY KEY, report_id TEXT NOT NULL, user_id TEXT NOT NULL, confirmed_at TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_client ON operations_reports(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_faults_client ON operations_faults(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_faults_equipment ON operations_faults(equipment_id)",
@@ -972,16 +973,19 @@ class OperationsStore:
                 found = next((row for row in candidates if json.loads(row[1] or '{}').get('_draft_user_id') == payload.get('_draft_user_id')), None)
                 report_id = found[0] if found else f"RPT_{uuid.uuid4().hex[:16].upper()}"
             stamp = _now()
-            conn.execute(
+            saved = conn.execute(
                 f"INSERT INTO operations_reports(id,equipment_id,client_id,round_number,start_at,end_at,completed,source,matrix_id,report_type,payload_json,state,sync_status,updated_at) "
                 f"VALUES ({','.join([p] * 14)}) ON CONFLICT(id) DO UPDATE SET "
                 "equipment_id=excluded.equipment_id,client_id=excluded.client_id,round_number=excluded.round_number,"
                 "start_at=excluded.start_at,end_at=excluded.end_at,matrix_id=excluded.matrix_id,report_type=excluded.report_type,"
-                "payload_json=excluded.payload_json,state='draft',sync_status='local_only',updated_at=excluded.updated_at",
+                "payload_json=excluded.payload_json,state='draft',sync_status='local_only',updated_at=excluded.updated_at "
+                "WHERE operations_reports.state='draft' AND operations_reports.completed=0",
                 (report_id, equipment_id, client_id, round_number, _text(payload.get("inicio")),
                  _text(payload.get("fin")), 0, "app", matrix_id, _text(item.get("report_type")) or "refrigeration",
                  json.dumps(payload, ensure_ascii=False), "draft", "local_only", stamp),
             )
+            if saved.rowcount != 1:
+                raise ValueError("El reporte ya fue finalizado; no se sobrescribió con un borrador tardío.")
         return self.get_report_draft(equipment_id, round_number, user_id=payload.get('_draft_user_id'))
 
     def ensure_report_fault(self, report_id, *, client_id, equipment_id, description, priority="Alta"):
@@ -1546,6 +1550,24 @@ class OperationsStore:
             conn.execute(f"DELETE FROM operations_reports WHERE id={p}", (report_id,))
         return True
 
+    def get_report_submission(self, draft_id, user_id=None):
+        """Recibo persistente: también reconoce ediciones cuyo borrador se eliminó."""
+        self.initialize()
+        with self.connection() as conn:
+            row = conn.execute(
+                f"SELECT report_id,user_id FROM operations_report_submissions WHERE draft_id={self.placeholder}",
+                (_text(draft_id),),
+            ).fetchone()
+        if row:
+            if user_id is not None and row[1] != _text(user_id):
+                return None
+            return self.get_report_detail(row[0])
+        report = self.get_report_detail(draft_id)
+        if report and report['completed'] and (user_id is None or
+                report['payload'].get('_draft_user_id') == user_id):
+            return report
+        return None
+
     def finalize_report(self, report_id):
         """Finaliza un borrador sin perderlo y lo deja listo para sincronización."""
         self.initialize()
@@ -1555,11 +1577,23 @@ class OperationsStore:
         p = self.placeholder
         stamp = _now()
         with self.connection() as conn:
+            # Serialize the final check per equipment, including submissions
+            # from separate workers. SQLite is only used locally.
+            if self.dialect == 'sqlite':
+                conn.execute('BEGIN IMMEDIATE')
+            else:
+                conn.execute(
+                    f"SELECT id FROM operations_equipment WHERE id=(SELECT equipment_id "
+                    f"FROM operations_reports WHERE id={p}) FOR UPDATE", (report_id,),
+                ).fetchone()
             row = conn.execute(
                 f"SELECT id,client_id,equipment_id,round_number,payload_json FROM operations_reports "
                 f"WHERE id={p} AND source='app' AND state='draft'", (report_id,),
             ).fetchone()
             if not row:
+                confirmed = self.get_report_submission(report_id)
+                if confirmed:
+                    return confirmed
                 raise ValueError("El borrador ya no existe o ya fue finalizado.")
             try:
                 payload = json.loads(row[4] or "{}")
@@ -1614,14 +1648,23 @@ class OperationsStore:
                     (start_at, end_at, json.dumps(payload, ensure_ascii=False), stamp, report_id),
                 )
             self._remember_observations(conn, payload)
-        detail = self.get_report_detail(final_report_id)
-        self.queue_sync("report", final_report_id, "sheets", "upsert", {
-            "client_id": row[1], "equipment_id": row[2], "round": row[3],
-            "completed": True, "payload": payload,
-            "evidence": [{"position": item["position"], "drive_ref": item["drive_ref"]}
-                         for item in detail["evidence"]],
-        })
-        return detail
+            conn.execute(
+                f"INSERT INTO operations_report_submissions(draft_id,report_id,user_id,confirmed_at) "
+                f"VALUES ({','.join([p] * 4)}) ON CONFLICT(draft_id) DO NOTHING",
+                (report_id, final_report_id, _text(payload.get('_draft_user_id')), stamp),
+            )
+            evidence = conn.execute(
+                f"SELECT position,drive_ref FROM operations_evidence WHERE report_id={p} ORDER BY position",
+                (final_report_id,),
+            ).fetchall()
+            # Report, receipt and delivery queue commit together. A restart
+            # cannot leave a completed report without its Sheets delivery.
+            self._queue_sync_in_transaction(conn, "report", final_report_id, "sheets", "upsert", {
+                "client_id": row[1], "equipment_id": row[2], "round": row[3],
+                "completed": True, "payload": payload,
+                "evidence": [{"position": item[0], "drive_ref": item[1]} for item in evidence],
+            })
+        return self.get_report_detail(final_report_id)
 
     def reset_report_evidence(self, report_id):
         """Prepara un nuevo intento de subida para un borrador."""
@@ -1714,18 +1757,21 @@ class OperationsStore:
     def queue_sync(self, entity_type, entity_id, destination, action, payload=None):
         """Encola una operación idempotente hacia Drive o Sheets."""
         self.initialize()
+        with self.connection() as conn:
+            return self._queue_sync_in_transaction(conn, entity_type, entity_id, destination, action, payload)
+
+    def _queue_sync_in_transaction(self, conn, entity_type, entity_id, destination, action, payload=None):
         stamp = _now()
         operation_id = uuid.uuid4().hex
         p = self.placeholder
-        with self.connection() as conn:
-            conn.execute(
+        conn.execute(
                 f"INSERT INTO operations_sync_outbox"
                 f"(id,entity_type,entity_id,destination,action,payload_json,status,attempts,last_error,created_at,updated_at) "
                 f"VALUES ({','.join([p] * 11)}) ON CONFLICT(entity_type,entity_id,destination,action) "
                 "DO UPDATE SET id=excluded.id,payload_json=excluded.payload_json,status='pending',attempts=0,last_error='',updated_at=excluded.updated_at",
                 (operation_id, _text(entity_type), _text(entity_id), _text(destination),
                  _text(action), json.dumps(payload or {}, ensure_ascii=False), "pending", 0, "", stamp, stamp),
-            )
+        )
         return operation_id
 
     def pending_sync(self, limit=50):

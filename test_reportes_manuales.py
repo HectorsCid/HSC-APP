@@ -1,4 +1,5 @@
 import os
+import time
 import unittest
 from unittest.mock import patch
 
@@ -42,6 +43,8 @@ class ManualReportsTests(unittest.TestCase):
             self.client.session_transaction() as session,
         ):
             session["hsc_role"] = "technician"
+            session["hsc_user_id"] = "test-technician"
+            session["hsc_account_checked_at"] = time.time()
             session["hsc_user_name"] = "Carlos Técnico"
         with patch.object(reports, "_diag_clientes_catalogo", return_value=[]):
             response = self.client.get(
@@ -59,6 +62,8 @@ class ManualReportsTests(unittest.TestCase):
     def test_technician_cannot_open_admin_report_history(self):
         with self.client.session_transaction() as session:
             session["hsc_role"] = "technician"
+            session["hsc_user_id"] = "test-technician"
+            session["hsc_account_checked_at"] = time.time()
         response = self.client.get("/reportes")
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.headers["Location"].endswith("/hsc-tecnico/"))

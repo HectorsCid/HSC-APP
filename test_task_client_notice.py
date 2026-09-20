@@ -17,12 +17,10 @@ class TaskClientNoticeTests(unittest.TestCase):
             with patch.dict('sys.modules',{'notification_delivery':SimpleNamespace(enqueue=enqueue)}):
                 response,status=ns['api_operaciones_save_task']()
             self.assertEqual(status,201)
-            self.assertEqual(enqueue.call_count,int(enabled))
-            if enabled:
-                self.assertEqual(enqueue.call_args.kwargs['client_id'],'A')
-                self.assertEqual(enqueue.call_args.kwargs['audience'],'client')
-                self.assertIn('10:30',enqueue.call_args.args[1])
-                self.assertIn('open=calendar',enqueue.call_args.args[2])
+            # Delivery now belongs to the transactional task outbox, tested in
+            # test_task_creation_notifications, not a second inline push.
+            self.assertEqual(store.save_task.call_args.args[0]['notify_client'],enabled)
+            enqueue.assert_not_called()
 
 
 if __name__=='__main__':unittest.main()

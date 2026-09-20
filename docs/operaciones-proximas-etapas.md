@@ -1,6 +1,6 @@
 # Prioridades acordadas — 20 septiembre 2026
 
-No publicar esta etapa hasta autorización del propietario.
+Publicación autorizada el 20 de septiembre de 2026 para HectorsCid/HSC-APP, rama main, Render HSC-APP-3. Las ideas futuras siguientes no están autorizadas para activación automática.
 
 ## Prioridad inmediata
 
@@ -20,3 +20,13 @@ Guardar identificadores estables, responsable, autor, versiones, fechas y revisi
 - Posible compensación por adelantar dinero propio para gasolina/piezas: ejemplo de 10%, todavía no aprobado como regla. Registrar por separado del gasto real y su reembolso; definir autorización, límites, qué gastos califican y evitar aplicarla a anticipos del patrón o tarjetas de la empresa.
 
 La última indicación del usuario es recordar estas ideas, no implementarlas ahora. Prioridad: hacer reportes y que funcionen.
+
+## Propuesta pendiente: bitácora de reparaciones y remisiones
+
+Solicitada después: administrador y técnicos registran intervenciones para clientes existentes o nuevos, equipo, síntoma, diagnóstico, trabajo realizado, piezas, mediciones finales (por ejemplo, 33 psi en baja), resultado y fotos antes/durante/después. Cada intervención tiene su propio registro y no reemplaza el historial por ronda. Listado cronológico por equipo y cliente, búsqueda y borrador offline. Fotos en lotes comprimidos/paginados, sin el límite de seis del reporte preventivo; definir límites por archivo y almacenamiento, sin prometer capacidad infinita.
+
+Nota de remisión vinculada y generada desde la misma captura; proponer precios opcionales y firma/recepción, sin timbrado automático. Pendiente de acordar el alcance y de terminar la confiabilidad de los reportes actuales. No implementar dentro de esta auditoría.
+
+## Criterio de salida de AppSheet aclarado por el propietario
+
+El objetivo es cancelar licencias de la aplicación AppSheet por usuario; NO eliminar la hoja matriz ni las fotos en Drive. HSC debe cubrir el flujo usado en campo sin abrir AppSheet, conservando su integración por IDs con Sheets. No cancelar ni desconectar cuentas hasta validar el protocolo de salida y contar con autorización específica.

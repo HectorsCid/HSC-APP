@@ -37,7 +37,7 @@ class TaskAssigneesTests(unittest.TestCase):
             ns={'_operations_forbidden':lambda *args:None,'_operations_role':lambda:'technician','OPERACIONES_STORE':store,
                 'session':{'hsc_user_id':user},'abort':abort,'_invalidate_operations_cache':Mock(),'jsonify':lambda v:v}
             exec(compile(ast.Module(body=[fn],type_ignores=[]),'app.py','exec'),ns)
-            if allowed:ns['api_operaciones_complete_task']('M');store.complete_task.assert_called_once_with('M')
+            if allowed:ns['api_operaciones_complete_task']('M');store.complete_task.assert_called_once_with('M',actor_id=user)
             else:
                 with self.assertRaises(PermissionError):ns['api_operaciones_complete_task']('M')
                 store.complete_task.assert_not_called()

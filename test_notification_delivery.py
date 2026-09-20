@@ -18,6 +18,9 @@ class NotificationsTest(unittest.TestCase):
         self.path.start();self.addCleanup(self.path.stop)
         self.backup=patch.object(notices,'backup_json_file',Mock())
         self.backup.start();self.addCleanup(self.backup.stop)
+        # Also isolate cold-start reads if another test imported the real module first.
+        self.restore=patch.object(notices,'load_json_file',return_value={})
+        self.restore.start();self.addCleanup(self.restore.stop)
         self.app=Flask(__name__);self.app.config.update(TESTING=True,SECRET_KEY='test')
         self.app.register_blueprint(delivery.bp);self.client=self.app.test_client()
 

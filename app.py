@@ -3776,6 +3776,22 @@ def api_operaciones_bootstrap():
     """Lee primero la base operativa; Sheets sólo alimenta la carga inicial/refresco."""
     now = time.monotonic()
     refresh = request.args.get("refresh") == "1"
+    # The ordinary field read must never queue behind a slow Google import.
+    # Explicit refresh also starts work in the background once the DB is ready.
+    if OPERACIONES_STORE.enabled:
+        try:
+            if OPERACIONES_STORE.has_data():
+                payload = _prepare_operaciones_payload(OPERACIONES_STORE.snapshot())
+                if refresh:
+                    _schedule_operations_sync(force=True)
+                return jsonify({
+                    "ok": True, "read_only": False, "cached": False, "source": "database",
+                    **_scope_operaciones_payload(payload), "refreshing": refresh,
+                    "warning": _OPERACIONES_IMPORT_STATUS["error"],
+                })
+        except Exception:
+            current_app.logger.exception('La base operativa no respondió; no se inicia una importación sustitutiva')
+            return jsonify(ok=False, error='La base operativa no respondió. Conserva tus pendientes; se reintentará.'), 503
     with _OPERACIONES_MATRIX_CACHE_LOCK:
         cached = _OPERACIONES_MATRIX_CACHE["payload"]
         fresh = cached is not None and now - _OPERACIONES_MATRIX_CACHE["ts"] < _OPERACIONES_MATRIX_TTL
@@ -4285,7 +4301,12 @@ def api_operaciones_report_detail(report_id):
         return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
     try:
         report = OPERACIONES_STORE.get_report_detail(report_id)
+        if not report and _operations_role() in {'admin', 'technician'}:
+            report = OPERACIONES_STORE.get_report_submission(report_id, str(session.get('hsc_user_id') or 'owner'))
         if not report:
+            abort(404)
+        if report.get('state') == 'draft' and _operations_role() != 'admin' and (
+                report.get('payload') or {}).get('_draft_user_id') not in {None, str(session.get('hsc_user_id') or 'owner')}:
             abort(404)
         if _operations_role() == "client" and report.get("client_id") != str(session.get("hsc_client_id") or "").strip():
             abort(404)
@@ -4294,7 +4315,7 @@ def api_operaciones_report_detail(report_id):
                 ("drive-id-v2:" + str(evidence.get("drive_ref") or evidence.get("storage_ref") or "")).encode("utf-8")
             ).hexdigest()[:10]
             evidence["url"] = url_for(
-                "api_operaciones_report_evidence", report_id=report_id,
+                "api_operaciones_report_evidence", report_id=report['id'],
                 position=evidence["position"], v=media_version,
             )
             evidence.pop("storage_ref", None)
@@ -4365,8 +4386,14 @@ def api_operaciones_finalize_report():
     try:
         body['payload'] = dict(body.get('payload') or {})
         body['payload']['_draft_user_id'] = str(session.get('hsc_user_id') or 'owner')
-        draft = OPERACIONES_STORE.save_report_draft(body)
-        report = OPERACIONES_STORE.finalize_report(draft["id"])
+        report = OPERACIONES_STORE.get_report_submission(body.get('id'), body['payload']['_draft_user_id']) if body.get('id') else None
+        if report:
+            if (report['client_id'], report['equipment_id'], report['round']) != (
+                    str(body.get('client_id') or ''), str(body.get('equipment_id') or ''), str(body.get('round') or '')):
+                raise ValueError('La confirmación pertenece a otro equipo o ronda.')
+        else:
+            draft = OPERACIONES_STORE.save_report_draft(body)
+            report = OPERACIONES_STORE.finalize_report(draft["id"])
         try:
             from notification_delivery import enqueue
             from urllib.parse import urlencode
@@ -4405,6 +4432,9 @@ def api_operaciones_reset_report_evidence(report_id):
     if not OPERACIONES_STORE.enabled:
         return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
     try:
+        report = OPERACIONES_STORE.get_report_detail(report_id)
+        if report and (report.get('payload') or {}).get('_draft_user_id') not in {None, str(session.get('hsc_user_id') or 'owner')}:
+            return jsonify(ok=False, error='Ese borrador pertenece a otra cuenta.'), 403
         OPERACIONES_STORE.reset_report_evidence(report_id)
         return jsonify({"ok": True})
     except ValueError as exc:
@@ -4438,6 +4468,8 @@ def api_operaciones_upload_report_evidence(report_id, position):
         report = OPERACIONES_STORE.get_report_detail(report_id)
         if not report or report.get("state") != "draft":
             return jsonify({"ok": False, "error": "El borrador ya no está disponible."}), 400
+        if (report.get('payload') or {}).get('_draft_user_id') not in {None, str(session.get('hsc_user_id') or 'owner')}:
+            return jsonify(ok=False, error='Ese borrador pertenece a otra cuenta.'), 403
         client = next(
             (item for item in OPERACIONES_STORE.snapshot()["clients"] if item["id"] == report["client_id"]), None
         )

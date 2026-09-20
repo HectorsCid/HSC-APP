@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock,patch
 from operaciones_store import OperationsStore
 from test_operaciones_store import _payload
+from task_notices import plan_task_notices
 
 
 class VisitRequestTests(unittest.TestCase):
@@ -33,8 +34,9 @@ class VisitRequestTests(unittest.TestCase):
                 confirmed=ns['api_operaciones_confirm_visit'](task['id'])['task']
                 self.assertEqual(confirmed['status'],'Pendiente');self.assertEqual(confirmed['client_id'],'UVMQ')
                 self.assertEqual(confirmed['scheduled_time'],'11:00');self.assertEqual(len(store.snapshot()['tasks']),1)
-                self.assertEqual(enqueue.call_args.kwargs['client_id'],'UVMQ')
-                self.assertEqual(enqueue.call_args.args[0],'Visita confirmada')
+                event=store.pending_notice_events()[-1]
+                messages=plan_task_notices(event['id'],event['payload'])
+                self.assertTrue(any(item['client_id']=='UVMQ' and item['title']=='Visita confirmada' for item in messages))
                 ns['api_operaciones_confirm_visit'](task['id'])
                 self.assertEqual(len(store.tasks_for_reminders('2026-09-21')),1)
 

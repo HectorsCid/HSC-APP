@@ -56,7 +56,7 @@ nav.restoreOperationalNavigation();assert.equal(nav.current,'partnerDocuments');
 nav.account.isOwner=true;nav.appKind='technician';nav.serverRole='admin';nav.restoreOperationalNavigation();assert.equal(nav.currentMode,'partner');assert.equal(nav.current,'partnerDocuments');
 console.log('OK: destino de notificación de un solo uso y recarga en la misma pantalla, incluida vista Partner administrativa.');
 const backSource=html.slice(html.indexOf('  function parentView('),html.indexOf('  function initializeBrowserNavigation('));
-const goBackSource=html.split(/\r?\n/).find(line=>line.trim().startsWith('function goBack('));
+const goBackSource=html.split(/\r?\n/).find(line=>line.trim().startsWith('async function goBack('));
 let modalOpen=true;
 Object.assign(nav,{document:{querySelector:()=>modalOpen?{classList:{remove(){modalOpen=false}}}:null},browserHistoryReady:false,handlingHistoryPop:false,activeReportContext:null});
 vm.runInContext(backSource+'\n'+goBackSource,nav);
