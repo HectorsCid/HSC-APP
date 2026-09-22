@@ -64,6 +64,29 @@ class ReadinessTests(unittest.TestCase):
         self.store.import_matrix_snapshot(self.matrix)
         self.assertEqual(self.store.snapshot()['equipment'][0]['name'], 'Cambio en AppSheet')
 
+    def test_legacy_duplicate_matrix_report_does_not_block_equipment_refresh(self):
+        stamp = datetime.now(timezone.utc).isoformat(timespec='microseconds')
+        with self.store.connection() as conn:
+            conn.execute(
+                "INSERT INTO operations_reports(id,equipment_id,client_id,round_number,completed,"
+                "source,matrix_id,report_type,payload_json,state,sync_status,updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                ('legacy-copy', 'UDA14', 'UDA', '1', 1, 'app', 'UDA14_R 1',
+                 'refrigeration', '{}', 'completed', 'synced', stamp),
+            )
+            conn.execute(
+                "INSERT INTO operations_reports(id,equipment_id,client_id,round_number,completed,"
+                "source,matrix_id,report_type,payload_json,state,sync_status,updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                ('UDA14_R 1', 'UDA14', 'UDA', '1', 1, 'sheets', 'UDA14_R 1',
+                 'refrigeration', '{}', 'imported', 'synced', stamp),
+            )
+        self.matrix['equipment'][0]['name'] = 'Cambio desde AppSheet'
+        self.matrix['reports'] = [{'id': 'UDA14_R 1', 'equipment_id': 'UDA14',
+            'client_id': 'UDA', 'round': '1', 'completed': True}]
+        self.store.import_matrix_snapshot(self.matrix)
+        self.assertEqual(self.store.snapshot()['equipment'][0]['name'], 'Cambio desde AppSheet')
+
     def test_snapshot_older_than_confirmation_keeps_local_edit(self):
         op = self.edit()
         from operaciones_store import _now as now

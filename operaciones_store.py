@@ -444,11 +444,18 @@ class OperationsStore:
                 client_map[matrix_id] = local_id
             report_map = {}
             for local_id, matrix_id in conn.execute(
-                "SELECT id,matrix_id FROM operations_reports WHERE matrix_id!='' AND state!='draft'"
+                "SELECT id,matrix_id FROM operations_reports WHERE matrix_id!='' AND state!='draft' "
+                "ORDER BY updated_at DESC,id"
             ).fetchall():
-                if matrix_id in report_map and report_map[matrix_id] != local_id:
-                    raise ValueError(f"Folio de matriz ambiguo: {matrix_id}")
-                report_map[matrix_id] = local_id
+                previous = report_map.get(matrix_id)
+                if not previous:
+                    report_map[matrix_id] = local_id
+                elif local_id == matrix_id:
+                    # Legacy imports sometimes left an app UUID and the real
+                    # AppSheet ID pointing at the same matrix folio. Prefer the
+                    # exact ID; keep the other record as history instead of
+                    # blocking every client/equipment refresh.
+                    report_map[matrix_id] = local_id
         payload = dict(payload)
         for collection in ("clients", "equipment", "reports", "faults"):
             transformed = []
