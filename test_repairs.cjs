@@ -15,7 +15,7 @@ const {visible,label,transmit,valvePosition,valveLabel}=require('./static/operat
   const vm=require('node:vm'),source=require('node:fs').readFileSync('./static/operations_repairs.js','utf8');
   const backupCode=source.slice(source.indexOf('async function backup()'),source.indexOf('function autosave()'));
   const leaveCode=source.slice(source.indexOf('async function leave()'),source.indexOf("$('#repairSaveDraft').onclick"));
-  const status={textContent:''},context={clearTimeout(){},timer:1,editor:{id:'local',data:{work:'no perder'},files:row.files},capture(){},structuredClone,put:async()=>{throw Error('Sin espacio')},$:()=>status,lastError:'',photoBusy:false,api:{current:()=> 'repairEditor',toast(){}}};
+  const status={textContent:''},context={clearTimeout(){},timer:1,editor:{id:'local',data:{work:'no perder'},files:row.files},capture(){},structuredClone,put:async()=>{throw Error('Sin espacio')},$:selector=>selector==='#repairValveWorkspace'?{hidden:true}:status,lastError:'',photoBusy:false,api:{current:()=> 'repairEditor',toast(){}}};
   vm.createContext(context);vm.runInContext(backupCode+leaveCode,context);
   assert.equal(await vm.runInContext('leave()',context),false,'A failed durable write must retain the editor');
   assert.equal(context.editor.data.work,'no perder');assert.equal(context.editor.files.length,9);

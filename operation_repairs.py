@@ -124,9 +124,11 @@ def save(store, body, actor, admin=False, author=''):
             valve_ids.add(valve_id)
             checked = []
             for move in movements:
-                if not isinstance(move, dict) or type(move.get('steps')) is not int or move['steps'] not in (-1, 1):
-                    raise ValueError('Cada movimiento debe ser de 1/8 de vuelta.')
-                checked.append(dict(steps=move['steps'], at=clean(move.get('at', ''), 40)))
+                if not isinstance(move, dict) or type(move.get('steps')) is not int or not 1 <= abs(move['steps']) <= 80:
+                    raise ValueError('Cada cambio debe ser un múltiplo de 1/8 de vuelta, entre 1/8 y 10 vueltas.')
+                checked.append(dict(steps=move['steps'], at=clean(move.get('at', ''), 40),
+                                    pressure_low=clean(move.get('pressure_low', ''), 40),
+                                    pressure_high=clean(move.get('pressure_high', ''), 40)))
             valves.append(dict(id=valve_id, name=clean(valve.get('name', ''), 100), movements=checked))
         raw_photos = body.get('photos', [])
         if not isinstance(raw_photos, list):

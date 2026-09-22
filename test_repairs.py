@@ -88,12 +88,12 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(len(self.store.snapshot()['equipment']),1)
 
     def test_valve_eighth_turns_persist_and_reject_other_steps(self):
-        valve = dict(id='v1', name='Circuito 1', movements=[dict(steps=1, at='2026-09-21T10:00:00Z'), dict(steps=-1, at='2026-09-21T10:01:00Z')])
+        valve = dict(id='v1', name='Circuito 1', movements=[dict(steps=3, at='2026-09-21T10:00:00Z', pressure_low='33', pressure_high='210'), dict(steps=-1, at='2026-09-21T10:01:00Z', pressure_low='', pressure_high='')])
         row = self.save({**self.body, 'valve_adjustments': [valve]})
         self.assertEqual(row['valve_adjustments'][0]['movements'][1]['steps'], -1)
         self.assertEqual(repairs.read(self.store, 'REP_test', 'tech2')['valve_adjustments'], [valve])
         with self.assertRaises(ValueError):
-            self.save({**self.body, 'id': 'REP_bad', 'mutation_id': 'change_bad', 'valve_adjustments': [{**valve, 'movements': [dict(steps=2)]}]})
+            self.save({**self.body, 'id': 'REP_bad', 'mutation_id': 'change_bad', 'valve_adjustments': [{**valve, 'movements': [dict(steps=0)]}]})
 
     def test_unfinished_hidden_and_not_finalized_until_all_photos(self):
         body={**self.body,'photos':[dict(id='p1',stage='before',caption='Antes'),dict(id='p2',stage='after',caption='Después')]}

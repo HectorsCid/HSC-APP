@@ -12,12 +12,30 @@
   .repair-valve-origin::before,.repair-valve-moving::before{content:'';position:absolute;top:5px;left:50%;width:4px;height:24px;border-radius:3px;transform:translateX(-50%)}
   .repair-valve-origin::before{background:#9ca9bd;top:-7px;height:12px;width:8px}
   .repair-valve-moving::before{background:#20d4bd;width:6px;box-shadow:0 0 8px #20d4bd88}
-  .repair-valve-moving{transition:transform .3s ease}
+  .repair-valve-moving{transition:none}
   .repair-valve-dial::after{content:'';position:absolute;top:50%;left:50%;width:12px;height:12px;background:#e5edf9;border:2px solid #17263b;border-radius:50%;transform:translate(-50%,-50%)}
   .repair-valve-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.8em;color:var(--muted)}
   .repair-valve-legend .origin::before,.repair-valve-legend .current::before{content:'●';margin-right:5px}
   .repair-valve-legend .origin::before{color:#9ca9bd}.repair-valve-legend .current::before{color:#20d4bd}
   .repair-valve-steps{font-size:.9em;color:var(--muted)}
+  .repair-valve-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:14px}
+  .repair-valve-workspace{position:fixed;inset:0;z-index:10000;overflow:auto;background:#101b2c;color:#edf4ff;padding:env(safe-area-inset-top) max(16px,env(safe-area-inset-right)) env(safe-area-inset-bottom) max(16px,env(safe-area-inset-left))}
+  .repair-valve-workspace[hidden]{display:none!important}
+  .repair-valve-workspace-inner{max-width:680px;margin:auto;padding:18px 0 36px}
+  .repair-valve-workspace-head{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .repair-valve-workspace .repair-valve-dial{width:160px;height:160px;margin:24px auto}
+  .repair-valve-workspace .repair-valve-origin::before,.repair-valve-workspace .repair-valve-moving::before{height:60px;width:8px}
+  .repair-valve-workspace .repair-valve-origin::before{height:18px;width:12px}
+  .repair-valve-workspace .repair-valve-dial::after{width:20px;height:20px}
+  .repair-valve-amount{text-align:center;font-size:1.2rem;font-weight:800}
+  .repair-valve-control,.repair-valve-step{border:1px solid var(--line);border-radius:16px;padding:16px;margin:16px 0;background:#18283d}
+  .repair-valve-control .repair-actions{justify-content:center}
+  .repair-valve-control .repair-actions button{min-width:125px}
+  .repair-valve-pressure-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .repair-valve-step summary{cursor:pointer;font-weight:700}
+  .repair-valve-step .repair-valve-pressure-grid{margin-top:16px}
+  .repair-temp-entry{display:flex;gap:8px}.repair-temp-entry input{min-width:0;flex:1}.repair-temp-entry button{flex:none;min-width:44px}
+  body.repair-valve-open{overflow:hidden}
 </style>
 <section class="view repairs" data-view="repairs">
   <div class="section-head"><div><h2>Reparaciones</h2><p class="muted">Cada visita conserva lo que fallaba, lo que hicimos y cómo quedó.</p></div><button class="primary" id="repairNew" type="button" data-permission="createReports">＋ Registrar reparación</button></div>
@@ -42,11 +60,12 @@
       <label>¿Qué fallaba?<textarea name="symptom" rows="3" maxlength="6000" placeholder="Ej. La cámara no llegaba a su temperatura."></textarea></label>
       <label>Trabajo realizado<textarea name="work" rows="4" maxlength="10000" placeholder="Qué revisaste, reparaste o cambiaste."></textarea></label>
     </fieldset>
+    <fieldset id="repairValveSection"><legend>Válvula de expansión (si la ajustaste)</legend><p class="muted">Registra sólo los cambios aplicados. Cada toque prepara ⅛; “Aplicar cambio” guarda el giro total como un paso.</p><div id="repairValves"></div><button class="secondary" id="repairAddValve" type="button">＋ Registrar válvula</button></fieldset>
+    <div id="repairValveWorkspace" class="repair-valve-workspace" role="dialog" aria-modal="true" aria-label="Ajuste de válvula de expansión" hidden><div class="repair-valve-workspace-inner"><div class="repair-valve-workspace-head"><h2>Ajuste de válvula</h2><button class="secondary" id="repairValveClose" type="button">Cerrar</button></div><div id="repairValveWorkspaceBody"></div></div></div>
     <fieldset><legend>Resultado y mediciones</legend>
       <label>¿Cómo quedó?<textarea name="result" rows="2" maxlength="6000" placeholder="Ej. Se deja trabajando bien, con 33 psi en baja."></textarea></label>
-      <div class="repair-grid"><label>Presión baja · psi<input name="pressure_low" inputmode="decimal" maxlength="40" placeholder="Ej. 33"></label><label>Presión alta · psi<input name="pressure_high" inputmode="decimal" maxlength="40"></label><label>Temperatura · °C<input name="temperature" inputmode="decimal" maxlength="40"></label><label>Amperaje · A<input name="amperage" inputmode="decimal" maxlength="40"></label><label>Tipo de gas<input name="refrigerant" maxlength="50" placeholder="Ej. R404A"></label></div>
+      <div class="repair-grid"><label>Presión baja · psi<input name="pressure_low" inputmode="decimal" maxlength="40" placeholder="Ej. 33"></label><label>Presión alta · psi<input name="pressure_high" inputmode="decimal" maxlength="40"></label><label>Temperatura · °C<span class="repair-temp-entry"><input name="temperature" inputmode="decimal" maxlength="40" placeholder="Ej. -18"><button class="secondary" id="repairTempSign" type="button" aria-label="Cambiar signo de temperatura">−</button></span></label><label>Amperaje · A<input name="amperage" inputmode="decimal" maxlength="40"></label><label>Tipo de gas<input name="refrigerant" maxlength="50" placeholder="Ej. R404A"></label></div>
     </fieldset>
-    <fieldset><legend>Válvula de expansión (si la ajustaste)</legend><p class="muted">Cada toque registra ⅛ de vuelta respecto a la posición inicial, mirando de frente el tornillo de ajuste.</p><div id="repairValves"></div><button class="secondary" id="repairAddValve" type="button">＋ Registrar válvula</button></fieldset>
     <fieldset><legend>Evidencia fotográfica</legend><p class="muted">Sin límite de seis espacios. Puedes agregar varias de golpe o una por una; se comprimen antes de guardarlas.</p>
       <label>Etapa para las próximas fotos<select id="repairPhotoStage"><option value="before">Antes</option><option value="during">Durante el trabajo</option><option value="after">Después</option></select></label>
       <div class="repair-actions"><button class="secondary" id="repairCamera" type="button">📷 Tomar foto</button><button class="secondary" id="repairGallery" type="button">Elegir fotos</button></div>
