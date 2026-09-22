@@ -1,6 +1,10 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const html=fs.readFileSync('templates/app_operativa_demo.html','utf8');
 const line=prefix=>html.split(/\r?\n/).find(row=>row.trim().startsWith(prefix));
+const sign=vm.createContext({});vm.runInContext(line('function toggleReportTemperatureSign('),sign);
+assert.equal(sign.toggleReportTemperatureSign('18.5'),'-18.5');
+assert.equal(sign.toggleReportTemperatureSign('-18.5'),'18.5');
+assert.ok(html.includes("for(const name of ['t1','t2'])"),'Ambas temperaturas del reporte normal deben ofrecer el signo menos');
 (async()=>{
   let full=true,photoSaved=false,localWrites=0;
   const ctx=vm.createContext({activeReportContext:{key:'T1:A1:R1'},evidenceBusy:false,
