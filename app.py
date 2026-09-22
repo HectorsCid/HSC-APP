@@ -3815,6 +3815,12 @@ def api_operaciones_bootstrap():
                 **_scope_operaciones_payload(payload),
             })
         except Exception as exc:
+            if failure_warning.startswith("Google no confirmó"):
+                detail = " ".join(str(exc).split())[:350]
+                failure_warning = f"La importación falló al guardar ({type(exc).__name__})"
+                if detail:
+                    failure_warning += f": {detail}"
+                failure_warning += ". Se conservaron los datos anteriores."
             _OPERACIONES_IMPORT_STATUS["error"] = failure_warning
             current_app.logger.exception("No se pudo confirmar el refresco manual de la matriz: %s", exc)
             try:
