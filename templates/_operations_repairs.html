@@ -7,7 +7,16 @@
   .repair-optional-fields{margin-top:10px}
   .repair-valve{border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
   .repair-valve-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .repair-valve-dial{width:58px;height:58px;border:2px solid currentColor;border-radius:50%;display:grid;place-items:center;font-size:30px;transition:transform .3s ease}
+  .repair-valve-dial{width:74px;height:74px;flex:none;border:2px solid var(--line);border-radius:50%;position:relative;background:radial-gradient(circle at center,var(--surface,#17263b) 0 7px,transparent 8px)}
+  .repair-valve-origin,.repair-valve-moving{position:absolute;inset:0;display:block;transform-origin:center}
+  .repair-valve-origin::before,.repair-valve-moving::before{content:'';position:absolute;top:5px;left:50%;width:4px;height:24px;border-radius:3px;transform:translateX(-50%)}
+  .repair-valve-origin::before{background:#9ca9bd;top:-7px;height:12px;width:8px}
+  .repair-valve-moving::before{background:#20d4bd;width:6px;box-shadow:0 0 8px #20d4bd88}
+  .repair-valve-moving{transition:transform .3s ease}
+  .repair-valve-dial::after{content:'';position:absolute;top:50%;left:50%;width:12px;height:12px;background:#e5edf9;border:2px solid #17263b;border-radius:50%;transform:translate(-50%,-50%)}
+  .repair-valve-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.8em;color:var(--muted)}
+  .repair-valve-legend .origin::before,.repair-valve-legend .current::before{content:'●';margin-right:5px}
+  .repair-valve-legend .origin::before{color:#9ca9bd}.repair-valve-legend .current::before{color:#20d4bd}
   .repair-valve-steps{font-size:.9em;color:var(--muted)}
 </style>
 <section class="view repairs" data-view="repairs">
