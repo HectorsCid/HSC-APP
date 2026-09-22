@@ -39,6 +39,8 @@ def read(store, ident, actor, admin=False, *, edit=False, conn=None, lock=False)
     if not row:
         raise LookupError('La reparación no está disponible.')
     result = json.loads(row[0])
+    if result.get('status') == 'deleted':
+        raise LookupError('Esta visita fue retirada del historial.')
     if not admin and result['created_by'] != actor and (edit or result['status'] != 'completed'):
         raise PermissionError('Esta reparación no está disponible para tu cuenta.')
     return result
@@ -204,10 +206,49 @@ def finish(store, ident, mutation, actor, admin=False):
         return repair
 
 
+def delete_visit(store, ident, mutation, expected_revision, actor, admin=False):
+    """Retire a completed visit without erasing its folio, audit or photo refs."""
+    store.initialize()
+    ident, mutation = token(ident), token(mutation)
+    if type(expected_revision) is not int:
+        raise ValueError('Revisión de visita no válida.')
+    p = store.placeholder
+    with store.connection() as conn:
+        locked(store, conn)
+        suffix = ' FOR UPDATE' if store.dialect == 'postgres' else ''
+        row = conn.execute(f'SELECT revision,payload_json FROM operations_repairs WHERE id={p}{suffix}', (ident,)).fetchone()
+        if not row:
+            raise LookupError('No se encontró la visita.')
+        repair = json.loads(row[1])
+        if not admin and repair['created_by'] != actor:
+            raise PermissionError('Sólo quien registró la visita o el administrador puede retirarla.')
+        if repair.get('status') == 'deleted':
+            if repair.get('deletion_mutation_id') == mutation and repair.get('deleted_by') == actor:
+                return repair
+            raise Conflict('La visita ya fue retirada por otra operación.')
+        if repair.get('status') != 'completed':
+            raise ValueError('Sólo se puede retirar una visita finalizada y confirmada.')
+        if row[0] != expected_revision:
+            raise Conflict('La visita cambió. Actualiza antes de retirarla.')
+        if conn.execute(f'SELECT 1 FROM operations_repair_changes WHERE id={p}', (mutation,)).fetchone():
+            raise Conflict('Este identificador ya pertenece a otro cambio.')
+        stamp = datetime.now(timezone.utc).isoformat(timespec='microseconds')
+        repair.update(status='deleted', revision=row[0] + 1, deleted_at=stamp,
+                      deleted_by=actor, deletion_mutation_id=mutation)
+        blob = json.dumps(repair, ensure_ascii=False)
+        updated = conn.execute(f'UPDATE operations_repairs SET revision={p},state={p},payload_json={p} WHERE id={p} AND revision={p}',
+                               (repair['revision'], 'deleted', blob, ident, expected_revision))
+        if updated.rowcount != 1:
+            raise Conflict('La visita cambió. Actualiza antes de retirarla.')
+        conn.execute(f'INSERT INTO operations_repair_changes(id,repair_id,actor_id,saved_at,payload_json) VALUES ({",".join([p]*5)})',
+                     (mutation, ident, actor, stamp, blob))
+        return repair
+
+
 def listing(store, actor, admin=False, query='', equipment_key='', offset=0):
     store.initialize()
     p = store.placeholder
-    where, params = ['1=1'], []
+    where, params = ["state<>'deleted'"], []
     if not admin:
         where.append(f'(state=\'completed\' OR owner_id={p})')
         params.append(actor)

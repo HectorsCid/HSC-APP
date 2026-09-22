@@ -95,6 +95,15 @@ def create_repair_blueprint(store, role, forbidden, permission, uploader, photo_
         body = request.get_json(silent=True) or {}
         return jsonify(ok=True, repair=repairs.finish(store, ident, body.get('mutation_id'), *identity()))
 
+    @bp.post('/api/operaciones/repairs/<ident>/delete')
+    def delete_visit(ident):
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict):
+            raise ValueError('Solicitud no válida.')
+        actor, admin = identity()
+        return jsonify(ok=True, repair=repairs.delete_visit(
+            store, ident, body.get('mutation_id'), body.get('expected_revision'), actor, admin))
+
     @bp.get('/api/operaciones/repairs/<ident>/photos/<pid>')
     def image(ident, pid):
         repair = repairs.read(store, ident, *identity())

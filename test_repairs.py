@@ -44,6 +44,24 @@ class RepairTests(unittest.TestCase):
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM operations_repair_changes').fetchone()[0],3)
             self.assertIn('33 psi',conn.execute("SELECT payload_json FROM operations_repair_changes WHERE id='change1'").fetchone()[0])
 
+    def test_retire_completed_visit_preserves_audit_and_photo_refs(self):
+        row=self.save({**self.body,'photos':[dict(id='p1',stage='after')]})
+        repairs.attach(self.store,row['id'],'p1','change1',b'image','tech1',False,Mock(return_value='drive-ref'))
+        repairs.finish(self.store,row['id'],'change1','tech1')
+        with self.assertRaises(PermissionError):
+            repairs.delete_visit(self.store,row['id'],'delete1',1,'tech2')
+        with self.assertRaises(repairs.Conflict):
+            repairs.delete_visit(self.store,row['id'],'delete1',0,'tech1')
+        deleted=repairs.delete_visit(self.store,row['id'],'delete1',1,'tech1')
+        self.assertEqual(deleted['status'],'deleted')
+        self.assertEqual(repairs.delete_visit(self.store,row['id'],'delete1',1,'tech1'),deleted)
+        self.assertEqual(repairs.listing(self.store,'tech1')[0],[])
+        with self.assertRaises(LookupError):
+            repairs.read(self.store,row['id'],'tech1')
+        with self.store.connection() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM operations_repair_changes WHERE repair_id=?',(row['id'],)).fetchone()[0],2)
+            self.assertEqual(repairs.photo_refs(self.store,conn,row['id']),{'p1':'drive-ref'})
+
     def test_stale_edit_conflicts(self):
         self.save()
         with self.assertRaises(repairs.Conflict):
@@ -147,6 +165,10 @@ class RepairTests(unittest.TestCase):
         self.assertIn('no es factura',page.get_data(as_text=True))
         with client.session_transaction() as s:s.update(hsc_user_id='tech2')
         self.assertEqual(client.post('/api/operaciones/repairs/REP_test/finish',json={'mutation_id':'change1'}).status_code,403)
+        self.assertEqual(client.post('/api/operaciones/repairs/REP_test/delete',json={'mutation_id':'delete1','expected_revision':1}).status_code,403)
+        with client.session_transaction() as s:s.update(hsc_user_id='tech1')
+        self.assertEqual(client.post('/api/operaciones/repairs/REP_test/delete',json={'mutation_id':'delete1','expected_revision':1}).status_code,200)
+        self.assertEqual(client.get('/api/operaciones/repairs/REP_test/remision').status_code,404)
 
     def test_mutation_receipt_cannot_be_reused_by_another_visit(self):
         self.save()
