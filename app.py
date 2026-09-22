@@ -3776,6 +3776,49 @@ def api_operaciones_bootstrap():
     """Lee primero la base operativa; Sheets sólo alimenta la carga inicial/refresco."""
     now = time.monotonic()
     refresh = request.args.get("refresh") == "1"
+    # A manual refresh must return the newly imported snapshot, not start a
+    # background job and immediately label the previous data as confirmed.
+    if refresh and OPERACIONES_STORE.enabled:
+        try:
+            incoming = read_operaciones_matrix(
+                get_sheets_service(timeout=25), SHEET_ID,
+                include_media_refs=True, include_raw=True,
+            )
+            checks = _operations_migration_checks(incoming.get("stats") or {})
+            if not checks["ready"]:
+                raise ValueError("La matriz contiene IDs duplicados; importación detenida.")
+            OPERACIONES_STORE.import_matrix_snapshot(
+                _complete_legacy_operations_relations(incoming)
+            )
+            _OPERACIONES_IMPORT_STATUS.update(
+                error="", last_success=datetime.now().isoformat()
+            )
+            _invalidate_operations_cache()
+            payload = _prepare_operaciones_payload(OPERACIONES_STORE.snapshot())
+            return jsonify({
+                "ok": True, "read_only": False, "cached": False,
+                "source": "database", "refreshing": False,
+                "import_confirmed": True,
+                **_scope_operaciones_payload(payload),
+            })
+        except Exception as exc:
+            _OPERACIONES_IMPORT_STATUS["error"] = (
+                "Google no confirmó la importación. Se conservan los datos anteriores."
+            )
+            current_app.logger.exception("No se pudo confirmar el refresco manual de la matriz: %s", exc)
+            try:
+                payload = _prepare_operaciones_payload(OPERACIONES_STORE.snapshot())
+                return jsonify({
+                    "ok": True, "read_only": False, "cached": True, "stale": True,
+                    "source": "database", "refreshing": False,
+                    "import_confirmed": False,
+                    "warning": _OPERACIONES_IMPORT_STATUS["error"],
+                    **_scope_operaciones_payload(payload),
+                })
+            except Exception:
+                return jsonify({"ok": False, "error": _OPERACIONES_IMPORT_STATUS["error"]}), 502
+        finally:
+            reset_thread_google_services()
     # The ordinary field read must never queue behind a slow Google import.
     # Explicit refresh also starts work in the background once the DB is ready.
     if OPERACIONES_STORE.enabled:
@@ -4088,6 +4131,8 @@ def _schedule_operations_sync(*, force=False):
 def _retry_operations_sync_on_activity():
     """Reintenta la cola con pausa, aprovechando actividad normal de la app."""
     if request.method in {"GET", "HEAD"}:
+        if request.path == "/api/operaciones/bootstrap" and request.args.get("refresh") == "1":
+            return
         _schedule_operations_sync()
 
 

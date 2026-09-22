@@ -472,7 +472,7 @@
       if(!lastServerPayload){try{lastServerPayload=JSON.parse(localStorage.getItem(`hsc-operaciones-data-${account.id}-${appKind}`)||'null')?.payload||null;await repaintPendingState()}catch(error){console.warn('Copia local:',error)}}
       const revision=fieldRevision;
       try{
-        const response=await hscFetch(`/api/operaciones/bootstrap${refresh?'?refresh=1':''}`,{cache:'no-store',headers:{Accept:'application/json'}});
+        const response=await hscFetch(`/api/operaciones/bootstrap${refresh?'?refresh=1':''}`,{cache:'no-store',headers:{Accept:'application/json'}},refresh?40000:20000);
         if(response.status===401||response.redirected)throw Error('Tu sesión necesita renovarse. Conservamos los pendientes; vuelve a iniciar sesión en la misma cuenta.');
         if(!response.ok)throw Error(`HSC no pudo actualizar (${response.status}). Se conserva tu trabajo local.`);
         const payload=await response.json();
@@ -481,8 +481,8 @@
         lastServerPayload=payload;try{cacheServerPayload()}catch(_){toast('No hay espacio para actualizar la copia local; no borres datos si tienes envíos pendientes.');}
         await repaintPendingState();
         if(payload.warning)$('#matrixStatus').textContent=payload.warning;
-        if(refresh&&payload.stale)throw Error(payload.warning||'Google no respondió; importación pendiente');
-        if(refresh)toast('Importación de Google confirmada');return true;
+        if(refresh&&(!payload.import_confirmed||payload.stale))throw Error(payload.warning||'Google no respondió; se conservan los datos anteriores');
+        if(refresh)toast('Cambios de Google importados y visibles');return true;
       }catch(error){
         try{await repaintPendingState()}catch(localError){console.warn('Vista local:',localError)}
         $('#matrixStatus').textContent=serverConnection==='auth'?'Sesión por renovar · trabajo local conservado':lastServerPayload?'Sin respuesta de HSC · mostrando trabajo guardado':'HSC no respondió · reintentando';
