@@ -65,6 +65,7 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
 
     clients = []
     duplicate_clients = 0
+    duplicate_client_ids = []
     seen_clients = set()
     for row in by_title.get("Clientes", []):
         client_id = _text(_pick(row, "ID_Cliente", "ID Cliente"))
@@ -72,6 +73,8 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
             continue
         if client_id in seen_clients:
             duplicate_clients += 1
+            if client_id not in duplicate_client_ids:
+                duplicate_client_ids.append(client_id)
             continue
         seen_clients.add(client_id)
         photo = _text(_pick(row, "Foto", "Foto Cliente"))
@@ -90,6 +93,7 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
 
     equipment = []
     duplicate_equipment = 0
+    duplicate_equipment_ids = []
     seen_equipment = set()
     for row in by_title.get("Equipos", []):
         equipment_id = _text(_pick(row, "ID_Equipo", "ID Equipo"))
@@ -98,6 +102,8 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
             continue
         if equipment_id in seen_equipment:
             duplicate_equipment += 1
+            if equipment_id not in duplicate_equipment_ids:
+                duplicate_equipment_ids.append(equipment_id)
             continue
         seen_equipment.add(equipment_id)
         photo = _text(_pick(row, "Foto", "Foto Equipo"))
@@ -121,6 +127,7 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
 
     reports = []
     duplicate_reports = 0
+    duplicate_report_ids = []
     seen_reports = set()
     evidence_count = 0
     for row in by_title.get("Reportes", []):
@@ -131,6 +138,8 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
             continue
         if report_id in seen_reports:
             duplicate_reports += 1
+            if report_id not in duplicate_report_ids:
+                duplicate_report_ids.append(report_id)
             continue
         seen_reports.add(report_id)
         evidence_refs = [_text(_pick(row, f"Foto{index}", f"Foto {index}")) for index in range(1, 7)]
@@ -245,6 +254,9 @@ def build_operaciones_bootstrap(value_ranges, *, include_media_refs=False, inclu
             "duplicate_clients": duplicate_clients,
             "duplicate_equipment": duplicate_equipment,
             "duplicate_reports": duplicate_reports,
+            "duplicate_client_ids": duplicate_client_ids[:20],
+            "duplicate_equipment_ids": duplicate_equipment_ids[:20],
+            "duplicate_report_ids": duplicate_report_ids[:20],
             "faults": len(faults),
             "duplicate_faults": duplicate_faults,
             "fault_sheets": fault_sheet_count,

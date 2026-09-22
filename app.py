@@ -3779,6 +3779,7 @@ def api_operaciones_bootstrap():
     # A manual refresh must return the newly imported snapshot, not start a
     # background job and immediately label the previous data as confirmed.
     if refresh and OPERACIONES_STORE.enabled:
+        failure_warning = "Google no confirmó la importación. Se conservan los datos anteriores."
         try:
             incoming = read_operaciones_matrix(
                 get_sheets_service(timeout=25), SHEET_ID,
@@ -3786,6 +3787,18 @@ def api_operaciones_bootstrap():
             )
             checks = _operations_migration_checks(incoming.get("stats") or {})
             if not checks["ready"]:
+                stats = incoming.get("stats") or {}
+                groups = []
+                for label, key in (("clientes", "duplicate_client_ids"),
+                                   ("equipos", "duplicate_equipment_ids"),
+                                   ("reportes", "duplicate_report_ids")):
+                    ids = [str(value) for value in stats.get(key) or [] if str(value).strip()]
+                    if ids:
+                        groups.append(f"{label}: {', '.join(ids)}")
+                failure_warning = "La Hoja Matriz tiene IDs duplicados"
+                if groups:
+                    failure_warning += " · " + " · ".join(groups)
+                failure_warning += ". Corrígelos en AppSheet antes de importar."
                 raise ValueError("La matriz contiene IDs duplicados; importación detenida.")
             OPERACIONES_STORE.import_matrix_snapshot(
                 _complete_legacy_operations_relations(incoming)
@@ -3802,9 +3815,7 @@ def api_operaciones_bootstrap():
                 **_scope_operaciones_payload(payload),
             })
         except Exception as exc:
-            _OPERACIONES_IMPORT_STATUS["error"] = (
-                "Google no confirmó la importación. Se conservan los datos anteriores."
-            )
+            _OPERACIONES_IMPORT_STATUS["error"] = failure_warning
             current_app.logger.exception("No se pudo confirmar el refresco manual de la matriz: %s", exc)
             try:
                 payload = _prepare_operaciones_payload(OPERACIONES_STORE.snapshot())
