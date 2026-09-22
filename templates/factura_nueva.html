@@ -26,6 +26,7 @@
     @media(min-width:560px){ .row-2{grid-template-columns:1fr 1fr} }
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);cursor:pointer;font-weight:700;font-size:15px;background:#f9f9f9;color:#0f172a;text-decoration:none}
     .btn:hover{background:#f3f4f6}
+    .btn-primary:disabled{background:var(--brand);color:#fff;opacity:.8;cursor:wait}
     .btn-primary{background:var(--brand);color:#fff;border-color:transparent}
     .btn-ok{background:var(--ok);color:#fff;border-color:transparent}
     .btn-danger{background:var(--danger);color:#fff;border-color:transparent}
@@ -62,6 +63,7 @@
     html[data-theme="dark"] .theme-track{background:#22c55e}html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
     @media(max-width:839px){.wrap{padding:11px}.top{align-items:flex-start;flex-direction:column}.top .actions{width:100%}.top .actions>*{flex:1}.card{padding:11px}}
     .template-backdrop{position:fixed;inset:0;z-index:9999;display:none;place-items:center;padding:18px;background:rgba(2,6,23,.62);overflow-y:auto}.template-backdrop.show{display:grid}.template-dialog{width:min(460px,100%);max-height:calc(100vh - 36px);overflow:auto;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.template-dialog.mail-dialog{width:min(680px,100%);scrollbar-gutter:stable}.template-dialog h2{margin:0 0 5px;font-size:1.15rem}.template-dialog p{margin:0 0 14px;color:var(--muted);font-size:.82rem}.template-dialog .actions{margin-top:14px;justify-content:flex-end}.mail-dialog>.actions{position:sticky;bottom:-18px;margin-left:-18px;margin-right:-18px;margin-bottom:-18px;padding:14px 18px;background:var(--card);border-top:1px solid var(--line)}.modal-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:13px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);font-size:.84rem}.modal-summary strong{display:block;margin-top:2px;color:var(--ink)}.recipient-presets,.email-history{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.email-history button{padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:var(--soft);color:var(--ink);cursor:pointer}.email-history button span{margin-left:7px;color:var(--muted)}.modal-error{min-height:18px;margin-top:8px;color:var(--danger);font-size:.82rem;font-weight:700}.hidden{display:none!important}.billing-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:3px}.environment-pill,.folio-counter{display:inline-flex;padding:3px 8px;border:1px solid #93c5fd;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:.75rem;font-weight:800}.environment-pill.production{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}.folio-counter{gap:5px}.folio-counter small{font-size:.68rem;font-weight:650;color:var(--muted)}.folio-counter.warning{border-color:#fbbf24;background:#fffbeb;color:#92400e}.folio-counter.empty{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}html[data-theme="dark"] .environment-pill,html[data-theme="dark"] .folio-counter{background:#152849;color:#93c5fd}html[data-theme="dark"] .environment-pill.production,html[data-theme="dark"] .folio-counter.empty{background:#451a1a;color:#fca5a5}html[data-theme="dark"] .folio-counter.warning{background:#422006;color:#fcd34d}@media(max-width:560px){.modal-summary{grid-template-columns:1fr}.folio-counter small{display:none}}
+    .modal-error.pending{color:var(--muted)}
     @media(max-width:700px){
       .mobile-concept-entry{display:block!important;margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--field)}
       .mobile-concept-entry textarea{min-height:112px;font-size:16px;line-height:1.4}
@@ -313,11 +315,14 @@
     <div class="template-dialog mail-dialog">
       <h2 id="invoiceEmailTitle">Enviar factura por correo</h2>
       <p>Se adjuntarán automáticamente el PDF y el XML. También puedes agregar otros documentos.</p>
-      <label for="invoiceEmailContact">Atención / destinatario</label>
-      <select id="invoiceEmailContact"><option value="">Escribir destinatario manualmente</option></select>
-      <div class="pill">Elige una persona; se usará únicamente el correo asignado a ella.</div>
-      <label for="invoiceEmailRecipients">Destinatarios</label>
-      <input id="invoiceEmailRecipients" type="text" placeholder="cliente@empresa.com; compras@empresa.com" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <div id="invoiceEmailContactWrap" class="hidden">
+        <label for="invoiceEmailContact">Persona de contacto (opcional)</label>
+        <select id="invoiceEmailContact"></select>
+        <div class="pill">Si eliges una persona, se usará su correo.</div>
+      </div>
+      <label for="invoiceEmailRecipients">Enviar a estos correos</label>
+      <input id="invoiceEmailRecipients" type="text" inputmode="email" placeholder="cliente@empresa.com; compras@empresa.com" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <div class="pill">Aquí van los correos que recibirán el PDF y XML de la factura.</div>
       <div class="pill">Separa varios correos con coma, punto y coma o un renglón nuevo.</div>
       <label for="invoiceEmailCc">CC</label>
       <input id="invoiceEmailCc" type="text" placeholder="Correos con copia, separados por coma" autocomplete="off" autocapitalize="none" spellcheck="false">
@@ -333,7 +338,7 @@
       <label for="invoiceEmailFiles">Archivos adicionales (opcional)</label>
       <input id="invoiceEmailFiles" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,.csv">
       <div class="pill">Hasta 8 archivos adicionales y 15 MB en total.</div>
-      <div id="invoiceEmailKeyWrap"><label for="invoiceEmailKey">Clave de envío (solo la primera vez)</label><input id="invoiceEmailKey" type="password" autocomplete="off" placeholder="Clave privada configurada en Render"></div>
+      <div id="invoiceEmailKeyWrap" class="hidden"><label for="invoiceEmailKey">Clave de envío (solo al autorizar este dispositivo)</label><div class="pill">No es la contraseña de tu correo; es la clave privada configurada en Render.</div></div>
       <div class="modal-error" id="invoiceEmailError"></div>
       <div class="actions"><button class="btn" id="invoiceEmailCancel" type="button">Regresar</button><button class="btn btn-primary" id="invoiceEmailSend" type="button">✉ Enviar PDF y XML</button></div>
     </div>
@@ -1111,13 +1116,23 @@
     const invoiceEmailMessage = document.getElementById('invoiceEmailMessage');
     const invoiceEmailFiles = document.getElementById('invoiceEmailFiles');
     const invoiceEmailStoredFiles = document.getElementById('invoiceEmailStoredFiles');
-    const invoiceEmailKey = document.getElementById('invoiceEmailKey');
+    const invoiceEmailKey = document.createElement('input');
+    invoiceEmailKey.id = 'invoiceEmailKey';
+    invoiceEmailKey.type = 'password';
+    invoiceEmailKey.autocomplete = 'off';
+    invoiceEmailKey.placeholder = 'Clave privada configurada en Render';
     const invoiceEmailKeyWrap = document.getElementById('invoiceEmailKeyWrap');
     const invoiceEmailError = document.getElementById('invoiceEmailError');
     const invoiceEmailSend = document.getElementById('invoiceEmailSend');
     const invoiceEmailHistory = document.getElementById('invoiceEmailHistory');
     const invoiceEmailContact = document.getElementById('invoiceEmailContact');
+    const invoiceEmailContactWrap = document.getElementById('invoiceEmailContactWrap');
     const invoiceEmailFrequent = document.getElementById('invoiceEmailFrequent');
+
+    function showInvoiceEmailKey(){
+      if(!invoiceEmailKey.isConnected) invoiceEmailKeyWrap.append(invoiceEmailKey);
+      invoiceEmailKeyWrap.classList.remove('hidden');
+    }
 
     function addStampedCc(email){
       const current = invoiceEmailCc.value.split(/[,;\n]+/).map(value=>value.trim()).filter(Boolean);
@@ -1162,8 +1177,9 @@
       invoiceEmailContact.innerHTML = '';
       const eligible=(contacts || []).filter(item=>item.correo && ['cuentas_pagar','ambos'].includes(item.tipo));
       const usable=eligible.length ? eligible : (contacts || []).filter(item=>item.correo);
+      invoiceEmailContactWrap.classList.toggle('hidden', !usable.length);
+      if(usable.length && fallbackEmail) invoiceEmailContact.add(new Option(`Correo de facturación — ${fallbackEmail}`, fallbackEmail));
       usable.forEach(item=>invoiceEmailContact.add(new Option(`${item.nombre} — ${item.correo}`, item.correo)));
-      if(!usable.length) invoiceEmailContact.add(new Option('Escribir destinatario manualmente', ''));
       invoiceEmailRecipients.value = invoiceEmailContact.value || fallbackEmail || '';
       invoiceEmailContact.onchange=()=>{if(invoiceEmailContact.value) invoiceEmailRecipients.value=invoiceEmailContact.value;};
     }
@@ -1175,6 +1191,7 @@
       invoiceEmailMessage.value = `Buen día, estimado cliente. Envío la factura solicitada.\n\nDe antemano muchas gracias.\n\nQuedo a sus órdenes.\n\nIng. Héctor Silva Cid\n\nCel: 5527605496`;
       invoiceEmailFiles.value = '';
       invoiceEmailKey.value = '';
+      invoiceEmailKey.remove();
       invoiceEmailKeyWrap.classList.add('hidden');
       invoiceEmailError.textContent = '';
       invoiceEmailCc.value = '';
@@ -1189,7 +1206,10 @@
       try{
         const statusResponse = await fetch('/api/email/status', {headers:{'Accept':'application/json'}});
         const status = await statusResponse.json();
-        if(!status.trusted) invoiceEmailKeyWrap.classList.remove('hidden');
+        if(!status.configured){
+          invoiceEmailError.textContent = 'El correo de salida no está configurado. La factura sí quedó timbrada; podrás enviarla después.';
+        }
+        if(!status.trusted) showInvoiceEmailKey();
         if(status.trusted){
           const contactsResponse = await fetch('/api/clientes/contactos-seleccionado', {
             method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
@@ -1204,7 +1224,9 @@
             renderStampedEmailHistory(stampedEmailContext.correos.historial || []);
           }
         }
-      }catch(_){ invoiceEmailKeyWrap.classList.remove('hidden'); }
+      }catch(_){
+        invoiceEmailError.textContent = 'No se pudo comprobar el permiso de envío mientras Render responde. Espera un momento y vuelve a abrir esta ventana; la factura ya está timbrada.';
+      }
       try{
         const documentsResponse = await fetch(`/api/invoices/${encodeURIComponent(stampedEmailContext.id)}/documents`, {headers:{'Accept':'application/json'}});
         const documents = await documentsResponse.json();
@@ -1240,9 +1262,12 @@
         invoiceEmailKey.focus();
         return;
       }
+      invoiceEmailError.classList.remove('pending');
       invoiceEmailError.textContent = '';
       invoiceEmailSend.disabled = true;
-      invoiceEmailSend.textContent = 'Enviando…';
+      invoiceEmailSend.textContent = 'Preparando y enviando…';
+      invoiceEmailError.classList.add('pending');
+      invoiceEmailError.textContent = 'Preparando el PDF y XML para enviar. Espera la confirmación antes de volver a intentarlo.';
       try{
         const form = new FormData();
         form.append('email', invoiceEmailRecipients.value.trim());
@@ -1254,7 +1279,9 @@
         Array.from(invoiceEmailFiles.files).forEach(file=>form.append('attachments', file));
         invoiceEmailStoredFiles.querySelectorAll('input[data-stored-attachment]:checked').forEach(input=>form.append('stored_attachments', input.value));
         const response = await fetch(`/api/invoices/${encodeURIComponent(stampedEmailContext.id)}/email`, {method:'POST',headers:{'Accept':'application/json'},body:form});
-        const result = await response.json();
+        const result = await response.json().catch(()=>{
+          throw new Error('Render no confirmó el envío. Antes de reintentar, revisa si el correo ya llegó para evitar duplicarlo.');
+        });
         if(!response.ok || !result.ok) throw new Error(result.error || 'No se pudo enviar el correo.');
         const recordedContext = {...stampedEmailContext};
         const recordedEmails = [invoiceEmailRecipients.value.trim(), invoiceEmailCc.value.trim()].filter(Boolean).join('; ');
@@ -1264,10 +1291,14 @@
         }).catch(()=>{});
         goToInvoicePanel('&email=1');
       }catch(error){
-        invoiceEmailError.textContent = error.message || String(error);
-        if(String(error.message || '').toLowerCase().includes('clave')) invoiceEmailKeyWrap.classList.remove('hidden');
+        invoiceEmailError.classList.remove('pending');
+        invoiceEmailError.textContent = error instanceof TypeError
+          ? 'Se perdió la conexión antes de confirmar el envío. Revisa si el correo ya llegó antes de reintentar para evitar duplicarlo.'
+          : (error.message || String(error));
+        if(String(error.message || '').toLowerCase().includes('clave')) showInvoiceEmailKey();
         invoiceEmailSend.disabled = false;
         invoiceEmailSend.textContent = '✉ Reintentar';
+        invoiceEmailError.scrollIntoView({block:'nearest'});
       }
     };
 
