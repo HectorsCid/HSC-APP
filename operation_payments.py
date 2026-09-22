@@ -134,6 +134,10 @@ def listing(store, day=None):
     people, accounts, expenses, _ = data
     ids = {p['id'] for p in people.values() if p['role'] == 'technician'} | set(accounts) | {e['user_id'] for e in expenses}
     rows = [_calculate(uid, data, day or today()) for uid in ids]
+    # Deleted technicians can remain referenced by settled expense history.
+    # Keep the ledger, but do not resurrect a zero-balance account in the
+    # current payments dashboard. Outstanding debt must remain visible.
+    rows = [row for row in rows if row['id'] in people or row['due_cents'] > 0]
     for row in rows:
         row.pop('weeks')
         row.pop('plans')

@@ -5,6 +5,10 @@
   .repair-optional summary::after{content:'⌄';float:right}
   .repair-optional[open] summary::after{transform:rotate(180deg)}
   .repair-optional-fields{margin-top:10px}
+  .repair-valve{border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+  .repair-valve-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .repair-valve-dial{width:58px;height:58px;border:2px solid currentColor;border-radius:50%;display:grid;place-items:center;font-size:30px;transition:transform .3s ease}
+  .repair-valve-steps{font-size:.9em;color:var(--muted)}
 </style>
 <section class="view repairs" data-view="repairs">
   <div class="section-head"><div><h2>Reparaciones</h2><p class="muted">Cada visita conserva lo que fallaba, lo que hicimos y cómo quedó.</p></div><button class="primary" id="repairNew" type="button" data-permission="createReports">＋ Registrar reparación</button></div>
@@ -22,19 +26,18 @@
   <p class="form-intro">Una visita independiente: no cambia la ronda ni crea una póliza. Los borradores se guardan en este dispositivo.</p>
   <form id="repairForm" autocomplete="off">
     <fieldset><legend>¿A quién y a qué equipo?</legend><div class="repair-grid">
-      <label>Cliente<select id="repairClient"></select></label><label id="repairClientNameField">Nombre del cliente<input name="client_name" maxlength="200" required></label>
-      <label>Equipo<select id="repairEquipment"></select></label><label id="repairEquipmentNameField">Nombre del equipo<input name="equipment_name" maxlength="200" required></label>
-      <label>Fecha de la visita<input name="service_date" type="date" required></label>
-    </div><details class="repair-optional"><summary>Datos adicionales del cliente o equipo</summary><div class="repair-grid"><label class="repair-wide">Dirección<input name="address" maxlength="400"></label><label>Modelo<input name="model" maxlength="160"></label><label>Número de serie<input name="serial" maxlength="160"></label><label>Ubicación<input name="location" maxlength="200"></label></div></details><p class="muted">Si no está en el catálogo, escribe el nombre; no se agregará a la póliza.</p></fieldset>
+      <label>Cliente<input name="client_name" id="repairClient" list="repairClientOptions" maxlength="200" placeholder="Nombre del cliente" required><datalist id="repairClientOptions"></datalist></label>
+      <label>Equipo<input name="equipment_name" id="repairEquipment" list="repairEquipmentOptions" maxlength="200" placeholder="Nombre del equipo" required><datalist id="repairEquipmentOptions"></datalist></label>
+    </div><p class="muted">La fecha se registra automáticamente. Puedes escribir un cliente o equipo nuevo sin agregarlo a la póliza.</p></fieldset>
     <fieldset><legend>Qué ocurrió y qué hicimos</legend>
       <label>¿Qué fallaba?<textarea name="symptom" rows="3" maxlength="6000" placeholder="Ej. La cámara no llegaba a su temperatura."></textarea></label>
       <label>Trabajo realizado<textarea name="work" rows="4" maxlength="10000" placeholder="Qué revisaste, reparaste o cambiaste."></textarea></label>
     </fieldset>
-    <fieldset><legend>Cómo quedó</legend><label>Estado al terminar<select name="outcome"><option value="working">Trabajando bien</option><option value="follow_up">Requiere seguimiento</option><option value="stopped">Fuera de servicio</option></select></label>
-      <label>Resultado y prueba de funcionamiento<textarea name="result" rows="3" maxlength="6000" placeholder="Ej. Se deja trabajando bien, con 33 psi en baja."></textarea></label>
-      <label>Presión baja · psi (opcional)<input name="pressure_low" inputmode="decimal" maxlength="40" placeholder="Ej. 33"></label>
-      <details class="repair-optional"><summary>Diagnóstico, partes y otras mediciones</summary><div class="repair-optional-fields"><label>Diagnóstico<textarea name="diagnosis" rows="3" maxlength="6000"></textarea></label><label>Partes utilizadas<textarea name="parts" rows="2" maxlength="4000" placeholder="Una parte por renglón; incluye cantidad si aplica."></textarea></label><div class="repair-grid"><label>Refrigerante<input name="refrigerant" maxlength="50" placeholder="Ej. R404A"></label><label>Presión alta · psi<input name="pressure_high" inputmode="decimal" maxlength="40"></label><label>Temperatura · °C<input name="temperature" inputmode="decimal" maxlength="40"></label><label>Amperaje · A<input name="amperage" inputmode="decimal" maxlength="40"></label></div><label>Condiciones de medición / otros parámetros<textarea name="measurement_notes" rows="2" maxlength="2000" placeholder="Punto medido, circuito, condiciones de operación…"></textarea></label><label>Recomendaciones / siguiente paso<textarea name="recommendations" rows="3" maxlength="6000"></textarea></label><label>Nombre de quien recibe el servicio<input name="received_by" maxlength="160"></label></div></details>
+    <fieldset><legend>Resultado y mediciones</legend>
+      <label>¿Cómo quedó?<textarea name="result" rows="2" maxlength="6000" placeholder="Ej. Se deja trabajando bien, con 33 psi en baja."></textarea></label>
+      <div class="repair-grid"><label>Presión baja · psi<input name="pressure_low" inputmode="decimal" maxlength="40" placeholder="Ej. 33"></label><label>Presión alta · psi<input name="pressure_high" inputmode="decimal" maxlength="40"></label><label>Temperatura · °C<input name="temperature" inputmode="decimal" maxlength="40"></label><label>Amperaje · A<input name="amperage" inputmode="decimal" maxlength="40"></label><label>Tipo de gas<input name="refrigerant" maxlength="50" placeholder="Ej. R404A"></label></div>
     </fieldset>
+    <fieldset><legend>Válvula de expansión (si la ajustaste)</legend><p class="muted">Cada toque registra ⅛ de vuelta respecto a la posición inicial, mirando de frente el tornillo de ajuste.</p><div id="repairValves"></div><button class="secondary" id="repairAddValve" type="button">＋ Registrar válvula</button></fieldset>
     <fieldset><legend>Evidencia fotográfica</legend><p class="muted">Sin límite de seis espacios. Puedes agregar varias de golpe o una por una; se comprimen antes de guardarlas.</p>
       <label>Etapa para las próximas fotos<select id="repairPhotoStage"><option value="before">Antes</option><option value="during">Durante el trabajo</option><option value="after">Después</option></select></label>
       <div class="repair-actions"><button class="secondary" id="repairCamera" type="button">📷 Tomar foto</button><button class="secondary" id="repairGallery" type="button">Elegir fotos</button></div>

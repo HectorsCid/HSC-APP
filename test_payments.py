@@ -39,6 +39,19 @@ class PaymentTests(unittest.TestCase):
         with self.store.connection() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM operations_pay_accounts').fetchone()[0],0)
 
+    def test_deleted_technician_with_settled_expense_is_not_listed(self):
+        self.expense('old', '2026-09-12', 100, status='Liquidado', user='T2')
+        self.assertTrue(self.store.delete_user_account('T2'))
+        self.assertEqual([r['id'] for r in pay.listing(self.store, date(2026,9,20))], ['T1'])
+        self.assertEqual(pay.detail(self.store, 'T2', date(2026,9,20))['due_cents'], 0)
+
+    def test_deleted_technician_with_unpaid_expense_remains_visible(self):
+        self.expense('old', '2026-09-12', 100, user='T2')
+        self.assertTrue(self.store.delete_user_account('T2'))
+        rows = pay.listing(self.store, date(2026,9,20))
+        self.assertEqual(rows[0]['id'], 'T2')
+        self.assertEqual(rows[0]['due_cents'], 10000)
+
     def test_sunday_never_resets_expense_debt(self):
         self.expense('old','2026-09-12',123.45)
         self.expense('recent','2026-09-19',100,'Aprobado')

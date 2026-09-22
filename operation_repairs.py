@@ -108,6 +108,24 @@ def save(store, body, actor, admin=False, author=''):
         if body.get('outcome') not in ('working', 'follow_up', 'stopped'):
             raise ValueError('Selecciona cómo quedó el equipo.')
         photos, seen = [], set()
+        valves, valve_ids = [], set()
+        raw_valves = body.get('valve_adjustments', [])
+        if not isinstance(raw_valves, list) or len(raw_valves) > 20:
+            raise ValueError('Registro de válvulas no válido.')
+        for valve in raw_valves:
+            if not isinstance(valve, dict):
+                raise ValueError('Válvula no válida.')
+            valve_id = token(valve.get('id'))
+            movements = valve.get('movements', [])
+            if valve_id in valve_ids or not isinstance(movements, list) or len(movements) > 1000:
+                raise ValueError('Movimientos de válvula no válidos.')
+            valve_ids.add(valve_id)
+            checked = []
+            for move in movements:
+                if not isinstance(move, dict) or type(move.get('steps')) is not int or move['steps'] not in (-1, 1):
+                    raise ValueError('Cada movimiento debe ser de 1/8 de vuelta.')
+                checked.append(dict(steps=move['steps'], at=clean(move.get('at', ''), 40)))
+            valves.append(dict(id=valve_id, name=clean(valve.get('name', ''), 100), movements=checked))
         raw_photos = body.get('photos', [])
         if not isinstance(raw_photos, list):
             raise ValueError('Lista de fotografías no válida.')
@@ -129,7 +147,7 @@ def save(store, body, actor, admin=False, author=''):
                       client_key=result['client_key'], equipment_key=result['equipment_key'],
                       service_date=service_date, outcome=body['outcome'], requested_status=status,
                       status='uploading' if status == 'completed' and any(photo['id'] not in refs for photo in photos) else status,
-                      photos=photos, created_by=old['created_by'] if old else actor,
+                      photos=photos, valve_adjustments=valves, created_by=old['created_by'] if old else actor,
                       author=old['author'] if old else clean(author or actor, 200),
                       created_at=old['created_at'] if old else stamp, updated_at=stamp, updated_by=actor)
         blob = json.dumps(result, ensure_ascii=False)

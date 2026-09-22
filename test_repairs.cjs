@@ -1,9 +1,10 @@
 const assert=require('node:assert/strict');
-const {visible,label,transmit}=require('./static/operations_repairs.js');
+const {visible,label,transmit,valvePosition,valveLabel}=require('./static/operations_repairs.js');
 (async()=>{
   const data={id:'REP_1',mutation_id:'change1',equipment_key:'equipment:A1',result:'Quedó a 33 psi',photos:Array.from({length:9},(_,i)=>({id:'p'+i,stage:'after'}))};
   const row={id:data.id,data,localState:'pending',files:data.photos.map(p=>({id:p.id,blob:new Blob(['image']),name:'photo.jpg'}))};
   assert.equal(visible(row,'33 psi','equipment:A1'),true);assert.equal(visible(row,'33 psi','equipment:B1'),false);assert.equal(label(row),'Pendiente de envío');
+  assert.equal(valvePosition([{steps:1},{steps:1},{steps:-1}]),1);assert.equal(valveLabel(1),'1/8 de vuelta a la derecha del inicio');assert.equal(valveLabel(0),'Posición original');
   let calls=[];const request=async(url,options)=>{calls.push({url,options});return {repair:{...data,status:'completed'}}};
   const result=await transmit(row,request);assert.equal(result.status,'completed');assert.equal(calls.length,11);assert.ok(calls[10].url.endsWith('/finish'));
   assert.equal(calls[1].options.body.get('mutation_id'),'change1');assert.equal(JSON.parse(calls[0].options.body).id,'REP_1');
