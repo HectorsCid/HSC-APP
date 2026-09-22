@@ -29,6 +29,15 @@ def clean(value, limit=4000):
     return value
 
 
+def format_turns(steps):
+    eighths = abs(int(steps))
+    whole, remainder = divmod(eighths, 8)
+    part = (f'{remainder}/8' if remainder % 2 else
+            f'{remainder // 2}/4' if remainder % 4 else
+            '1/2' if remainder else '')
+    return ' '.join(piece for piece in (str(whole) if whole else '', part) if piece) or '0'
+
+
 def read(store, ident, actor, admin=False, *, edit=False, conn=None, lock=False):
     if conn is None:
         store.initialize()

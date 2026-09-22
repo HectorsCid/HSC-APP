@@ -122,6 +122,6 @@ def create_repair_blueprint(store, role, forbidden, permission, uploader, photo_
         repair = repairs.read(store, ident, *identity())
         if repair['status'] != 'completed':
             raise repairs.Conflict('Finaliza la visita y confirma sus fotos antes de emitir la remisión.')
-        return render_template('repair_remision.html', repair=repair)
+        return render_template('repair_remision.html', repair=repair, format_turns=repairs.format_turns)
 
     return bp

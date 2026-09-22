@@ -88,6 +88,8 @@ class RepairTests(unittest.TestCase):
         self.assertEqual(len(self.store.snapshot()['equipment']),1)
 
     def test_valve_eighth_turns_persist_and_reject_other_steps(self):
+        self.assertEqual([repairs.format_turns(n) for n in (1,2,4,6,8,10)],
+                         ['1/8','1/4','1/2','3/4','1','1 1/4'])
         valve = dict(id='v1', name='Circuito 1', movements=[dict(steps=3, at='2026-09-21T10:00:00Z', pressure_low='33', pressure_high='210'), dict(steps=-1, at='2026-09-21T10:01:00Z', pressure_low='', pressure_high='')])
         row = self.save({**self.body, 'valve_adjustments': [valve]})
         self.assertEqual(row['valve_adjustments'][0]['movements'][1]['steps'], -1)
