@@ -109,7 +109,7 @@
     .topbar [data-notice-count]:not(:empty){position:absolute;top:-3px;right:-3px;min-width:18px;padding:1px 4px;border-radius:10px;background:var(--brand);color:#fff;font-size:11px;line-height:16px}
     .client-tools{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 16px}.client-tools button{min-height:40px;padding:0 11px;font-size:.82rem;box-shadow:none}
     .client-worklists{padding:14px;border:1px solid var(--line);border-radius:18px;background:var(--surface);margin:14px 0}.client-worklists .section-head{margin:0 0 10px}.client-worklists .section-head button{min-height:38px;padding:0 10px;font-size:.8rem}
-    .client-worklist-card{padding:11px 0;border-top:1px solid var(--line)}.client-worklist-card header{display:flex;align-items:center;gap:8px}.client-worklist-card header b{flex:1;min-width:0;overflow-wrap:anywhere}.client-worklist-card small{display:block;margin:3px 0 8px;color:var(--muted)}.client-worklist-items{display:flex;gap:6px;flex-wrap:wrap;max-height:160px;overflow-y:auto;overscroll-behavior:contain}.client-worklist-items button{min-height:36px;padding:5px 9px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--text);font-size:.78rem;text-align:left}.client-worklist-items button.done{border-color:var(--ok)}
+    .client-worklist-card{padding:11px 0;border-top:1px solid var(--line)}.client-worklist-card header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.client-worklist-card header b{flex:1 1 100px;min-width:0;overflow-wrap:anywhere}.client-worklist-card small{display:block;margin:3px 0 8px;color:var(--muted)}.client-worklist-items{display:flex;gap:6px;flex-wrap:wrap;max-height:160px;overflow-y:auto;overscroll-behavior:contain}.client-worklist-items button{min-height:36px;padding:5px 9px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--text);font-size:.78rem;text-align:left}.client-worklist-items button.done{border-color:var(--ok)}
     .client-worklist-options{position:relative}.client-worklist-options summary{display:grid;place-items:center;min-width:38px;min-height:38px;border:1px solid var(--line);border-radius:10px;list-style:none;cursor:pointer}.client-worklist-options summary::-webkit-details-marker{display:none}.client-worklist-options>div{position:absolute;z-index:5;right:0;top:40px;display:grid;gap:5px;min-width:160px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:var(--shadow)}.client-worklist-options button{min-height:36px;border:0;background:var(--surface-2);color:var(--text);text-align:left;border-radius:8px;padding:5px 8px}
     @media(max-width:480px){
       .topbar{gap:6px;padding-right:calc(10px + env(safe-area-inset-right,0px));padding-left:calc(10px + env(safe-area-inset-left,0px))}
@@ -337,7 +337,7 @@
 
 <div class="modal" id="profileEditModal"><div class="sheet"><div class="eyebrow">Mi cuenta</div><h2>Editar perfil</h2><div class="field"><label for="ownProfileName">Nombre visible</label><input id="ownProfileName" maxlength="100" autocomplete="name"></div><div class="field" id="ownProfilePhotoField" style="margin-top:12px"><label for="ownProfilePhoto">Fotografía opcional</label><input id="ownProfilePhoto" type="file" accept="image/jpeg,image/png,image/webp"><p class="editor-note">JPG, PNG o WebP de máximo 8 MB.</p></div><div class="sheet-actions"><button class="secondary" id="closeOwnProfile" type="button">Cancelar</button><button class="primary" id="saveOwnProfile" type="button">Guardar perfil</button></div></div></div>
 {% include '_operations_worklist_editor.html' %}
-<script src="/static/operations_worklists.js?v=2"></script>
+<script src="/static/operations_worklists.js?v=3"></script>
 <script src="/static/operations_repairs.js?v=1"></script>
 {% if operations_is_owner %}<script src="/static/operations_payments.js?v=1"></script>{% endif %}
 <script src="/static/operations_offline.js?v=20260920-worklists"></script>
@@ -560,7 +560,7 @@
     if(view==='repairs')return ['clients','repairs'];
     if(view==='repair')return ['clients','repairs','repair'];
     if(view==='repairEditor')return ['clients','repairs','repairEditor'];
-    if(view==='worklist')return ['clients','agenda','worklists','worklist'];
+    if(view==='worklist')return ['clients','client','worklist'];
     const paths={client:['clients','client'],equipment:currentMode==='partner'?['partner','partnerEquipment','equipment']:['clients','client','equipment'],report:['clients','client','equipment','report'],agenda:['clients','agenda'],profile:['clients','profile'],expenses:['clients','profile','expenses'],task:['clients','agenda','task'],users:['clients','users'],userPermissions:['clients','users','userPermissions'],clientEditor:['clients','clientEditor'],equipmentEditor:['clients','client','equipmentEditor'],partnerEquipment:['partner','partnerEquipment'],partnerReports:['partner','partnerReports'],partnerFaults:['partner','partnerFaults'],partnerDocuments:['partner','partnerDocuments'],reportView:currentMode==='partner'?['partner','partnerReports','reportView']:['clients','client','equipment','reportView']};
     return paths[view]||[view];
   }
@@ -568,7 +568,7 @@
     if(view==='expenses'&&account.isOwner)return 'payments';
     if(view==='payAccount')return 'payments';
     if(view==='payments')return 'profile';
-    if(view==='worklist')return 'worklists';
+    if(view==='worklist')return 'client';
     if(['repair','repairEditor'].includes(view))return 'repairs';
     if(view==='repairs')return 'clients';
     if(view==='worklists')return 'agenda';
