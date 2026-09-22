@@ -541,7 +541,7 @@
       return `
         <tr data-index="${i}">
           <td>${i+1}</td>
-          <td><input class="c-desc" value="${fieldValue(d.descripcion)}" /></td>
+          <td><input class="c-desc" autocapitalize="sentences" value="${fieldValue(d.descripcion)}" /></td>
           <td><input class="c-cant" type="number" step="0.01" min="0" value="${d.cantidad??1}"/></td>
           <td><input class="c-precio" type="number" step="0.01" min="0" value="${d.precio_unitario??0}"/></td>
           <td><input class="c-cps" value="${fieldValue(d.clave_prod_serv||'85121600')}"/></td>

@@ -75,11 +75,10 @@
     field.spellcheck = true;
     field.setAttribute('spellcheck', 'true');
     field.setAttribute('autocorrect', 'on');
-    field.autocapitalize = field instanceof HTMLTextAreaElement ? 'sentences' : 'words';
-    field.setAttribute(
-      'autocapitalize',
-      field instanceof HTMLTextAreaElement ? 'sentences' : 'words'
-    );
+    const capitalization = field.getAttribute('autocapitalize')
+      || (field instanceof HTMLTextAreaElement ? 'sentences' : 'words');
+    field.autocapitalize = capitalization;
+    field.setAttribute('autocapitalize', capitalization);
     field.dataset.hscSpellcheck = 'active';
   }
 
