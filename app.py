@@ -4541,6 +4541,19 @@ def api_operaciones_save_fault():
         return jsonify({"ok": False, "error": "No se pudo registrar la falla."}), 500
 
 
+@app.delete('/api/operaciones/faults/<path:fault_id>')
+def api_operaciones_delete_fault(fault_id):
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa no está conectada."}), 503
+    if not OPERACIONES_STORE.delete_fault(fault_id):
+        return jsonify({"ok": False, "error": "La falla no existe o ya fue eliminada."}), 404
+    _invalidate_operations_cache()
+    return jsonify({"ok": True})
+
+
 @app.post('/api/operaciones/faults/<path:fault_id>/evidence/<int:position>')
 def api_operaciones_upload_fault_evidence(fault_id, position):
     """Guarda hasta tres fotos de una falla y conserva una URL interna privada."""

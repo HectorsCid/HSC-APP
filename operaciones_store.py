@@ -318,6 +318,7 @@ class OperationsStore:
             self._ensure_column(conn, "operations_faults", "resolved_at", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_faults", "resolved_by", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_faults", "resolution_notes", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "operations_faults", "deleted_at", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_users", "photo_ref", "TEXT NOT NULL DEFAULT ''")
             added_task_notice_choice = self._ensure_column(conn, "operations_tasks", "notify_client", "INTEGER NOT NULL DEFAULT 0")
             if added_task_notice_choice:
@@ -638,7 +639,7 @@ class OperationsStore:
             faults = conn.execute(
                 "SELECT f.id,f.client_id,f.equipment_id,f.report_id,f.description,f.priority,f.status,f.reported_at,f.resolved_at,f.resolved_by,f.resolution_notes,f.source,f.sync_status,"
                 "(SELECT COUNT(*) FROM operations_fault_evidence e WHERE e.fault_id=f.id) "
-                "FROM operations_faults f ORDER BY f.reported_at DESC,f.id DESC"
+                "FROM operations_faults f WHERE f.deleted_at='' ORDER BY f.reported_at DESC,f.id DESC"
             ).fetchall()
             tasks = conn.execute(
                 "SELECT id,title,details,scheduled_date,scheduled_time,client_id,equipment_id,"
@@ -1499,6 +1500,25 @@ class OperationsStore:
                     (json.dumps(permissions or {}, ensure_ascii=False), stamp, _text(user_id)),
                 )
         return next(user for user in self.list_users() if user["id"] == _text(user_id))
+
+    def delete_fault(self, fault_id):
+        """Oculta una falla sin perder su evidencia ni reimportarla desde Sheets."""
+        self.initialize()
+        fault_id = _text(fault_id)
+        p = self.placeholder
+        with self.connection() as conn:
+            stamp = _now()
+            changed = conn.execute(
+                f"UPDATE operations_faults SET deleted_at={p},updated_at={p} "
+                f"WHERE id={p} AND deleted_at=''",
+                (stamp, stamp, fault_id),
+            )
+            if changed.rowcount:
+                conn.execute(
+                    f"DELETE FROM operations_sync_outbox WHERE entity_type='fault' AND entity_id={p}",
+                    (fault_id,),
+                )
+        return changed.rowcount == 1
 
     def resolve_fault(self, fault_id, *, resolved_by="", resolution_notes="", status="Atendida"):
         """Marca una falla como atendida y conserva el cierre para auditoría."""

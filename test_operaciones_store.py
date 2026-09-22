@@ -54,6 +54,19 @@ def test_queued_fault_retry_keeps_one_record(tmp_path):
         pass
 
 
+def test_deleted_fault_stays_hidden_after_matrix_import(tmp_path):
+    store = OperationsStore(local_path=tmp_path / 'deleted-fault.sqlite3')
+    payload = _payload()
+    store.import_matrix_snapshot(payload)
+    assert store.delete_fault('F-UVM-1')
+    assert not store.delete_fault('F-UVM-1')
+    assert store.snapshot()['faults'] == []
+    store.import_matrix_snapshot(payload)
+    assert store.snapshot()['faults'] == []
+    with store.connection() as conn:
+        assert conn.execute("SELECT deleted_at FROM operations_faults WHERE id='F-UVM-1'").fetchone()[0]
+
+
 def test_matrix_snapshot_round_trip_uses_ids_and_evidence_rows(tmp_path):
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
     counts = store.import_matrix_snapshot(_payload())
