@@ -63,6 +63,10 @@
     @media(max-width:839px){.wrap{padding:11px}.top{align-items:flex-start;flex-direction:column}.top .actions{width:100%}.top .actions>*{flex:1}.card{padding:11px}}
     .template-backdrop{position:fixed;inset:0;z-index:9999;display:none;place-items:center;padding:18px;background:rgba(2,6,23,.62);overflow-y:auto}.template-backdrop.show{display:grid}.template-dialog{width:min(460px,100%);max-height:calc(100vh - 36px);overflow:auto;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.template-dialog.mail-dialog{width:min(680px,100%);scrollbar-gutter:stable}.template-dialog h2{margin:0 0 5px;font-size:1.15rem}.template-dialog p{margin:0 0 14px;color:var(--muted);font-size:.82rem}.template-dialog .actions{margin-top:14px;justify-content:flex-end}.mail-dialog>.actions{position:sticky;bottom:-18px;margin-left:-18px;margin-right:-18px;margin-bottom:-18px;padding:14px 18px;background:var(--card);border-top:1px solid var(--line)}.modal-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:13px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);font-size:.84rem}.modal-summary strong{display:block;margin-top:2px;color:var(--ink)}.recipient-presets,.email-history{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.email-history button{padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:var(--soft);color:var(--ink);cursor:pointer}.email-history button span{margin-left:7px;color:var(--muted)}.modal-error{min-height:18px;margin-top:8px;color:var(--danger);font-size:.82rem;font-weight:700}.hidden{display:none!important}.billing-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:3px}.environment-pill,.folio-counter{display:inline-flex;padding:3px 8px;border:1px solid #93c5fd;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:.75rem;font-weight:800}.environment-pill.production{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}.folio-counter{gap:5px}.folio-counter small{font-size:.68rem;font-weight:650;color:var(--muted)}.folio-counter.warning{border-color:#fbbf24;background:#fffbeb;color:#92400e}.folio-counter.empty{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}html[data-theme="dark"] .environment-pill,html[data-theme="dark"] .folio-counter{background:#152849;color:#93c5fd}html[data-theme="dark"] .environment-pill.production,html[data-theme="dark"] .folio-counter.empty{background:#451a1a;color:#fca5a5}html[data-theme="dark"] .folio-counter.warning{background:#422006;color:#fcd34d}@media(max-width:560px){.modal-summary{grid-template-columns:1fr}.folio-counter small{display:none}}
     @media(max-width:700px){
+      .mobile-concept-entry{display:block!important;margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--field)}
+      .mobile-concept-entry textarea{min-height:112px;font-size:16px;line-height:1.4}
+      .mobile-concept-entry input{min-height:48px;font-size:16px}
+      .mobile-concept-entry .btn{min-height:44px;margin-top:12px}
       .table-wrap{overflow:visible;max-height:none;border:0;background:transparent}
       #tabla{display:block;min-width:0}
       #tabla thead{display:none}
@@ -220,6 +224,17 @@
           <button id="btnAgregar" class="btn" type="button">➕ Agregar a factura</button>
           <a class="btn" href="/articulos-servicios">⚙️ Administrar</a>
         </div>
+      </div>
+
+      <div class="mobile-concept-entry" style="display:none">
+        <h4 class="section-title">Agregar concepto</h4>
+        <label for="mobileConceptDescription">Descripción</label>
+        <textarea id="mobileConceptDescription" placeholder="Describe el servicio o producto..." autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+        <div class="row row-2">
+          <div><label for="mobileConceptQuantity">Cantidad</label><input id="mobileConceptQuantity" type="number" step="0.01" min="0.01" value="1"></div>
+          <div><label for="mobileConceptPrice">Precio</label><input id="mobileConceptPrice" type="number" step="0.01" min="0" placeholder="0.00"></div>
+        </div>
+        <button id="mobileAddConcept" class="btn btn-primary" type="button">➕ Agregar a factura</button>
       </div>
 
       <div class="table-wrap">
@@ -560,7 +575,7 @@
       return `
         <tr data-index="${i}">
           <td data-label="Concepto">${i+1}</td>
-          <td data-label="Descripción"><input class="c-desc" autocapitalize="sentences" value="${fieldValue(d.descripcion)}" /></td>
+          <td data-label="Descripción"><input class="c-desc" autocapitalize="off" autocorrect="off" spellcheck="false" value="${fieldValue(d.descripcion)}" /></td>
           <td data-label="Cantidad"><input class="c-cant" type="number" step="0.01" min="0" value="${d.cantidad??1}"/></td>
           <td data-label="Precio"><input class="c-precio" type="number" step="0.01" min="0" value="${d.precio_unitario??0}"/></td>
           <td data-label="Clave P/S"><input class="c-cps" value="${fieldValue(d.clave_prod_serv||'85121600')}"/></td>
@@ -632,6 +647,24 @@
       catalogInput.value = '';
     };
 
+    document.getElementById('mobileAddConcept').onclick = ()=>{
+      const description = document.getElementById('mobileConceptDescription');
+      const quantity = document.getElementById('mobileConceptQuantity');
+      const price = document.getElementById('mobileConceptPrice');
+      const text = description.value.trim();
+      const amount = Number(quantity.value);
+      const unitPrice = Number(price.value);
+      if(!text || !Number.isFinite(amount) || amount <= 0 || !price.value.trim() || !Number.isFinite(unitPrice) || unitPrice < 0){
+        msg(false, 'Completa descripción, cantidad y precio antes de agregar el concepto.');
+        return;
+      }
+      addItem({descripcion:text,cantidad:amount,precio_unitario:unitPrice,clave_prod_serv:'85121600',clave_unidad:'E48',tasa_iva:0.16});
+      description.value = '';
+      quantity.value = '1';
+      price.value = '';
+      description.focus();
+    };
+
     function calc(){
       let subtotal = 0, iva = 0;
       [...tbody.querySelectorAll('tr')].forEach((tr, i)=>{
@@ -668,7 +701,8 @@
     document.getElementById('retencionIsr').addEventListener('change', calc);
     document.getElementById('retencionIva').addEventListener('change', calc);
 
-    addItem(null); // fila inicial
+    if(matchMedia('(max-width:700px)').matches) render();
+    else addItem(null); // fila inicial en escritorio
 
     // ------- Plantillas completas de factura -------
     const templateModal = document.getElementById('templateModal');
@@ -744,7 +778,7 @@
         const ivaRetention=Number(template.retentions?.iva||0);
         document.getElementById('retencionIva').value=ivaRetention>0.10666&&ivaRetention<0.10668?'0.106667':String(ivaRetention);
         estado.items=(template.items||[]).map(item=>({descripcion:item.description,cantidad:Number(item.quantity||1),precio_unitario:Number(item.unit_price||0),clave_prod_serv:item.product_key||'85121600',clave_unidad:item.unit_key||'E48',tasa_iva:Number(item.tax_rate||0),descuento:Number(item.discount||0)}));
-        if(!estado.items.length)addItem(null);else render();
+        if(!estado.items.length && !matchMedia('(max-width:700px)').matches)addItem(null);else render();
         syncForma();updateFiscalStatus();calc();msg(true,`Plantilla “${template.name}” cargada. Revisa antes de timbrar.`);
       }catch(error){msg(false,error.message)}
     })();
