@@ -1131,8 +1131,9 @@ def _build_facturama_cfdi(payload):
     requested_date = str(payload.get("fecha_emision") or "").strip()
     if requested_date:
         cfdi["Date"] = requested_date
-    elif not cfg["sandbox"]:
-        cfdi["Date"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    # Facturama asigna la hora local del código postal de expedición cuando
+    # Date se omite. La hora del servidor puede estar en UTC y adelantar el
+    # CFDI varias horas respecto a la hora fiscal del emisor.
     # En producción la serie HSC administra su propio consecutivo en Facturama.
     # El navegador nunca envía un folio fiscal: así una cotización no puede
     # alterar ni duplicar accidentalmente la numeración oficial.

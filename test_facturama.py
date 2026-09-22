@@ -84,6 +84,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
             cfdi = billing._build_facturama_cfdi(payload)
         self.assertEqual(cfdi["Serie"], "HSC")
         self.assertNotIn("Folio", cfdi)
+        self.assertNotIn("Date", cfdi)
 
     def test_ppd_forces_payment_form_99(self):
         payload = self.payload()
