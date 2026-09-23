@@ -72,8 +72,8 @@
   .flash.err{display:block;background:#fee2e2;border:1px solid #fca5a5;color:#7f1d1d}
 
   /* Panel compacto 2026 */
-  :root{--bg:#f4f7fb;--surface:#fff;--card:#fff;--ink:#17233b;--muted:#64748b;--line:#dce3ed;--brand:#2563eb;--brand-soft:#eaf1ff;--soft:#f8fafc;--ok-soft:#dcfce7;--danger-soft:#fee2e2;--purple:#7c3aed;--purple-soft:#f1eafe;--shadow:0 12px 32px rgba(30,41,59,.08)}
-  html[data-theme="dark"]{--bg:#0b1120;--surface:#121b2e;--card:#151f33;--ink:#f8fafc;--muted:#9fb0c9;--line:#30405a;--brand:#3b82f6;--brand-soft:#172d52;--soft:#1c2940;--ok-soft:#123a28;--danger-soft:#48212a;--purple:#a78bfa;--purple-soft:#2d2450;--shadow:0 16px 38px rgba(0,0,0,.24)}
+  :root{--bg:#e8eef6;--surface:#fff;--card:#fff;--ink:#14213a;--muted:#52627a;--line:#c6d1df;--brand:#1769e0;--brand-soft:#e8f1ff;--soft:#eef3f9;--ok:#159447;--ok-soft:#dcfce7;--danger:#dc3545;--danger-soft:#fee2e2;--purple:#6d3bd1;--purple-soft:#f1eafe;--shadow:0 12px 30px rgba(37,55,82,.11)}
+  html[data-theme="dark"]{--bg:#172033;--surface:#1b263a;--card:#222e43;--ink:#f3f7fc;--muted:#b5c2d4;--line:#40516a;--brand:#5a9cff;--brand-soft:#263c5d;--soft:#2a384f;--ok:#35c76f;--ok-soft:#1d4834;--danger:#ff6675;--danger-soft:#542c36;--purple:#b29aff;--purple-soft:#39325c;--shadow:0 14px 34px rgba(5,12,24,.22)}
   html,body{min-width:0;background:var(--bg);color:var(--ink)}
   body{overflow:hidden}
   button,input,select,textarea{font:inherit;color:inherit}
@@ -82,10 +82,13 @@
   .side .logo{font-size:1.22rem;font-weight:900;margin:2px 8px 20px}
   .nav{gap:7px}
   .nav .btn{justify-content:flex-start;padding:10px 11px;font-weight:700}
-  .btn{justify-content:center;gap:5px;min-height:32px;padding:6px 9px;border-radius:9px;background:var(--surface);color:var(--ink);font-weight:700;white-space:nowrap;transition:.16s ease}
-  .btn:hover{background:var(--soft);transform:translateY(-1px)}
+  .btn{justify-content:center;gap:7px;min-height:32px;padding:6px 9px;border-radius:9px;background:var(--surface);color:var(--ink);font-weight:700;white-space:nowrap;transition:border-color .16s ease,background .16s ease,transform .16s ease,box-shadow .16s ease}
+  .btn:hover{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 7%,var(--surface));transform:translateY(-1px);box-shadow:0 5px 14px color-mix(in srgb,var(--brand) 14%,transparent)}
   .btn-primary,.btn.btn-primary{background:var(--brand);color:#fff}
   .btn-danger{background:var(--danger);color:#fff}
+  .line-icon{width:18px;height:18px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .icon-sprite{position:absolute;width:0;height:0;overflow:hidden}
+  .nav .line-icon{width:20px;height:20px}
   .btn-mail-pending{background:var(--ok-soft)!important;border-color:color-mix(in srgb,var(--ok) 45%,var(--line))!important;color:#15803d!important}
   html[data-theme="dark"] .btn-mail-pending{color:#86efac!important}
   .wrap{width:100%;max-width:1500px;height:100vh;height:100dvh;min-width:0;min-height:0;padding:17px 20px;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-color:#64748b transparent;scrollbar-width:thin}
@@ -198,17 +201,31 @@
 <script defer src="{{ url_for('static', filename='notifications.js', v='3') }}"></script>
 </head>
 <body>
+<svg class="icon-sprite" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.8 12 3l9 7.8"/><path d="M5.5 9.5V21h13V9.5M9 21v-7h6v7"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="M4 7v10l8 4 8-4V7M12 11v10"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h3"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 2h8l4 4v16H6V2Z"/><path d="M14 2v5h5M9 12h6M9 16h6"/></symbol>
+  <symbol id="i-exit" viewBox="0 0 24 24"><path d="M10 5H5v14h5M14 8l4 4-4 4M8 12h10"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M6.1 9a7 7 0 0 1 11.5-2.5L20 9M4 15l2.4 2.5A7 7 0 0 0 17.9 15"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m6 6 12 12"/></symbol>
+</svg>
 <div class="layout">
   <aside class="side">
     <div class="logo">HSC</div>
     <div class="nav">
-      <a class="btn" href="/inicio-app">🏠 Inicio app</a>
-      <a class="btn" href="/articulos-servicios">📦 Artículos y servicios</a>
-      <a class="btn btn-primary" href="/facturas/nueva">➕ Nueva factura</a>
-      <a class="btn" href="/pagos/nuevo">💳 Complemento</a>
-      <a class="btn" href="/clientes">👤 Clientes</a>
-      <a class="btn" href="/cotizaciones">📋 Cotizaciones</a>
-      <a class="btn" href="/cerrar-sesion">🔒 Cerrar sesión</a>
+      <a class="btn" href="/inicio-app"><svg class="line-icon" aria-hidden="true"><use href="#i-home"/></svg>Inicio app</a>
+      <a class="btn" href="/articulos-servicios"><svg class="line-icon" aria-hidden="true"><use href="#i-box"/></svg>Artículos y servicios</a>
+      <a class="btn btn-primary" href="/facturas/nueva"><svg class="line-icon" aria-hidden="true"><use href="#i-plus"/></svg>Nueva factura</a>
+      <a class="btn" href="/pagos/nuevo"><svg class="line-icon" aria-hidden="true"><use href="#i-card"/></svg>Complemento</a>
+      <a class="btn" href="/clientes"><svg class="line-icon" aria-hidden="true"><use href="#i-user"/></svg>Clientes</a>
+      <a class="btn" href="/cotizaciones"><svg class="line-icon" aria-hidden="true"><use href="#i-file"/></svg>Cotizaciones</a>
+      <a class="btn" href="/cerrar-sesion"><svg class="line-icon" aria-hidden="true"><use href="#i-exit"/></svg>Cerrar sesión</a>
       <!-- eliminado: visor fiscal -->
     </div>
   </aside>
@@ -266,7 +283,7 @@
     </div>
 
     <div class="card" id="panelRecibidas" style="display:none">
-      <div class="panel-head"><div><h2>Facturas recibidas</h2><div class="pill">Gastos facturados a HSC en el mes seleccionado</div></div><button class="btn" id="reloadReceived">↻ Actualizar</button></div>
+      <div class="panel-head"><div><h2>Facturas recibidas</h2><div class="pill">Gastos facturados a HSC en el mes seleccionado</div></div><button class="btn" id="reloadReceived"><svg class="line-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Actualizar</button></div>
       <div class="summary-grid">
         <div class="summary-box"><span>Facturas vigentes · MXN</span><strong id="receivedCount">0</strong></div>
         <div class="summary-box"><span>Subtotal neto · MXN</span><strong id="receivedSubtotal">$0.00</strong></div>
@@ -277,22 +294,22 @@
       <div class="mini-list" id="receivedList"><div class="empty-state">Abre esta pestaña para consultar Facturama.</div></div>
     </div>
     <div class="card" id="panelBalance" style="display:none">
-      <div class="panel-head"><div><h2>Balance de facturación</h2><div class="pill">Consulta un mes o el año completo con desglose de enero a diciembre</div></div><div class="balance-toolbar"><select id="balanceScope"><option value="month">Resumen del mes</option><option value="year">Resumen anual · por meses</option></select><select id="balanceClient"><option value="">Todos los clientes</option></select><button class="btn" id="reloadBalance">↻ Actualizar</button></div></div>
+      <div class="panel-head"><div><h2>Balance de facturación</h2><div class="pill">Consulta un mes o el año completo con desglose de enero a diciembre</div></div><div class="balance-toolbar"><select id="balanceScope"><option value="month">Resumen del mes</option><option value="year">Resumen anual · por meses</option></select><select id="balanceClient"><option value="">Todos los clientes</option></select><button class="btn" id="reloadBalance"><svg class="line-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Actualizar</button></div></div>
       <div class="balance-kpis">
         <div class="summary-box"><span>Facturado</span><strong id="balanceIssued">$0.00</strong></div><div class="summary-box"><span>Cobrado</span><strong id="balanceCollected">$0.00</strong></div><div class="summary-box warn"><span>Por cobrar</span><strong id="balancePending">$0.00</strong></div><div class="summary-box"><span>Gastos recibidos</span><strong id="balanceExpenses">$0.00</strong></div><div class="summary-box result"><span>Resultado estimado</span><strong id="balanceResult">$0.00</strong></div><div class="summary-box"><span>Complementos pendientes</span><strong id="balanceRepCount">0</strong></div>
       </div>
       <div class="balance-grid"><section class="balance-section"><h3 id="balanceChartTitle">Movimiento del periodo</h3><div class="balance-legend"><span style="--dot:var(--brand)">Facturado</span><span style="--dot:var(--ok)">Cobrado</span><span style="--dot:var(--danger)">Gastos</span></div><div class="balance-chart" id="balanceChart"></div><div class="balance-note" id="balanceNote">El resultado estimado es facturación vigente menos CFDI recibidos; no sustituye la utilidad contable.</div></section><section class="balance-section"><h3>Clientes principales</h3><div class="balance-rank" id="balanceTop"></div></section><section class="balance-section" style="grid-column:1/-1"><h3>Facturas pendientes de complemento</h3><div class="balance-pending" id="balancePendingList"></div></section></div>
     </div>
     <div class="card" id="panelPlantillas" style="display:none">
-      <div class="panel-head"><div><h2>Plantillas de factura</h2><div class="pill">Reutiliza cliente, conceptos, impuestos y condiciones sin timbrar automáticamente</div></div><a class="btn btn-primary" href="/facturas/nueva">＋ Preparar plantilla</a></div>
+      <div class="panel-head"><div><h2>Plantillas de factura</h2><div class="pill">Reutiliza cliente, conceptos, impuestos y condiciones sin timbrar automáticamente</div></div><a class="btn btn-primary" href="/facturas/nueva"><svg class="line-icon" aria-hidden="true"><use href="#i-plus"/></svg>Preparar plantilla</a></div>
       <div class="mini-list" id="templateList"><div class="empty-state">Cargando plantillas…</div></div>
       <section class="schedule-section">
-        <div class="panel-head"><div><h2>Facturas programadas</h2><div class="pill">Recordatorio, confirmación en un toque o timbrado y envío automáticos</div></div><button class="btn btn-primary" id="newSchedule" type="button">＋ Programar factura</button></div>
+        <div class="panel-head"><div><h2>Facturas programadas</h2><div class="pill">Recordatorio, confirmación en un toque o timbrado y envío automáticos</div></div><button class="btn btn-primary" id="newSchedule" type="button"><svg class="line-icon" aria-hidden="true"><use href="#i-plus"/></svg>Programar factura</button></div>
         <div class="schedule-list" id="scheduleList"><div class="empty-state">Cargando programaciones…</div></div>
       </section>
     </div>
     <div class="card" id="panelClientes" style="display:none">
-      <div class="panel-head"><div><h2>Relación por cliente</h2><div class="pill">Facturas, cobros y complementos en un solo lugar</div></div><button class="btn" id="reloadClients">↻ Actualizar</button></div>
+      <div class="panel-head"><div><h2>Relación por cliente</h2><div class="pill">Facturas, cobros y complementos en un solo lugar</div></div><button class="btn" id="reloadClients"><svg class="line-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Actualizar</button></div>
       <div class="client-layout"><div class="client-list" id="billingClientList"><div class="empty-state">Abre esta pestaña para consultar.</div></div><div class="client-detail" id="billingClientDetail"><div class="empty-state">Selecciona un cliente.</div></div></div>
     </div>
   </main>
@@ -397,13 +414,14 @@
     </div>
     <div class="cm-actions">
       <button class="cm-btn cm-btn-ghost" id="emCancel">Cancelar</button>
-      <button class="cm-btn cm-btn-primary" id="emConfirm">✉ Enviar PDF y XML</button>
+      <button class="cm-btn cm-btn-primary" id="emConfirm"><svg class="line-icon" aria-hidden="true"><use href="#i-mail"/></svg>Enviar PDF y XML</button>
     </div>
   </div>
 </div>
 
 <script>
 const $ = s=>document.querySelector(s);
+const lineIcon = name => `<svg class="line-icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const tbody = $('#tbl tbody');
 const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Balance:'#panelBalance', Plantillas:'#panelPlantillas', Clientes:'#panelClientes'};
 let activePanel = 'Emitidas';
@@ -542,18 +560,18 @@ async function load(){
         <td>${pagoStatus}</td>
         <td class="td-uuid" title="${x.uuid||''}">${x.uuid||''}</td>
         <td class="td-acciones">
-          <a class="btn" href="/api/invoices/${x.id}/pdf" target="_blank">👁 Ver</a>
-          <a class="btn" href="/api/invoices/${x.id}/pdf" target="_blank">PDF</a>
-          <a class="btn" href="/api/invoices/${x.id}/xml" target="_blank">XML</a>
+          <a class="btn" href="/api/invoices/${x.id}/pdf" target="_blank">${lineIcon('eye')}Ver</a>
+          <a class="btn" href="/api/invoices/${x.id}/pdf" target="_blank">${lineIcon('file')}PDF</a>
+          <a class="btn" href="/api/invoices/${x.id}/xml" target="_blank">${lineIcon('file')}XML</a>
           <button class="btn ${x.email_delivery?.sent ? '' : 'btn-mail-pending'}"
                   data-email-send="${escAttr(x.id)}"
                   data-email="${escAttr(x.customer_email)}"
                   data-folio="${escAttr(x.folio || x.uuid)}"
                   data-rfc="${escAttr(x.customer_tax_id)}"
-                  data-cliente="${escAttr(x.customer_name)}" title="${x.email_delivery?.sent ? `Enviada ${escAttr(x.email_delivery.last_sent_at || '')}` : 'Correo pendiente de enviar'}">${x.email_delivery?.sent ? '✉ ✓' : '✉ Enviar'}</button>
+                  data-cliente="${escAttr(x.customer_name)}" title="${x.email_delivery?.sent ? `Enviada ${escAttr(x.email_delivery.last_sent_at || '')}` : 'Correo pendiente de enviar'}">${lineIcon(x.email_delivery?.sent ? 'check' : 'mail')}${x.email_delivery?.sent ? 'Enviada' : 'Enviar'}</button>
           ${
             (x.type==='I' && x.payment_method==='PPD' && !x.paid && !lifecycle.blocksPayment)
-              ? `<button class="btn" title="Generar complemento de pago" aria-label="Generar complemento de pago" data-goto="/pagos/nuevo?invoice_id=${encodeURIComponent(x.id)}&uuid=${encodeURIComponent(x.uuid||'')}" data-key="rep-${x.id}">💳 Comp.</button>`
+              ? `<button class="btn" title="Generar complemento de pago" aria-label="Generar complemento de pago" data-goto="/pagos/nuevo?invoice_id=${encodeURIComponent(x.id)}&uuid=${encodeURIComponent(x.uuid||'')}" data-key="rep-${x.id}">${lineIcon('card')}Comp.</button>`
               : '<span class="action-slot" aria-hidden="true"></span>'
           }
           ${lifecycle.blocksPayment?`<span class="badge ${lifecycle.className}">${lifecycle.label}</span>`:`<button class="btn btn-danger"
@@ -561,7 +579,7 @@ async function load(){
                   data-total="${x.total||0}"
                   data-cliente="${(x.customer_name||'').replace(/"/g,'&quot;')}"
                   data-uuid="${x.uuid||''}"
-                  data-key="cancel-${x.id}">⛔ Cancelar</button>`}
+                  data-key="cancel-${x.id}">${lineIcon('ban')}Cancelar</button>`}
         </td>`;
       tbody.appendChild(tr);
     }
@@ -788,7 +806,7 @@ document.getElementById('scheduleSave').onclick=async event=>{
 let billingClients=[];
 function billingEmailButton(row, client){
   const sent=row.email_delivery?.sent;
-  return `<button class="btn ${sent?'':'btn-mail-pending'}" data-client-email="${escAttr(row.id)}" data-email="" data-folio="${escAttr(row.folio||row.uuid)}" data-rfc="${escAttr(client.rfc)}" data-cliente="${escAttr(client.name)}" title="${sent?'Correo enviado':'Correo pendiente'}">${sent?'✉ ✓':'✉ Enviar'}</button>`;
+  return `<button class="btn ${sent?'':'btn-mail-pending'}" data-client-email="${escAttr(row.id)}" data-email="" data-folio="${escAttr(row.folio||row.uuid)}" data-rfc="${escAttr(client.rfc)}" data-cliente="${escAttr(client.name)}" title="${sent?'Correo enviado':'Correo pendiente'}">${lineIcon(sent?'check':'mail')}${sent?'Enviada':'Enviar'}</button>`;
 }
 function renderBillingClient(client){
   const detail=document.getElementById('billingClientDetail');
@@ -896,7 +914,7 @@ async function openEmailModal(ctx){
   emKeyWrap.classList.add('hidden');
   emErr.textContent = '';
   emConfirm.disabled = false;
-  emConfirm.textContent = '✉ Enviar PDF y XML';
+  emConfirm.innerHTML = `${lineIcon('mail')}Enviar PDF y XML`;
   renderInvoiceHistory([]);
   renderInvoiceFrequent('');
   renderInvoiceContacts([], ctx.email || '');
@@ -1001,7 +1019,7 @@ emConfirm.addEventListener('click', async ()=>{
     emErr.textContent = error.message || String(error);
     if(String(error.message || '').toLowerCase().includes('clave')) emKeyWrap.classList.remove('hidden');
     emConfirm.disabled = false;
-    emConfirm.textContent = '✉ Reintentar';
+    emConfirm.innerHTML = `${lineIcon('refresh')}Reintentar`;
   }
 });
 
