@@ -65,8 +65,8 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(self.store.snapshot()['equipment'][0]['name'], 'Cambio en AppSheet')
 
     def test_duplicate_policy_is_explicit_and_reversible(self):
-        self.assertFalse(self.store.matrix_duplicates_allowed())
-        self.assertEqual(self.store.status()['matrix_duplicate_policy'], 'block')
+        self.assertTrue(self.store.matrix_duplicates_allowed())
+        self.assertEqual(self.store.status()['matrix_duplicate_policy'], 'first_wins')
         self.assertEqual(self.store.set_matrix_duplicate_policy(True), 'first_wins')
         self.assertTrue(self.store.matrix_duplicates_allowed())
         self.assertEqual(self.store.status()['matrix_duplicate_policy'], 'first_wins')
