@@ -3,7 +3,7 @@ html[data-theme="light"]{
   --bg:#e8eef6;--surface:#fff;--card:#fff;--field:#fff;--button:#fff;
   --button-hover:#eef4fb;--table-head:#eef3f9;--soft:#eef3f9;
   --ink:#14213a;--text:#14213a;--muted:#52627a;--line:#c6d1df;
-  --brand:#397edc;--accent:#397edc;--blue:#397edc;--blue-dark:#2e6fc8;
+  --brand:#477fbe;--accent:#477fbe;--blue:#477fbe;--blue-dark:#376ea9;
   --brand-soft:#e8f1ff;--ok:#159447;--danger:#dc3545;
   --shadow:rgba(37,55,82,.11);
 }
@@ -12,7 +12,7 @@ html[data-theme="dark"]{
   --bg:#172033;--surface:#1b263a;--card:#222e43;--field:#1b263a;--button:#1b263a;
   --button-hover:#2a384f;--table-head:#2a384f;--soft:#2a384f;
   --ink:#f3f7fc;--text:#f3f7fc;--muted:#b5c2d4;--line:#40516a;
-  --brand:#629fee;--accent:#629fee;--blue:#629fee;--blue-dark:#79aff4;
+  --brand:#71a1db;--accent:#71a1db;--blue:#71a1db;--blue-dark:#86b3e7;
   --brand-soft:#263c5d;--ok:#35c76f;--danger:#ff6675;
   --shadow:rgba(5,12,24,.22);
 }
