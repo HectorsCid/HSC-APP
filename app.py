@@ -3932,6 +3932,21 @@ def _operations_migration_checks(stats):
     return {"ready": not problems, "problems": problems}
 
 
+def _operations_matrix_diagnostic(stats):
+    stats = stats or {}
+    checks = _operations_migration_checks(stats)
+    return {
+        **checks,
+        "counts": {key: int(stats.get(key) or 0) for key in
+                   ("clients", "equipment", "reports", "faults")},
+        "duplicate_ids": {
+            "clients": list(stats.get("duplicate_client_ids") or []),
+            "equipment": list(stats.get("duplicate_equipment_ids") or []),
+            "reports": list(stats.get("duplicate_report_ids") or []),
+        },
+    }
+
+
 def _complete_legacy_operations_relations(payload):
     """Conserva filas huérfanas sin adivinar ni perder su relación histórica."""
     clients = payload.setdefault("clients", [])
@@ -4098,7 +4113,7 @@ def _operations_sync_worker(app_obj):
                     incoming = read_operaciones_matrix(get_sheets_service(timeout=20), SHEET_ID,
                                                       include_media_refs=True, include_raw=True)
                     checks = _operations_migration_checks(incoming.get("stats") or {})
-                    if not checks["ready"]:
+                    if not checks["ready"] and not OPERACIONES_STORE.matrix_duplicates_allowed():
                         raise ValueError("La matriz contiene IDs duplicados; importación detenida.")
                     OPERACIONES_STORE.import_matrix_snapshot(_complete_legacy_operations_relations(incoming))
                     _OPERACIONES_IMPORT_STATUS.update(error="", last_success=datetime.now().isoformat())
@@ -4170,6 +4185,94 @@ def api_operaciones_sync_status():
             "attempts": item["attempts"], "last_error": item["last_error"],
         } for item in pending],
     })
+
+
+@app.get('/api/operaciones/diagnostics')
+def api_operaciones_diagnostics():
+    """Panel privado del propietario; no altera Google ni la base."""
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa no está conectada."}), 503
+    try:
+        status = OPERACIONES_STORE.status()
+        pending = OPERACIONES_STORE.pending_sync(50)
+        result = {
+            "ok": True, "storage": status,
+            "import_status": dict(_OPERACIONES_IMPORT_STATUS),
+            "pending": len(pending),
+            "pending_items": [{
+                "entity_type": item["entity_type"], "entity_id": item["entity_id"],
+                "attempts": item["attempts"], "last_error": item["last_error"],
+            } for item in pending[:15]],
+        }
+        if request.args.get("live") == "1":
+            source = read_operaciones_matrix(
+                get_sheets_service(timeout=25), SHEET_ID,
+                include_media_refs=False, include_raw=False,
+            )
+            result["matrix"] = _operations_matrix_diagnostic(source.get("stats") or {})
+        return jsonify(result)
+    except Exception as exc:
+        current_app.logger.exception("No se pudo ejecutar el diagnóstico operativo: %s", exc)
+        return jsonify({"ok": False, "error": f"Diagnóstico fallido ({type(exc).__name__}): {str(exc)[:300]}"}), 502
+    finally:
+        reset_thread_google_services()
+
+
+@app.post('/api/operaciones/diagnostics/import')
+def api_operaciones_diagnostics_import():
+    """Importación administrada; ignorar conserva la primera fila y no toca Sheets."""
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa no está conectada."}), 503
+    body = request.get_json(silent=True) or {}
+    ignore = body.get("ignore_ambiguities") is True
+    try:
+        source = read_operaciones_matrix(
+            get_sheets_service(timeout=25), SHEET_ID,
+            include_media_refs=True, include_raw=True,
+        )
+        diagnostic = _operations_matrix_diagnostic(source.get("stats") or {})
+        if not diagnostic["ready"] and not ignore:
+            return jsonify({
+                "ok": False, "code": "matrix_integrity",
+                "error": "La matriz tiene IDs repetidos. Puedes corregirlos o importar sólo las primeras filas válidas.",
+                "matrix": diagnostic,
+            }), 409
+        OPERACIONES_STORE.set_matrix_duplicate_policy(ignore)
+        OPERACIONES_STORE.import_matrix_snapshot(_complete_legacy_operations_relations(source))
+        _OPERACIONES_IMPORT_STATUS.update(error="", last_success=datetime.now().isoformat())
+        _invalidate_operations_cache()
+        return jsonify({
+            "ok": True, "import_confirmed": True, "matrix": diagnostic,
+            "duplicate_policy": "first_wins" if ignore else "block",
+            "message": "Importación completada. Los duplicados posteriores se omitieron." if ignore
+                       else "Importación completada sin omitir conflictos.",
+        })
+    except Exception as exc:
+        current_app.logger.exception("No se pudo ejecutar la importación administrativa: %s", exc)
+        return jsonify({"ok": False, "error": f"Importación fallida ({type(exc).__name__}): {str(exc)[:300]}"}), 502
+    finally:
+        reset_thread_google_services()
+
+
+@app.post('/api/operaciones/diagnostics/policy')
+def api_operaciones_diagnostics_policy():
+    """Restaura la protección estricta sin importar ni modificar la matriz."""
+    denied = _operations_forbidden("admin")
+    if denied:
+        return denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa no está conectada."}), 503
+    body = request.get_json(silent=True) or {}
+    policy = OPERACIONES_STORE.set_matrix_duplicate_policy(
+        body.get("ignore_duplicates") is True
+    )
+    return jsonify({"ok": True, "matrix_duplicate_policy": policy})
 
 
 @app.post('/api/operaciones/sync')
