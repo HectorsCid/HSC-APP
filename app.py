@@ -75,6 +75,8 @@ app.register_blueprint(notifications_bp)
 @app.before_request
 def ensure_notifications_worker():
     """Conserva los avisos operativos sin mantener un lector de correo IMAP."""
+    if request.endpoint in {"ping_root", "healthz", "health", "health_check", "static"}:
+        return
     start_notifications(app)
 
 
@@ -1078,7 +1080,7 @@ def _schedule_bootstrap_sync():
     global __bootstrap_sync_last_attempt
     endpoint = request.endpoint or ""
     if (
-        endpoint in {"healthz", "health", "health_check", "static"}
+        endpoint in {"ping_root", "healthz", "health", "health_check", "static"}
         or endpoint.startswith("reportes.")
         or endpoint.endswith("reportes_auto_status")
     ):
@@ -4273,6 +4275,8 @@ def _schedule_operations_sync(*, force=False):
 @app.before_request
 def _retry_operations_sync_on_activity():
     """Reintenta la cola con pausa, aprovechando actividad normal de la app."""
+    if request.endpoint in {"ping_root", "healthz", "health", "health_check", "static"}:
+        return
     if request.method in {"GET", "HEAD"}:
         if request.path == "/api/operaciones/bootstrap" and request.args.get("refresh") == "1":
             return
