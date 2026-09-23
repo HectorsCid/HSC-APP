@@ -127,6 +127,7 @@
     <div class="card">
       <h3>Cliente</h3>
       <div class="row"><div class="label">Nombre</div><div class="value">{{ datos.cliente or '' }}</div></div>
+      {% if datos.sucursal %}<div class="row"><div class="label">Sucursal</div><div class="value">{{ datos.sucursal }}</div></div>{% endif %}
       <div class="row">
         <div class="label">Atención</div>
         <div class="value">

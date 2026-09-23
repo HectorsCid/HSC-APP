@@ -214,6 +214,20 @@
           <a class="btn" href="{{ url_for('repositorio') }}"><svg class="line-icon" aria-hidden="true"><use href="#c-folder"/></svg>Ver cotizaciones guardadas</a>
         </div>
 
+        <label for="sucursal">Sucursal, lote o proyecto</label>
+        <input
+          type="text"
+          name="sucursal"
+          id="sucursal"
+          list="sucursales-list"
+          value="{{ datos.sucursal or '' }}"
+          placeholder="Ej. Lote 86"
+          maxlength="100"
+          autocomplete="off"
+        />
+        <datalist id="sucursales-list"></datalist>
+        <div class="hint">Opcional. Separa el PDF, el historial y la carpeta de Drive sin duplicar el RFC.</div>
+
         <label>Atención</label>
         <select name="atencion" id="atencion" required></select>
 
@@ -404,6 +418,10 @@
   {{ (datos.atencion or []) | tojson | safe }}
 </script>
 
+<script type="application/json" id="sucursales-data">
+  {{ sucursales_por_cliente | tojson | safe }}
+</script>
+
 <script>
   const themeToggle = document.getElementById('theme-toggle');
   const themeLabel = document.getElementById('theme-label');
@@ -423,12 +441,15 @@
   const clientes = JSON.parse(document.getElementById("clientes-data").textContent);
   const ordenGuardadoClientes = JSON.parse(document.getElementById("clientes-orden-data").textContent);
   const atencionGuardada = JSON.parse(document.getElementById("atencion-data").textContent);
+  const sucursalesPorCliente = JSON.parse(document.getElementById("sucursales-data").textContent);
   let cotizacionConCambios = {{ cambios_sin_guardar | tojson }};
 
   document.addEventListener('DOMContentLoaded', () => {
     const selectCliente = document.getElementById('cliente');
     const selectOrdenClientes = document.getElementById('orden-clientes');
     const selectAtencion = document.getElementById('atencion');
+    const sucursal = document.getElementById('sucursal');
+    const sucursalesList = document.getElementById('sucursales-list');
     const direccion = document.getElementById('direccion');
     const tiempo = document.getElementById('tiempo');
     const anticipo = document.getElementById('anticipo');
@@ -547,12 +568,26 @@
       }
     }
 
+    function cargarSucursales(nombreCliente, mantenerSeleccion = true) {
+      const valorActual = sucursal.value;
+      sucursalesList.replaceChildren();
+      (sucursalesPorCliente[nombreCliente] || []).forEach(nombre => {
+        const option = document.createElement('option');
+        option.value = nombre;
+        sucursalesList.appendChild(option);
+      });
+      if (!mantenerSeleccion) sucursal.value = '';
+      else sucursal.value = valorActual;
+    }
+
     if (selectCliente.value) {
       cargarDatosCliente(selectCliente.value, true);
+      cargarSucursales(selectCliente.value, true);
     }
 
     selectCliente.addEventListener('change', () => {
       cargarDatosCliente(selectCliente.value, false);
+      cargarSucursales(selectCliente.value, false);
     });
 
     const btnEditar = document.getElementById('btnEditarCliente');

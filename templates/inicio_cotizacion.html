@@ -305,6 +305,7 @@
     function normalize(raw, i){
       const id = raw.id || raw.folio || raw.numero || raw.uuid || String(i+1);
       const cliente = raw.cliente || raw.nombre_cliente || (raw.receptor && (raw.receptor.nombre || raw.receptor.razon_social)) || raw.nombre || '';
+      const sucursal = raw.sucursal || (raw.datos && raw.datos.sucursal) || '';
       const fecha = raw.fecha || raw.created_at || raw.fecha_emision || raw.fecha_creacion || '';
       const folio = raw.folio || raw.numero || raw.id || '';
       const total = calcTotal(raw);
@@ -314,7 +315,7 @@
       const quote_id = raw.quote_id || id;
       const facturar_url = quote_id ? `/facturas/nueva?quote_id=${encodeURIComponent(quote_id)}` : '#';
 
-      return { id, cliente, fecha, folio, total, resumen, view_url, facturar_url, email_delivery:raw.email_delivery||{}, _raw: raw };
+      return { id, cliente, sucursal, fecha, folio, total, resumen, view_url, facturar_url, email_delivery:raw.email_delivery||{}, _raw: raw };
     }
 
     function normalizeDraft(raw, i){
@@ -325,6 +326,7 @@
         id,
         nombre_borrador: raw.nombre_borrador || datos.nombre_borrador || '',
         cliente: raw.cliente || datos.cliente || 'Sin cliente',
+        sucursal: raw.sucursal || datos.sucursal || '',
         fecha: raw.actualizado || raw.fecha || datos.fecha || '',
         folio: raw.folio || datos.cotizacion || id,
         total: raw.total,
@@ -342,8 +344,8 @@
       tbody.innerHTML = list.map(it => `
         <tr>
           <td>${it.borrador && it.nombre_borrador
-            ? `<strong>${escapeHTML(it.nombre_borrador)}</strong><div class="muted">${escapeHTML(it.cliente||'')}</div>`
-            : escapeHTML(it.cliente||'')}</td>
+            ? `<strong>${escapeHTML(it.nombre_borrador)}</strong><div class="muted">${escapeHTML(it.cliente||'')}${it.sucursal ? ` · ${escapeHTML(it.sucursal)}` : ''}</div>`
+            : `${escapeHTML(it.cliente||'')}${it.sucursal ? `<div class="muted">${escapeHTML(it.sucursal)}</div>` : ''}`}</td>
           <td>${escapeHTML(fmtDate(it.fecha)||'')}</td>
           <td>${escapeHTML(String(it.folio||''))}</td>
           <td class="numeric">${it.total!=null ? money(it.total) : ''}</td>
@@ -643,7 +645,7 @@
       const source = currentData();
       if(!term) { renderRows(source); return; }
       const f = source.filter(it => {
-        return [it.nombre_borrador, it.cliente, it.folio, it.resumen].some(v => String(v||'').toLowerCase().includes(term));
+        return [it.nombre_borrador, it.cliente, it.sucursal, it.folio, it.resumen].some(v => String(v||'').toLowerCase().includes(term));
       });
       renderRows(f);
     });

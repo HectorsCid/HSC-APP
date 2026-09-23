@@ -58,6 +58,7 @@
       <div class="card grid">
         <div class="kv">
           <div class="muted">Cliente</div><div>{{ q.cliente }}</div>
+          {% if q.sucursal %}<div class="muted">Sucursal</div><div>{{ q.sucursal }}</div>{% endif %}
           <div class="muted">Folio</div><div>{{ q.folio or q.id }}</div>
           <div class="muted">Fecha</div><div>{{ q.fecha }}</div>
           <div class="muted">Total</div><div>${{ '%.2f'|format(q.total or 0) }}</div>

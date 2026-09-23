@@ -87,24 +87,27 @@
     </div>
 
     <div class="fs" id="fs">
-      {% for cliente, archivos in estructura.items() %}
-      <div class="row folder" data-cliente="{{ cliente | lower }}">
+      {% for carpeta in estructura %}
+      {% set carpeta_key = 'folder-' ~ loop.index %}
+      <div class="row folder" data-cliente="{{ carpeta_key }}">
         <!-- chevron -->
         <svg class="ico chev" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <!-- folder -->
         <svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M10 4l2 2h8a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h5z"/></svg>
         <div class="name">
-          <strong>{{ cliente }}</strong>
+          <strong>{{ carpeta.label }}</strong>
         </div>
-        <span class="badge">{{ archivos|length }} archivo{{ 's' if archivos|length != 1 }}</span>
-        <a href="{{ url_for('abrir_drive_cliente', cliente=cliente) }}" class="btn" style="margin-left:8px" title="Abrir carpeta en Drive">Drive ↗</a>
+        <span class="badge">{{ carpeta.archivos|length }} archivo{{ 's' if carpeta.archivos|length != 1 }}</span>
+        {% if from_drive %}
+        <a href="{{ carpeta.drive_url }}" target="_blank" rel="noopener" class="btn" style="margin-left:8px" title="Abrir carpeta en Drive">Drive ↗</a>
+        {% endif %}
       </div>
 
-      <div class="files" data-files-of="{{ cliente | lower }}">
+      <div class="files" data-files-of="{{ carpeta_key }}">
         {% if from_drive %}
           {# archivos = lista de dicts {name, link} #}
-          {% for item in archivos %}
-          <div class="file" data-file="{{ (cliente ~ ' ' ~ item.name) | lower }}">
+          {% for item in carpeta.archivos %}
+          <div class="file" data-file="{{ (carpeta.label ~ ' ' ~ item.name) | lower }}">
             <!-- pdf icon -->
             <svg class="ico" viewBox="0 0 24 24" fill="none">
               <path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="1.2"/>
@@ -121,19 +124,20 @@
           {% endfor %}
         {% else %}
           {# archivos = lista de nombres (archivos locales) #}
-          {% for nombre in archivos %}
-          <div class="file" data-file="{{ (cliente ~ ' ' ~ nombre) | lower }}">
+          {% for nombre in carpeta.archivos %}
+          {% set ruta_nombre = (carpeta.relative_prefix ~ '/' ~ nombre) if carpeta.relative_prefix else nombre %}
+          <div class="file" data-file="{{ (carpeta.label ~ ' ' ~ nombre) | lower }}">
             <!-- pdf icon -->
             <svg class="ico" viewBox="0 0 24 24" fill="none">
               <path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" stroke="currentColor" stroke-width="1.2"/>
               <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.2"/>
               <text x="8" y="17" font-size="6" fill="currentColor">PDF</text>
             </svg>
-            <a href="{{ url_for('repo_local_file', cliente=cliente, filename=nombre) }}" target="_blank" rel="noopener">
+            <a href="{{ url_for('repo_local_file', cliente=carpeta.cliente, filename=ruta_nombre) }}" target="_blank" rel="noopener">
               {{ nombre }}
             </a>
             <span class="badge">ver</span>
-            <a href="{{ url_for('repo_local_file', cliente=cliente, filename=nombre) }}" download style="margin-left:auto" title="Descargar"><svg class="line-icon" aria-hidden="true"><use href="#c-download"/></svg></a>
+            <a href="{{ url_for('repo_local_file', cliente=carpeta.cliente, filename=ruta_nombre) }}" download style="margin-left:auto" title="Descargar"><svg class="line-icon" aria-hidden="true"><use href="#c-download"/></svg></a>
           </div>
           {% else %}
           <div class="file"><span class="hint">Sin PDFs en la carpeta local de este cliente.</span></div>

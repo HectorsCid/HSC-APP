@@ -1441,6 +1441,28 @@ def inicio():
     total = subtotal + iva - isr_retenido - iva_retenido
     cambios_sin_guardar = _cotizacion_tiene_cambios_sin_guardar()
 
+    sucursales_por_cliente = {}
+    try:
+        historicos = []
+        path_cotizaciones = _ruta_cotizaciones()
+        if path_cotizaciones.exists():
+            historicos.extend(json.loads(path_cotizaciones.read_text("utf-8")) or [])
+        historicos.extend(_leer_borradores_locales())
+        for item in historicos:
+            if not isinstance(item, dict):
+                continue
+            item_datos = item.get("datos") if isinstance(item.get("datos"), dict) else {}
+            cliente_item = str(item.get("cliente") or item_datos.get("cliente") or "").strip()
+            sucursal_item = str(item.get("sucursal") or item_datos.get("sucursal") or "").strip()
+            if cliente_item and sucursal_item:
+                sucursales_por_cliente.setdefault(cliente_item, set()).add(sucursal_item)
+    except Exception as exc:
+        print("No se pudieron preparar las sugerencias de sucursales:", exc)
+    sucursales_por_cliente = {
+        cliente: sorted(valores, key=_clave_orden_cliente)
+        for cliente, valores in sucursales_por_cliente.items()
+    }
+
     return render_template(
         'inicio.html',
         partidas=partidas,
@@ -1448,6 +1470,7 @@ def inicio():
         clientes=clientes_predefinidos,
         clientes_orden=list(clientes_predefinidos.keys()),
         clientes_alfabeticos=sorted(clientes_predefinidos.keys(), key=_clave_orden_cliente),
+        sucursales_por_cliente=sucursales_por_cliente,
         subtotal=subtotal,
         iva=iva,
         isr_retenido=isr_retenido,
@@ -1500,6 +1523,7 @@ def guardar_datos():
 def _actualizar_datos_cliente_desde_form():
     """Copia el formulario activo sin generar PDF ni alterar el historial."""
     datos_cliente['cliente'] = request.form.get('cliente')
+    datos_cliente['sucursal'] = (request.form.get('sucursal') or '').strip()
     datos_cliente['atencion'] = request.form.getlist('atencion')
     datos_cliente['direccion'] = request.form.get('direccion', '')
     datos_cliente['fecha'] = request.form.get('fecha', '')
@@ -1893,6 +1917,7 @@ def _construir_borrador_actual():
         "folio": folio,
         "estado": "borrador",
         "cliente": (datos_cliente.get("cliente") or "").strip(),
+        "sucursal": (datos_cliente.get("sucursal") or "").strip(),
         "nombre_borrador": (datos_cliente.get("nombre_borrador") or "").strip(),
         "fecha": datos_cliente.get("fecha") or "",
         "actualizado": datetime.now().isoformat(timespec="seconds"),
@@ -2155,12 +2180,17 @@ def generar_pdf():
     total_final = total
 
     cliente = (datos.get('cliente') or 'SIN_CLIENTE').strip()
+    sucursal = (datos.get('sucursal') or '').strip()
     cot = (str(datos.get('cotizacion')) or 'S/F').strip()
 
     # Guardar PDF en carpeta local del proyecto (respaldo)
-    cliente_folder = os.path.join('cotizaciones', cliente.replace("/", "-").replace("\\", "-"))
+    cliente_seguro = cliente.replace("/", "-").replace("\\", "-").strip()
+    sucursal_segura = sucursal.replace("/", "-").replace("\\", "-").strip()
+    cliente_folder = os.path.join('cotizaciones', cliente_seguro)
+    if sucursal_segura:
+        cliente_folder = os.path.join(cliente_folder, sucursal_segura)
     os.makedirs(cliente_folder, exist_ok=True)
-    nombre_archivo = f"{cliente} - {cot}.pdf"
+    nombre_archivo = f"{cliente_seguro} - {sucursal_segura} - {cot}.pdf" if sucursal_segura else f"{cliente_seguro} - {cot}.pdf"
     ruta_pdf = os.path.abspath(os.path.join(cliente_folder, nombre_archivo))
 
     img_path = Path("img/logo.png").resolve().as_uri()
@@ -2184,15 +2214,21 @@ def generar_pdf():
         flash("Hay otro PDF procesándose. Inténtalo nuevamente en unos segundos.", "warning")
         return redirect(url_for("inicio"))
 
-    def guardar_respaldo_local(ruta_pdf_local, cliente_nombre, nombre_arch):
+    def guardar_respaldo_local(ruta_pdf_local, cliente_nombre, sucursal_nombre, nombre_arch):
         ruta_respaldo_dir = os.path.join('static', 'cotizaciones', cliente_nombre.replace("/", "-").replace("\\", "-"))
+        if sucursal_nombre:
+            ruta_respaldo_dir = os.path.join(
+                ruta_respaldo_dir,
+                sucursal_nombre.replace("/", "-").replace("\\", "-")
+            )
         os.makedirs(ruta_respaldo_dir, exist_ok=True)
         ruta_final = os.path.join(ruta_respaldo_dir, nombre_arch)
         shutil.copy2(ruta_pdf_local, ruta_final)
         print("💾 Copiado a respaldo local:", ruta_final)
 
     def _obtener_o_crear_carpeta(service, nombre, id_padre=None):
-        query = f"name='{nombre}' and mimeType='application/vnd.google-apps.folder'"
+        nombre_query = str(nombre or "").replace("\\", "\\\\").replace("'", "\\'")
+        query = f"name='{nombre_query}' and mimeType='application/vnd.google-apps.folder'"
         if id_padre:
             query += f" and '{id_padre}' in parents"
         res = service.files().list(q=query, spaces='drive', fields='files(id,name)', pageSize=1).execute()
@@ -2205,10 +2241,15 @@ def generar_pdf():
         carpeta = service.files().create(body=meta, fields='id').execute()
         return carpeta['id']
 
-    def abrir_drive_local_win(cliente_nombre, nombre_archivo):
+    def abrir_drive_local_win(cliente_nombre, sucursal_nombre, nombre_archivo):
         base = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
         cliente_seguro = (cliente_nombre or "SIN_CLIENTE").replace("/", "-").replace("\\", "-").strip()
         dir_local = os.path.join(base, cliente_seguro)
+        if sucursal_nombre:
+            dir_local = os.path.join(
+                dir_local,
+                sucursal_nombre.replace("/", "-").replace("\\", "-").strip()
+            )
         pdf_local = os.path.join(dir_local, nombre_archivo)
         try:
             if os.path.exists(pdf_local):
@@ -2222,8 +2263,8 @@ def generar_pdf():
         except Exception as e:
             print("⚠️ No se pudo abrir recurso local:", e)
 
-    def subir_a_drive_archivo(ruta_pdf, cliente_nombre, nombre_archivo):
-        print(f"🚀 Subiendo a Drive: {nombre_archivo} para '{cliente_nombre}'")
+    def subir_a_drive_archivo(ruta_pdf, cliente_nombre, sucursal_nombre, nombre_archivo):
+        print(f"🚀 Subiendo a Drive: {nombre_archivo} para '{cliente_nombre}' / '{sucursal_nombre}'")
         service = get_drive_service_user()
 
         id_cot = ID_COT
@@ -2245,10 +2286,15 @@ def generar_pdf():
             print(f"📁 Carpeta cliente no encontrada, creando: {cliente_nombre}")
             id_cliente = _obtener_o_crear_carpeta(service, cliente_nombre, id_cot)
 
-        carpeta_url = f"https://drive.google.com/drive/folders/{id_cliente}"
+        id_destino = id_cliente
+        if sucursal_nombre:
+            id_destino = _obtener_o_crear_carpeta(service, sucursal_nombre, id_cliente)
 
+        carpeta_url = f"https://drive.google.com/drive/folders/{id_destino}"
+
+        nombre_archivo_query = nombre_archivo.replace("\\", "\\\\").replace("'", "\\'")
         existing = service.files().list(
-            q=f"name='{nombre_archivo}' and '{id_cliente}' in parents and trashed=false",
+            q=f"name='{nombre_archivo_query}' and '{id_destino}' in parents and trashed=false",
             spaces='drive',
             fields='files(id,name)',
             pageSize=100
@@ -2270,7 +2316,7 @@ def generar_pdf():
                     pass
         else:
             created = service.files().create(
-                body={'name': nombre_archivo, 'parents': [id_cliente]},
+                body={'name': nombre_archivo, 'parents': [id_destino]},
                 media_body=media,
                 fields='id, webViewLink, webContentLink'
             ).execute()
@@ -2278,13 +2324,13 @@ def generar_pdf():
 
         return carpeta_url, archivo_url
 
-    guardar_respaldo_local(ruta_pdf, cliente, nombre_archivo)
-    carpeta_url, archivo_url = subir_a_drive_archivo(ruta_pdf, cliente, nombre_archivo)
-    abrir_drive_local_win(cliente, nombre_archivo)
+    guardar_respaldo_local(ruta_pdf, cliente, sucursal, nombre_archivo)
+    carpeta_url, archivo_url = subir_a_drive_archivo(ruta_pdf, cliente, sucursal, nombre_archivo)
+    abrir_drive_local_win(cliente, sucursal, nombre_archivo)
 
     # Registrar en historial (para el panel de "Generados recientes")
     try:
-        log_pdf_event(cliente, cot, archivo_url, carpeta_url)
+        log_pdf_event(f"{cliente} · {sucursal}" if sucursal else cliente, cot, archivo_url, carpeta_url)
     except Exception as _e:
         print("⚠️ No se pudo registrar en HistorialPDF:", _e)
 
@@ -2321,6 +2367,7 @@ def generar_pdf():
             "id": str(cot),
             "folio": str(cot),
             "cliente": cliente,
+            "sucursal": sucursal,
             "fecha": datetime.now().isoformat(timespec="seconds"),
             "total": round(float(total), 2),
             "view_url": archivo_url,           # ← AÑADIDO
@@ -2338,14 +2385,17 @@ def generar_pdf():
     except Exception as e:
         print("⚠️ No se pudo retirar el borrador ya finalizado:", e)
 
-    cliente_seguro = cliente.replace("/", "-").replace("\\", "-")
+    ruta_pdf_estatica = f"cotizaciones/{cliente_seguro}"
+    if sucursal_segura:
+        ruta_pdf_estatica += f"/{sucursal_segura}"
     pdf_descarga_url = url_for(
         "static",
-        filename=f"cotizaciones/{cliente_seguro}/{nombre_archivo}",
+        filename=f"{ruta_pdf_estatica}/{nombre_archivo}",
     )
     return render_template(
         "cotizacion_generada.html",
         cliente=cliente,
+        sucursal=sucursal,
         folio=cot,
         nombre_archivo=nombre_archivo,
         pdf_descarga_url=pdf_descarga_url,
@@ -2548,7 +2598,7 @@ def repositorio():
     if use_drive:
         try:
             service = _drive_service_cfg()
-            estructura = {}
+            estructura = []
 
             resp = service.files().list(
                 q=f"'{ID_COT}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
@@ -2561,34 +2611,87 @@ def repositorio():
                 cliente = folder['name']
                 fid = folder['id']
 
-                files = service.files().list(
+                archivos_raiz = service.files().list(
                     q=f"'{fid}' in parents and mimeType='application/pdf' and trashed=false",
                     spaces='drive',
                     fields='files(id,name,webViewLink)',
                     pageSize=1000
                 ).execute().get('files', [])
 
-                estructura[cliente] = [
-                    {"name": f["name"], "link": f.get("webViewLink")} for f in files
-                ]
+                if archivos_raiz:
+                    estructura.append({
+                        "label": cliente,
+                        "cliente": cliente,
+                        "sucursal": "",
+                        "drive_url": f"https://drive.google.com/drive/folders/{fid}",
+                        "archivos": [
+                            {"name": f["name"], "link": f.get("webViewLink")} for f in archivos_raiz
+                        ],
+                    })
+
+                subcarpetas = service.files().list(
+                    q=f"'{fid}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+                    spaces='drive',
+                    fields='files(id,name)',
+                    pageSize=1000
+                ).execute().get('files', [])
+                for subcarpeta in subcarpetas:
+                    sucursal = subcarpeta['name']
+                    sub_id = subcarpeta['id']
+                    archivos = service.files().list(
+                        q=f"'{sub_id}' in parents and mimeType='application/pdf' and trashed=false",
+                        spaces='drive',
+                        fields='files(id,name,webViewLink)',
+                        pageSize=1000
+                    ).execute().get('files', [])
+                    estructura.append({
+                        "label": f"{cliente} · {sucursal}",
+                        "cliente": cliente,
+                        "sucursal": sucursal,
+                        "drive_url": f"https://drive.google.com/drive/folders/{sub_id}",
+                        "archivos": [
+                            {"name": f["name"], "link": f.get("webViewLink")} for f in archivos
+                        ],
+                    })
+
+            estructura.sort(key=lambda item: _clave_orden_cliente(item["label"]))
 
             return render_template("repositorio.html", estructura=estructura, from_drive=True)
 
         except Exception as e:
             print("⚠️ No se pudo listar desde Drive en /repositorio:", e)
-            return render_template("repositorio.html", estructura={}, from_drive=True)
+            return render_template("repositorio.html", estructura=[], from_drive=True)
 
     # --- Local ---
-    estructura = {}
+    estructura = []
     try:
         for cliente in sorted(os.listdir(BASE_LOCAL_DRIVE)):
             c_path = os.path.join(BASE_LOCAL_DRIVE, cliente)
             if os.path.isdir(c_path):
                 pdfs = [a for a in os.listdir(c_path) if a.lower().endswith('.pdf')]
-                estructura[cliente] = sorted(pdfs)
+                if pdfs:
+                    estructura.append({
+                        "label": cliente,
+                        "cliente": cliente,
+                        "sucursal": "",
+                        "relative_prefix": "",
+                        "archivos": sorted(pdfs),
+                    })
+                for sucursal in sorted(os.listdir(c_path)):
+                    s_path = os.path.join(c_path, sucursal)
+                    if not os.path.isdir(s_path):
+                        continue
+                    pdfs_sucursal = [a for a in os.listdir(s_path) if a.lower().endswith('.pdf')]
+                    estructura.append({
+                        "label": f"{cliente} · {sucursal}",
+                        "cliente": cliente,
+                        "sucursal": sucursal,
+                        "relative_prefix": sucursal,
+                        "archivos": sorted(pdfs_sucursal),
+                    })
     except Exception as e:
         print("⚠️ Error listando en local /repositorio:", e)
-        estructura = {}
+        estructura = []
 
     return render_template("repositorio.html", estructura=estructura, from_drive=False)
 
