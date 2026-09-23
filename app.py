@@ -3785,33 +3785,22 @@ def api_operaciones_bootstrap():
                 get_sheets_service(timeout=25), SHEET_ID,
                 include_media_refs=True, include_raw=True,
             )
-            checks = _operations_migration_checks(incoming.get("stats") or {})
-            if not checks["ready"]:
-                stats = incoming.get("stats") or {}
-                groups = []
-                for label, key in (("clientes", "duplicate_client_ids"),
-                                   ("equipos", "duplicate_equipment_ids"),
-                                   ("reportes", "duplicate_report_ids")):
-                    ids = [str(value) for value in stats.get(key) or [] if str(value).strip()]
-                    if ids:
-                        groups.append(f"{label}: {', '.join(ids)}")
-                failure_warning = "La Hoja Matriz tiene IDs duplicados"
-                if groups:
-                    failure_warning += " · " + " · ".join(groups)
-                failure_warning += ". Corrígelos en AppSheet antes de importar."
-                raise ValueError("La matriz contiene IDs duplicados; importación detenida.")
             OPERACIONES_STORE.import_matrix_snapshot(
                 _complete_legacy_operations_relations(incoming)
             )
+            duplicate_repairs = _queue_matrix_duplicate_repairs(incoming.get("stats") or {})
             _OPERACIONES_IMPORT_STATUS.update(
                 error="", last_success=datetime.now().isoformat()
             )
             _invalidate_operations_cache()
+            if duplicate_repairs:
+                _schedule_operations_sync(force=True)
             payload = _prepare_operaciones_payload(OPERACIONES_STORE.snapshot())
             return jsonify({
                 "ok": True, "read_only": False, "cached": False,
                 "source": "database", "refreshing": False,
                 "import_confirmed": True,
+                "duplicate_repairs_queued": duplicate_repairs,
                 **_scope_operaciones_payload(payload),
             })
         except Exception as exc:
@@ -3926,7 +3915,7 @@ def api_operaciones_storage_status():
 
 def _operations_migration_checks(stats):
     # Las relaciones huérfanas heredadas se preservan con fichas provisionales.
-    # Los IDs duplicados sí son ambiguos y por eso bloquean la migración.
+    # Los IDs duplicados se diagnostican y reparan sin bloquear la operación.
     problem_keys = ("duplicate_clients", "duplicate_equipment", "duplicate_reports")
     problems = {key: int(stats.get(key) or 0) for key in problem_keys if int(stats.get(key) or 0)}
     return {"ready": not problems, "problems": problems}
@@ -3945,6 +3934,30 @@ def _operations_matrix_diagnostic(stats):
             "reports": list(stats.get("duplicate_report_ids") or []),
         },
     }
+
+
+def _queue_matrix_duplicate_repairs(stats):
+    """Convierte avisos de la matriz en reparaciones idempotentes de Sheets."""
+    stats = stats or {}
+    snapshot = OPERACIONES_STORE.snapshot()
+    clients = {str(row.get("matrix_id") or row.get("id")): row for row in snapshot.get("clients", [])}
+    equipment = {str(row.get("id")): row for row in snapshot.get("equipment", [])}
+    reports = {str(row.get("matrix_id") or row.get("id")): row for row in snapshot.get("reports", [])}
+    queued = 0
+    for entity_type, key, catalog in (
+        ("client", "duplicate_client_ids", clients),
+        ("equipment", "duplicate_equipment_ids", equipment),
+        ("report", "duplicate_report_ids", reports),
+    ):
+        for matrix_id in stats.get(key) or []:
+            item = catalog.get(str(matrix_id))
+            if not item:
+                continue
+            OPERACIONES_STORE.queue_sync(entity_type, item["id"], "sheets", "upsert", {
+                "repair_duplicate_matrix_id": str(matrix_id),
+            })
+            queued += 1
+    return queued
 
 
 def _complete_legacy_operations_relations(payload):
@@ -4060,16 +4073,12 @@ def api_operaciones_migrate():
             get_sheets_service(timeout=30), SHEET_ID,
             include_media_refs=True, include_raw=True,
         )
-        checks = _operations_migration_checks(source.get("stats") or {})
-        if not checks["ready"]:
-            return jsonify({
-                "ok": False, "code": "matrix_integrity",
-                "error": "La matriz tiene IDs duplicados; no se modificó la base.",
-                "stats": source.get("stats") or {}, **checks,
-            }), 409
         source = _complete_legacy_operations_relations(source)
         imported = OPERACIONES_STORE.import_matrix_snapshot(source)
+        duplicate_repairs = _queue_matrix_duplicate_repairs(source.get("stats") or {})
         _invalidate_operations_cache()
+        if duplicate_repairs:
+            _schedule_operations_sync(force=True)
         stored = OPERACIONES_STORE.snapshot()
         source_stats = source.get("stats") or {}
         stored_stats = stored.get("stats") or {}
@@ -4089,6 +4098,7 @@ def api_operaciones_migrate():
             )
         return jsonify({
             "ok": complete, "complete": complete, "imported": imported,
+            "duplicate_repairs_queued": duplicate_repairs,
             "verification": verification,
             "legacy_placeholders": source.get("legacy_placeholders") or {},
             "error": None if complete else "Los conteos no coinciden; la migración requiere revisión.",
@@ -4113,6 +4123,7 @@ def _operations_sync_worker(app_obj):
                     incoming = read_operaciones_matrix(get_sheets_service(timeout=20), SHEET_ID,
                                                       include_media_refs=True, include_raw=True)
                     OPERACIONES_STORE.import_matrix_snapshot(_complete_legacy_operations_relations(incoming))
+                    _queue_matrix_duplicate_repairs(incoming.get("stats") or {})
                     _OPERACIONES_IMPORT_STATUS.update(error="", last_success=datetime.now().isoformat())
                     _invalidate_operations_cache()
             except Exception:
@@ -4238,10 +4249,14 @@ def api_operaciones_diagnostics_import():
         # El lector conserva la primera fila de cada ID y continúa con el resto.
         OPERACIONES_STORE.set_matrix_duplicate_policy(True)
         OPERACIONES_STORE.import_matrix_snapshot(_complete_legacy_operations_relations(source))
+        duplicate_repairs = _queue_matrix_duplicate_repairs(source.get("stats") or {})
         _OPERACIONES_IMPORT_STATUS.update(error="", last_success=datetime.now().isoformat())
         _invalidate_operations_cache()
+        if duplicate_repairs:
+            _schedule_operations_sync(force=True)
         return jsonify({
             "ok": True, "import_confirmed": True, "matrix": diagnostic,
+            "duplicate_repairs_queued": duplicate_repairs,
             "duplicate_policy": "first_wins",
             "message": "Importación completada. Las filas repetidas se señalaron sin detener los demás cambios."
                        if not diagnostic["ready"] else "Importación completada.",
@@ -4268,7 +4283,15 @@ def api_operaciones_sync():
             "ok": False, "code": "sync_not_enabled",
             "error": "La escritura a la Hoja Matriz sigue en modo seguro.",
         }), 409
+    acquired = False
     try:
+        if not dry_run:
+            acquired = _OPERACIONES_SYNC_LOCK.acquire(blocking=False)
+            if not acquired:
+                return jsonify({
+                    "ok": True, "already_running": True,
+                    "message": "La sincronización ya está trabajando en segundo plano.",
+                }), 202
         service = get_sheets_service(timeout=30) if dry_run else get_sheets_write_service(timeout=30)
         result = sync_operations_outbox(
             OPERACIONES_STORE, service, SHEET_ID,
@@ -4283,6 +4306,8 @@ def api_operaciones_sync():
         return jsonify({"ok": False, "error": "No se pudo revisar la sincronización con Google."}), 502
     finally:
         reset_thread_google_services()
+        if acquired:
+            _OPERACIONES_SYNC_LOCK.release()
 
 
 @app.post('/api/operaciones/clients')

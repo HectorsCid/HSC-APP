@@ -38,6 +38,8 @@ class _Values:
         row = list(kwargs["body"]["values"][0])
         self.fake.sheets[title]["rows"].append(row)
         row_number = len(self.fake.sheets[title]["rows"]) + 1
+        if self.fake.duplicate_after_append:
+            self.fake.sheets[title]["rows"].append(list(row))
         self.fake.writes.append(("append", title, row_number, row, kwargs["range"]))
         return _Request({"updates": {"updatedRange": f"'{title}'!A{row_number}:AL{row_number}"}})
 
@@ -52,7 +54,6 @@ class _Values:
             return _Request(failure=RuntimeError("fallo temporal"))
         return _Request({"updatedCells": 1})
 
-
 class _Spreadsheets:
     def __init__(self, fake):
         self.fake = fake
@@ -65,7 +66,7 @@ class _Spreadsheets:
 
 
 class FakeSheets:
-    def __init__(self, *, fail_completion_once=False):
+    def __init__(self, *, fail_completion_once=False, duplicate_after_append=False):
         self.sheets = {
             "Clientes": {"headers": ["ID_Cliente", "NombreCliente", "Direccion", "Foto", "", "CorreoAutorizado", "RondaSeleccionadaCliente", "URL_Reportes"], "rows": []},
             "Equipos": {"headers": ["ID_Equipo", "ID_Cliente", "NombreEquipo", "Marca", "Foto", "Modelo", "NoSerie", "Estatus", "Inventario", "Ubicacion", "Departamento", "Responsable", "NoContrato", "Vigencia"], "rows": []},
@@ -74,6 +75,7 @@ class FakeSheets:
         }
         self.writes = []
         self.fail_completion_once = fail_completion_once
+        self.duplicate_after_append = duplicate_after_append
 
     def spreadsheets(self):
         return _Spreadsheets(self)
@@ -141,6 +143,39 @@ def test_failed_completion_stays_queued_for_idempotent_retry(tmp_path):
     assert second["synced"] == 1
     assert store.pending_sync() == []
     assert sum(write[0] == "append" for write in fake.writes) == 1
+
+
+def test_existing_duplicate_rows_are_consolidated_without_blocking(tmp_path):
+    store, report_id = _store_with_report(tmp_path)
+    fake = FakeSheets()
+    id_col = REPORT_HEADERS.index("ID_Reporte")
+    first = [""] * len(REPORT_HEADERS)
+    second = [""] * len(REPORT_HEADERS)
+    first[id_col] = second[id_col] = "UVMQ1_R 2"
+    second[REPORT_HEADERS.index("Comentarios")] = "Dato conservado de la copia"
+    fake.sheets["Reportes"]["rows"] = [first, second]
+
+    result = sync_operations_outbox(store, fake, "sheet-id")
+
+    assert result["synced"] == 1
+    assert result["failed"] == 0
+    assert result["items"][0]["duplicates_repaired"] == 1
+    updates = [entry for write in fake.writes if write[0] == "batchUpdate" for entry in write[1]]
+    assert any(entry["values"] == [["Dato conservado de la copia"]] for entry in updates)
+    assert any(entry["range"].endswith("3") for entry in updates)
+
+
+def test_duplicate_created_during_append_is_detected_and_repaired(tmp_path):
+    store, _ = _store_with_report(tmp_path)
+    fake = FakeSheets(duplicate_after_append=True)
+
+    result = sync_operations_outbox(store, fake, "sheet-id")
+
+    assert result["synced"] == 1
+    rows = fake.sheets["Reportes"]["rows"]
+    assert sum(bool(row) for row in rows) == 2
+    updates = [entry for write in fake.writes if write[0] == "batchUpdate" for entry in write[1]]
+    assert any(entry["range"].endswith("3") for entry in updates)
 
 
 def test_pilot_allowlist_leaves_other_clients_queued(tmp_path):

@@ -439,9 +439,12 @@ class OperationsStore:
             for local_id, matrix_id in conn.execute(
                 "SELECT id,matrix_id FROM operations_clients WHERE matrix_id!=''"
             ).fetchall():
-                if matrix_id in client_map and client_map[matrix_id] != local_id:
-                    raise ValueError(f"Cliente de matriz ambiguo: {matrix_id}")
-                client_map[matrix_id] = local_id
+                previous = client_map.get(matrix_id)
+                if not previous or local_id == matrix_id:
+                    # Bases heredadas pudieron conservar un UUID local y el ID
+                    # real de la matriz. Se prefiere la coincidencia exacta sin
+                    # detener la importación del resto de los clientes.
+                    client_map[matrix_id] = local_id
             report_map = {}
             for local_id, matrix_id in conn.execute(
                 "SELECT id,matrix_id FROM operations_reports WHERE matrix_id!='' AND state!='draft' "
