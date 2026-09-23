@@ -154,7 +154,7 @@
           class="btn btn-danger"
           href="{{ url_for('cancelar_cotizacion') }}"
           onclick="return confirm('¿Cancelar esta cotización? Se descartarán los datos y partidas que no hayas guardado como borrador.');"
-        >✕ Cancelar cotización</a>
+        ><svg class="line-icon" aria-hidden="true"><use href="#c-close"/></svg>Cancelar cotización</a>
         <button
           id="btn-guardar-borrador"
           class="btn"
@@ -163,7 +163,7 @@
           formaction="{{ url_for('guardar_borrador') }}"
           formmethod="post"
           formnovalidate
-        >💾 Guardar borrador</button>
+        ><svg class="line-icon" aria-hidden="true"><use href="#c-save"/></svg>Guardar borrador</button>
         <button
           class="btn"
           type="submit"
@@ -171,12 +171,12 @@
           formaction="{{ url_for('abrir_costos_internos') }}"
           formmethod="post"
           formnovalidate
-        >🧮 Costos internos</button>
+        ><svg class="line-icon" aria-hidden="true"><use href="#c-calculator"/></svg>Costos internos</button>
         <a
           class="btn"
           href="{{ url_for('limpiar') }}"
           onclick="return confirm('¿Limpiar toda la cotización? Se borrarán el cliente, los datos capturados y todas las partidas.');"
-        >🧹 Limpiar formulario</a>
+        ><svg class="line-icon" aria-hidden="true"><use href="#c-clean"/></svg>Limpiar formulario</a>
       </div>
     </div>
 
