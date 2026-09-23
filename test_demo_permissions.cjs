@@ -2,7 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const html = fs.readFileSync('templates/app_operativa_demo.html', 'utf8');
+const html = fs.readFileSync('templates/app_operativa_demo.html', 'utf8')
+  .replace("{% include '_operations_profile.html' %}", fs.readFileSync('templates/_operations_profile.html', 'utf8'));
 const script = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>'));
 
 new vm.Script(script);

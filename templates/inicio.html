@@ -215,18 +215,14 @@
         </div>
 
         <label for="sucursal">Sucursal, lote o proyecto</label>
-        <input
-          type="text"
-          name="sucursal"
-          id="sucursal"
-          list="sucursales-list"
-          value="{{ datos.sucursal or '' }}"
-          placeholder="Ej. Lote 86"
-          maxlength="100"
-          autocomplete="off"
-        />
-        <datalist id="sucursales-list"></datalist>
-        <div class="hint">Opcional. Separa el PDF, el historial y la carpeta de Drive sin duplicar el RFC.</div>
+        <select name="sucursal" id="sucursal" aria-describedby="sucursal-hint">
+          <option value="">Sin sucursal · cliente general</option>
+          {% set opciones_sucursal = sucursales_por_cliente.get(datos.cliente, []) %}
+          {% for nombre in opciones_sucursal %}<option value="{{ nombre }}" {% if datos.sucursal == nombre %}selected{% endif %}>{{ nombre }}</option>{% endfor %}
+          {% if datos.sucursal and datos.sucursal not in opciones_sucursal %}<option value="{{ datos.sucursal }}" selected>{{ datos.sucursal }} · guardada en esta cotización</option>{% endif %}
+        </select>
+        <div class="hint" id="sucursal-hint">Elige una sucursal guardada o cotiza al cliente general. Cada sucursal conserva su carpeta e historial.</div>
+        <div class="actions" style="margin:6px 0 10px"><button class="btn" type="button" id="btnSucursales"><svg class="line-icon" aria-hidden="true"><use href="#c-edit"/></svg>Administrar sucursales</button></div>
 
         <label>Atención</label>
         <select name="atencion" id="atencion" required></select>
@@ -449,7 +445,7 @@
     const selectOrdenClientes = document.getElementById('orden-clientes');
     const selectAtencion = document.getElementById('atencion');
     const sucursal = document.getElementById('sucursal');
-    const sucursalesList = document.getElementById('sucursales-list');
+    const sucursalHint = document.getElementById('sucursal-hint');
     const direccion = document.getElementById('direccion');
     const tiempo = document.getElementById('tiempo');
     const anticipo = document.getElementById('anticipo');
@@ -569,21 +565,24 @@
     }
 
     function cargarSucursales(nombreCliente, mantenerSeleccion = true) {
-      const valorActual = sucursal.value;
-      sucursalesList.replaceChildren();
-      (sucursalesPorCliente[nombreCliente] || []).forEach(nombre => {
-        const option = document.createElement('option');
-        option.value = nombre;
-        sucursalesList.appendChild(option);
-      });
-      if (!mantenerSeleccion) sucursal.value = '';
-      else sucursal.value = valorActual;
+      const valorActual = mantenerSeleccion ? sucursal.value : '';
+      const opciones = sucursalesPorCliente[nombreCliente] || [];
+      sucursal.replaceChildren(new Option('Sin sucursal · cliente general', ''));
+      opciones.forEach(nombre => sucursal.add(new Option(nombre, nombre)));
+      if (valorActual && !opciones.includes(valorActual)) {
+        sucursal.add(new Option(`${valorActual} · guardada en esta cotización`, valorActual));
+      }
+      sucursal.value = valorActual;
+      sucursal.disabled = !nombreCliente;
+      sucursalHint.textContent = !nombreCliente ? 'Primero elige un cliente.' : opciones.length
+        ? 'Elige una sucursal guardada. Cada una conserva su carpeta e historial, con el mismo RFC.'
+        : 'Este cliente no tiene sucursales guardadas. Puedes agregarlas en Administrar sucursales.';
     }
 
     if (selectCliente.value) {
       cargarDatosCliente(selectCliente.value, true);
-      cargarSucursales(selectCliente.value, true);
     }
+    cargarSucursales(selectCliente.value, true);
 
     selectCliente.addEventListener('change', () => {
       cargarDatosCliente(selectCliente.value, false);
@@ -591,6 +590,13 @@
     });
 
     const btnEditar = document.getElementById('btnEditarCliente');
+    document.getElementById('btnSucursales').addEventListener('click', () => {
+      if (!selectCliente.value) { alert('Primero selecciona un cliente.'); return; }
+      formDatos.action = "{{ url_for('editar_sucursales_desde_cotizacion') }}";
+      // Guardar los datos actuales antes de salir, sin exigir campos que aún
+      // pueden estar vacíos en una cotización en proceso.
+      formDatos.submit();
+    });
     if (btnEditar) {
       btnEditar.addEventListener('click', () => {
         const c = selectCliente.value;

@@ -1,0 +1,198 @@
+{
+  "platform": "win32",
+  "results": [
+    {
+      "case": "idle",
+      "seconds": 0.128,
+      "before": {
+        "rss_mib": 113.71,
+        "private_mib": 89.95,
+        "process_peak_rss_mib": 113.71
+      },
+      "sampled_peak": {
+        "rss_mib": 114.32,
+        "private_mib": 90.34,
+        "process_peak_rss_mib": 114.39
+      },
+      "after": {
+        "rss_mib": 114.09,
+        "private_mib": 89.99,
+        "process_peak_rss_mib": 114.39
+      },
+      "after_gc": {
+        "rss_mib": 114.09,
+        "private_mib": 89.99,
+        "process_peak_rss_mib": 114.39
+      },
+      "details": {
+        "health_requests": 500,
+        "network": "blocked"
+      }
+    },
+    {
+      "case": "payments",
+      "seconds": 0.972,
+      "before": {
+        "rss_mib": 113.42,
+        "private_mib": 89.66,
+        "process_peak_rss_mib": 115.2
+      },
+      "sampled_peak": {
+        "rss_mib": 115.08,
+        "private_mib": 91.18,
+        "process_peak_rss_mib": 115.2
+      },
+      "after": {
+        "rss_mib": 115.08,
+        "private_mib": 91.16,
+        "process_peak_rss_mib": 115.2
+      },
+      "after_gc": {
+        "rss_mib": 114.82,
+        "private_mib": 90.82,
+        "process_peak_rss_mib": 115.2
+      },
+      "details": {
+        "cycles": 100,
+        "requests": 300,
+        "technicians": 10,
+        "expenses": 100,
+        "writes": "temporary SQLite only; no real payments"
+      }
+    },
+    {
+      "case": "payments_post",
+      "seconds": 1.073,
+      "before": {
+        "rss_mib": 115.12,
+        "private_mib": 91.1,
+        "process_peak_rss_mib": 115.12
+      },
+      "sampled_peak": {
+        "rss_mib": 116.33,
+        "private_mib": 92.5,
+        "process_peak_rss_mib": 116.35
+      },
+      "after": {
+        "rss_mib": 115.28,
+        "private_mib": 91.68,
+        "process_peak_rss_mib": 116.35
+      },
+      "after_gc": {
+        "rss_mib": 115.0,
+        "private_mib": 91.34,
+        "process_peak_rss_mib": 116.35
+      },
+      "details": {
+        "cycles": 100,
+        "requests": 300,
+        "technicians": 10,
+        "expenses": 100,
+        "writes": "temporary SQLite only; no real payments"
+      }
+    },
+    {
+      "case": "matrix",
+      "seconds": 16.22,
+      "before": {
+        "rss_mib": 118.6,
+        "private_mib": 94.48,
+        "process_peak_rss_mib": 124.52
+      },
+      "sampled_peak": {
+        "rss_mib": 131.25,
+        "private_mib": 107.48,
+        "process_peak_rss_mib": 131.25
+      },
+      "after": {
+        "rss_mib": 127.34,
+        "private_mib": 104.06,
+        "process_peak_rss_mib": 131.25
+      },
+      "after_gc": {
+        "rss_mib": 125.55,
+        "private_mib": 101.4,
+        "process_peak_rss_mib": 131.25
+      },
+      "details": {
+        "cycles": 20,
+        "source_bytes": 1307975,
+        "counts": {
+          "clients": 12,
+          "equipment": 600,
+          "reports": 1800,
+          "faults": 0
+        },
+        "excludes": "Google transport, real sheet data and remote database"
+      }
+    },
+    {
+      "case": "thumbnails_legacy",
+      "seconds": 0.856,
+      "before": {
+        "rss_mib": 114.38,
+        "private_mib": 90.98,
+        "process_peak_rss_mib": 114.38
+      },
+      "sampled_peak": {
+        "rss_mib": 304.55,
+        "private_mib": 282.88,
+        "process_peak_rss_mib": 305.99
+      },
+      "after": {
+        "rss_mib": 118.05,
+        "private_mib": 95.25,
+        "process_peak_rss_mib": 305.99
+      },
+      "after_gc": {
+        "rss_mib": 117.1,
+        "private_mib": 94.18,
+        "process_peak_rss_mib": 305.99
+      },
+      "details": {
+        "generated": 20,
+        "cached": 20,
+        "image_dimensions": [
+          4000,
+          3000
+        ],
+        "source_bytes": 188629,
+        "workers": 2
+      }
+    },
+    {
+      "case": "thumbnails_fixed",
+      "seconds": 0.786,
+      "before": {
+        "rss_mib": 113.8,
+        "private_mib": 89.66,
+        "process_peak_rss_mib": 113.8
+      },
+      "sampled_peak": {
+        "rss_mib": 118.8,
+        "private_mib": 95.23,
+        "process_peak_rss_mib": 118.8
+      },
+      "after": {
+        "rss_mib": 118.74,
+        "private_mib": 95.19,
+        "process_peak_rss_mib": 118.8
+      },
+      "after_gc": {
+        "rss_mib": 117.79,
+        "private_mib": 94.09,
+        "process_peak_rss_mib": 118.8
+      },
+      "details": {
+        "generated": 20,
+        "cached": 20,
+        "image_dimensions": [
+          4000,
+          3000
+        ],
+        "source_bytes": 188629,
+        "workers": 2
+      }
+    }
+  ]
+}

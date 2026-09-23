@@ -1,0 +1,20 @@
+<fieldset class="branch-editor" data-branch-editor id="sucursales">
+  <legend>Sucursales, lotes o proyectos</legend>
+  <input type="hidden" name="sucursales_present" value="1">
+  <p class="hint">Guárdalos una vez y elígelos al cotizar. Comparten los datos fiscales y el RFC de este cliente.</p>
+  <div class="branch-list" data-branch-list>
+    {% for nombre in (datos.sucursales if datos is defined else []) or [] %}
+    <div class="branch-row">
+      <input name="sucursal_nombre" value="{{ nombre }}" maxlength="100" placeholder="Ej. Lote 86" aria-label="Nombre de sucursal" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <button class="btn branch-remove" type="button" data-remove-branch aria-label="Quitar sucursal" title="Quitar de la lista"><svg class="line-icon" aria-hidden="true"><use href="#c-trash"/></svg></button>
+    </div>
+    {% endfor %}
+  </div>
+  <button class="btn branch-add" type="button" data-add-branch><svg class="line-icon" aria-hidden="true"><use href="#c-plus"/></svg>Agregar sucursal</button>
+  <p class="hint" data-branch-empty>Si el cliente no tiene sucursales, deja la lista vacía.</p>
+  <p class="hint">Quitar o cambiar un nombre aquí no modifica cotizaciones ni carpetas anteriores.</p>
+  <p class="branch-error" data-branch-error role="alert" hidden></p>
+  <template data-branch-template><div class="branch-row"><input name="sucursal_nombre" maxlength="100" placeholder="Ej. Lote 86" aria-label="Nombre de sucursal" autocomplete="off" autocapitalize="none" spellcheck="false"><button class="btn branch-remove" type="button" data-remove-branch aria-label="Quitar sucursal" title="Quitar de la lista"><svg class="line-icon" aria-hidden="true"><use href="#c-trash"/></svg></button></div></template>
+</fieldset>
+<link rel="stylesheet" href="{{ url_for('static', filename='quotation_branches.css', v='1') }}">
+<script defer src="{{ url_for('static', filename='quotation_branches.js', v='1') }}"></script>

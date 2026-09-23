@@ -43,6 +43,8 @@ from auth_google import (
     reset_thread_google_services,
 )
 from pdf_runtime import PdfRendererBusy, render_pdf_file
+from photo_runtime import prepare_photo
+from quotation_branches import catalog_branches, select_branch, validate_branches
 
 # NEW: para detectar RefreshError con claridad
 from google.auth.exceptions import RefreshError
@@ -1443,27 +1445,7 @@ def inicio():
     total = subtotal + iva - isr_retenido - iva_retenido
     cambios_sin_guardar = _cotizacion_tiene_cambios_sin_guardar()
 
-    sucursales_por_cliente = {}
-    try:
-        historicos = []
-        path_cotizaciones = _ruta_cotizaciones()
-        if path_cotizaciones.exists():
-            historicos.extend(json.loads(path_cotizaciones.read_text("utf-8")) or [])
-        historicos.extend(_leer_borradores_locales())
-        for item in historicos:
-            if not isinstance(item, dict):
-                continue
-            item_datos = item.get("datos") if isinstance(item.get("datos"), dict) else {}
-            cliente_item = str(item.get("cliente") or item_datos.get("cliente") or "").strip()
-            sucursal_item = str(item.get("sucursal") or item_datos.get("sucursal") or "").strip()
-            if cliente_item and sucursal_item:
-                sucursales_por_cliente.setdefault(cliente_item, set()).add(sucursal_item)
-    except Exception as exc:
-        print("No se pudieron preparar las sugerencias de sucursales:", exc)
-    sucursales_por_cliente = {
-        cliente: sorted(valores, key=_clave_orden_cliente)
-        for cliente, valores in sucursales_por_cliente.items()
-    }
+    sucursales_por_cliente = _catalogo_sucursales_cotizacion()
 
     return render_template(
         'inicio.html',
@@ -1519,13 +1501,22 @@ def clientes_refresh_cache():
 
 @app.route('/guardar_datos', methods=['POST'])
 def guardar_datos():
-    _actualizar_datos_cliente_desde_form()
+    if not _actualizar_datos_cliente_desde_form():
+        return redirect(url_for('inicio'))
     return redirect(url_for('inicio'))
 
 def _actualizar_datos_cliente_desde_form():
     """Copia el formulario activo sin generar PDF ni alterar el historial."""
-    datos_cliente['cliente'] = request.form.get('cliente')
-    datos_cliente['sucursal'] = (request.form.get('sucursal') or '').strip()
+    cliente = request.form.get('cliente')
+    try:
+        sucursal = select_branch(request.form.get('sucursal'),
+            _catalogo_sucursales_cotizacion().get(cliente, []), current_client=cliente,
+            previous_client=datos_cliente.get('cliente'), previous_branch=datos_cliente.get('sucursal'))
+    except ValueError as exc:
+        flash(str(exc))
+        return False
+    datos_cliente['cliente'] = cliente
+    datos_cliente['sucursal'] = sucursal
     datos_cliente['atencion'] = request.form.getlist('atencion')
     datos_cliente['direccion'] = request.form.get('direccion', '')
     datos_cliente['fecha'] = request.form.get('fecha', '')
@@ -1539,11 +1530,13 @@ def _actualizar_datos_cliente_desde_form():
     datos_cliente["retencion_iva_tasa"] = request.form.get("retencion_iva_tasa", "0")
     tasa_isr, tasa_iva_ret = _tasas_retencion(datos_cliente)
     datos_cliente["usar_retenciones"] = bool(tasa_isr or tasa_iva_ret)
+    return True
 
 @app.route('/agregar', methods=['POST'])
 def agregar():
     if request.form.get("preservar_datos_cotizacion") == "1":
-        _actualizar_datos_cliente_desde_form()
+        if not _actualizar_datos_cliente_desde_form():
+            return redirect(url_for('inicio'))
     descripcion = (request.form.get('descripcion') or '').strip()
     if not descripcion:
         flash("❌ Escribe la descripción de la partida.")
@@ -1607,6 +1600,13 @@ def nueva_cotizacion():
     _reiniciar_costos_internos()
     return redirect(url_for('inicio'))
 
+
+@app.post('/cotizacion/sucursales')
+def editar_sucursales_desde_cotizacion():
+    if not _actualizar_datos_cliente_desde_form():
+        return redirect(url_for('inicio'))
+    return redirect(url_for('editar_cliente', cliente=datos_cliente.get('cliente'), _anchor='sucursales'))
+
 @app.route('/cancelar-cotizacion')
 def cancelar_cotizacion():
     """Descarta la captura actual y vuelve al listado de cotizaciones."""
@@ -1614,6 +1614,39 @@ def cancelar_cotizacion():
     datos_cliente.clear()
     _reiniciar_costos_internos()
     return redirect(url_for('ui_inicio_cotizacion'))
+
+def _catalogo_sucursales_cotizacion():
+    """Usa el catálogo guardado; sólo las fichas antiguas heredan el historial."""
+    with _CLIENTES_DATA_LOCK:
+        clients = {name: dict(value) for name, value in clientes_predefinidos.items()
+                   if isinstance(value, dict)}
+    if all('sucursales' in value for value in clients.values()):
+        return {name: catalog_branches(value) for name, value in clients.items()}
+    historic = {}
+    quotes = []
+    try:
+        path = _ruta_cotizaciones()
+        quotes = json.loads(path.read_text('utf-8')) if path.exists() else []
+        if isinstance(quotes, dict):
+            quotes = quotes.get('items', [])
+    except Exception:
+        app.logger.warning('No se pudieron leer las sucursales históricas', exc_info=True)
+    try:
+        drafts = _leer_borradores_locales()
+    except Exception:
+        app.logger.warning('No se pudieron leer las sucursales de borradores', exc_info=True)
+        drafts = []
+    for item in [*(quotes if isinstance(quotes, list) else []), *drafts]:
+        if not isinstance(item, dict):
+            continue
+        saved = item.get('datos') if isinstance(item.get('datos'), dict) else {}
+        client = str(item.get('cliente') or saved.get('cliente') or '').strip()
+        branch = str(item.get('sucursal') or saved.get('sucursal') or '').strip()
+        if client and branch:
+            historic.setdefault(client, set()).add(branch)
+    return {name: catalog_branches(value, sorted(historic.get(name, []), key=_clave_orden_cliente))
+            for name, value in clients.items()}
+
 
 def _normalizar_contactos_cliente(datos):
     """Devuelve contactos individuales y conserva compatibilidad con correos antiguos."""
@@ -1712,6 +1745,7 @@ def nuevo_cliente():
         nombre = (request.form.get('nombre') or '').strip()
         try:
             contactos = _contactos_desde_form(request.form)
+            sucursales = validate_branches(request.form.getlist('sucursal_nombre'))
         except ValueError as exc:
             flash(str(exc))
             return redirect(url_for('nuevo_cliente'))
@@ -1747,7 +1781,11 @@ def nuevo_cliente():
             return redirect(url_for('nuevo_cliente'))
 
         with _CLIENTES_DATA_LOCK:
+            if nombre in clientes_predefinidos:
+                flash('Ese cliente ya existe. Usa Editar cliente para agregar sus sucursales.')
+                return redirect(url_for('nuevo_cliente'))
             clientes_predefinidos[nombre] = {
+                "sucursales": sucursales,
                 "tiene_poliza": request.form.get('tiene_poliza') == '1',
                 "atencion": atencion,
                 "contactos": contactos,
@@ -1932,7 +1970,8 @@ def _construir_borrador_actual():
 
 @app.post('/borradores/guardar')
 def guardar_borrador():
-    _actualizar_datos_cliente_desde_form()
+    if not _actualizar_datos_cliente_desde_form():
+        return redirect(url_for('inicio'))
     borrador = _construir_borrador_actual()
     folio = borrador["folio"]
     drive_ok = _guardar_o_actualizar_borrador(borrador)
@@ -1996,7 +2035,8 @@ def eliminar_borrador(draft_id):
 
 @app.post('/costos-internos/abrir')
 def abrir_costos_internos():
-    _actualizar_datos_cliente_desde_form()
+    if not _actualizar_datos_cliente_desde_form():
+        return redirect(url_for('inicio'))
     return redirect(url_for("ver_costos_internos"))
 
 
@@ -2155,7 +2195,8 @@ def guardar_costos_internos():
 def generar_pdf():
     import shutil
     if request.method == 'POST':
-        _actualizar_datos_cliente_desde_form()
+        if not _actualizar_datos_cliente_desde_form():
+            return redirect(url_for('inicio'))
     pendientes = [p for p in partidas if p.get("precio_pendiente")]
     if pendientes:
         flash(
@@ -2424,7 +2465,6 @@ def editar_cliente():
     if nombre_actual not in clientes_predefinidos:
         flash("El cliente seleccionado ya no existe.")
         return redirect(url_for('inicio'))
-    datos_cliente['cliente'] = nombre_actual
     datos = clientes_predefinidos.get(nombre_actual, {
         "atencion": [],
         "direccion": "",
@@ -2437,6 +2477,8 @@ def editar_cliente():
         nuevo_nombre = (request.form.get('nombre') or "").strip()
         try:
             contactos = _contactos_desde_form(request.form)
+            sucursales = (validate_branches(request.form.getlist('sucursal_nombre'))
+                          if request.form.get('sucursales_present') == '1' else None)
         except ValueError as exc:
             flash(str(exc))
             return redirect(url_for('editar_cliente', cliente=nombre_actual))
@@ -2478,6 +2520,8 @@ def editar_cliente():
 
         # Merge con lo existente para no perder campos previos
         merged = dict(datos)
+        if sucursales is not None:
+            merged['sucursales'] = sucursales
         # Formularios antiguos no deben desactivar una póliza por omitir el campo.
         if request.form.get('poliza_present') == '1':
             merged['tiene_poliza'] = request.form.get('tiene_poliza') == '1'
@@ -2516,7 +2560,8 @@ def editar_cliente():
                 clientes_predefinidos[nuevo_nombre] = merged
                 if nombre_actual in clientes_predefinidos:
                     del clientes_predefinidos[nombre_actual]
-                datos_cliente['cliente'] = nuevo_nombre
+                if datos_cliente.get('cliente') == nombre_actual:
+                    datos_cliente['cliente'] = nuevo_nombre
 
             guardar_clientes(clientes_predefinidos)
         flash("Cliente actualizado correctamente.")
@@ -2524,6 +2569,7 @@ def editar_cliente():
 
     datos_vista = dict(datos)
     datos_vista["contactos"] = _normalizar_contactos_cliente(datos)
+    datos_vista['sucursales'] = _catalogo_sucursales_cotizacion().get(nombre_actual, [])
     return render_template('editar_cliente.html', cliente=nombre_actual, datos=datos_vista)
 
 
@@ -2563,7 +2609,8 @@ def guardar_partidas(partidas):
 @app.route('/vista_previa', methods=['GET', 'POST'])
 def vista_previa():
     if request.method == 'POST':
-        _actualizar_datos_cliente_desde_form()
+        if not _actualizar_datos_cliente_desde_form():
+            return redirect(url_for('inicio'))
     datos = dict(datos_cliente)
     partidas_actuales = list(partidas)
 
@@ -4968,16 +5015,9 @@ def _serve_operations_thumbnail(kind, record_id, photo_ref):
         original_response.direct_passthrough = False
         original_bytes = original_response.get_data()
         try:
-            from PIL import Image, ImageOps
-            with Image.open(io.BytesIO(original_bytes)) as image:
-                image = ImageOps.exif_transpose(image)
-                image.thumbnail((360, 360), Image.Resampling.LANCZOS)
-                if image.mode not in {"RGB", "RGBA"}:
-                    image = image.convert("RGBA" if "transparency" in image.info else "RGB")
-                output = io.BytesIO()
-                image.save(output, format="WEBP", quality=78, method=4)
-                thumbnail = output.getvalue()
-                width, height = image.size
+            thumbnail, _, width, height = prepare_photo(
+                original_bytes, target_size=(360, 360), thumbnail=True, wait_timeout=0.25
+            )
             # No guardar la imagen transparente de respaldo cuando Drive falló.
             if width > 1 and height > 1 and OPERACIONES_STORE.enabled:
                 try:
@@ -5816,6 +5856,7 @@ def _cargar_cotizacion_para_editar(qid, conservar_folio=False):
     datos_cliente.update(datos_guardados)
     datos_cliente.update({
         "cliente": original.get("cliente") or (original.get("receptor") or {}).get("nombre") or datos_guardados.get("cliente") or "",
+        "sucursal": original.get("sucursal") or datos_guardados.get("sucursal") or "",
         "fecha": datos_guardados.get("fecha") or date.today().isoformat(),
         "cotizacion": str(original.get("folio") or original.get("id") or qid) if conservar_folio else "",
         "nombre_borrador": "",

@@ -1,0 +1,10 @@
+.branch-editor{border-color:var(--line);margin:4px 0;min-width:0}
+.branch-editor legend{font-weight:750;color:var(--ink)}
+.branch-list{display:grid;gap:8px;margin:12px 0}
+.branch-row{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:8px;align-items:center}
+.branch-row input{min-width:0;padding:10px 12px}
+.branch-editor .branch-remove{display:flex;align-items:center;justify-content:center;min-height:44px;width:44px;padding:9px;flex:none;border:1px solid var(--line);color:var(--danger)}
+.branch-editor .branch-add{display:inline-flex;align-items:center;gap:7px;flex:none;width:auto;min-height:42px;padding:9px 12px;border:1px solid var(--line);font-size:14px}
+.branch-editor .hint{line-height:1.5;margin:8px 0}
+.branch-error{color:var(--danger);font-size:.9rem}
+.client-form-message{padding:12px;border:1px solid var(--line);border-radius:12px;margin-bottom:12px;background:var(--soft);color:var(--ink)}

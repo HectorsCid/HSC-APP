@@ -12,7 +12,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from googleapiclient.errors import HttpError
 from google.auth.exceptions import TransportError
-from PIL import Image, ImageOps
+from photo_runtime import MAX_PHOTO_BYTES, prepare_photo
 from werkzeug.utils import secure_filename
 from auth_google import (
     get_drive_service_user,
@@ -28,6 +28,7 @@ from pdf_runtime import (
     render_pdf_file,
     release_pdf_memory,
     rss_megabytes,
+    memory_snapshot,
 )
 from cfdi_drive import backup_json_file, load_json_file
 
@@ -71,8 +72,6 @@ AUTO_PDF_LOOKBACK = max(1, int(os.environ.get("REPORTES_AUTO_PDF_LOOKBACK", "25"
 AUTO_PDF_STABILITY_SECONDS = max(0, int(os.environ.get("REPORTES_AUTO_PDF_STABILITY_SECONDS", "15")))
 AUTO_PDF_QUEUE_DELAY = max(30, int(os.environ.get("REPORTES_AUTO_PDF_QUEUE_DELAY", "30")))
 PHOTO_TARGET_SIZE = (1400, 1400)
-PHOTO_MAX_SOURCE_PIXELS = 80_000_000
-PHOTO_MAX_DECODE_PIXELS = 25_000_000
 _AUTO_PDF_LOCK = threading.Lock()
 _AUTO_PDF_WAKE_EVENT = threading.Event()
 _AUTO_PDF_CANCEL_EVENT = threading.Event()
@@ -507,23 +506,25 @@ def _download_drive_image(file_id: str, *, max_chunks=None) -> bytes:
     """Reinicia cliente, request y buffer completos después de un fallo de red."""
     def operation(drive):
         request_obj = drive.files().get_media(fileId=file_id)
-        buffer = io.BytesIO()
-        downloader = MediaIoBaseDownload(buffer, request_obj)
-        done = False
-        chunks = 0
-        while not done:
-            if (
-                threading.current_thread().name == "reportes-auto-pdf"
-                and _AUTO_PDF_CANCEL_EVENT.is_set()
-            ):
-                raise _AutoProcessingCancelled()
-            _, done = downloader.next_chunk()
-            chunks += 1
-            if max_chunks is not None and chunks >= max_chunks and not done:
-                raise TimeoutError(
-                    f"Drive no terminó la descarga después de {max_chunks} bloques"
-                )
-        payload = buffer.getvalue()
+        with io.BytesIO() as buffer:
+            downloader = MediaIoBaseDownload(buffer, request_obj, chunksize=1024 * 1024)
+            done = False
+            chunks = 0
+            while not done:
+                if (
+                    threading.current_thread().name == "reportes-auto-pdf"
+                    and _AUTO_PDF_CANCEL_EVENT.is_set()
+                ):
+                    raise _AutoProcessingCancelled()
+                _, done = downloader.next_chunk()
+                chunks += 1
+                if buffer.tell() > MAX_PHOTO_BYTES or (buffer.tell() >= MAX_PHOTO_BYTES and not done):
+                    raise ValueError("La foto de Drive supera 20 MB; reduce su tamaño.")
+                if max_chunks is not None and chunks >= max_chunks and not done:
+                    raise TimeoutError(
+                        f"Drive no terminó la descarga después de {max_chunks} bloques"
+                    )
+            payload = buffer.getvalue()
         if not payload:
             raise RuntimeError("Drive devolvió una imagen vacía")
         return payload
@@ -565,7 +566,7 @@ def _cache_get_bytes(file_id: str):
         return bts, mime, name
 
 def _cache_set_bytes(file_id: str, bts: bytes, mime: str, name: str):
-    # Limit simple: no más de 40MB por entrada
+    # Límite por entrada y por caché completa, incluidas las fotos originales.
     max_entry = 6 * 1024 * 1024
     max_total = 24 * 1024 * 1024
     if len(bts) > max_entry:
@@ -576,6 +577,7 @@ def _cache_set_bytes(file_id: str, bts: bytes, mime: str, name: str):
         expired = [key for key, item in entries.items() if now - item[3] > _IMG_BYTES_CACHE["ttl"]]
         for key in expired:
             entries.pop(key, None)
+        entries.pop(file_id, None)
         current = sum(len(item[0]) for item in entries.values())
         while entries and current + len(bts) > max_total:
             oldest_key = min(entries, key=lambda key: entries[key][3])
@@ -591,37 +593,8 @@ def _clear_pdf_photo_cache():
 
 def _optimize_photo_bytes(bts: bytes) -> tuple[bytes, str]:
     """Reduce una foto para el PDF sin modificar el archivo original."""
-    if not bts:
-        raise ValueError("la imagen está vacía")
-
-    with Image.open(io.BytesIO(bts)) as source:
-        width, height = source.size
-        if width <= 0 or height <= 0:
-            raise ValueError("dimensiones de imagen inválidas")
-        if width * height > PHOTO_MAX_SOURCE_PIXELS:
-            raise ValueError(
-                f"la imagen supera el límite de {PHOTO_MAX_SOURCE_PIXELS // 1_000_000} megapíxeles"
-            )
-
-        # JPEG permite reducir desde el decodificador antes de cargar todos los
-        # píxeles. Debe ocurrir antes de corregir la orientación EXIF.
-        if (source.format or "").upper() in ("JPEG", "JPG", "MPO"):
-            source.draft("RGB", PHOTO_TARGET_SIZE)
-        if source.width * source.height > PHOTO_MAX_DECODE_PIXELS:
-            raise ValueError("la imagen requiere demasiada memoria para procesarse")
-
-        image = ImageOps.exif_transpose(source)
-        image.thumbnail(PHOTO_TARGET_SIZE, Image.Resampling.LANCZOS)
-        if image.mode != "RGB":
-            if "A" in image.getbands():
-                background = Image.new("RGB", image.size, "white")
-                background.paste(image, mask=image.getchannel("A"))
-                image = background
-            else:
-                image = image.convert("RGB")
-        output = io.BytesIO()
-        image.save(output, format="JPEG", quality=85, optimize=True)
-        return output.getvalue(), "image/jpeg"
+    content, mime, _, _ = prepare_photo(bts, target_size=PHOTO_TARGET_SIZE)
+    return content, mime
 
 _DRIVE_PATTERNS = [
     r'drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)',
@@ -744,19 +717,20 @@ def _photo_data_uri(photo_ref: str) -> str | None:
     if not file_id:
         return None
     file_id = _resolve_shortcut(file_id)
-    cached = _cache_get_bytes(file_id)
+    # La vista web guarda originales en la misma caché. Nunca incrustarlos
+    # directamente en un PDF: seis fotos completas pueden agotar la instancia.
+    optimized_key = "pdf:" + file_id
+    cached = _cache_get_bytes(optimized_key)
     if cached:
         bts, mime, _ = cached
         return f"data:{mime};base64,{base64.b64encode(bts).decode('ascii')}"
+    original = _cache_get_bytes(file_id)
+    if original:
+        bts, _, _ = original
     else:
-        meta = _drive_img_call(lambda drive: drive.files().get(
-            fileId=file_id, fields="mimeType,name"
-        ).execute())
-        mime = meta.get("mimeType") or "image/jpeg"
-        name = meta.get("name") or "foto"
         bts = _download_drive_image(file_id)
     bts, mime = _optimize_photo_bytes(bts)
-    _cache_set_bytes(file_id, bts, mime, "foto.jpg")
+    _cache_set_bytes(optimized_key, bts, mime, "foto.jpg")
     return f"data:{mime};base64,{base64.b64encode(bts).decode('ascii')}"
 
 def _pdf_photos(data: dict) -> list[str]:
@@ -1569,6 +1543,7 @@ def reportes_auto_status():
         "concurrency": 1,
         "queue_delay_seconds": AUTO_PDF_QUEUE_DELAY,
         "memory_mb": rss_megabytes(),
+        "memory": memory_snapshot(),
         **_AUTO_PDF_STATUS,
     })
 

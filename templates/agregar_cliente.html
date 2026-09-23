@@ -46,6 +46,7 @@
       <h1>Agregar cliente</h1>
     </div>
 
+    {% for message in get_flashed_messages() %}<div class="client-form-message" role="alert">{{ message }}</div>{% endfor %}
     <form class="card grid" method="post" action="{{ url_for('nuevo_cliente') }}" autocomplete="on">
       <div>
         <label for="nombre">Nombre del cliente</label>
@@ -53,6 +54,7 @@
                required autocapitalize="words" />
       </div>
 
+      {% include '_client_branches.html' %}
       <div>
         <input type="hidden" name="poliza_present" value="1" />
         <label for="tiene_poliza" style="display:flex;align-items:center;gap:10px"><input id="tiene_poliza" name="tiene_poliza" type="checkbox" value="1" style="width:20px;height:20px;padding:0" /> Tiene póliza de mantenimiento</label>

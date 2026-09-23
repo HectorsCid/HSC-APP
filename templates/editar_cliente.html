@@ -39,9 +39,10 @@
   <div class="wrap">
     <div class="topbar">
       <a class="back" href="{{ url_for('inicio') }}"><svg class="line-icon" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>Volver</a>
-      <h1>Editar cliente: {{ cliente }} · fisc v1</h1>
+      <h1>Editar cliente: {{ cliente }}</h1>
     </div>
 
+    {% for message in get_flashed_messages() %}<div class="client-form-message" role="alert">{{ message }}</div>{% endfor %}
     <form class="card grid" method="post" action="{{ url_for('editar_cliente') }}">
       <input type="hidden" name="cliente_original" value="{{ cliente }}" />
       <div>
@@ -50,6 +51,7 @@
         <div class="hint">Si cambias el nombre y ya existe otro igual, la app te avisará.</div>
       </div>
 
+      {% include '_client_branches.html' %}
       <div>
         <input type="hidden" name="poliza_present" value="1" />
         <label for="tiene_poliza" style="display:flex;align-items:center;gap:10px"><input id="tiene_poliza" name="tiene_poliza" type="checkbox" value="1" {% if datos.get('tiene_poliza') == true %}checked{% endif %} style="width:20px;height:20px;padding:0" /> Tiene póliza de mantenimiento</label>

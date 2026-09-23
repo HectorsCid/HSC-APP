@@ -1,0 +1,130 @@
+{
+  "platform": "win32",
+  "results": [
+    {
+      "case": "google_clients",
+      "seconds": 0.26,
+      "before": {
+        "rss_mib": 113.94,
+        "private_mib": 90.66,
+        "process_peak_rss_mib": 113.94
+      },
+      "sampled_peak": {
+        "rss_mib": 123.11,
+        "private_mib": 99.57,
+        "process_peak_rss_mib": 123.2
+      },
+      "after": {
+        "rss_mib": 122.28,
+        "private_mib": 98.72,
+        "process_peak_rss_mib": 123.2
+      },
+      "after_gc": {
+        "rss_mib": 121.94,
+        "private_mib": 98.04,
+        "process_peak_rss_mib": 123.2
+      },
+      "details": {
+        "workers": 3,
+        "cycles": 5,
+        "clients_per_worker": 3,
+        "cycle_memory": [
+          {
+            "rss_mib": 122.02,
+            "private_mib": 99.57,
+            "process_peak_rss_mib": 122.02
+          },
+          {
+            "rss_mib": 123.09,
+            "private_mib": 99.57,
+            "process_peak_rss_mib": 123.09
+          },
+          {
+            "rss_mib": 123.11,
+            "private_mib": 99.57,
+            "process_peak_rss_mib": 123.11
+          },
+          {
+            "rss_mib": 123.11,
+            "private_mib": 99.57,
+            "process_peak_rss_mib": 123.11
+          },
+          {
+            "rss_mib": 123.11,
+            "private_mib": 99.57,
+            "process_peak_rss_mib": 123.11
+          }
+        ],
+        "network": "blocked; real discovery/client constructors with anonymous credentials"
+      }
+    },
+    {
+      "case": "thumbnails_legacy",
+      "seconds": 1.611,
+      "before": {
+        "rss_mib": 114.54,
+        "private_mib": 91.25,
+        "process_peak_rss_mib": 114.54
+      },
+      "sampled_peak": {
+        "rss_mib": 486.39,
+        "private_mib": 464.64,
+        "process_peak_rss_mib": 487.52
+      },
+      "after": {
+        "rss_mib": 118.05,
+        "private_mib": 93.93,
+        "process_peak_rss_mib": 487.52
+      },
+      "after_gc": {
+        "rss_mib": 117.09,
+        "private_mib": 92.86,
+        "process_peak_rss_mib": 487.52
+      },
+      "details": {
+        "generated": 20,
+        "cached": 20,
+        "image_dimensions": [
+          6000,
+          4000
+        ],
+        "source_bytes": 375629,
+        "workers": 2
+      }
+    },
+    {
+      "case": "thumbnails_fixed",
+      "seconds": 0.917,
+      "before": {
+        "rss_mib": 114.16,
+        "private_mib": 90.29,
+        "process_peak_rss_mib": 114.16
+      },
+      "sampled_peak": {
+        "rss_mib": 119.75,
+        "private_mib": 96.57,
+        "process_peak_rss_mib": 119.75
+      },
+      "after": {
+        "rss_mib": 118.39,
+        "private_mib": 95.09,
+        "process_peak_rss_mib": 119.75
+      },
+      "after_gc": {
+        "rss_mib": 117.45,
+        "private_mib": 93.99,
+        "process_peak_rss_mib": 119.75
+      },
+      "details": {
+        "generated": 20,
+        "cached": 20,
+        "image_dimensions": [
+          6000,
+          4000
+        ],
+        "source_bytes": 375629,
+        "workers": 2
+      }
+    }
+  ]
+}
