@@ -762,29 +762,21 @@ class OperationsStore:
             "enabled": True, "engine": "postgresql" if self.dialect == "postgres" else "sqlite-local",
             "has_data": bool(snapshot["clients"]), "stats": snapshot["stats"],
             "last_matrix_import": snapshot.get("meta", {}).get("last_matrix_import"),
-            "matrix_duplicate_policy": snapshot.get("meta", {}).get("matrix_duplicate_policy") or "first_wins",
+            "matrix_duplicate_policy": "first_wins",
         }
 
     def set_matrix_duplicate_policy(self, ignore_duplicates=False):
-        """Control administrativo persistente; nunca modifica la Hoja Matriz."""
+        """Conserva compatibilidad; la operación continua es la única política."""
         self.initialize()
-        value = "first_wins" if ignore_duplicates else "block"
+        value = "first_wins"
         with self.connection() as conn:
             self._upsert_meta(conn, "matrix_duplicate_policy", value)
         return value
 
     def matrix_duplicates_allowed(self):
-        self.initialize()
-        p = self.placeholder
-        with self.connection() as conn:
-            row = conn.execute(
-                f"SELECT value FROM operations_meta WHERE key={p}",
-                ("matrix_duplicate_policy",),
-            ).fetchone()
-        # En campo una fila histórica defectuosa no debe congelar todos los cambios.
-        # Si no existe una decisión administrativa previa, se importan las filas
-        # válidas y la primera aparición de cada ID; el panel conserva el aviso.
-        return not row or _text(row[0]) == "first_wins"
+        # Compatibilidad con llamadas anteriores: la operación nunca se bloquea
+        # globalmente por una fila duplicada.
+        return True
 
     def get_media_ref(self, kind, record_id):
         """Obtiene la referencia original sin depender del caché en memoria del proceso."""

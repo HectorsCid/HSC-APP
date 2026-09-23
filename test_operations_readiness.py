@@ -70,8 +70,8 @@ class ReadinessTests(unittest.TestCase):
         self.assertEqual(self.store.set_matrix_duplicate_policy(True), 'first_wins')
         self.assertTrue(self.store.matrix_duplicates_allowed())
         self.assertEqual(self.store.status()['matrix_duplicate_policy'], 'first_wins')
-        self.assertEqual(self.store.set_matrix_duplicate_policy(False), 'block')
-        self.assertFalse(self.store.matrix_duplicates_allowed())
+        self.assertEqual(self.store.set_matrix_duplicate_policy(False), 'first_wins')
+        self.assertTrue(self.store.matrix_duplicates_allowed())
 
     def test_legacy_duplicate_matrix_report_does_not_block_equipment_refresh(self):
         stamp = datetime.now(timezone.utc).isoformat(timespec='microseconds')

@@ -4112,9 +4112,6 @@ def _operations_sync_worker(app_obj):
                 with app_obj.app_context():
                     incoming = read_operaciones_matrix(get_sheets_service(timeout=20), SHEET_ID,
                                                       include_media_refs=True, include_raw=True)
-                    checks = _operations_migration_checks(incoming.get("stats") or {})
-                    if not checks["ready"] and not OPERACIONES_STORE.matrix_duplicates_allowed():
-                        raise ValueError("La matriz contiene IDs duplicados; importación detenida.")
                     OPERACIONES_STORE.import_matrix_snapshot(_complete_legacy_operations_relations(incoming))
                     _OPERACIONES_IMPORT_STATUS.update(error="", last_success=datetime.now().isoformat())
                     _invalidate_operations_cache()
@@ -4237,42 +4234,23 @@ def api_operaciones_diagnostics_import():
             include_media_refs=True, include_raw=True,
         )
         diagnostic = _operations_matrix_diagnostic(source.get("stats") or {})
-        if not diagnostic["ready"] and not ignore:
-            return jsonify({
-                "ok": False, "code": "matrix_integrity",
-                "error": "La matriz tiene IDs repetidos. Puedes corregirlos o importar sólo las primeras filas válidas.",
-                "matrix": diagnostic,
-            }), 409
-        OPERACIONES_STORE.set_matrix_duplicate_policy(ignore)
+        # Los conflictos se informan, pero nunca congelan toda la operación.
+        # El lector conserva la primera fila de cada ID y continúa con el resto.
+        OPERACIONES_STORE.set_matrix_duplicate_policy(True)
         OPERACIONES_STORE.import_matrix_snapshot(_complete_legacy_operations_relations(source))
         _OPERACIONES_IMPORT_STATUS.update(error="", last_success=datetime.now().isoformat())
         _invalidate_operations_cache()
         return jsonify({
             "ok": True, "import_confirmed": True, "matrix": diagnostic,
-            "duplicate_policy": "first_wins" if ignore else "block",
-            "message": "Importación completada. Los duplicados posteriores se omitieron." if ignore
-                       else "Importación completada sin omitir conflictos.",
+            "duplicate_policy": "first_wins",
+            "message": "Importación completada. Las filas repetidas se señalaron sin detener los demás cambios."
+                       if not diagnostic["ready"] else "Importación completada.",
         })
     except Exception as exc:
         current_app.logger.exception("No se pudo ejecutar la importación administrativa: %s", exc)
         return jsonify({"ok": False, "error": f"Importación fallida ({type(exc).__name__}): {str(exc)[:300]}"}), 502
     finally:
         reset_thread_google_services()
-
-
-@app.post('/api/operaciones/diagnostics/policy')
-def api_operaciones_diagnostics_policy():
-    """Restaura la protección estricta sin importar ni modificar la matriz."""
-    denied = _operations_forbidden("admin")
-    if denied:
-        return denied
-    if not OPERACIONES_STORE.enabled:
-        return jsonify({"ok": False, "error": "La base operativa no está conectada."}), 503
-    body = request.get_json(silent=True) or {}
-    policy = OPERACIONES_STORE.set_matrix_duplicate_policy(
-        body.get("ignore_duplicates") is True
-    )
-    return jsonify({"ok": True, "matrix_duplicate_policy": policy})
 
 
 @app.post('/api/operaciones/sync')
