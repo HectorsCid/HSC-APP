@@ -52,14 +52,16 @@
     .hint{font-size:.8rem;color:var(--muted);margin-top:6px}
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
   <script src="{{ url_for('static', filename='hsc_theme.js') }}"></script>
   <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
 </head>
-<body>
+<body class="commerce-ui">
+  {% include "_commerce_icons.html" %}
   <div class="wrap">
     <div class="topbar">
-      <a class="back" href="{{ url_for('inicio') }}">← Volver</a>
+      <a class="back" href="{{ url_for('inicio') }}"><svg class="line-icon" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>Volver</a>
       <h1>Editar partida #{{ indice + 1 }}</h1>
     </div>
 

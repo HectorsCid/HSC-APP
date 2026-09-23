@@ -29,10 +29,12 @@
         }
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
   <script src="{{ url_for('static', filename='hsc_theme.js') }}"></script>
   {% include "_pwa_head.html" %}
 </head>
-<body>
+<body class="commerce-ui">
+  {% include "_commerce_icons.html" %}
     <h2>¿Seguro que deseas borrar al cliente <strong>{{ cliente }}</strong>?</h2>
 
     <form method="post">

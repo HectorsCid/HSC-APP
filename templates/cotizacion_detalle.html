@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Detalle de cotización</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>(()=>{const saved=localStorage.getItem('hsc-theme');document.documentElement.dataset.theme=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')})();</script>
   <style>
     :root{--bg:#fff;--card:#f9fafb;--ink:#111827;--muted:#6b7280;--line:#e5e7eb;--brand:#374151;--ok:#22c55e}
     *{box-sizing:border-box} html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Roboto,system-ui,sans-serif}
@@ -26,25 +27,27 @@
     .tot{font-weight:800}
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
   <script src="{{ url_for('static', filename='hsc_theme.js') }}"></script>
   {% include "_pwa_head.html" %}
 </head>
-<body>
+<body class="commerce-ui">
+  {% include "_commerce_icons.html" %}
   <div class="wrap">
     <div class="top">
       <div class="title">Detalle de cotización</div>
       <div class="row">
-        <a class="btn" href="/cotizaciones">← Volver</a>
+        <a class="btn" href="/cotizaciones"><svg class="line-icon" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>Volver</a>
         {% if q %}
           <form method="post" action="/cotizaciones/{{ q.id }}/eliminar" onsubmit="return confirm('¿Quitar esta cotización del listado? El PDF permanecerá en Google Drive.');">
-            <button class="btn" type="submit">Eliminar</button>
+            <button class="btn btn-danger" type="submit"><svg class="line-icon" aria-hidden="true"><use href="#c-trash"/></svg>Eliminar</button>
           </form>
           {% if q.view_url %}
-            <a class="btn" href="{{ q.view_url }}" target="_blank">Reimprimir</a>
+            <a class="btn" href="{{ q.view_url }}" target="_blank"><svg class="line-icon" aria-hidden="true"><use href="#c-file"/></svg>Reimprimir</a>
           {% endif %}
-          <a class="btn" href="/cotizaciones/{{ q.id }}/editar" onclick="return confirm('¿Corregir esta cotización conservando el mismo folio? Al generar el PDF se reemplazará la versión anterior.');">Corregir</a>
-          <a class="btn" href="/cotizaciones/{{ q.id }}/duplicar">Duplicar</a>
-          <a class="btn btn-ok" href="/facturas/nueva?quote_id={{ q.id }}">Facturar</a>
+          <a class="btn" href="/cotizaciones/{{ q.id }}/editar" onclick="return confirm('¿Corregir esta cotización conservando el mismo folio? Al generar el PDF se reemplazará la versión anterior.');"><svg class="line-icon" aria-hidden="true"><use href="#c-edit"/></svg>Corregir</a>
+          <a class="btn" href="/cotizaciones/{{ q.id }}/duplicar"><svg class="line-icon" aria-hidden="true"><use href="#c-copy"/></svg>Duplicar</a>
+          <a class="btn btn-ok" href="/facturas/nueva?quote_id={{ q.id }}"><svg class="line-icon" aria-hidden="true"><use href="#c-file"/></svg>Facturar</a>
         {% endif %}
       </div>
     </div>

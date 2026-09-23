@@ -87,10 +87,12 @@
       .table-wrap{max-height:none}tbody tr{grid-template-columns:minmax(0,1fr) auto;gap:7px;padding:12px}tbody td:nth-child(1){grid-column:1;grid-row:1}tbody td:nth-child(2){grid-column:1;grid-row:2}tbody td:nth-child(3){grid-column:2;grid-row:1}tbody td:nth-child(4){grid-column:2;grid-row:2}tbody td:nth-child(5){grid-column:1/-1;grid-row:3}.summary-cell{max-width:none}tbody td:nth-child(6){grid-column:1/-1;grid-row:4}.table-actions{max-width:none;grid-template-columns:repeat(3,minmax(0,1fr))}
     }
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
   <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
 </head>
-<body>
+<body class="commerce-ui">
+  {% include "_commerce_icons.html" %}
   <div class="wrap">
     <div class="top">
       <div>
@@ -102,15 +104,15 @@
           <span class="theme-track" aria-hidden="true"><span class="theme-knob"></span></span>
           <span class="theme-text" id="theme-label">Modo</span>
         </button>
-        <a class="btn" href="/inicio-app">🏠 Inicio</a>
-        <a class="btn" href="/facturacion">🧾 Facturas</a>
-        <a class="btn" href="/cerrar-sesion">🔒 Salir</a>
-        <a class="btn" href="/clientes">👤 Clientes</a>
+        <a class="btn" href="/inicio-app"><svg class="line-icon" aria-hidden="true"><use href="#c-home"/></svg>Inicio</a>
+        <a class="btn" href="/facturacion"><svg class="line-icon" aria-hidden="true"><use href="#c-file"/></svg>Facturas</a>
+        <a class="btn" href="/cerrar-sesion"><svg class="line-icon" aria-hidden="true"><use href="#c-exit"/></svg>Salir</a>
+        <a class="btn" href="/clientes"><svg class="line-icon" aria-hidden="true"><use href="#c-user"/></svg>Clientes</a>
         <a
           id="lnkNueva"
           class="btn btn-accent"
           href="{{ url_for('nueva_cotizacion') }}"
-        >🆕 Nueva cotización</a>
+        ><svg class="line-icon" aria-hidden="true"><use href="#c-plus"/></svg>Nueva cotización</a>
       </div>
     </div>
 
@@ -123,7 +125,7 @@
       </div>
       <div class="row">
         <input id="q" type="search" class="grow" placeholder="Buscar por cliente, folio o concepto…" />
-        <button id="btnReload" class="btn" type="button">🔄 Actualizar</button>
+        <button id="btnReload" class="btn" type="button"><svg class="line-icon" aria-hidden="true"><use href="#c-refresh"/></svg>Actualizar</button>
       </div>
 
       <div class="table-wrap">
@@ -201,12 +203,13 @@
       </div>
       <div class="mail-actions">
         <button id="quoteMailCancel" class="btn" type="button">Cancelar</button>
-        <button id="quoteMailSend" class="btn btn-accent" type="button">✉ Enviar cotización</button>
+        <button id="quoteMailSend" class="btn btn-accent" type="button"><svg class="line-icon" aria-hidden="true"><use href="#c-mail"/></svg>Enviar cotización</button>
       </div>
     </div>
   </div>
 
   <script>
+  const lineIcon = name => `<svg class="line-icon" aria-hidden="true"><use href="#c-${name}"/></svg>`;
   const themeToggle = document.getElementById('theme-toggle');
   const themeLabel = document.getElementById('theme-label');
   function refreshThemeToggle(){
@@ -348,20 +351,20 @@
           <td>
             <div class="table-actions">
               ${it.borrador ? `
-                <a class="btn btn-accent" title="Continuar editando" href="/borradores/${encodeURIComponent(it.id)}/continuar">Continuar</a>
+                <a class="btn btn-accent" title="Continuar editando" href="/borradores/${encodeURIComponent(it.id)}/continuar">${lineIcon('edit')}Continuar</a>
                 <form class="inline" method="post" action="/borradores/${encodeURIComponent(it.id)}/eliminar" onsubmit="return confirm('¿Eliminar este borrador? Esta acción no se puede deshacer.');">
-                  <button class="btn btn-danger" type="submit">Eliminar</button>
+                  <button class="btn btn-danger" type="submit">${lineIcon('trash')}Eliminar</button>
                 </form>
               ` : `
                 <form class="inline" method="post" action="/cotizaciones/${encodeURIComponent(it.id)}/eliminar" onsubmit="return confirm('¿Quitar esta cotización del listado? El PDF permanecerá en Google Drive.');">
-                  <button class="btn btn-danger" type="submit">Eliminar</button>
+                  <button class="btn btn-danger" type="submit">${lineIcon('trash')}Eliminar</button>
                 </form>
-                <a class="btn" title="Ver o reimprimir PDF" href="${it.view_url}" target="_blank">PDF</a>
-                <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/editar" onclick="return confirm('¿Corregir esta cotización conservando el mismo folio? Al generar el PDF se reemplazará la versión anterior.');">Corregir</a>
-                <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">Duplicar</a>
-                <a class="btn btn-ok" href="${it.facturar_url}">Facturar</a>
-                <button class="btn ${it.email_delivery?.sent?'':'btn-mail-pending'}" type="button" data-quote-email="${escapeHTML(String(it.id))}" title="${it.email_delivery?.sent?`Enviada ${escapeHTML(it.email_delivery.last_sent_at||'')}`:'Correo pendiente de enviar'}">${it.email_delivery?.sent?'✉ ✓':'✉ Enviar'}</button>
-                <button class="btn" type="button" data-quote-docs="${escapeHTML(String(it.id))}" title="Documentos para la factura">📎</button>
+                <a class="btn" title="Ver o reimprimir PDF" href="${it.view_url}" target="_blank">${lineIcon('file')}PDF</a>
+                <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/editar" onclick="return confirm('¿Corregir esta cotización conservando el mismo folio? Al generar el PDF se reemplazará la versión anterior.');">${lineIcon('edit')}Corregir</a>
+                <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">${lineIcon('copy')}Duplicar</a>
+                <a class="btn btn-ok" href="${it.facturar_url}">${lineIcon('file')}Facturar</a>
+                <button class="btn ${it.email_delivery?.sent?'':'btn-mail-pending'}" type="button" data-quote-email="${escapeHTML(String(it.id))}" title="${it.email_delivery?.sent?`Enviada ${escapeHTML(it.email_delivery.last_sent_at||'')}`:'Correo pendiente de enviar'}">${lineIcon(it.email_delivery?.sent?'check':'mail')}${it.email_delivery?.sent?'Enviada':'Enviar'}</button>
+                <button class="btn" type="button" data-quote-docs="${escapeHTML(String(it.id))}" title="Documentos para la factura">${lineIcon('folder')}</button>
               `}
             </div>
           </td>
@@ -526,7 +529,7 @@
       quoteMailKey.value = '';
       quoteMailKeyWrap.style.display = 'none';
       quoteMailSend.disabled = false;
-      quoteMailSend.textContent = '✉ Enviar cotización';
+      quoteMailSend.innerHTML = `${lineIcon('mail')}Enviar cotización`;
       renderQuoteHistory([]);
       renderQuoteFrequent('');
       quoteMail.classList.add('show');
@@ -607,7 +610,7 @@
       }catch(error){
         quoteMailError.textContent = error.message || String(error);
         quoteMailSend.disabled = false;
-        quoteMailSend.textContent = '✉ Reintentar';
+        quoteMailSend.innerHTML = `${lineIcon('refresh')}Reintentar`;
         if(String(error.message || '').toLowerCase().includes('clave')) quoteMailKeyWrap.style.display = '';
       }
     });

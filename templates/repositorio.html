@@ -63,10 +63,12 @@
     }
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
   <script src="{{ url_for('static', filename='hsc_theme.js') }}"></script>
   {% include "_pwa_head.html" %}
 </head>
-<body>
+<body class="commerce-ui">
+  {% include "_commerce_icons.html" %}
   <div class="wrap">
     <h1>Repositorio de Cotizaciones</h1>
     <div class="hint">
@@ -131,7 +133,7 @@
               {{ nombre }}
             </a>
             <span class="badge">ver</span>
-            <a href="{{ url_for('repo_local_file', cliente=cliente, filename=nombre) }}" download style="margin-left:auto" title="Descargar">⬇</a>
+            <a href="{{ url_for('repo_local_file', cliente=cliente, filename=nombre) }}" download style="margin-left:auto" title="Descargar"><svg class="line-icon" aria-hidden="true"><use href="#c-download"/></svg></a>
           </div>
           {% else %}
           <div class="file"><span class="hint">Sin PDFs en la carpeta local de este cliente.</span></div>
@@ -142,7 +144,7 @@
     </div>
 
     <div class="actions">
-      <a class="btn back" href="{{ url_for('inicio') }}">← Volver al inicio</a>
+      <a class="btn back" href="{{ url_for('inicio') }}"><svg class="line-icon" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>Volver al inicio</a>
     </div>
   </div>
 

@@ -131,10 +131,12 @@
     html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
     .theme-text{font-size:.78rem;white-space:nowrap}
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
   <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
 </head>
-<body>
+<body class="commerce-ui">
+  {% include "_commerce_icons.html" %}
   <div class="wrap">
     <div class="top">
       <div>
@@ -146,8 +148,8 @@
           <span class="theme-track" aria-hidden="true"><span class="theme-knob"></span></span>
           <span class="theme-text" id="theme-label">Modo</span>
         </button>
-        <a class="btn salida-cotizacion" href="/inicio-app">🏠 Inicio</a>
-        <a class="btn salida-cotizacion" href="/cotizaciones">📋 Cotizaciones</a>
+        <a class="btn salida-cotizacion" href="/inicio-app"><svg class="line-icon" aria-hidden="true"><use href="#c-home"/></svg>Inicio</a>
+        <a class="btn salida-cotizacion" href="/cotizaciones"><svg class="line-icon" aria-hidden="true"><use href="#c-file"/></svg>Cotizaciones</a>
         <a
           class="btn btn-danger"
           href="{{ url_for('cancelar_cotizacion') }}"
@@ -206,10 +208,10 @@
         </select>
 
         <div class="actions" style="margin:6px 0 10px">
-          <a class="btn" href="{{ url_for('nuevo_cliente') }}">➕ Nuevo</a>
-          <button class="btn" type="button" id="btnEditarCliente">✏️ Editar</button>
-          <a class="btn btn-danger" id="btnBorrarCliente" href="{{ url_for('borrar_cliente') }}">🗑️ Borrar</a>
-          <a class="btn" href="{{ url_for('repositorio') }}">📂 Ver cotizaciones guardadas</a>
+          <a class="btn" href="{{ url_for('nuevo_cliente') }}"><svg class="line-icon" aria-hidden="true"><use href="#c-plus"/></svg>Nuevo</a>
+          <button class="btn" type="button" id="btnEditarCliente"><svg class="line-icon" aria-hidden="true"><use href="#c-edit"/></svg>Editar</button>
+          <a class="btn btn-danger" id="btnBorrarCliente" href="{{ url_for('borrar_cliente') }}"><svg class="line-icon" aria-hidden="true"><use href="#c-trash"/></svg>Borrar</a>
+          <a class="btn" href="{{ url_for('repositorio') }}"><svg class="line-icon" aria-hidden="true"><use href="#c-folder"/></svg>Ver cotizaciones guardadas</a>
         </div>
 
         <label>Atención</label>
@@ -298,9 +300,9 @@
         </div>
       </div>
       <div class="actions" style="margin-top:10px">
-        <button class="btn" type="submit">➕ Agregar</button>
-        <button class="btn" type="submit" form="form-datos" formaction="{{ url_for('vista_previa') }}" formmethod="post">👁️ Vista previa</button>
-        <button class="btn btn-ok" type="submit" form="form-datos" formaction="{{ url_for('generar_pdf') }}" formmethod="post">📄 Generar PDF</button>
+        <button class="btn" type="submit"><svg class="line-icon" aria-hidden="true"><use href="#c-plus"/></svg>Agregar</button>
+        <button class="btn" type="submit" form="form-datos" formaction="{{ url_for('vista_previa') }}" formmethod="post"><svg class="line-icon" aria-hidden="true"><use href="#c-eye"/></svg>Vista previa</button>
+        <button class="btn btn-ok" type="submit" form="form-datos" formaction="{{ url_for('generar_pdf') }}" formmethod="post"><svg class="line-icon" aria-hidden="true"><use href="#c-file"/></svg>Generar PDF</button>
       </div>
     </form>
 
@@ -331,8 +333,8 @@
             </td>
             <td class="t-actions">
               <div class="actions" style="gap:8px">
-                <a class="btn" href="{{ url_for('editar', indice=loop.index0) }}">✏️ Editar</a>
-                <a class="btn btn-danger" href="{{ url_for('eliminar', indice=loop.index0) }}">🗑️ Borrar</a>
+                <a class="btn" href="{{ url_for('editar', indice=loop.index0) }}"><svg class="line-icon" aria-hidden="true"><use href="#c-edit"/></svg>Editar</a>
+                <a class="btn btn-danger" href="{{ url_for('eliminar', indice=loop.index0) }}"><svg class="line-icon" aria-hidden="true"><use href="#c-trash"/></svg>Borrar</a>
               </div>
             </td>
           </tr>
