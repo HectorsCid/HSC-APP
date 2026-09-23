@@ -10,6 +10,7 @@
   <style>
     :root{ --bg:#ffffff; --card:#f9fafb; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --brand:#374151; --ok:#22c55e; --danger:#ef4444; --radius:14px; }
     *{box-sizing:border-box}
+    [hidden]{display:none!important}
     html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
     .wrap{max-width:1100px;margin:0 auto;padding:18px}
     .top{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
@@ -25,7 +26,8 @@
     .row{display:grid;gap:12px}
     @media(min-width:560px){ .row-2{grid-template-columns:1fr 1fr} }
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);cursor:pointer;font-weight:700;font-size:15px;background:#f9f9f9;color:#0f172a;text-decoration:none}
-    .btn:hover{background:#f3f4f6}
+    .btn:hover{background:var(--soft,#f3f4f6)}
+    .btn-primary:hover{background:color-mix(in srgb,var(--brand) 86%,#000);color:#fff}
     .btn-primary:disabled{background:var(--brand);color:#fff;opacity:.8;cursor:wait}
     .btn-primary{background:var(--brand);color:#fff;border-color:transparent}
     .btn-ok{background:var(--ok);color:#fff;border-color:transparent}
@@ -62,13 +64,21 @@
     .theme-track{width:38px;height:21px;padding:2px;border-radius:999px;background:#94a3b8;display:flex}.theme-knob{width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transition:.2s}
     html[data-theme="dark"] .theme-track{background:#22c55e}html[data-theme="dark"] .theme-knob{transform:translateX(17px)}
     @media(max-width:839px){.wrap{padding:11px}.top{align-items:flex-start;flex-direction:column}.top .actions{width:100%}.top .actions>*{flex:1}.card{padding:11px}}
+    input[type="number"]{-moz-appearance:textfield;appearance:textfield}
+    input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+    .top-nav .btn{white-space:nowrap}.top-nav .nav-label{display:inline}
+    .invoice-flow{display:grid;gap:12px}.invoice-step{position:relative}.invoice-step>.section-title{display:flex;align-items:center;gap:9px;font-size:1.05rem}.step-number{display:inline-grid;place-items:center;width:27px;height:27px;border-radius:9px;background:color-mix(in srgb,var(--brand) 15%,var(--field));color:var(--brand);font-size:.78rem;font-weight:900}
+    .service-picker{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}.service-picker .btn{min-width:46px;min-height:42px;font-size:1.25rem}
+    .concept-composer{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end}.concept-composer .concept-description,.concept-composer .concept-add{grid-column:1/-1}.concept-composer textarea{min-height:100px}.concept-dialog{width:min(560px,100%)}
+    .concept-composer label{margin-top:0}.concept-hint{margin-top:7px;color:var(--muted);font-size:.76rem}.concept-empty{padding:19px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:12px;background:var(--field)}
+    details.billing-more{border:1px solid var(--line);border-radius:14px;background:var(--card);box-shadow:var(--shadow)}details.billing-more>summary{cursor:pointer;list-style:none;padding:15px 16px;font-weight:850}details.billing-more>summary::-webkit-details-marker{display:none}details.billing-more>summary::after{content:'+';float:right;color:var(--brand);font-size:1.15rem}details.billing-more[open]>summary::after{content:'−'}details.billing-more .details-body{padding:0 15px 15px;border-top:1px solid var(--line)}
+    .stamp-bar{position:sticky;bottom:0;z-index:50;display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:12px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb,var(--card) 94%,transparent);box-shadow:0 -8px 28px rgba(15,23,42,.16);backdrop-filter:blur(12px)}.stamp-total small{display:block;color:var(--muted);font-size:.75rem}.stamp-total strong{font-size:1.3rem}.stamp-bar .actions{justify-content:flex-end}
+    .stamp-state{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);font-weight:750}.stamp-state.pending{color:var(--brand)}.stamp-state.error{border-color:#fecaca;background:#fef2f2;color:#b91c1c}.stamp-state.success{border-color:#86efac;background:#f0fdf4;color:#166534}.stamp-spinner{display:inline-block;width:15px;height:15px;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-2px;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
     .template-backdrop{position:fixed;inset:0;z-index:9999;display:none;place-items:center;padding:18px;background:rgba(2,6,23,.62);overflow-y:auto}.template-backdrop.show{display:grid}.template-dialog{width:min(460px,100%);max-height:calc(100vh - 36px);overflow:auto;padding:18px;border:1px solid var(--line);border-radius:16px;background:var(--card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.template-dialog.mail-dialog{width:min(680px,100%);scrollbar-gutter:stable}.template-dialog h2{margin:0 0 5px;font-size:1.15rem}.template-dialog p{margin:0 0 14px;color:var(--muted);font-size:.82rem}.template-dialog .actions{margin-top:14px;justify-content:flex-end}.mail-dialog>.actions{position:sticky;bottom:-18px;margin-left:-18px;margin-right:-18px;margin-bottom:-18px;padding:14px 18px;background:var(--card);border-top:1px solid var(--line)}.modal-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:13px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);font-size:.84rem}.modal-summary strong{display:block;margin-top:2px;color:var(--ink)}.recipient-presets,.email-history{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}.email-history button{padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:var(--soft);color:var(--ink);cursor:pointer}.email-history button span{margin-left:7px;color:var(--muted)}.modal-error{min-height:18px;margin-top:8px;color:var(--danger);font-size:.82rem;font-weight:700}.hidden{display:none!important}.billing-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:3px}.environment-pill,.folio-counter{display:inline-flex;padding:3px 8px;border:1px solid #93c5fd;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:.75rem;font-weight:800}.environment-pill.production{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}.folio-counter{gap:5px}.folio-counter small{font-size:.68rem;font-weight:650;color:var(--muted)}.folio-counter.warning{border-color:#fbbf24;background:#fffbeb;color:#92400e}.folio-counter.empty{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}html[data-theme="dark"] .environment-pill,html[data-theme="dark"] .folio-counter{background:#152849;color:#93c5fd}html[data-theme="dark"] .environment-pill.production,html[data-theme="dark"] .folio-counter.empty{background:#451a1a;color:#fca5a5}html[data-theme="dark"] .folio-counter.warning{background:#422006;color:#fcd34d}@media(max-width:560px){.modal-summary{grid-template-columns:1fr}.folio-counter small{display:none}}
     .modal-error.pending{color:var(--muted)}
     @media(max-width:700px){
-      .mobile-concept-entry{display:block!important;margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--field)}
-      .mobile-concept-entry textarea{min-height:112px;font-size:16px;line-height:1.4}
-      .mobile-concept-entry input{min-height:48px;font-size:16px}
-      .mobile-concept-entry .btn{min-height:44px;margin-top:12px}
+      .top{flex-direction:row;align-items:flex-start}.top>div:first-child{min-width:0}.top-nav{width:auto!important;margin-left:auto}.top-nav .nav-label,.top-nav #theme-label{display:none}.top-nav .btn,.top-nav .theme-toggle{flex:0 0 auto!important;min-width:42px;min-height:42px;padding:9px}.top-nav a[href="/articulos-servicios"],.top-nav a[href="/cerrar-sesion"]{display:none}.billing-meta{max-width:210px}.environment-pill{font-size:0}.environment-pill::after{content:'Pruebas';font-size:.7rem}.environment-pill.production::after{content:'Producción real'}
+      .service-picker{padding:10px}.concept-composer textarea{min-height:94px;font-size:16px}.concept-composer input{min-height:48px;font-size:16px}.concept-composer .btn{width:100%;min-height:46px}
       .table-wrap{overflow:visible;max-height:none;border:0;background:transparent}
       #tabla{display:block;min-width:0}
       #tabla thead{display:none}
@@ -86,6 +96,7 @@
       #tabla tfoot td{padding:0;border:0;background:transparent;font-size:14px}
       #tabla tfoot td:first-child{display:none}
       #tabla tfoot td:last-child{order:-1}
+      .stamp-bar{margin-left:-11px;margin-right:-11px;margin-bottom:-11px;border-radius:16px 16px 0 0;padding:11px}.stamp-bar .actions{gap:7px}.stamp-bar .btn{min-height:44px}.stamp-bar #btnSaveTemplate{padding-inline:11px}.stamp-bar #btnSaveTemplate .button-label{display:none}
     }
 </style>
 <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
@@ -107,20 +118,20 @@
           </div>
         </div>
       </div>
-      <div class="actions" style="display:flex;gap:8px">
+      <div class="actions top-nav" style="display:flex;gap:8px">
         <button class="theme-toggle" type="button" id="theme-toggle" role="switch"><span class="theme-track"><span class="theme-knob"></span></span><span id="theme-label">Modo</span></button>
-        <a class="btn" href="/inicio-app">🏠 Inicio</a>
-        <a class="btn" href="/facturacion">📚 Facturas</a>
-        <a class="btn" href="/articulos-servicios">📦 Artículos</a>
-        <a class="btn" href="/cerrar-sesion">🔒 Salir</a>
+        <a class="btn" href="/inicio-app" title="Inicio">🏠 <span class="nav-label">Inicio</span></a>
+        <a class="btn" href="/facturacion" title="Facturas">📚 <span class="nav-label">Facturas</span></a>
+        <a class="btn" href="/articulos-servicios" title="Claves SAT">🏷️ <span class="nav-label">Claves SAT</span></a>
+        <a class="btn" href="/cerrar-sesion" title="Cerrar sesión">🔒 <span class="nav-label">Salir</span></a>
       </div>
     </div>
 
     <div id="msg" class="flash"></div>
 
-    <div class="grid grid-2">
-      <div class="card">
-        <h3 class="section-title">Receptor</h3>
+    <div class="invoice-flow">
+      <div class="card invoice-step">
+        <h3 class="section-title"><span class="step-number">1</span> 🧾 Datos de la factura</h3>
 
         <label>Cliente</label>
         <select id="cliente">
@@ -136,108 +147,30 @@
             {% endfor %}
           {% endif %}
         </select>
-
-        <label>RFC</label>
-        <input id="rfc" placeholder="Ej. ABCD010101XXX" required />
-
-        <label>Razón social</label>
-        <input id="razon" required />
-
-        <label>Código postal</label>
-        <input id="cp" required />
-
-        <label>Régimen fiscal</label>
-        <select id="regimen" required>
-          <option value="">— Selecciona —</option>
-          <option value="601">601 - PM General</option>
-          <option value="612">612 - PF Actividades Empresariales</option>
-          <option value="621">621 - Incorporación Fiscal</option>
-          <option value="626">626 - RESICO</option>
-        </select>
-
-        <label>Uso de CFDI</label>
-        <select id="uso" required>
-          <option value="G03">G03 - Gastos en general</option>
-          <option value="G01">G01 - Adquisición de mercancías</option>
-          <option value="S01">S01 - Sin efectos fiscales</option>
-        </select>
-        <label>Correo de facturación</label>
-        <input id="email" type="email" placeholder="facturacion@cliente.com" />
+        <div class="row row-2">
+          <div><label>Forma de pago</label><select id="forma" required><option value="03">03 - Transferencia</option><option value="01">01 - Efectivo</option><option value="28">28 - Tarjeta de débito</option><option value="99">99 - Por definir</option></select></div>
+          <div><label>Método de pago</label><select id="metodo" required><option value="PUE">PUE - Una exhibición</option><option value="PPD">PPD - Parcialidades</option></select></div>
+        </div>
+        <details class="billing-more" id="fiscalDetails" style="margin-top:11px;box-shadow:none">
+          <summary>✏️ Ver o corregir datos fiscales</summary>
+          <div class="details-body row row-2">
+          <div><label>RFC</label><input id="rfc" placeholder="Ej. ABCD010101XXX" required /></div>
+          <div><label>Razón social</label><input id="razon" required /></div>
+          <div><label>Código postal</label><input id="cp" inputmode="numeric" required /></div>
+          <div><label>Correo de facturación</label><input id="email" type="email" placeholder="facturacion@cliente.com" /></div>
+          <div><label>Régimen fiscal</label><select id="regimen" required><option value="">— Selecciona —</option><option value="601">601 - PM General</option><option value="612">612 - PF Actividades Empresariales</option><option value="621">621 - Incorporación Fiscal</option><option value="626">626 - RESICO</option></select></div>
+          <div><label>Uso de CFDI</label><select id="uso" required><option value="G03">G03 - Gastos en general</option><option value="G01">G01 - Adquisición de mercancías</option><option value="S01">S01 - Sin efectos fiscales</option></select></div>
+          </div>
+        </details>
         <div id="fiscalStatus" class="fiscal-status" role="status" hidden></div>
       </div>
-
-      <div class="card">
-        <h3 class="section-title">Condiciones</h3>
-        <label>Forma de pago</label>
-        <select id="forma" required>
-          <option value="03">03 - Transferencia</option>
-          <option value="01">01 - Efectivo</option>
-          <option value="28">28 - Tarjeta de débito</option>
-          <option value="99">99 - Por definir</option>
-        </select>
-
-        <label>Método de pago</label>
-        <select id="metodo" required>
-          <option value="PUE">PUE - Una exhibición</option>
-          <option value="PPD">PPD - Parcialidades</option>
-        </select>
-
-        <label>Serie de factura</label>
-        <input id="serie" value="HSC" maxlength="25" />
-        <div class="pill">Facturama asignará automáticamente el siguiente folio de la serie.</div>
-
-        <label>Número de orden de compra (opcional)</label>
-        <input id="ordenCompra" maxlength="100" placeholder="Ej. OC-45872" autocomplete="off" />
-
-        <label>Folio de cotización (opcional)</label>
-        <input id="folioCotizacion" maxlength="40" placeholder="Ej. 1594" autocomplete="off" />
-        <div class="pill">Solo es una referencia visible en el PDF; no modifica el folio de la factura.</div>
-
-        <label>Alias para guardar la factura (opcional)</label>
-        <input id="aliasFactura" maxlength="100" placeholder="Ej. Mantenimiento septiembre" autocomplete="off" />
-        <div class="pill">En Drive quedará como: Alias - Folio. El folio fiscal y el folio interno no cambian.</div>
-
-        <label>Condiciones (opcional)</label>
-        <input id="cond" placeholder="Crédito 15 días" />
-
-        <div class="row row-2" style="margin-top:10px">
-          <div><label>Retención ISR</label><select id="retencionIsr"><option value="0">Sin retención</option><option value="0.0125">ISR 1.25%</option><option value="0.1">ISR 10%</option></select></div>
-          <div><label>Retención IVA</label><select id="retencionIva"><option value="0">Sin retención</option><option value="0.03">3%</option><option value="0.04">4%</option><option value="0.053333">5.3333%</option><option value="0.06">6%</option><option value="0.106667">10.6667%</option><option value="0.16">16%</option></select></div>
+      <div class="card invoice-step">
+        <h3 class="section-title"><span class="step-number">2</span> 🛒 Servicios</h3>
+        <div class="service-picker">
+          <div><label for="serviceCategory">Tipo de servicio</label><select id="serviceCategory"><option value="">Otro / captura libre</option></select></div>
+          <button id="openConceptComposer" class="btn btn-primary" type="button" aria-label="Agregar servicio" title="Agregar servicio">＋</button>
         </div>
-        <div class="pill" style="margin-top:6px">Se cargan desde el cliente o la cotización, y puedes ajustarlas antes de timbrar.</div>
-
-        <div class="actions" style="margin-top:12px">
-          <button id="btnTimbrar" class="btn btn-primary" type="button">🧾 Timbrar</button>
-          <button id="btnSaveTemplate" class="btn" type="button">📋 Guardar plantilla</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:12px">
-      <h3 class="section-title">Conceptos</h3>
-
-      <div class="row row-2">
-        <div>
-          <label>Buscar artículo o servicio</label>
-          <input id="catalogo" list="catalogoOpciones" placeholder="Escribe código, nombre o categoría..." autocomplete="off" />
-          <datalist id="catalogoOpciones"></datalist>
-        </div>
-        <div class="actions" style="align-items:end">
-          <button id="btnAgregar" class="btn" type="button">➕ Agregar a factura</button>
-          <a class="btn" href="/articulos-servicios">⚙️ Administrar</a>
-        </div>
-      </div>
-
-      <div class="mobile-concept-entry" style="display:none">
-        <h4 class="section-title">Agregar concepto</h4>
-        <label for="mobileConceptDescription">Descripción</label>
-        <textarea id="mobileConceptDescription" placeholder="Describe el servicio o producto..." autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
-        <div class="row row-2">
-          <div><label for="mobileConceptQuantity">Cantidad</label><input id="mobileConceptQuantity" type="number" step="0.01" min="0.01" value="1"></div>
-          <div><label for="mobileConceptPrice">Precio</label><input id="mobileConceptPrice" type="number" step="0.01" min="0" placeholder="0.00"></div>
-        </div>
-        <button id="mobileAddConcept" class="btn btn-primary" type="button">➕ Agregar a factura</button>
-      </div>
+        <div id="serviceCategoryHint" class="concept-hint">Selecciona un tipo para cargar su clave SAT y escribe libremente la descripción.</div>
 
       <div class="table-wrap">
         <table id="tabla">
@@ -262,6 +195,32 @@
             <tr><td colspan="3"></td><td class="numeric" id="totalCell"><strong>$0.00</strong></td><td colspan="4"><strong>TOTAL</strong></td></tr>
           </tfoot>
         </table>
+      </div>
+        <div id="conceptEmpty" class="concept-empty">Todavía no hay partidas. Agrega la primera arriba.</div>
+      </div>
+
+      <details class="billing-more invoice-step">
+        <summary><span class="step-number">3</span> ⚙️ Opciones adicionales</summary>
+        <div class="details-body">
+          <div class="row row-2">
+            <div><label>Número de orden de compra (opcional)</label><input id="ordenCompra" maxlength="100" placeholder="Ej. OC-45872" autocomplete="off" /></div>
+            <div><label>Folio de cotización (opcional)</label><input id="folioCotizacion" maxlength="40" placeholder="Ej. 1594" autocomplete="off" /></div>
+            <div><label>Alias para guardar en Drive (opcional)</label><input id="aliasFactura" maxlength="100" placeholder="Ej. Mantenimiento septiembre" autocomplete="off" /></div>
+            <div><label>Condiciones (opcional)</label><input id="cond" placeholder="Ej. Crédito 15 días" /></div>
+            <div><label>Retención ISR</label><select id="retencionIsr"><option value="0">Sin retención</option><option value="0.0125">ISR 1.25%</option><option value="0.1">ISR 10%</option></select></div>
+            <div><label>Retención IVA</label><select id="retencionIva"><option value="0">Sin retención</option><option value="0.03">3%</option><option value="0.04">4%</option><option value="0.053333">5.3333%</option><option value="0.06">6%</option><option value="0.106667">10.6667%</option><option value="0.16">16%</option></select></div>
+          </div>
+          <input id="serie" value="HSC" maxlength="25" type="hidden" />
+          <div class="pill" style="margin-top:9px">La orden de compra y la cotización aparecerán en el PDF cuando las captures.</div>
+        </div>
+      </details>
+
+      <div class="stamp-bar">
+        <div class="stamp-total"><small>Total de la factura</small><strong id="stickyTotal">$0.00</strong></div>
+        <div class="actions">
+          <button id="btnSaveTemplate" class="btn" type="button" title="Guardar como plantilla">📋 <span class="button-label">Guardar plantilla</span></button>
+          <button id="btnTimbrar" class="btn btn-primary" type="button">✓ Revisar y timbrar</button>
+        </div>
       </div>
     </div>
 
@@ -294,11 +253,26 @@
     </div>
   </div>
 
+  <div class="template-backdrop" id="conceptComposerModal" role="dialog" aria-modal="true" aria-labelledby="conceptComposerTitle">
+    <div class="template-dialog concept-dialog">
+      <h2 id="conceptComposerTitle">Agregar servicio</h2>
+      <p id="conceptComposerCategory">Escribe únicamente lo que se facturará.</p>
+      <div class="concept-composer">
+        <div class="concept-description"><label for="conceptDescription">Descripción</label><textarea id="conceptDescription" rows="3" placeholder="Describe el trabajo facturado…" autocapitalize="sentences" spellcheck="true"></textarea></div>
+        <div><label for="conceptQuantity">Cantidad</label><input id="conceptQuantity" type="number" inputmode="decimal" step="0.01" min="0.01" value="1"></div>
+        <div><label for="conceptPrice">Precio unitario</label><input id="conceptPrice" type="number" inputmode="decimal" step="0.01" min="0" placeholder="$0.00"></div>
+        <div id="conceptComposerError" class="modal-error concept-add"></div>
+        <div class="concept-add actions"><button id="cancelConceptComposer" class="btn" type="button">Cancelar</button><button id="btnAgregar" class="btn btn-primary" type="button">＋ Agregar servicio</button></div>
+      </div>
+    </div>
+  </div>
+
   <div class="template-backdrop" id="stampConfirmModal" role="dialog" aria-modal="true" aria-labelledby="stampConfirmTitle">
     <div class="template-dialog">
       <h2 id="stampConfirmTitle">Confirmar timbrado</h2>
       <p id="stampConfirmText">Revisa estos datos antes de continuar.</p>
       <div class="modal-summary" id="stampConfirmSummary"></div>
+      <div class="stamp-state" id="stampState" hidden></div>
       <div class="actions"><button class="btn" id="stampConfirmCancel" type="button">Regresar y revisar</button><button class="btn btn-primary" id="stampConfirmGo" type="button">🧾 Sí, timbrar</button></div>
     </div>
   </div>
@@ -568,9 +542,10 @@
 
     // ------- Conceptos -------
     const tbody = document.getElementById('tbody');
-    const catalogInput = document.getElementById('catalogo');
-    const catalogOptions = document.getElementById('catalogoOpciones');
-    const catalogMap = new Map();
+    const serviceCategory = document.getElementById('serviceCategory');
+    const serviceCategoryHint = document.getElementById('serviceCategoryHint');
+    const conceptComposerModal = document.getElementById('conceptComposerModal');
+    const categoryPresets = new Map();
     const currency = n => n.toLocaleString('es-MX',{style:'currency',currency:'MXN'});
     const fieldValue = value => String(value ?? '')
       .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
@@ -598,6 +573,8 @@
 
     function render(){
       tbody.innerHTML = estado.items.map((it, i)=>filaHTML(i, it)).join('');
+      document.querySelector('.table-wrap').hidden = estado.items.length === 0;
+      document.getElementById('conceptEmpty').hidden = estado.items.length > 0;
       tbody.querySelectorAll('.btnDel').forEach((b, idx)=>{
         b.onclick = () => { estado.items.splice(idx,1); render(); calc(); };
       });
@@ -609,7 +586,7 @@
 
     function addItem(fromPreset){
       const base = fromPreset || {
-        descripcion:'Concepto',
+        descripcion:'',
         cantidad:1, precio_unitario:0,
         clave_prod_serv:'85121600', clave_unidad:'E48', tasa_iva:0.16
       };
@@ -622,52 +599,72 @@
         const response = await fetch('/api/articulos', {headers:{'Accept':'application/json'}});
         const data = await response.json();
         if(!response.ok || !data.ok) return;
-        catalogMap.clear();
-        catalogOptions.innerHTML = '';
+        categoryPresets.clear();
         for(const article of (data.items || [])){
-          const label = `${article.codigo} · ${article.nombre} · ${article.categoria || 'General'}`;
-          catalogMap.set(label, article);
-          catalogMap.set(String(article.codigo).toLowerCase(), article);
+          const category = String(article.categoria || article.nombre || 'General').trim();
+          const key = category.toLocaleLowerCase('es');
+          if(!categoryPresets.has(key)) categoryPresets.set(key, {
+            category,
+            clave_prod_serv: article.clave_sat || '85121600',
+            clave_unidad: article.unidad_sat || 'E48',
+            tasa_iva: Number(article.iva ?? 0.16)
+          });
+        }
+        for(const [key, preset] of [...categoryPresets].sort((a,b)=>a[1].category.localeCompare(b[1].category,'es'))){
           const option = document.createElement('option');
-          option.value = label;
-          option.label = `${Number(article.precio||0).toLocaleString('es-MX',{style:'currency',currency:'MXN'})} · SAT ${article.clave_sat}`;
-          catalogOptions.appendChild(option);
+          option.value = key;
+          option.textContent = preset.category;
+          serviceCategory.appendChild(option);
         }
       }catch(_){}
     }
     loadArticleCatalog();
 
-    document.getElementById('btnAgregar').onclick = ()=>{
-      const typed = (catalogInput.value || '').trim();
-      const article = catalogMap.get(typed) || catalogMap.get(typed.toLowerCase());
-      addItem(article ? {
-        codigo: article.codigo,
-        descripcion: article.descripcion || article.nombre,
-        cantidad: 1,
-        precio_unitario: Number(article.precio || 0),
-        clave_prod_serv: article.clave_sat,
-        clave_unidad: article.unidad_sat,
-        tasa_iva: Number(article.iva || 0)
-      } : null);
-      catalogInput.value = '';
-    };
+    serviceCategory.addEventListener('change', ()=>{
+      const preset = categoryPresets.get(serviceCategory.value);
+      serviceCategoryHint.textContent = preset
+        ? `${preset.category}: clave SAT ${preset.clave_prod_serv} · unidad ${preset.clave_unidad}. Podrás corregirlas en la partida.`
+        : 'Captura libre: se usará la clave SAT general y podrás corregirla en la partida.';
+    });
 
-    document.getElementById('mobileAddConcept').onclick = ()=>{
-      const description = document.getElementById('mobileConceptDescription');
-      const quantity = document.getElementById('mobileConceptQuantity');
-      const price = document.getElementById('mobileConceptPrice');
+    document.getElementById('openConceptComposer').onclick = ()=>{
+      const preset = categoryPresets.get(serviceCategory.value);
+      document.getElementById('conceptComposerCategory').textContent = preset
+        ? `${preset.category} · SAT ${preset.clave_prod_serv} · ${preset.clave_unidad}`
+        : 'Captura libre · la clave SAT se podrá corregir en la partida.';
+      document.getElementById('conceptComposerError').textContent = '';
+      conceptComposerModal.classList.add('show');
+      setTimeout(()=>document.getElementById('conceptDescription').focus(), 0);
+    };
+    document.getElementById('cancelConceptComposer').onclick = ()=>conceptComposerModal.classList.remove('show');
+    conceptComposerModal.addEventListener('click', event=>{if(event.target===conceptComposerModal)conceptComposerModal.classList.remove('show')});
+
+    document.getElementById('btnAgregar').onclick = ()=>{
+      const description = document.getElementById('conceptDescription');
+      const quantity = document.getElementById('conceptQuantity');
+      const price = document.getElementById('conceptPrice');
       const text = description.value.trim();
       const amount = Number(quantity.value);
       const unitPrice = Number(price.value);
       if(!text || !Number.isFinite(amount) || amount <= 0 || !price.value.trim() || !Number.isFinite(unitPrice) || unitPrice < 0){
-        msg(false, 'Completa descripción, cantidad y precio antes de agregar el concepto.');
+        const errorText = !text ? 'Escribe la descripción de la partida.' : (!price.value.trim() ? 'Escribe el precio de la partida.' : 'Revisa la cantidad y el precio.');
+        document.getElementById('conceptComposerError').textContent = errorText;
+        msg(false, errorText);
+        (!text ? description : (!price.value.trim() ? price : quantity)).focus();
         return;
       }
-      addItem({descripcion:text,cantidad:amount,precio_unitario:unitPrice,clave_prod_serv:'85121600',clave_unidad:'E48',tasa_iva:0.16});
+      const preset = categoryPresets.get(serviceCategory.value) || {};
+      addItem({
+        descripcion:text,cantidad:amount,precio_unitario:unitPrice,
+        clave_prod_serv:preset.clave_prod_serv || '85121600',
+        clave_unidad:preset.clave_unidad || 'E48',
+        tasa_iva:Number(preset.tasa_iva ?? 0.16)
+      });
       description.value = '';
       quantity.value = '1';
       price.value = '';
-      description.focus();
+      conceptComposerModal.classList.remove('show');
+      document.getElementById('openConceptComposer').focus();
     };
 
     function calc(){
@@ -700,14 +697,15 @@
       document.getElementById('ivaRetCell').textContent = '-' + currency(ivaRet);
       document.getElementById('isrLabel').textContent = `RETENCIÓN ISR ${Number(isrRate*100).toFixed(isrRate === 0.0125 ? 2 : 0)}%`;
       document.getElementById('ivaRetLabel').textContent = `RETENCIÓN IVA ${Number(ivaRetRate*100).toFixed(ivaRetRate === 0.053333 || ivaRetRate === 0.106667 ? 4 : 0)}%`;
-      document.getElementById('totalCell').textContent = currency(subtotal+iva-isrRet-ivaRet);
+      const total = currency(subtotal+iva-isrRet-ivaRet);
+      document.getElementById('totalCell').textContent = total;
+      document.getElementById('stickyTotal').textContent = total;
     }
 
     document.getElementById('retencionIsr').addEventListener('change', calc);
     document.getElementById('retencionIva').addEventListener('change', calc);
 
-    if(matchMedia('(max-width:700px)').matches) render();
-    else addItem(null); // fila inicial en escritorio
+    render();
 
     // ------- Plantillas completas de factura -------
     const templateModal = document.getElementById('templateModal');
@@ -783,7 +781,7 @@
         const ivaRetention=Number(template.retentions?.iva||0);
         document.getElementById('retencionIva').value=ivaRetention>0.10666&&ivaRetention<0.10668?'0.106667':String(ivaRetention);
         estado.items=(template.items||[]).map(item=>({descripcion:item.description,cantidad:Number(item.quantity||1),precio_unitario:Number(item.unit_price||0),clave_prod_serv:item.product_key||'85121600',clave_unidad:item.unit_key||'E48',tasa_iva:Number(item.tax_rate||0),descuento:Number(item.discount||0)}));
-        if(!estado.items.length && !matchMedia('(max-width:700px)').matches)addItem(null);else render();
+        render();
         syncForma();updateFiscalStatus();calc();msg(true,`Plantilla “${template.name}” cargada. Revisa antes de timbrar.`);
       }catch(error){msg(false,error.message)}
     })();
@@ -791,6 +789,18 @@
     // -------- VALIDACIONES P0 ----------
     const RFC_RE = /^[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{3}$/;
     const CP_RE  = /^\d{5}$/;
+    let lastValidationError = '';
+
+    function validationError(message, field){
+      lastValidationError = message;
+      msg(false, message);
+      if(field){
+        mark(field, false);
+        const details = field.closest('details');
+        if(details) details.open = true;
+      }
+      return false;
+    }
 
     function mark(el, ok){
       if(!el) return;
@@ -817,36 +827,39 @@
 
       mark(rfc, okRFC); mark(razon, okRazon); mark(cp, okCP); mark(reg, okReg); mark(uso, okUso);
 
-      if(!okRFC){ msg(false,'RFC inválido. Formato SAT requerido.'); return false; }
-      if(!okRazon){ msg(false,'Escribe la razón social exactamente como aparece en la constancia fiscal.'); return false; }
-      if(!okCP){  msg(false,'Código postal debe ser 5 dígitos.'); return false; }
-      if(!okReg){ msg(false,'Selecciona Régimen fiscal.'); return false; }
-      if(!okUso){ msg(false,'Selecciona Uso de CFDI.'); return false; }
+      if(!okRFC) return validationError('El RFC está vacío o no tiene el formato requerido por el SAT.', rfc);
+      if(!okRazon) return validationError('Falta la razón social exactamente como aparece en la constancia fiscal.', razon);
+      if(!okCP) return validationError('El código postal fiscal debe tener 5 dígitos.', cp);
+      if(!okReg) return validationError('Falta seleccionar el régimen fiscal.', reg);
+      if(!okUso) return validationError('Falta seleccionar el uso de CFDI.', uso);
       return true;
     }
 
     function valConceptos(){
       const rows = [...tbody.querySelectorAll('tr')];
-      if(rows.length === 0){ msg(false,'Agrega al menos un concepto.'); return false; }
-      let ok = true;
-      for(const tr of rows){
+      if(rows.length === 0) return validationError('La factura no se envió: agrega por lo menos una partida.');
+      for(const [index, tr] of rows.entries()){
+        const description = String(tr.querySelector('.c-desc')?.value || '').trim();
         const cant = parseFloat(tr.querySelector('.c-cant')?.value || 0);
         const pu   = parseFloat(tr.querySelector('.c-precio')?.value || 0);
         const iva  = parseFloat(tr.querySelector('.c-iva')?.value || 0);
+        const iDescription = tr.querySelector('.c-desc');
         const iCant = tr.querySelector('.c-cant');
         const iPrecio = tr.querySelector('.c-precio');
         const iIva = tr.querySelector('.c-iva');
 
+        const okDescription = !!description;
         const okCant = isFinite(cant) && cant > 0;
         const okPrecio = isFinite(pu) && pu >= 0;
         const okIva = isFinite(iva) && iva >= 0 && iva <= 0.16 + 1e-9;
 
-        mark(iCant, okCant); mark(iPrecio, okPrecio); mark(iIva, okIva);
-
-        if(!(okCant && okPrecio && okIva)) ok = false;
+        mark(iDescription, okDescription); mark(iCant, okCant); mark(iPrecio, okPrecio); mark(iIva, okIva);
+        if(!okDescription) return validationError(`La partida ${index + 1} no tiene descripción.`, iDescription);
+        if(!okCant) return validationError(`La cantidad de la partida ${index + 1} debe ser mayor que cero.`, iCant);
+        if(!okPrecio) return validationError(`El precio de la partida ${index + 1} no es válido.`, iPrecio);
+        if(!okIva) return validationError(`El IVA de la partida ${index + 1} debe estar entre 0 y 0.16.`, iIva);
       }
-      if(!ok) msg(false,'Revisa cantidad (>0), precio (≥0) e IVA (0 a 0.16).');
-      return ok;
+      return true;
     }
 
     document.getElementById('rfc')?.addEventListener('blur', e=>{
@@ -899,7 +912,7 @@
           estado.items = [];
           for(const it of arr){
             estado.items.push({
-              descripcion: it.descripcion || 'Concepto',
+              descripcion: it.descripcion || '',
               cantidad: Number(it.cantidad||1),
               precio_unitario: Number(it.precio_unitario||0),
               clave_prod_serv: it.clave_prod_serv || '85121600',
@@ -953,6 +966,9 @@
     const stampConfirmModal = document.getElementById('stampConfirmModal');
     const stampSuccessModal = document.getElementById('stampSuccessModal');
     const stampConfirmSummary = document.getElementById('stampConfirmSummary');
+    const stampState = document.getElementById('stampState');
+    const stampConfirmCancel = document.getElementById('stampConfirmCancel');
+    const stampConfirmGo = document.getElementById('stampConfirmGo');
     let stampedEmailContext = null;
 
     function escapeHtml(value){
@@ -962,9 +978,28 @@
       const driveState = stampedEmailContext?.driveState || 'ok';
       window.location.assign(`/facturacion?timbrada=1&drive=${driveState}${extra}`);
     }
+    function setStampState(kind, text){
+      stampState.hidden = false;
+      stampState.className = `stamp-state ${kind}`;
+      stampState.innerHTML = kind === 'pending'
+        ? `<span class="stamp-spinner"></span>${escapeHtml(text)}`
+        : escapeHtml(text);
+    }
+    function showStampError(text){
+      document.getElementById('stampConfirmTitle').textContent = 'No se pudo timbrar';
+      document.getElementById('stampConfirmText').textContent = 'La factura no fue enviada. Corrige el dato indicado y vuelve a intentarlo.';
+      stampConfirmSummary.hidden = true;
+      setStampState('error', text);
+      stampConfirmCancel.textContent = 'Corregir datos';
+      stampConfirmGo.hidden = true;
+      stampConfirmModal.classList.add('show');
+    }
     function openStampConfirmation(){
-      if(!valReceptor()) return;
-      if(!valConceptos()) return;
+      lastValidationError = '';
+      if(!valReceptor() || !valConceptos()){
+        showStampError(lastValidationError || 'Revisa los datos marcados antes de continuar.');
+        return;
+      }
 
       const receiver = document.getElementById('razon').value.trim();
       const rfc = document.getElementById('rfc').value.trim().toUpperCase();
@@ -976,7 +1011,14 @@
       document.getElementById('stampConfirmText').textContent = production
         ? 'Estás en PRODUCCIÓN. Al continuar se generará un CFDI con efectos fiscales reales.'
         : 'Estás en el ambiente de pruebas. Revisa los datos antes de simular el timbrado.';
-      document.getElementById('stampConfirmGo').className = production ? 'btn btn-danger' : 'btn btn-primary';
+      stampConfirmGo.className = production ? 'btn btn-danger' : 'btn btn-primary';
+      stampConfirmGo.textContent = '🧾 Sí, timbrar';
+      stampConfirmGo.hidden = false;
+      stampConfirmGo.disabled = false;
+      stampConfirmCancel.textContent = 'Regresar y revisar';
+      stampConfirmCancel.hidden = false;
+      stampConfirmSummary.hidden = false;
+      stampState.hidden = true;
       stampConfirmSummary.innerHTML = `
         <div>Receptor<strong>${escapeHtml(receiver)}</strong></div>
         <div>RFC<strong>${escapeHtml(rfc)}</strong></div>
@@ -984,7 +1026,7 @@
         <div>Pago<strong>${escapeHtml(method)} · ${escapeHtml(payment)}</strong></div>
         ${invoiceAlias ? `<div>Carpeta en Drive<strong>${escapeHtml(invoiceAlias)} - folio</strong></div>` : ''}`;
       stampConfirmModal.classList.add('show');
-      setTimeout(()=>document.getElementById('stampConfirmGo').focus(), 0);
+      setTimeout(()=>stampConfirmGo.focus(), 0);
     }
 
     async function performStamp(){
@@ -994,6 +1036,9 @@
       if(stampButton.disabled) return;
       stampButton.disabled = true;
       stampButton.textContent = '⏳ Validando…';
+      stampConfirmGo.disabled = true;
+      stampConfirmCancel.hidden = true;
+      setStampState('pending', 'Validando los datos fiscales del receptor…');
       msg(true, 'Validando los datos fiscales del receptor antes de timbrar…');
       document.getElementById('accionesPost').style.display = 'none';
       document.getElementById('accionesREP').style.display  = 'none';
@@ -1002,7 +1047,7 @@
         const pu = Number(it.precio_unitario||0);
         return {
           codigo: it.codigo || '',
-          descripcion: it.descripcion || 'Concepto',
+          descripcion: it.descripcion || '',
           clave_prod_serv: it.clave_prod_serv || '85121600',
           clave_unidad: it.clave_unidad || 'E48',
           precio_unitario: pu,
@@ -1042,6 +1087,7 @@
       };
 
       try{
+        setStampState('pending', 'Enviando la factura a Facturama para timbrado…');
         const r = await fetch('/api/facturar', {
           method:'POST',
           headers:{ 'Content-Type':'application/json','Accept':'application/json' },
@@ -1087,26 +1133,27 @@
           document.getElementById('stampSuccessText').textContent = data.warning
             ? `${data.warning} ¿Quieres enviar el PDF y XML por correo ahora?`
             : 'El PDF y el XML están listos. ¿Quieres enviarlos por correo ahora?';
+          stampConfirmModal.classList.remove('show');
           stampSuccessModal.classList.add('show');
         } else {
           const fieldMessage = showServerFieldErrors(data);
-          msg(false, fieldMessage || readableError(data));
+          const errorMessage = fieldMessage || readableError(data);
+          msg(false, errorMessage);
+          showStampError(errorMessage);
           stampButton.disabled = false;
-          stampButton.textContent = '🧾 Timbrar';
+          stampButton.textContent = '✓ Revisar y timbrar';
         }
       }catch(e){
         msg(false, e.message);
+        showStampError(`No hubo respuesta del servidor: ${e.message}`);
         stampButton.disabled = false;
-        stampButton.textContent = '🧾 Timbrar';
+        stampButton.textContent = '✓ Revisar y timbrar';
       }
     }
 
     document.getElementById('btnTimbrar').onclick = openStampConfirmation;
-    document.getElementById('stampConfirmCancel').onclick = ()=>stampConfirmModal.classList.remove('show');
-    document.getElementById('stampConfirmGo').onclick = ()=>{
-      stampConfirmModal.classList.remove('show');
-      performStamp();
-    };
+    stampConfirmCancel.onclick = ()=>stampConfirmModal.classList.remove('show');
+    stampConfirmGo.onclick = performStamp;
     document.getElementById('stampSuccessLater').onclick = ()=>goToInvoicePanel();
 
     const invoiceEmailModal = document.getElementById('invoiceEmailModal');

@@ -74,6 +74,13 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertNotIn("Date", cfdi)
         self.assertNotIn("Serie", cfdi)
 
+    def test_blank_item_description_is_rejected_instead_of_using_placeholder(self):
+        payload = self.payload()
+        payload["items"][0]["descripcion"] = "   "
+        with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
+            with self.assertRaisesRegex(ValueError, "partida 1 no tiene descripción"):
+                billing._build_facturama_cfdi(payload)
+
     def test_production_uses_hsc_series_and_never_accepts_browser_folio(self):
         payload = self.payload()
         payload["folio"] = "1594"

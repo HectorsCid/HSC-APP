@@ -1047,7 +1047,9 @@ def _build_facturama_cfdi(payload):
     if isr_rate not in allowed_isr or iva_ret_rate not in allowed_iva_ret:
         raise ValueError("Selecciona tasas de retención permitidas")
     for index, raw in enumerate(payload.get("items") or [], start=1):
-        description = str(raw.get("descripcion", "")).strip() or f"Concepto {index}"
+        description = str(raw.get("descripcion", "")).strip()
+        if not description:
+            raise ValueError(f"La partida {index} no tiene descripción")
         quantity = _number(raw.get("cantidad"), 1)
         unit_price = _money(raw.get("precio_unitario", raw.get("valor_unitario", 0)))
         tax_rate = _number(raw.get("tasa_iva"), 0)
