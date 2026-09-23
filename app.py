@@ -2050,6 +2050,8 @@ def ver_costos_internos():
         categorias=categorias,
         unidades=unidades,
         folio=datos_cliente.get("cotizacion") or "",
+        cliente=datos_cliente.get("cliente") or "",
+        sucursal=datos_cliente.get("sucursal") or "",
         desgloses=desgloses,
     )
 

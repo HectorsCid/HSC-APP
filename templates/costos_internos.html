@@ -5,55 +5,65 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Costos internos · Cotización {{ folio }}</title>
   <style>
-    :root{
-      --bg:#e3e8f0;--card:#fff;--ink:#111827;--muted:#4b5563;--line:#c5ceda;
-      --brand:#1d4ed8;--ok:#16a34a;--danger:#ef4444;--soft:#edf2f8;--radius:14px;
-    }
     *{box-sizing:border-box}
-    html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI,Roboto,system-ui,sans-serif}
-    .wrap{max-width:1180px;margin:auto;padding:18px}
-    .top,.actions,.row-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    .top{justify-content:space-between;margin-bottom:14px}
-    h1{font-size:1.35rem;margin:0}.subtle{color:var(--muted);font-size:.88rem}
-    .layout{display:grid;gap:16px;grid-template-columns:minmax(0,1.45fr) minmax(300px,.55fr)}
-    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;box-shadow:0 8px 22px rgba(17,24,39,.06)}
-    .entry-panel{border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0;background:#fafcff}
-    .entry-title{font-size:.82rem;font-weight:800;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.03em}
-    .entry-fields,.item-fields{display:grid;grid-template-columns:1.05fr 1.75fr .62fr .9fr .9fr .58fr;gap:8px;align-items:end}
-    .entry-note{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-top:8px}
-    .cost-list{display:flex;flex-direction:column;gap:7px}
-    .list-head{display:grid;grid-template-columns:1.05fr 1.75fr .62fr .9fr .9fr .58fr 1fr auto;gap:8px;padding:0 9px;color:var(--muted);font-size:.7rem;font-weight:800}
-    .cost-row{border:1px solid var(--line);border-radius:10px;padding:8px;background:#fafcff}
-    .item-fields{grid-template-columns:1.05fr 1.75fr .62fr .9fr .9fr .58fr 1fr auto;align-items:center}
-    .item-note{grid-column:1/7;display:grid;grid-template-columns:70px 1fr;gap:7px;align-items:center;margin-top:7px}
-    .item-note span{font-size:.72rem;color:var(--muted);font-weight:700}
-    .empty-list{border:1px dashed var(--line);border-radius:10px;padding:16px;text-align:center;color:var(--muted);font-size:.85rem}
-    label{display:block;color:var(--muted);font-size:.78rem;font-weight:700;margin-bottom:5px}
-    input,select,textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--soft);color:var(--ink);font-size:15px}
-    textarea{min-height:65px;resize:vertical}.full{grid-column:1/-1}
-    .cost-row input,.cost-row select{padding:7px 8px;border-radius:8px;font-size:13px}
-    .cost-row label{display:none}
-    .line-total{font-weight:800;text-align:right;white-space:nowrap;font-size:.82rem}
-    .btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:11px;padding:11px 13px;background:#f3f6ff;color:#0f172a;font-weight:800;text-decoration:none;cursor:pointer}
-    .btn-primary{background:var(--brand);color:#fff;border-color:transparent}.btn-ok{background:var(--ok);color:#fff;border-color:transparent}
-    .btn-danger{background:#fee2e2;color:#991b1b;border-color:#fecaca;padding:7px 9px}
-    .cost-row .btn-danger{padding:7px 8px;font-size:12px;border-radius:8px}
-    .summary{position:sticky;top:14px}.summary h2{font-size:1.05rem;margin:0 0 12px}
-    .summary-row{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid var(--line)}
-    .summary-row strong{white-space:nowrap}.final{font-size:1.08rem;color:#14532d}
-    .config{display:grid;gap:10px;margin-top:14px}.config-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .flash{background:#dcfce7;color:#14532d;border:1px solid #86efac;padding:11px 13px;border-radius:11px;margin-bottom:12px;font-weight:700}
-    .privacy{background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;border-radius:11px;padding:10px;margin:12px 0;font-size:.86rem}
-    .work-selector{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:14px;padding:11px;border:1px solid var(--line);border-radius:11px;background:#fafcff}
-    @media(max-width:900px){.layout{grid-template-columns:1fr}.summary{position:static}.work-selector{grid-template-columns:1fr}}
+    html,body{margin:0;font-family:Segoe UI,Roboto,system-ui,sans-serif}
+    body{background:var(--bg);color:var(--ink)}
+    .wrap{max-width:1240px;margin:auto;padding:18px}
+    .top,.actions,.row-head,.panel-title,.cost-summary,.price-lead{display:flex;align-items:center;gap:10px}
+    .top{justify-content:space-between;margin-bottom:14px}.top-copy{min-width:0}
+    h1,h2,h3,p{margin:0}h1{font-size:1.45rem}h2{font-size:1.03rem}h3{font-size:.95rem}
+    .subtle{color:var(--muted);font-size:.86rem}.context{margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 30px var(--shadow)}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;border:1px solid var(--line);border-radius:11px;padding:9px 13px;background:var(--button);color:var(--ink);font-weight:800;text-decoration:none;cursor:pointer}
+    .btn-primary{background:var(--brand);color:#fff;border-color:var(--brand)}.btn-ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+    .btn-danger{background:color-mix(in srgb,var(--danger) 12%,var(--card));color:var(--danger);border-color:color-mix(in srgb,var(--danger) 42%,var(--line))}
+    .btn-quiet{background:transparent}.btn-small{min-height:36px;padding:7px 10px;font-size:.82rem}
+    .flash{background:color-mix(in srgb,var(--ok) 13%,var(--card));color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 42%,var(--line));padding:11px 13px;border-radius:11px;margin-bottom:12px;font-weight:700}
+    .summary-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden;margin-bottom:16px}
+    .metric{padding:15px 18px;border-right:1px solid var(--line)}.metric:last-child{border-right:0}
+    .metric span{display:block;color:var(--muted);font-size:.76rem;margin-bottom:5px}.metric strong{font-size:1.18rem;font-variant-numeric:tabular-nums}
+    .metric.final strong{color:var(--ok)}
+    .layout{display:grid;gap:16px;grid-template-columns:minmax(0,1fr) 310px;align-items:start}
+    .main-card{min-width:0;overflow:hidden}.panel-head{padding:16px;border-bottom:1px solid var(--line)}
+    .panel-title{justify-content:space-between;align-items:flex-start}.count{margin-top:3px}
+    .panel-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .filters{display:grid;grid-template-columns:minmax(180px,1fr) 190px;gap:9px;margin-top:14px}
+    .search-box{position:relative}.search-box .line-icon{position:absolute;left:12px;top:12px;color:var(--muted)}.search-box input{padding-left:39px}
+    .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    label{display:block;color:var(--muted);font-size:.74rem;font-weight:750;margin-bottom:5px}
+    input,select,textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--field);color:var(--ink);font-size:15px}
+    textarea{min-height:76px;resize:vertical}
+    .entry-panel{display:none;padding:15px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--brand) 4%,var(--card))}
+    .entry-panel.open{display:block}.entry-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+    .entry-fields{display:grid;grid-template-columns:1fr 1.7fr .62fr .9fr .9fr .58fr;gap:8px;align-items:end}
+    .entry-note{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-top:9px}
+    .cost-list{padding:5px 14px 14px}.cost-row{border-bottom:1px solid var(--line)}.cost-row:last-of-type{border-bottom:0}
+    .cost-summary{width:100%;display:grid;grid-template-columns:minmax(0,1fr) 135px 120px 24px;gap:12px;padding:14px 4px;border:0;background:transparent;color:var(--ink);text-align:left;cursor:pointer}
+    .cost-name strong{display:block;font-size:.91rem}.cost-meta,.cost-math{display:block;color:var(--muted);font-size:.76rem;margin-top:3px}
+    .cost-total{text-align:right;font-weight:850;font-variant-numeric:tabular-nums}.chevron{transition:transform .16s ease}.cost-row.open .chevron{transform:rotate(180deg)}
+    .cost-detail{display:none;padding:0 4px 15px}.cost-row.open .cost-detail{display:block}
+    .item-fields{display:grid;grid-template-columns:1.05fr 1.75fr .62fr .9fr .9fr .58fr;gap:8px;align-items:end}
+    .item-note{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-top:9px}
+    .empty-list{border:1px dashed var(--line);border-radius:11px;padding:18px;text-align:center;color:var(--muted);font-size:.86rem;margin:10px 0}
+    .no-results{padding:22px;text-align:center;color:var(--muted)}
+    .sidebar{position:sticky;top:14px;display:grid;gap:12px}.side-card{padding:15px}
+    .work-selector{display:grid;gap:8px;margin-bottom:13px}.work-actions{display:flex;gap:8px}.work-actions>*{flex:1}
+    .price-lead{justify-content:space-between;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:13px 0;margin-top:4px}
+    .price-lead span{display:block;color:var(--muted);font-size:.75rem}.price-lead strong{display:block;color:var(--ok);font-size:1.55rem;margin-top:3px;font-variant-numeric:tabular-nums}
+    .side-stats{padding:8px 0}.summary-row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;color:var(--muted);font-size:.82rem}.summary-row strong{color:var(--ink);font-variant-numeric:tabular-nums}
+    details{border-top:1px solid var(--line)}details:first-of-type{border-top:0}summary{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:13px 0;list-style:none;font-weight:800;cursor:pointer}summary::-webkit-details-marker{display:none}details[open] summary .chevron{transform:rotate(180deg)}
+    .config{display:grid;gap:10px;padding-bottom:13px}.config-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .privacy{background:var(--soft);color:var(--muted);border-radius:11px;padding:11px;font-size:.79rem;line-height:1.4}
+    .save-actions{display:grid;gap:8px}.save-actions .btn{width:100%}
+    [hidden]{display:none!important}
+    @media(max-width:940px){.layout{grid-template-columns:1fr}.sidebar{position:static}.entry-fields{grid-template-columns:1fr 1fr 1fr}.field-name{grid-column:span 2}}
     @media(max-width:700px){
-      .entry-fields{grid-template-columns:1fr 1fr}.field-name,.full{grid-column:1/-1}
-      .list-head{display:none}.item-fields{grid-template-columns:1fr 1fr}.item-fields>*{min-width:0}
-      .cost-row label{display:block}
-      .item-name{grid-column:1/-1}.item-note{grid-column:1/-1}.line-total{text-align:left}
-      .top .actions{width:100%}.top .btn{flex:1 1 auto}
+      .wrap{padding:12px}.top{align-items:flex-start}.top .btn span{display:none}.summary-strip{grid-template-columns:1fr 1fr}.metric:nth-child(2){border-right:0}.metric:nth-child(-n+2){border-bottom:1px solid var(--line)}
+      .panel-title{display:block}.panel-actions{justify-content:flex-start;margin-top:12px}.filters{grid-template-columns:1fr}.entry-fields{grid-template-columns:1fr 1fr}.field-name{grid-column:1/-1}
+      .cost-summary{grid-template-columns:minmax(0,1fr) 105px 20px}.cost-math{display:none}.item-fields{grid-template-columns:1fr 1fr}.item-name{grid-column:1/-1}
+      .actions{width:100%}.actions .btn{flex:1}.sidebar{gap:10px}
     }
-    @media(max-width:430px){.entry-fields,.item-fields,.entry-note,.config-pair{grid-template-columns:1fr}.field-name,.full,.item-name{grid-column:auto}.item-note{grid-template-columns:1fr}}
+    @media(max-width:450px){.entry-fields,.entry-note,.item-fields,.item-note,.config-pair{grid-template-columns:1fr}.field-name,.item-name{grid-column:auto}.work-actions{display:grid}.summary-strip{grid-template-columns:1fr}.metric{border-right:0;border-bottom:1px solid var(--line)}.metric:last-child{border-bottom:0}}
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='hsc_theme.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
@@ -65,32 +75,32 @@
   {% include "_commerce_icons.html" %}
   <div class="wrap">
     <div class="top">
-      <div>
-        <h1>Minicotizador interno</h1>
-        <div class="subtle">Cotización {{ folio or 'sin folio' }} · Costos privados</div>
-      </div>
-      <div class="actions">
-        <a class="btn" href="{{ url_for('inicio') }}"><svg class="line-icon" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>Volver a la cotización</a>
-      </div>
+      <div class="top-copy"><h1>Costos internos</h1><div class="subtle context">{% if cliente %}{{ cliente }}{% endif %}{% if sucursal %} · {{ sucursal }}{% endif %}{% if folio %} · Cotización {{ folio }}{% else %} · Cotización sin folio{% endif %}</div></div>
+      <div class="actions"><a class="btn" href="{{ url_for('inicio') }}"><svg class="line-icon" aria-hidden="true"><use href="#c-back"/></svg><span>Volver a la cotización</span></a></div>
     </div>
-
-    {% with mensajes = get_flashed_messages() %}
-      {% if mensajes %}<div class="flash">{% for m in mensajes %}{{ m }}{% endfor %}</div>{% endif %}
-    {% endwith %}
-
+    {% with mensajes = get_flashed_messages() %}{% if mensajes %}<div class="flash">{% for m in mensajes %}{{ m }}{% endfor %}</div>{% endif %}{% endwith %}
     <form id="cost-form" method="post" action="{{ url_for('guardar_costos_internos') }}">
       <input type="hidden" name="desglose_id" value="{{ costos.get('id','') }}" />
+      <section class="card summary-strip" aria-label="Resumen de costos">
+        <div class="metric"><span>Costo directo</span><strong id="sum-directo">{{ totales.costo_directo|currency }}</strong></div>
+        <div class="metric"><span>Gastos adicionales</span><strong id="sum-extras">{{ totales.gastos_extra|currency }}</strong></div>
+        <div class="metric"><span>Ganancia</span><strong id="sum-ganancia">{{ totales.ganancia|currency }}</strong></div>
+        <div class="metric final"><span>Precio final sin IVA</span><strong id="sum-final">{{ totales.precio_final|currency }}</strong></div>
+      </section>
       <div class="layout">
-        <section class="card">
-          <div class="row-head">
-            <div>
-              <strong>Materiales, mano de obra y gastos</strong>
-              <div class="subtle">Captura arriba; los conceptos agregados aparecen en la lista editable.</div>
+        <section class="card main-card">
+          <div class="panel-head">
+            <div class="panel-title">
+              <div><h2>Partidas</h2><div class="subtle count"><span id="visible-count">{{ costos['items']|length }}</span> costos registrados</div></div>
+              <div class="panel-actions"><button id="toggle-entry" class="btn btn-primary" type="button" aria-expanded="false"><svg class="line-icon" aria-hidden="true"><use href="#c-plus"/></svg>Agregar costo</button></div>
+            </div>
+            <div class="filters">
+              <label class="search-box"><span class="visually-hidden">Buscar costos</span><svg class="line-icon" aria-hidden="true"><use href="#c-search"/></svg><input id="cost-search" type="search" placeholder="Buscar material, proveedor o nota…" /></label>
+              <label><span class="visually-hidden">Filtrar por tipo</span><select id="type-filter"><option value="all">Todos los tipos</option>{% for value,label in categorias %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
             </div>
           </div>
-
-          <div class="entry-panel">
-            <div class="entry-title">Nuevo concepto</div>
+          <div id="entry-panel" class="entry-panel">
+            <div class="entry-heading"><div><h3>Nuevo costo</h3><div class="subtle">Los detalles se podrán editar después.</div></div><button id="close-entry" class="btn btn-quiet btn-small" type="button">Cerrar</button></div>
             <div class="entry-fields">
               <div><label>Tipo</label><select id="new-categoria">{% for value,label in categorias %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
               <div class="field-name"><label>Nombre o descripción</label><input id="new-nombre" placeholder="Ej. Tubería de cobre" /></div>
@@ -99,171 +109,68 @@
               <div><label>Costo por unidad</label><input id="new-costo" type="number" min="0" step="0.01" /></div>
               <div><label>Merma %</label><input id="new-merma" type="number" min="0" step="0.01" value="0" /></div>
             </div>
-            <div class="entry-note">
-              <div><label>Nota interna opcional</label><input id="new-nota" placeholder="Proveedor, referencia o aclaración" /></div>
-              <button id="add-row" class="btn" type="button">＋ Agregar concepto</button>
-            </div>
-          </div>
-
-          <div class="list-head" aria-hidden="true">
-            <span>Tipo</span><span>Descripción</span><span>Cant.</span><span>Unidad</span><span>Costo unit.</span><span>Merma</span><span>Total</span><span></span>
+            <div class="entry-note"><div><label>Nota interna opcional</label><input id="new-nota" placeholder="Proveedor, referencia o aclaración" /></div><button id="add-row" class="btn btn-primary" type="button"><svg class="line-icon" aria-hidden="true"><use href="#c-plus"/></svg>Agregar</button></div>
           </div>
           <div id="cost-rows" class="cost-list">
             {% for item in costos['items'] %}
-              <div class="cost-row" data-cost-row>
-                <div class="item-fields">
-                  <div><label>Tipo</label><select name="categoria">{% for value,label in categorias %}<option value="{{ value }}" {% if item.get('categoria','material') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-                  <div class="item-name"><label>Nombre o descripción</label><input name="nombre" value="{{ item.get('nombre','') }}" placeholder="Ej. Tubería de cobre" /></div>
-                  <div><label>Cantidad</label><input name="cantidad" type="number" min="0" step="0.01" value="{{ item.get('cantidad','') }}" /></div>
-                  <div><label>Unidad</label><select name="unidad">{% for unidad in unidades %}<option value="{{ unidad }}" {% if item.get('unidad','Pieza') == unidad %}selected{% endif %}>{{ unidad }}</option>{% endfor %}</select></div>
-                  <div><label>Costo por unidad</label><input name="costo_unitario" type="number" min="0" step="0.01" value="{{ item.get('costo_unitario','') }}" /></div>
-                  <div><label>Merma %</label><input name="merma" type="number" min="0" step="0.01" value="{{ item.get('merma',0) }}" /></div>
-                  <div class="line-total">Total: <span data-line-total>$0.00</span></div>
-                  <button class="btn btn-danger" type="button" data-remove>Quitar</button>
-                  <div class="item-note"><span>Nota</span><input name="nota" value="{{ item.get('nota','') }}" placeholder="Proveedor, referencia o aclaración" /></div>
+              <article class="cost-row" data-cost-row>
+                <button class="cost-summary" type="button" data-expand aria-expanded="false"><span class="cost-name"><strong data-row-name>{{ item.get('nombre','Sin descripción') }}</strong><span class="cost-meta"><span data-row-category></span> · <span data-row-unit>{{ item.get('unidad','Pieza') }}</span></span></span><span class="cost-math" data-row-math></span><span class="cost-total" data-line-total>$0.00</span><svg class="line-icon chevron" aria-hidden="true"><use href="#c-chevron"/></svg></button>
+                <div class="cost-detail">
+                  <div class="item-fields">
+                    <div><label>Tipo</label><select name="categoria">{% for value,label in categorias %}<option value="{{ value }}" {% if item.get('categoria','material') == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+                    <div class="item-name"><label>Nombre o descripción</label><input name="nombre" value="{{ item.get('nombre','') }}" placeholder="Ej. Tubería de cobre" /></div>
+                    <div><label>Cantidad</label><input name="cantidad" type="number" min="0" step="0.01" value="{{ item.get('cantidad','') }}" /></div>
+                    <div><label>Unidad</label><select name="unidad">{% for unidad in unidades %}<option value="{{ unidad }}" {% if item.get('unidad','Pieza') == unidad %}selected{% endif %}>{{ unidad }}</option>{% endfor %}</select></div>
+                    <div><label>Costo por unidad</label><input name="costo_unitario" type="number" min="0" step="0.01" value="{{ item.get('costo_unitario','') }}" /></div>
+                    <div><label>Merma %</label><input name="merma" type="number" min="0" step="0.01" value="{{ item.get('merma',0) }}" /></div>
+                  </div>
+                  <div class="item-note"><div><label>Nota interna</label><input name="nota" value="{{ item.get('nota','') }}" placeholder="Proveedor, referencia o aclaración" /></div><button class="btn btn-danger btn-small" type="button" data-remove><svg class="line-icon" aria-hidden="true"><use href="#c-trash"/></svg>Quitar</button></div>
                 </div>
-              </div>
+              </article>
             {% endfor %}
-            <div id="empty-list" class="empty-list" {% if costos['items'] %}hidden{% endif %}>Aún no hay conceptos. Captura uno arriba y pulsa <strong>Agregar concepto</strong>.</div>
+            <div id="empty-list" class="empty-list" {% if costos['items'] %}hidden{% endif %}>Aún no hay costos. Pulsa <strong>Agregar costo</strong> para capturar el primero.</div>
+            <div id="no-results" class="no-results" hidden>No encontramos costos con ese filtro.</div>
           </div>
         </section>
-
-        <aside class="card summary">
-          <h2>Resumen interno</h2>
-          <div class="work-selector">
-            <div>
-              <label>Cálculo / partida</label>
-              <select id="desglose-selector">
-                {% for desglose in desgloses %}
-                  <option value="{{ desglose.id }}" {% if desglose.id == costos.get('id') %}selected{% endif %}>{{ desglose.descripcion }}{% if desglose.en_cotizacion %} · en cotización{% else %} · guardado{% endif %}</option>
-                {% endfor %}
-              </select>
+        <aside class="sidebar">
+          <section class="card side-card">
+            <div class="work-selector">
+              <div><label>Cálculo / partida</label><select id="desglose-selector">{% for desglose in desgloses %}<option value="{{ desglose.id }}" {% if desglose.id == costos.get('id') %}selected{% endif %}>{{ desglose.descripcion }}{% if desglose.en_cotizacion %} · en cotización{% else %} · guardado{% endif %}</option>{% endfor %}</select></div>
+              <div class="work-actions"><a class="btn btn-small" href="{{ url_for('ver_costos_internos', nuevo=1) }}"><svg class="line-icon" aria-hidden="true"><use href="#c-plus"/></svg>Nueva partida</a></div>
             </div>
-            <a class="btn" href="{{ url_for('ver_costos_internos', nuevo=1) }}">＋ Nueva partida</a>
-          </div>
-          <div class="summary-row"><span>Costo directo</span><strong id="sum-directo">{{ totales.costo_directo|currency }}</strong></div>
-          <div class="summary-row"><span>Gastos adicionales</span><strong id="sum-extras">{{ totales.gastos_extra|currency }}</strong></div>
-          <div class="summary-row"><span>Costo total</span><strong id="sum-costo">{{ totales.costo_total|currency }}</strong></div>
-          <div class="summary-row"><span>Ganancia</span><strong id="sum-ganancia">{{ totales.ganancia|currency }}</strong></div>
-          <div class="summary-row"><span>Precio sugerido</span><strong id="sum-sugerido">{{ totales.precio_sugerido|currency }}</strong></div>
-          <div class="summary-row final"><span>Precio final sin IVA</span><strong id="sum-final">{{ totales.precio_final|currency }}</strong></div>
-          <div class="summary-row"><span>Referencia con IVA</span><strong id="sum-iva">{{ totales.precio_con_iva|currency }}</strong></div>
-
-          <div class="config">
-            <div><label>Otros gastos o imprevistos</label><input id="gastos-extra" name="gastos_extra" type="number" min="0" step="0.01" value="{{ costos.get('gastos_extra',0) }}" /></div>
-            <div class="config-pair">
-              <div><label>Tipo de ganancia</label><select id="ganancia-modo" name="ganancia_modo"><option value="porcentaje" {% if costos.get('ganancia_modo') != 'monto' %}selected{% endif %}>% sobre el costo</option><option value="monto" {% if costos.get('ganancia_modo') == 'monto' %}selected{% endif %}>Monto fijo</option></select></div>
-              <div><label>Ganancia</label><input id="ganancia-valor" name="ganancia_valor" type="number" min="0" step="0.01" value="{{ costos.get('ganancia_valor',0) }}" /></div>
-            </div>
-            <div><label>Redondear hacia arriba</label><select id="redondeo" name="redondeo"><option value="1" {% if costos.get('redondeo',1)|float == 1 %}selected{% endif %}>Sin redondeo</option><option value="10" {% if costos.get('redondeo')|float == 10 %}selected{% endif %}>A $10</option><option value="50" {% if costos.get('redondeo')|float == 50 %}selected{% endif %}>A $50</option><option value="100" {% if costos.get('redondeo')|float == 100 %}selected{% endif %}>A $100</option></select></div>
-            <div><label>Descripción que verá el cliente</label><textarea name="descripcion_publica">{{ costos.get('descripcion_publica','Suministro de materiales y servicios') }}</textarea></div>
-          </div>
-
-          <div class="privacy">Este desglose se guarda únicamente en el borrador interno. El cliente solo verá la descripción pública y el precio final.</div>
-          <div class="actions">
-            <button class="btn btn-primary" type="submit" name="accion" value="guardar">Guardar cálculo</button>
-            <button class="btn btn-ok" type="submit" name="accion" value="transferir">Usar precio en la cotización</button>
-            <button
-              class="btn btn-ok"
-              type="submit"
-              name="accion"
-              value="transferir_todos"
-              onclick="return confirm('¿Enviar todos los cálculos guardados a la cotización? Los ya vinculados se actualizarán.');"
-            >Usar todas en la cotización</button>
-          </div>
+            <div class="price-lead"><div><span>Precio sugerido</span><strong id="sum-sugerido">{{ totales.precio_sugerido|currency }}</strong></div><svg class="line-icon" aria-hidden="true"><use href="#c-calculator"/></svg></div>
+            <div class="side-stats"><div class="summary-row"><span>Costo total</span><strong id="sum-costo">{{ totales.costo_total|currency }}</strong></div><div class="summary-row"><span>Referencia con IVA</span><strong id="sum-iva">{{ totales.precio_con_iva|currency }}</strong></div></div>
+            <details open><summary>Ganancia y redondeo <svg class="line-icon chevron" aria-hidden="true"><use href="#c-chevron"/></svg></summary><div class="config"><div class="config-pair"><div><label>Tipo de ganancia</label><select id="ganancia-modo" name="ganancia_modo"><option value="porcentaje" {% if costos.get('ganancia_modo') != 'monto' %}selected{% endif %}>% sobre el costo</option><option value="monto" {% if costos.get('ganancia_modo') == 'monto' %}selected{% endif %}>Monto fijo</option></select></div><div><label>Ganancia</label><input id="ganancia-valor" name="ganancia_valor" type="number" min="0" step="0.01" value="{{ costos.get('ganancia_valor',0) }}" /></div></div><div><label>Redondear hacia arriba</label><select id="redondeo" name="redondeo"><option value="1" {% if costos.get('redondeo',1)|float == 1 %}selected{% endif %}>Sin redondeo</option><option value="10" {% if costos.get('redondeo')|float == 10 %}selected{% endif %}>A $10</option><option value="50" {% if costos.get('redondeo')|float == 50 %}selected{% endif %}>A $50</option><option value="100" {% if costos.get('redondeo')|float == 100 %}selected{% endif %}>A $100</option></select></div></div></details>
+            <details><summary>Gastos e imprevistos <svg class="line-icon chevron" aria-hidden="true"><use href="#c-chevron"/></svg></summary><div class="config"><div><label>Otros gastos o imprevistos</label><input id="gastos-extra" name="gastos_extra" type="number" min="0" step="0.01" value="{{ costos.get('gastos_extra',0) }}" /></div></div></details>
+            <details><summary>Descripción para el cliente <svg class="line-icon chevron" aria-hidden="true"><use href="#c-chevron"/></svg></summary><div class="config"><div><label>Descripción que verá el cliente</label><textarea name="descripcion_publica">{{ costos.get('descripcion_publica','Suministro de materiales y servicios') }}</textarea></div></div></details>
+          </section>
+          <div class="privacy">El cliente sólo verá la descripción pública y el precio final. Este desglose permanece interno.</div>
+          <div class="save-actions"><button class="btn btn-primary" type="submit" name="accion" value="guardar"><svg class="line-icon" aria-hidden="true"><use href="#c-save"/></svg>Guardar costos</button><button class="btn btn-ok" type="submit" name="accion" value="transferir">Usar precio en la cotización</button><button class="btn" type="submit" name="accion" value="transferir_todos" onclick="return confirm('¿Enviar todos los cálculos guardados a la cotización? Los ya vinculados se actualizarán.');">Usar todas las partidas</button></div>
         </aside>
       </div>
     </form>
   </div>
-
   <template id="row-template">
-    <div class="cost-row" data-cost-row>
-      <div class="item-fields">
-        <div><label>Tipo</label><select name="categoria">{% for value,label in categorias %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
-        <div class="item-name"><label>Nombre o descripción</label><input name="nombre" placeholder="Ej. Tubería de cobre" /></div>
-        <div><label>Cantidad</label><input name="cantidad" type="number" min="0" step="0.01" /></div>
-        <div><label>Unidad</label><select name="unidad">{% for unidad in unidades %}<option value="{{ unidad }}">{{ unidad }}</option>{% endfor %}</select></div>
-        <div><label>Costo por unidad</label><input name="costo_unitario" type="number" min="0" step="0.01" /></div>
-        <div><label>Merma %</label><input name="merma" type="number" min="0" step="0.01" value="0" /></div>
-        <div class="line-total">Total: <span data-line-total>$0.00</span></div>
-        <button class="btn btn-danger" type="button" data-remove>Quitar</button>
-        <div class="item-note"><span>Nota</span><input name="nota" placeholder="Proveedor, referencia o aclaración" /></div>
-      </div>
-    </div>
+    <article class="cost-row open" data-cost-row>
+      <button class="cost-summary" type="button" data-expand aria-expanded="true"><span class="cost-name"><strong data-row-name>Nuevo costo</strong><span class="cost-meta"><span data-row-category></span> · <span data-row-unit></span></span></span><span class="cost-math" data-row-math></span><span class="cost-total" data-line-total>$0.00</span><svg class="line-icon chevron" aria-hidden="true"><use href="#c-chevron"/></svg></button>
+      <div class="cost-detail"><div class="item-fields"><div><label>Tipo</label><select name="categoria">{% for value,label in categorias %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div><div class="item-name"><label>Nombre o descripción</label><input name="nombre" placeholder="Ej. Tubería de cobre" /></div><div><label>Cantidad</label><input name="cantidad" type="number" min="0" step="0.01" /></div><div><label>Unidad</label><select name="unidad">{% for unidad in unidades %}<option value="{{ unidad }}">{{ unidad }}</option>{% endfor %}</select></div><div><label>Costo por unidad</label><input name="costo_unitario" type="number" min="0" step="0.01" /></div><div><label>Merma %</label><input name="merma" type="number" min="0" step="0.01" value="0" /></div></div><div class="item-note"><div><label>Nota interna</label><input name="nota" placeholder="Proveedor, referencia o aclaración" /></div><button class="btn btn-danger btn-small" type="button" data-remove><svg class="line-icon" aria-hidden="true"><use href="#c-trash"/></svg>Quitar</button></div></div>
+    </article>
   </template>
-
   <script>
-    const money = value => Number(value || 0).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
-    const numberOf = input => Math.max(0, Number(input.value || 0) || 0);
-    const emptyList = document.getElementById('empty-list');
-    const breakdownSelector = document.getElementById('desglose-selector');
-    if(breakdownSelector){
-      breakdownSelector.addEventListener('change', () => {
-        window.location.href = `{{ url_for('ver_costos_internos') }}?desglose=${encodeURIComponent(breakdownSelector.value)}`;
-      });
-    }
-
-    function refreshEmptyState(){
-      emptyList.hidden = Boolean(document.querySelector('[data-cost-row]'));
-    }
-
-    function recalculate(){
-      let direct = 0;
-      document.querySelectorAll('[data-cost-row]').forEach(row => {
-        const qty = numberOf(row.querySelector('[name="cantidad"]'));
-        const unit = numberOf(row.querySelector('[name="costo_unitario"]'));
-        const waste = numberOf(row.querySelector('[name="merma"]'));
-        const total = qty * unit * (1 + waste / 100);
-        direct += total;
-        row.querySelector('[data-line-total]').textContent = money(total);
-      });
-      const extras = numberOf(document.getElementById('gastos-extra'));
-      const cost = direct + extras;
-      const gainValue = numberOf(document.getElementById('ganancia-valor'));
-      const gain = document.getElementById('ganancia-modo').value === 'monto' ? gainValue : cost * gainValue / 100;
-      const suggested = cost + gain;
-      const rounding = Math.max(1, Number(document.getElementById('redondeo').value || 1));
-      const finalPrice = suggested ? Math.ceil(suggested / rounding) * rounding : 0;
-      document.getElementById('sum-directo').textContent = money(direct);
-      document.getElementById('sum-extras').textContent = money(extras);
-      document.getElementById('sum-costo').textContent = money(cost);
-      document.getElementById('sum-ganancia').textContent = money(gain);
-      document.getElementById('sum-sugerido').textContent = money(suggested);
-      document.getElementById('sum-final').textContent = money(finalPrice);
-      document.getElementById('sum-iva').textContent = money(finalPrice * 1.16);
-    }
-
-    document.getElementById('add-row').addEventListener('click', () => {
-      const fragment = document.getElementById('row-template').content.cloneNode(true);
-      const row = fragment.querySelector('[data-cost-row]');
-      row.querySelector('[name="categoria"]').value = document.getElementById('new-categoria').value;
-      row.querySelector('[name="nombre"]').value = document.getElementById('new-nombre').value;
-      row.querySelector('[name="cantidad"]').value = document.getElementById('new-cantidad').value;
-      row.querySelector('[name="unidad"]').value = document.getElementById('new-unidad').value;
-      row.querySelector('[name="costo_unitario"]').value = document.getElementById('new-costo').value;
-      row.querySelector('[name="merma"]').value = document.getElementById('new-merma').value || '0';
-      row.querySelector('[name="nota"]').value = document.getElementById('new-nota').value;
-      document.getElementById('cost-rows').insertBefore(fragment, emptyList);
-      document.getElementById('new-nombre').value = '';
-      document.getElementById('new-cantidad').value = '';
-      document.getElementById('new-costo').value = '';
-      document.getElementById('new-merma').value = '0';
-      document.getElementById('new-nota').value = '';
-      document.getElementById('new-nombre').focus();
-      refreshEmptyState();
-      recalculate();
-    });
-    document.getElementById('cost-form').addEventListener('click', event => {
-      const button = event.target.closest('[data-remove]');
-      if(!button) return;
-      button.closest('[data-cost-row]').remove();
-      refreshEmptyState();
-      recalculate();
-    });
-    document.getElementById('cost-form').addEventListener('input', recalculate);
-    document.getElementById('cost-form').addEventListener('change', recalculate);
-    refreshEmptyState();
-    recalculate();
+    const money=value=>Number(value||0).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
+    const numberOf=input=>Math.max(0,Number(input?.value||0)||0);
+    const emptyList=document.getElementById('empty-list'),noResults=document.getElementById('no-results'),entryPanel=document.getElementById('entry-panel'),toggleEntry=document.getElementById('toggle-entry'),costSearch=document.getElementById('cost-search'),typeFilter=document.getElementById('type-filter'),breakdownSelector=document.getElementById('desglose-selector');
+    if(breakdownSelector){breakdownSelector.addEventListener('change',()=>{window.location.href=`{{ url_for('ver_costos_internos') }}?desglose=${encodeURIComponent(breakdownSelector.value)}`;});}
+    function setEntry(open){entryPanel.classList.toggle('open',open);toggleEntry.setAttribute('aria-expanded',String(open));if(open)setTimeout(()=>document.getElementById('new-nombre').focus(),0)}
+    toggleEntry.addEventListener('click',()=>setEntry(!entryPanel.classList.contains('open')));document.getElementById('close-entry').addEventListener('click',()=>setEntry(false));
+    function rows(){return[...document.querySelectorAll('[data-cost-row]')]}
+    function refreshEmptyState(){const hasRows=rows().length>0;emptyList.hidden=hasRows;applyFilters()}
+    function updateRow(row,total){const name=row.querySelector('[name="nombre"]')?.value.trim()||'Sin descripción',category=row.querySelector('[name="categoria"]'),quantity=numberOf(row.querySelector('[name="cantidad"]')),unitCost=numberOf(row.querySelector('[name="costo_unitario"]')),unit=row.querySelector('[name="unidad"]')?.value||'Pieza';row.querySelector('[data-row-name]').textContent=name;row.querySelector('[data-row-category]').textContent=category?.selectedOptions[0]?.textContent||'Otro';row.querySelector('[data-row-unit]').textContent=unit;row.querySelector('[data-row-math]').textContent=`${quantity||0} × ${money(unitCost)}`;row.querySelector('[data-line-total]').textContent=money(total)}
+    function recalculate(){let direct=0;rows().forEach(row=>{const qty=numberOf(row.querySelector('[name="cantidad"]')),unit=numberOf(row.querySelector('[name="costo_unitario"]')),waste=numberOf(row.querySelector('[name="merma"]')),total=qty*unit*(1+waste/100);direct+=total;updateRow(row,total)});const extras=numberOf(document.getElementById('gastos-extra')),cost=direct+extras,gainValue=numberOf(document.getElementById('ganancia-valor')),gain=document.getElementById('ganancia-modo').value==='monto'?gainValue:cost*gainValue/100,suggested=cost+gain,rounding=Math.max(1,Number(document.getElementById('redondeo').value||1)),finalPrice=suggested?Math.ceil(suggested/rounding)*rounding:0;document.getElementById('sum-directo').textContent=money(direct);document.getElementById('sum-extras').textContent=money(extras);document.getElementById('sum-costo').textContent=money(cost);document.getElementById('sum-ganancia').textContent=money(gain);document.getElementById('sum-sugerido').textContent=money(suggested);document.getElementById('sum-final').textContent=money(finalPrice);document.getElementById('sum-iva').textContent=money(finalPrice*1.16);applyFilters()}
+    function applyFilters(){const term=(costSearch.value||'').trim().toLocaleLowerCase('es-MX'),type=typeFilter.value;let visible=0;rows().forEach(row=>{const category=row.querySelector('[name="categoria"]')?.value||'',haystack=[row.querySelector('[name="nombre"]')?.value,row.querySelector('[name="nota"]')?.value,row.querySelector('[name="unidad"]')?.value].join(' ').toLocaleLowerCase('es-MX'),show=(!term||haystack.includes(term))&&(type==='all'||category===type);row.hidden=!show;if(show)visible+=1});document.getElementById('visible-count').textContent=String(visible);noResults.hidden=visible>0||rows().length===0}
+    document.getElementById('add-row').addEventListener('click',()=>{const nombre=document.getElementById('new-nombre').value.trim();if(!nombre){document.getElementById('new-nombre').focus();return}rows().forEach(row=>{row.classList.remove('open');row.querySelector('[data-expand]').setAttribute('aria-expanded','false')});const fragment=document.getElementById('row-template').content.cloneNode(true),row=fragment.querySelector('[data-cost-row]');row.querySelector('[name="categoria"]').value=document.getElementById('new-categoria').value;row.querySelector('[name="nombre"]').value=nombre;row.querySelector('[name="cantidad"]').value=document.getElementById('new-cantidad').value;row.querySelector('[name="unidad"]').value=document.getElementById('new-unidad').value;row.querySelector('[name="costo_unitario"]').value=document.getElementById('new-costo').value;row.querySelector('[name="merma"]').value=document.getElementById('new-merma').value||'0';row.querySelector('[name="nota"]').value=document.getElementById('new-nota').value;document.getElementById('cost-rows').insertBefore(fragment,emptyList);['new-nombre','new-cantidad','new-costo','new-nota'].forEach(id=>document.getElementById(id).value='');document.getElementById('new-merma').value='0';setEntry(false);refreshEmptyState();recalculate()});
+    document.getElementById('cost-form').addEventListener('click',event=>{const expand=event.target.closest('[data-expand]');if(expand){const row=expand.closest('[data-cost-row]'),opening=!row.classList.contains('open');rows().forEach(item=>{item.classList.remove('open');item.querySelector('[data-expand]').setAttribute('aria-expanded','false')});if(opening){row.classList.add('open');expand.setAttribute('aria-expanded','true')}return}const remove=event.target.closest('[data-remove]');if(remove){remove.closest('[data-cost-row]').remove();refreshEmptyState();recalculate()}});
+    document.getElementById('cost-form').addEventListener('input',recalculate);document.getElementById('cost-form').addEventListener('change',recalculate);costSearch.addEventListener('input',applyFilters);typeFilter.addEventListener('change',applyFilters);refreshEmptyState();recalculate();
   </script>
 </body>
 </html>
