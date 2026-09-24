@@ -1546,11 +1546,11 @@ def _actualizar_datos_cliente_desde_form():
 def agregar():
     if request.form.get("preservar_datos_cotizacion") == "1":
         if not _actualizar_datos_cliente_desde_form():
-            return redirect(url_for('inicio'))
+            return redirect(url_for('inicio', _anchor='form-partida'))
     descripcion = (request.form.get('descripcion') or '').strip()
     if not descripcion:
         flash("❌ Escribe la descripción de la partida.")
-        return redirect(url_for('inicio'))
+        return redirect(url_for('inicio', _anchor='form-partida'))
     try:
         cantidad = int(request.form['cantidad'])
         precio_texto = (request.form.get('precio') or '').strip()
@@ -1558,7 +1558,7 @@ def agregar():
         precio = float(precio_texto) if precio_texto else 0.0
     except (TypeError, ValueError):
         flash("❌ Error: Ingresa una cantidad y un precio válidos, o deja el precio vacío si está pendiente.")
-        return redirect(url_for('inicio'))
+        return redirect(url_for('inicio', _anchor='form-partida'))
 
     total = cantidad * precio
     partidas.append({
@@ -1568,7 +1568,7 @@ def agregar():
         'total': total,
         'precio_pendiente': precio_pendiente,
     })
-    return redirect(url_for('inicio'))
+    return redirect(url_for('inicio', _anchor='form-partida'))
 
 @app.route('/editar/<int:indice>', methods=['GET', 'POST'])
 def editar(indice):

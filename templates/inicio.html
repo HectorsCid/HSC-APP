@@ -193,6 +193,20 @@
     .summary-total strong{font-size:1.3rem;color:var(--brand)}
     .summary-actions{display:flex;gap:9px}
     .empty-items{padding:28px;text-align:center}
+    #form-partida{scroll-margin-top:16px}
+    @media(min-width:840px){
+      body.commerce-ui{font-size:15px}
+      .card{padding:14px}
+      input,select,textarea{padding:10px 11px;font-size:15px}
+      .btn{padding:10px 12px;font-size:14px}
+      .quote-heading .title{font-size:1.4rem}
+      .quote-heading-icon,.step-number{width:36px;height:36px}
+      .section-heading{margin-bottom:11px}
+      .description-field textarea{min-height:112px}
+      .quote-composer-grid{gap:14px}
+      .part-details{gap:8px}
+      .quote-summary-inner{padding-top:9px;padding-bottom:9px}
+    }
     @media(max-width:839px){
       .quote-top-actions .nav-label{display:none}
       .quote-top-actions .btn{padding:11px}
@@ -263,6 +277,15 @@
           formnovalidate
           title="Guardar borrador"
         ><svg class="line-icon" aria-hidden="true"><use href="#c-save"/></svg><span class="nav-label">Guardar borrador</span></button>
+        <button
+          class="btn"
+          type="submit"
+          form="form-datos"
+          formaction="{{ url_for('abrir_costos_internos') }}"
+          formmethod="post"
+          formnovalidate
+          title="Costos internos"
+        ><svg class="line-icon" aria-hidden="true"><use href="#c-calculator"/></svg><span class="nav-label">Costos internos</span></button>
         <details class="quote-overflow">
           <summary class="btn icon-btn" aria-label="Más acciones" title="Más acciones">•••</summary>
           <div class="quote-overflow-menu">
@@ -412,7 +435,6 @@
           </div>
           <div class="hint part-price-hint">El precio puede quedar pendiente mientras guardas el borrador.</div>
           <div class="composer-actions">
-            <button class="btn" type="submit" form="form-datos" formaction="{{ url_for('abrir_costos_internos') }}" formmethod="post" formnovalidate><svg class="line-icon" aria-hidden="true"><use href="#c-calculator"/></svg>Costos internos</button>
             <button class="btn btn-primary" type="submit"><svg class="line-icon" aria-hidden="true"><use href="#c-plus"/></svg>Agregar partida</button>
           </div>
         </div>
