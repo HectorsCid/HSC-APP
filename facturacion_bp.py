@@ -2370,6 +2370,8 @@ def _validated_invoice_schedule(body, previous=None):
         "last_status": (previous or {}).get("last_status", "pending"),
         "last_error": (previous or {}).get("last_error", ""),
         "last_invoice_id": (previous or {}).get("last_invoice_id", ""),
+        "last_uuid": (previous or {}).get("last_uuid", ""),
+        "last_internal_folio": (previous or {}).get("last_internal_folio", ""),
     }
 
 
@@ -2472,6 +2474,46 @@ def api_notification_read(item_id):
         return jsonify({"ok": False, "error": "No se pudo guardar el cambio."}), 503
 
 
+def _email_scheduled_invoice(schedule, template):
+    """Envía un CFDI ya existente; nunca vuelve a timbrarlo."""
+    inv_id = str(schedule.get("last_invoice_id") or "").strip()
+    if not inv_id:
+        raise RuntimeError("No existe un CFDI timbrado para reintentar el correo.")
+    folio = str(
+        schedule.get("last_internal_folio")
+        or schedule.get("last_uuid")
+        or inv_id
+    )
+    delivery = delivery_status("factura", inv_id)
+    if delivery.get("sent"):
+        return {"email_sent": True, "already_sent": True}
+    xml = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
+    pdf = _facturama_printable_pdf(xml, inv_id)
+    subject = str(schedule.get("subject") or "Factura HSC {folio}")
+    subject = subject.replace("{folio}", folio).replace(
+        "{cliente}", str(template.get("client_name") or "")
+    )
+    thread = email_thread_headers("factura", inv_id)
+    mail_result = send_cfdi_email(
+        recipient=schedule.get("recipient") or (template.get("receiver") or {}).get("email") or "",
+        cc=schedule.get("cc") or "",
+        subject=subject,
+        body=schedule.get("message") or "",
+        pdf_bytes=pdf,
+        xml_bytes=xml,
+        folio=folio,
+        **thread,
+    )
+    record_email_delivery(
+        "factura", inv_id,
+        recipients=mail_result.get("recipients") or [],
+        cc=mail_result.get("cc") or [],
+        folio=folio,
+        message_id=mail_result.get("message_id") or "",
+    )
+    return {"email_sent": True, "already_sent": False}
+
+
 def _stamp_scheduled_invoice(schedule, template, run_key):
     payload = _template_invoice_payload(template, schedule, run_key)
     with current_app.test_request_context("/api/facturar", method="POST", json=payload):
@@ -2482,24 +2524,36 @@ def _stamp_scheduled_invoice(schedule, template, run_key):
     # Si el correo falla después, conservar la identidad del CFDI ya timbrado.
     schedule["last_invoice_id"] = str(data.get("invoice_id") or "")
     schedule["last_uuid"] = str(data.get("uuid") or "")
+    schedule["last_internal_folio"] = str(data.get("internal_folio") or "")
     if schedule.get("mode") == "auto_stamp_email":
-        inv_id = str(data.get("invoice_id") or "")
-        folio = str(data.get("internal_folio") or data.get("uuid") or inv_id)
-        xml = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
-        pdf = _facturama_printable_pdf(xml, inv_id)
-        subject = str(schedule.get("subject") or "Factura HSC {folio}").replace("{folio}", folio).replace("{cliente}", str(template.get("client_name") or ""))
-        delivery = delivery_status("factura", inv_id)
-        if not delivery.get("sent"):
-            thread = email_thread_headers("factura", inv_id)
-            mail_result = send_cfdi_email(
-                recipient=schedule.get("recipient") or (template.get("receiver") or {}).get("email") or "",
-                cc=schedule.get("cc") or "", subject=subject, body=schedule.get("message") or "",
-                pdf_bytes=pdf, xml_bytes=xml, folio=folio,
-                **thread,
-            )
-            record_email_delivery("factura", inv_id, recipients=mail_result.get("recipients") or [], cc=mail_result.get("cc") or [], folio=folio, message_id=mail_result.get("message_id") or "")
-        data["email_sent"] = True
+        data.update(_email_scheduled_invoice(schedule, template))
     return data
+
+
+@facturacion_bp.post("/invoice-schedules/<schedule_id>/retry-email")
+def api_retry_invoice_schedule_email(schedule_id):
+    """Reintenta sólo el correo del último CFDI, sin consumir otro folio."""
+    schedules = _read_invoice_schedules()
+    schedule = next((row for row in schedules if str(row.get("id")) == str(schedule_id)), None)
+    if not schedule:
+        return jsonify({"ok": False, "error": "La programación ya no existe."}), 404
+    if schedule.get("mode") != "auto_stamp_email" or not schedule.get("last_invoice_id"):
+        return jsonify({"ok": False, "error": "Esta programación no tiene un correo pendiente de un CFDI timbrado."}), 400
+    template = next((row for row in _read_invoice_templates() if str(row.get("id")) == str(schedule.get("template_id"))), None)
+    if not template:
+        return jsonify({"ok": False, "error": "La plantilla asociada ya no existe."}), 404
+    try:
+        result = _email_scheduled_invoice(schedule, template)
+        schedule["last_status"] = "completed"
+        schedule["last_error"] = ""
+        schedule["email_retried_at"] = _local_now().isoformat(timespec="seconds")
+        drive_ok = _write_invoice_schedules(schedules)
+        return jsonify({"ok": True, "drive_backup": drive_ok, **result}), 200
+    except Exception as exc:
+        schedule["last_status"] = "email_error"
+        schedule["last_error"] = str(exc)[:500]
+        _write_invoice_schedules(schedules)
+        return jsonify({"ok": False, "error": str(exc)}), 502
 
 
 @facturacion_bp.post("/invoice-schedules/run")
@@ -2541,7 +2595,15 @@ def api_run_invoice_schedules():
                 _send_push_notifications("Factura programada requiere atención",
                                          f"{schedule.get('name')}: la plantilla ya no existe.",
                                          "/facturacion?tab=plantillas", f"invoice-schedule-error-{schedule.get('id')}-{run_key}")
-            elif schedule.get("mode") in {"reminder", "confirm"}:
+            elif schedule.get("mode") == "reminder":
+                schedule["last_status"] = "reminded"
+                _send_push_notifications(
+                    "Recordatorio de factura",
+                    f"{schedule.get('name')}: revisa la plantilla cuando estés listo.",
+                    "/facturacion?tab=plantillas",
+                    f"invoice-schedule-{schedule.get('id')}-{run_key}",
+                )
+            elif schedule.get("mode") == "confirm":
                 schedule["last_status"] = "awaiting_confirmation"
                 _send_push_notifications(
                     "Factura lista para revisar",
@@ -2551,6 +2613,9 @@ def api_run_invoice_schedules():
                 )
             else:
                 try:
+                    schedule["last_invoice_id"] = ""
+                    schedule["last_uuid"] = ""
+                    schedule["last_internal_folio"] = ""
                     result = _stamp_scheduled_invoice(schedule, template, run_key)
                     schedule["last_status"] = "completed"
                     schedule["last_invoice_id"] = str(result.get("invoice_id") or "")
@@ -2561,16 +2626,24 @@ def api_run_invoice_schedules():
                         "/facturacion", f"invoice-schedule-{schedule.get('id')}-{run_key}",
                     )
                 except Exception as exc:
-                    schedule["last_status"] = "error"
+                    schedule["last_status"] = (
+                        "email_error"
+                        if schedule.get("mode") == "auto_stamp_email" and schedule.get("last_invoice_id")
+                        else "error"
+                    )
                     schedule["last_error"] = str(exc)[:500]
                     _send_push_notifications(
                         "Factura programada requiere atención",
-                        f"No se completó {schedule.get('name')}. Revisa si ya se timbró antes de reintentar.",
+                        (
+                            f"{schedule.get('name')} ya se timbró, pero el correo no salió. Puedes reintentar sólo el envío."
+                            if schedule.get("last_status") == "email_error"
+                            else f"No se completó {schedule.get('name')}. Revisa el detalle antes de reintentar."
+                        ),
                         "/facturacion?tab=plantillas", f"invoice-schedule-error-{schedule.get('id')}-{run_key}",
                     )
             processed.append({"id": schedule.get("id"), "status": schedule.get("last_status"), "error": schedule.get("last_error", "")})
         drive_ok = _write_invoice_schedules(schedules) if processed else True
-        failures = sum(row.get("status") == "error" for row in processed)
+        failures = sum(row.get("status") in {"error", "email_error"} for row in processed)
         notices.record_job("facturas_programadas", "error" if failures else "ok",
                            processed=len(processed), errors=failures, drive_backup=drive_ok)
         return jsonify({"ok": True, "processed": processed, "drive_backup": drive_ok, "checked_at": now.isoformat()}), 200

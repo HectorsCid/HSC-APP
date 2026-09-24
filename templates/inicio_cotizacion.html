@@ -502,8 +502,10 @@
         }
         const blob = await response.blob();
         const safeFolio = String(context.folio || context.id || 'cotizacion').replace(/[^a-z0-9_-]+/gi, '-');
-        const file = new File([blob], `Cotizacion-HSC-${safeFolio}.pdf`, {type:'application/pdf'});
-        const title = `Cotización HSC ${context.folio || ''}`.trim();
+        const clientName = String(context.cliente || 'Cliente').trim();
+        const safeClient = clientName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'Cliente';
+        const file = new File([blob], `Cotizacion-${safeClient}-${safeFolio}.pdf`, {type:'application/pdf'});
+        const title = `Cotización para ${clientName} · Folio ${context.folio || context.id || ''}`.trim();
         if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
           await navigator.share({title, text:title, files:[file]});
           quoteShareWhatsapp.disabled = false;

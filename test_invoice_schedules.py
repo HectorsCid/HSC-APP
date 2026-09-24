@@ -83,6 +83,42 @@ class InvoiceScheduleTests(unittest.TestCase):
         self.assertEqual(notify.call_count, 1)
         self.assertTrue(written)
 
+    def test_reminder_does_not_ask_to_confirm_stamping(self):
+        key = "scheduler-key-with-20-characters"
+        due = datetime.now(ZoneInfo("America/Mexico_City")) - timedelta(minutes=5)
+        schedules = [{
+            "id": "schedule-reminder", "name": "Revisar factura Alpha", "template_id": "template-1",
+            "day": due.day, "time": due.strftime("%H:%M"), "mode": "reminder", "active": True,
+            "next_run": due.isoformat(), "last_run_key": "", "last_status": "pending",
+        }]
+        with patch.dict(os.environ, {"HSC_SCHEDULER_KEY": key}, clear=False), patch.object(
+            billing, "_read_invoice_schedules", return_value=schedules
+        ), patch.object(billing, "_read_invoice_templates", return_value=[TEMPLATE]), patch.object(
+            billing, "_write_invoice_schedules", return_value=True
+        ), patch.object(billing, "_send_push_notifications") as notify:
+            response = self.client.post("/api/invoice-schedules/run", headers={"X-HSC-Scheduler-Key": key})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["processed"][0]["status"], "reminded")
+        self.assertIn("Recordatorio", notify.call_args.args[0])
+        self.assertNotIn("confirmar", notify.call_args.args[1].lower())
+
+    def test_retry_email_never_stamps_a_second_invoice(self):
+        schedule = {
+            "id": "schedule-email", "template_id": "template-1", "mode": "auto_stamp_email",
+            "last_status": "email_error", "last_invoice_id": "invoice-existing",
+            "last_uuid": "uuid-existing", "last_internal_folio": "1400",
+        }
+        with patch.object(billing, "_read_invoice_schedules", return_value=[schedule]), patch.object(
+            billing, "_read_invoice_templates", return_value=[TEMPLATE]
+        ), patch.object(billing, "_email_scheduled_invoice", return_value={"email_sent": True}) as send_only, patch.object(
+            billing, "_stamp_scheduled_invoice"
+        ) as stamp, patch.object(billing, "_write_invoice_schedules", return_value=True):
+            response = self.client.post("/api/invoice-schedules/schedule-email/retry-email")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["ok"])
+        send_only.assert_called_once()
+        stamp.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -133,6 +133,7 @@ _COTIZACIONES_DATA_LOCK = threading.RLock()
 _BORRADORES_DATA_LOCK = threading.RLock()
 _ARTICULOS_DATA_LOCK = threading.RLock()
 _FOLIO_ASSIGN_LOCK = threading.Lock()
+_QUOTE_STATE_LOCK = threading.RLock()
 
 # --- Google Sheets datos ---
 SHEET_ID = "15xLRRfR_Leidnd34Cpr3ERbpJ7AaMelMxMa-9B0d6kQ"
@@ -1507,29 +1508,38 @@ def guardar_datos():
 
 def _actualizar_datos_cliente_desde_form():
     """Copia el formulario activo sin generar PDF ni alterar el historial."""
-    cliente = request.form.get('cliente')
-    try:
-        sucursal = select_branch(request.form.get('sucursal'),
-            _catalogo_sucursales_cotizacion().get(cliente, []), current_client=cliente,
-            previous_client=datos_cliente.get('cliente'), previous_branch=datos_cliente.get('sucursal'))
-    except ValueError as exc:
-        flash(str(exc))
+    cliente_solicitado = (request.form.get('cliente') or '').strip()
+    cliente, _ = _resolver_cliente_catalogo(cliente_solicitado)
+    if not cliente:
+        flash("Selecciona un cliente válido antes de continuar.")
         return False
-    datos_cliente['cliente'] = cliente
-    datos_cliente['sucursal'] = sucursal
-    datos_cliente['atencion'] = request.form.getlist('atencion')
-    datos_cliente['direccion'] = request.form.get('direccion', '')
-    datos_cliente['fecha'] = request.form.get('fecha', '')
-    datos_cliente['anticipo'] = request.form.get('anticipo', '')
-    datos_cliente['tiempo'] = request.form.get('tiempo', '')
-    datos_cliente['vigencia'] = request.form.get('vigencia', '')
-    datos_cliente['cotizacion'] = request.form.get('cotizacion', '')
-    datos_cliente['nombre_borrador'] = (request.form.get('nombre_borrador') or '').strip()
-    datos_cliente['comentarios'] = request.form.get('comentarios', '')
-    datos_cliente["retencion_isr_tasa"] = request.form.get("retencion_isr_tasa", "0")
-    datos_cliente["retencion_iva_tasa"] = request.form.get("retencion_iva_tasa", "0")
-    tasa_isr, tasa_iva_ret = _tasas_retencion(datos_cliente)
-    datos_cliente["usar_retenciones"] = bool(tasa_isr or tasa_iva_ret)
+    with _QUOTE_STATE_LOCK:
+        try:
+            sucursal = select_branch(
+                request.form.get('sucursal'),
+                _catalogo_sucursales_cotizacion().get(cliente, []),
+                current_client=cliente,
+                previous_client=datos_cliente.get('cliente'),
+                previous_branch=datos_cliente.get('sucursal'),
+            )
+        except ValueError as exc:
+            flash(str(exc))
+            return False
+        datos_cliente['cliente'] = cliente
+        datos_cliente['sucursal'] = sucursal
+        datos_cliente['atencion'] = request.form.getlist('atencion')
+        datos_cliente['direccion'] = request.form.get('direccion', '')
+        datos_cliente['fecha'] = request.form.get('fecha', '')
+        datos_cliente['anticipo'] = request.form.get('anticipo', '')
+        datos_cliente['tiempo'] = request.form.get('tiempo', '')
+        datos_cliente['vigencia'] = request.form.get('vigencia', '')
+        datos_cliente['cotizacion'] = request.form.get('cotizacion', '')
+        datos_cliente['nombre_borrador'] = (request.form.get('nombre_borrador') or '').strip()
+        datos_cliente['comentarios'] = request.form.get('comentarios', '')
+        datos_cliente["retencion_isr_tasa"] = request.form.get("retencion_isr_tasa", "0")
+        datos_cliente["retencion_iva_tasa"] = request.form.get("retencion_iva_tasa", "0")
+        tasa_isr, tasa_iva_ret = _tasas_retencion(datos_cliente)
+        datos_cliente["usar_retenciones"] = bool(tasa_isr or tasa_iva_ret)
     return True
 
 @app.route('/agregar', methods=['POST'])
@@ -2194,23 +2204,25 @@ def guardar_costos_internos():
 @app.route('/generar_pdf', methods=['GET', 'POST'])
 def generar_pdf():
     import shutil
-    if request.method == 'POST':
-        if not _actualizar_datos_cliente_desde_form():
-            return redirect(url_for('inicio'))
-    pendientes = [p for p in partidas if p.get("precio_pendiente")]
-    if pendientes:
-        flash(
-            "No se puede generar el PDF: hay partidas con precio pendiente. "
-            "Complétalas o guarda la cotización como borrador."
-        )
-        return redirect(url_for("inicio"))
-    _asegurar_folio_actual()
-    # Congelar datos a disco
-    guardar_datos(datos_cliente)
-    guardar_partidas(partidas)
-
-    datos = dict(datos_cliente)
-    partidas_actuales = list(partidas)
+    # Cliente, folio y partidas deben pertenecer a la misma captura. El servidor
+    # atiende más de una solicitud a la vez, por lo que la instantánea se toma
+    # bajo un único candado antes de iniciar el render y la subida a Drive.
+    with _QUOTE_STATE_LOCK:
+        if request.method == 'POST':
+            if not _actualizar_datos_cliente_desde_form():
+                return redirect(url_for('inicio'))
+        pendientes = [p for p in partidas if p.get("precio_pendiente")]
+        if pendientes:
+            flash(
+                "No se puede generar el PDF: hay partidas con precio pendiente. "
+                "Complétalas o guarda la cotización como borrador."
+            )
+            return redirect(url_for("inicio"))
+        _asegurar_folio_actual()
+        datos = dict(datos_cliente)
+        partidas_actuales = [dict(p) for p in partidas]
+        guardar_datos(datos)
+        guardar_partidas(partidas_actuales)
 
     # Totales (mismo cálculo que en vista_previa)
     subtotal = sum((p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0) for p in partidas_actuales)
@@ -2608,11 +2620,12 @@ def guardar_partidas(partidas):
 # ============================ VISTA PREVIA (HTML en navegador) =============================
 @app.route('/vista_previa', methods=['GET', 'POST'])
 def vista_previa():
-    if request.method == 'POST':
-        if not _actualizar_datos_cliente_desde_form():
-            return redirect(url_for('inicio'))
-    datos = dict(datos_cliente)
-    partidas_actuales = list(partidas)
+    with _QUOTE_STATE_LOCK:
+        if request.method == 'POST':
+            if not _actualizar_datos_cliente_desde_form():
+                return redirect(url_for('inicio'))
+        datos = dict(datos_cliente)
+        partidas_actuales = [dict(p) for p in partidas]
 
     subtotal = sum((p.get('cantidad', 0) or 0) * (p.get('precio', 0.0) or 0.0) for p in partidas_actuales)
     iva = subtotal * 0.16

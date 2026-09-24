@@ -109,7 +109,7 @@
     const shareNote = document.getElementById('shareNote');
     const pdfUrl = {{ pdf_descarga_url|tojson }};
     const fileName = {{ nombre_archivo|tojson }};
-    const shareTitle = {{ ('Cotización HSC ' ~ folio)|tojson }};
+    const shareTitle = {{ ('Cotización para ' ~ cliente ~ ' · Folio ' ~ folio)|tojson }};
 
     function showNote(message) {
       shareNote.textContent = message;
