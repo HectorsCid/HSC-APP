@@ -91,9 +91,38 @@
   .pdf-footer .hr { border-top: 1px solid #e5e7eb; margin-bottom: 6px; }
   .pdf-footer .gridf { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
   .small { font-size: 10.5px; color: #6b7280; }
+  .preview-toolbar {
+    position: sticky; top: 0; z-index: 1000; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px; margin: 0 0 16px; padding: 11px 14px;
+    border-radius: 0 0 12px 12px; background: #172033; color: #f8fafc;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .2); font-size: 14px;
+  }
+  .preview-toolbar strong { display: block; font-size: 14px; }
+  .preview-toolbar small { color: #cbd5e1; }
+  .preview-actions { display: flex; gap: 8px; }
+  .preview-btn {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 40px;
+    padding: 9px 13px; border: 1px solid #64748b; border-radius: 9px;
+    color: #f8fafc; background: #253349; text-decoration: none; font-weight: 700;
+  }
+  .preview-btn.primary { border-color: #4b83c3; background: #4b83c3; color: #fff; }
+  @media (max-width: 620px) {
+    .preview-toolbar { align-items: stretch; flex-direction: column; }
+    .preview-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  }
+  @media print { .preview-toolbar { display: none !important; } }
 </style>
 </head>
 <body>
+  {% if preview %}
+  <nav class="preview-toolbar" aria-label="Acciones de vista previa">
+    <div><strong>Vista previa de la cotización</strong><small>Revisa el documento antes de generar el PDF.</small></div>
+    <div class="preview-actions">
+      <a class="preview-btn" href="{{ url_for('inicio', _anchor='form-partida') }}">← Volver a editar</a>
+      <a class="preview-btn primary" href="{{ url_for('generar_pdf') }}">Generar PDF</a>
+    </div>
+  </nav>
+  {% endif %}
   {# ---- Defaults/guards for retenciones ---- #}
   {% set _datos = datos if datos is defined else {} %}
   {% set usar_retenciones = (_datos.get('usar_retenciones') if _datos is mapping else false) %}
