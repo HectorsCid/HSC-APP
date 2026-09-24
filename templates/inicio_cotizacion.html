@@ -65,7 +65,7 @@
     .table-actions .btn{width:100%;min-width:0;padding:7px 7px;border-radius:9px;font-size:11px;line-height:1.1;min-height:34px;gap:4px;overflow:hidden;text-overflow:ellipsis}
     .table-actions form{display:block;width:100%;margin:0}
     .quote-more{font-size:18px!important;letter-spacing:1px;padding:0!important}
-    .quote-menu{display:none;position:absolute;z-index:8;right:0;top:40px;width:178px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:0 18px 45px rgba(0,0,0,.2)}
+    .quote-menu{display:none;position:fixed;z-index:30;width:190px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:0 18px 45px rgba(0,0,0,.28)}
     .quote-menu.open{display:grid;gap:3px}
     .quote-menu .btn,.quote-menu form .btn{width:100%;justify-content:flex-start;background:transparent;border-color:transparent;color:var(--ink);font-size:12px;min-height:34px;padding:8px 9px}
     .quote-menu .btn:hover{background:var(--button-hover)}
@@ -103,7 +103,7 @@
     @media(max-width:700px){
       .top{align-items:flex-start;flex-wrap:wrap}
       .top>.actions{width:100%}
-      .wrap{padding:12px}.card{padding:12px}.table-wrap{max-height:none}tbody tr{grid-template-columns:minmax(0,1fr) auto;gap:7px;padding:14px 12px}tbody td:nth-child(1){grid-column:1;grid-row:1}tbody td:nth-child(2){grid-column:1;grid-row:2}tbody td:nth-child(3){grid-column:2;grid-row:1}tbody td:nth-child(4){grid-column:2;grid-row:2}tbody td:nth-child(5){grid-column:1/-1;grid-row:3}.summary-cell{max-width:none}tbody td:nth-child(6){grid-column:1/-1;grid-row:4}.table-actions{max-width:none;grid-template-columns:repeat(3,minmax(0,1fr)) 40px}.table-actions .btn{min-height:40px}.quote-menu{right:0;top:auto;bottom:46px}.channel-grid{grid-template-columns:1fr}
+      .wrap{padding:12px}.card{padding:12px}.table-wrap{max-height:none;overflow:visible}tbody tr{grid-template-columns:minmax(0,1fr) auto;gap:7px;padding:14px 12px}tbody td:nth-child(1){grid-column:1;grid-row:1}tbody td:nth-child(2){grid-column:1;grid-row:2}tbody td:nth-child(3){grid-column:2;grid-row:1}tbody td:nth-child(4){grid-column:2;grid-row:2}tbody td:nth-child(5){grid-column:1/-1;grid-row:3}.summary-cell{max-width:none}tbody td:nth-child(6){grid-column:1/-1;grid-row:4}.table-actions{max-width:none;grid-template-columns:repeat(3,minmax(0,1fr)) 40px}.table-actions .btn{min-height:40px}.channel-grid{grid-template-columns:1fr}
     }
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
@@ -276,10 +276,13 @@
       el.className = 'flash ' + (ok ? 'ok' : 'err');
       el.textContent = t;
     };
-    document.addEventListener('click', () => {
+    function closeQuoteMenus(){
       tbody.querySelectorAll('.quote-menu.open').forEach(item=>item.classList.remove('open'));
       tbody.querySelectorAll('button[data-quote-more]').forEach(item=>item.setAttribute('aria-expanded','false'));
-    });
+    }
+    document.addEventListener('click', closeQuoteMenus);
+    document.querySelector('.table-wrap').addEventListener('scroll', closeQuoteMenus, {passive:true});
+    window.addEventListener('resize', closeQuoteMenus, {passive:true});
 
     async function fetchList(){
       const urls = ['/api/cotizaciones/list?limit=100','/api/cotizaciones?limit=100','/api/quotes/list?limit=100'];
@@ -439,9 +442,21 @@
           const id = btn.getAttribute('data-quote-more');
           const menu = tbody.querySelector(`[data-quote-menu="${CSS.escape(id)}"]`);
           const shouldOpen = menu && !menu.classList.contains('open');
-          tbody.querySelectorAll('.quote-menu.open').forEach(item=>item.classList.remove('open'));
-          tbody.querySelectorAll('button[data-quote-more]').forEach(item=>item.setAttribute('aria-expanded','false'));
-          if(shouldOpen){menu.classList.add('open');btn.setAttribute('aria-expanded','true');}
+          closeQuoteMenus();
+          if(shouldOpen){
+            menu.style.visibility='hidden';
+            menu.classList.add('open');
+            const trigger=btn.getBoundingClientRect();
+            const size=menu.getBoundingClientRect();
+            const gap=6;
+            const openAbove=(window.innerHeight-trigger.bottom)<(size.height+gap) && trigger.top>(size.height+gap);
+            const top=Math.max(8,Math.min(window.innerHeight-size.height-8,openAbove?trigger.top-size.height-gap:trigger.bottom+gap));
+            const left=Math.max(8,Math.min(window.innerWidth-size.width-8,trigger.right-size.width));
+            menu.style.top=`${top}px`;
+            menu.style.left=`${left}px`;
+            menu.style.visibility='visible';
+            btn.setAttribute('aria-expanded','true');
+          }
         };
       });
       tbody.querySelectorAll('button[data-quote-docs]').forEach(btn=>{
