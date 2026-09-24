@@ -166,10 +166,13 @@
     .fiscal-options[open] summary::after{content:'-'}
     .fiscal-body{padding-top:8px}
     .quote-composer{margin-top:16px}
-    .quote-composer-grid{display:grid;grid-template-columns:minmax(0,1fr) 130px 170px;gap:12px;align-items:end}
-    .description-field{grid-row:span 2}
-    .description-field textarea{min-height:154px;line-height:1.45}
-    .composer-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end;grid-column:2/-1}
+    .quote-composer-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(320px,.75fr);gap:18px;align-items:start}
+    .description-field textarea{min-height:132px;line-height:1.45}
+    .part-details{display:grid;gap:10px;align-content:start}
+    .part-numbers{display:grid;grid-template-columns:minmax(100px,.7fr) minmax(150px,1fr);gap:10px;align-items:start}
+    .part-details label{margin-top:0}
+    .part-price-hint{min-height:34px;margin-top:5px}
+    .composer-actions{display:flex;gap:10px;align-items:center;justify-content:flex-end}
     .composer-actions .btn-primary{min-width:142px}
     input[type=number]{appearance:textfield;-moz-appearance:textfield}
     input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
@@ -201,10 +204,10 @@
       .quote-heading{width:100%}
       .quote-top-actions{width:100%;justify-content:flex-end}
       .quote-top-actions .theme-text{display:none}
-      .quote-composer-grid{grid-template-columns:1fr 1fr}
-      .description-field{grid-column:1/-1;grid-row:auto}
-      .description-field textarea{min-height:176px}
-      .composer-actions{grid-column:1/-1;justify-content:stretch}
+      .quote-composer-grid{grid-template-columns:1fr}
+      .description-field textarea{min-height:148px}
+      .part-numbers{grid-template-columns:1fr 1fr}
+      .composer-actions{justify-content:stretch}
       .composer-actions .btn{flex:1}
       .branch-row{grid-template-columns:minmax(0,1fr) 46px}
       .table-wrap{border:0;background:transparent;overflow:visible}
@@ -396,18 +399,22 @@
           <label for="descripcion-partida">Descripción</label>
           <textarea id="descripcion-partida" name="descripcion" rows="6" placeholder="Escribe la descripción completa que verá el cliente…" required></textarea>
         </div>
-        <div>
-          <label>Cantidad</label>
-          <input type="number" name="cantidad" step="1" min="1" value="1" inputmode="numeric" />
-        </div>
-        <div>
-          <label>Precio</label>
-          <input type="number" name="precio" step="0.01" min="0" inputmode="decimal" placeholder="$0.00" />
-          <div class="hint">Puedes dejarlo vacío y guardar la cotización como borrador.</div>
-        </div>
-        <div class="composer-actions">
-          <button class="btn" type="submit" form="form-datos" formaction="{{ url_for('abrir_costos_internos') }}" formmethod="post" formnovalidate><svg class="line-icon" aria-hidden="true"><use href="#c-calculator"/></svg>Costos internos</button>
-          <button class="btn btn-primary" type="submit"><svg class="line-icon" aria-hidden="true"><use href="#c-plus"/></svg>Agregar partida</button>
+        <div class="part-details">
+          <div class="part-numbers">
+            <div>
+              <label>Cantidad</label>
+              <input type="number" name="cantidad" step="1" min="1" value="1" inputmode="numeric" />
+            </div>
+            <div>
+              <label>Precio</label>
+              <input type="number" name="precio" step="0.01" min="0" inputmode="decimal" placeholder="$0.00" />
+            </div>
+          </div>
+          <div class="hint part-price-hint">El precio puede quedar pendiente mientras guardas el borrador.</div>
+          <div class="composer-actions">
+            <button class="btn" type="submit" form="form-datos" formaction="{{ url_for('abrir_costos_internos') }}" formmethod="post" formnovalidate><svg class="line-icon" aria-hidden="true"><use href="#c-calculator"/></svg>Costos internos</button>
+            <button class="btn btn-primary" type="submit"><svg class="line-icon" aria-hidden="true"><use href="#c-plus"/></svg>Agregar partida</button>
+          </div>
         </div>
       </div>
     </form>
