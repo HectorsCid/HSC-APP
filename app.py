@@ -5501,6 +5501,32 @@ def _pdf_cotizacion_bytes(cotizacion):
     raise FileNotFoundError("No se encontró el PDF de esta cotización en el respaldo local ni en Google Drive.")
 
 
+@app.get("/api/cotizaciones/<qid>/pdf")
+def api_pdf_cotizacion(qid):
+    """Entrega el PDF histórico para descargarlo o compartirlo desde la app."""
+    cotizacion = _buscar_cotizacion_registrada(qid)
+    if not cotizacion:
+        return jsonify(ok=False, error="No se encontró la cotización."), 404
+    try:
+        cliente = str(cotizacion.get("cliente") or "Cliente").strip()
+        sucursal = str(cotizacion.get("sucursal") or (cotizacion.get("datos") or {}).get("sucursal") or "").strip()
+        folio = str(cotizacion.get("folio") or cotizacion.get("id") or qid).strip()
+        partes = [valor.replace("/", "-").replace("\\", "-") for valor in (cliente, sucursal, folio) if valor]
+        nombre = " - ".join(partes) + ".pdf"
+        return send_file(
+            io.BytesIO(_pdf_cotizacion_bytes(cotizacion)),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=nombre,
+            max_age=0,
+        )
+    except FileNotFoundError as exc:
+        return jsonify(ok=False, error=str(exc)), 404
+    except Exception:
+        current_app.logger.exception("No se pudo preparar el PDF de la cotización %s", qid)
+        return jsonify(ok=False, error="No se pudo preparar el PDF. Intenta nuevamente."), 502
+
+
 def _correos_cotizacion(cotizacion):
     nombre = str(cotizacion.get("cliente") or "").strip()
     receptor = cotizacion.get("receptor") or {}

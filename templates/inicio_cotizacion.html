@@ -39,6 +39,11 @@
     .btn-accent{background:var(--accent);color:#fff;border-color:transparent}
     .btn-ok{background:var(--ok);color:#fff;border-color:transparent}
     .btn-danger{background:var(--danger);color:#fff;border-color:transparent}
+    .btn-danger-subtle{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--line));background:transparent}
+    .btn-danger-subtle:hover{background:color-mix(in srgb,var(--danger) 10%,var(--button))}
+    .table-actions .btn-action-main{background:color-mix(in srgb,var(--ok) 11%,var(--button));border-color:color-mix(in srgb,var(--ok) 32%,var(--line));color:color-mix(in srgb,var(--ok) 68%,var(--ink))}
+    .table-actions .btn-share{background:color-mix(in srgb,var(--accent) 10%,var(--button));border-color:color-mix(in srgb,var(--accent) 30%,var(--line));color:color-mix(in srgb,var(--accent) 66%,var(--ink))}
+    .table-actions .btn-danger-subtle{border-color:color-mix(in srgb,var(--danger) 28%,var(--line));color:color-mix(in srgb,var(--danger) 62%,var(--ink))}
     .btn-mail-pending{background:var(--ok-flash)!important;border-color:color-mix(in srgb,var(--ok) 45%,var(--line))!important;color:var(--ok-flash-ink)!important}
     .tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
     .tab-active{background:var(--brand);color:#fff;border-color:transparent}
@@ -81,10 +86,17 @@
     .mail-history{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.mail-history:empty{display:none}
     .history-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:5px 7px;background:var(--button);color:var(--ink);font-size:11px;cursor:pointer}
     .history-remove{border:0;background:transparent;color:var(--muted);padding:0 2px;cursor:pointer;font-weight:900}
+    .channel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .channel-option{display:flex;min-height:104px;padding:16px;align-items:flex-start;gap:12px;text-align:left;border:1px solid var(--line);border-radius:14px;background:var(--button);color:var(--ink);cursor:pointer;font:inherit}
+    .channel-option:hover{background:var(--button-hover);border-color:var(--accent)}
+    .channel-option .line-icon{width:23px;height:23px;flex:0 0 23px;color:var(--accent)}
+    .channel-option.whatsapp .line-icon{color:var(--ok)}
+    .channel-option strong,.channel-option span{display:block}.channel-option strong{font-size:15px;margin-bottom:5px}.channel-option span{font-size:12px;line-height:1.4;color:var(--muted)}
+    .share-status{min-height:18px;margin-top:2px}
     @media(max-width:700px){
       .top{align-items:flex-start;flex-wrap:wrap}
       .top>.actions{width:100%}
-      .table-wrap{max-height:none}tbody tr{grid-template-columns:minmax(0,1fr) auto;gap:7px;padding:12px}tbody td:nth-child(1){grid-column:1;grid-row:1}tbody td:nth-child(2){grid-column:1;grid-row:2}tbody td:nth-child(3){grid-column:2;grid-row:1}tbody td:nth-child(4){grid-column:2;grid-row:2}tbody td:nth-child(5){grid-column:1/-1;grid-row:3}.summary-cell{max-width:none}tbody td:nth-child(6){grid-column:1/-1;grid-row:4}.table-actions{max-width:none;grid-template-columns:repeat(3,minmax(0,1fr))}
+      .table-wrap{max-height:none}tbody tr{grid-template-columns:minmax(0,1fr) auto;gap:7px;padding:12px}tbody td:nth-child(1){grid-column:1;grid-row:1}tbody td:nth-child(2){grid-column:1;grid-row:2}tbody td:nth-child(3){grid-column:2;grid-row:1}tbody td:nth-child(4){grid-column:2;grid-row:2}tbody td:nth-child(5){grid-column:1/-1;grid-row:3}.summary-cell{max-width:none}tbody td:nth-child(6){grid-column:1/-1;grid-row:4}.table-actions{max-width:none;grid-template-columns:repeat(3,minmax(0,1fr))}.channel-grid{grid-template-columns:1fr}
     }
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
@@ -205,6 +217,30 @@
         <button id="quoteMailCancel" class="btn" type="button">Cancelar</button>
         <button id="quoteMailSend" class="btn btn-accent" type="button"><svg class="line-icon" aria-hidden="true"><use href="#c-mail"/></svg>Enviar cotización</button>
       </div>
+    </div>
+  </div>
+
+  <div id="quoteShare" class="mail-backdrop" aria-modal="true" role="dialog" aria-labelledby="quoteShareTitle">
+    <div class="mail-card" role="document">
+      <div class="mail-head">
+        <div class="mail-title" id="quoteShareTitle">Enviar cotización</div>
+        <button id="quoteShareClose" class="mail-close" type="button" aria-label="Cerrar">×</button>
+      </div>
+      <div class="mail-body">
+        <div class="mail-hint" id="quoteShareSummary">Elige cómo quieres compartir el PDF.</div>
+        <div class="channel-grid">
+          <button id="quoteShareEmail" class="channel-option" type="button">
+            <svg class="line-icon" aria-hidden="true"><use href="#c-mail"/></svg>
+            <span><strong>Correo</strong><span id="quoteShareEmailHint">Enviar el PDF con el formulario de correo.</span></span>
+          </button>
+          <button id="quoteShareWhatsapp" class="channel-option whatsapp" type="button">
+            <svg class="line-icon" aria-hidden="true"><use href="#c-external"/></svg>
+            <span><strong>WhatsApp</strong><span>Preparar y compartir el PDF desde este dispositivo.</span></span>
+          </button>
+        </div>
+        <div id="quoteShareStatus" class="mail-hint share-status" role="status"></div>
+      </div>
+      <div class="mail-actions"><button id="quoteShareCancel" class="btn" type="button">Cancelar</button></div>
     </div>
   </div>
 
@@ -358,15 +394,15 @@
                   <button class="btn btn-danger" type="submit">${lineIcon('trash')}Eliminar</button>
                 </form>
               ` : `
-                <form class="inline" method="post" action="/cotizaciones/${encodeURIComponent(it.id)}/eliminar" onsubmit="return confirm('¿Quitar esta cotización del listado? El PDF permanecerá en Google Drive.');">
-                  <button class="btn btn-danger" type="submit">${lineIcon('trash')}Eliminar</button>
-                </form>
                 <a class="btn" title="Ver o reimprimir PDF" href="${it.view_url}" target="_blank">${lineIcon('file')}PDF</a>
+                <a class="btn btn-action-main" href="${it.facturar_url}">${lineIcon('file')}Facturar</a>
+                <button class="btn btn-share" type="button" data-quote-share="${escapeHTML(String(it.id))}" title="Enviar por correo o WhatsApp">${lineIcon('external')}Enviar</button>
                 <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/editar" onclick="return confirm('¿Corregir esta cotización conservando el mismo folio? Al generar el PDF se reemplazará la versión anterior.');">${lineIcon('edit')}Corregir</a>
                 <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">${lineIcon('copy')}Duplicar</a>
-                <a class="btn btn-ok" href="${it.facturar_url}">${lineIcon('file')}Facturar</a>
-                <button class="btn ${it.email_delivery?.sent?'':'btn-mail-pending'}" type="button" data-quote-email="${escapeHTML(String(it.id))}" title="${it.email_delivery?.sent?`Enviada ${escapeHTML(it.email_delivery.last_sent_at||'')}`:'Correo pendiente de enviar'}">${lineIcon(it.email_delivery?.sent?'check':'mail')}${it.email_delivery?.sent?'Enviada':'Enviar'}</button>
-                <button class="btn" type="button" data-quote-docs="${escapeHTML(String(it.id))}" title="Documentos para la factura">${lineIcon('folder')}</button>
+                <button class="btn" type="button" data-quote-docs="${escapeHTML(String(it.id))}" title="Documentos para la factura">${lineIcon('folder')}Archivos</button>
+                <form class="inline" method="post" action="/cotizaciones/${encodeURIComponent(it.id)}/eliminar" onsubmit="return confirm('¿Quitar esta cotización del listado? El PDF permanecerá en Google Drive.');">
+                  <button class="btn btn-danger-subtle" type="submit">${lineIcon('trash')}Eliminar</button>
+                </form>
               `}
             </div>
           </td>
@@ -380,8 +416,8 @@
           window.location.href = url;
         };
       });
-      tbody.querySelectorAll('button[data-quote-email]').forEach(btn=>{
-        btn.onclick = () => openQuoteMail(btn.getAttribute('data-quote-email'));
+      tbody.querySelectorAll('button[data-quote-share]').forEach(btn=>{
+        btn.onclick = () => openQuoteShare(btn.getAttribute('data-quote-share'));
       });
       tbody.querySelectorAll('button[data-quote-docs]').forEach(btn=>{
         btn.onclick = () => openQuoteDocs(btn.getAttribute('data-quote-docs'));
@@ -396,6 +432,7 @@
     let DRAFTS = [];
     let MODE = 'finalizadas';
     let quoteMailContext = null;
+    let quoteShareContext = null;
     const quoteMail = document.getElementById('quoteMail');
     const quoteMailTo = document.getElementById('quoteMailTo');
     const quoteMailCc = document.getElementById('quoteMailCc');
@@ -415,6 +452,80 @@
     const quoteDocsError = document.getElementById('quoteDocsError');
     const quoteDocsSave = document.getElementById('quoteDocsSave');
     let quoteDocsId = '';
+    const quoteShare = document.getElementById('quoteShare');
+    const quoteShareWhatsapp = document.getElementById('quoteShareWhatsapp');
+    const quoteShareStatus = document.getElementById('quoteShareStatus');
+
+    function closeQuoteShare(){
+      if(quoteShareWhatsapp.disabled) return;
+      quoteShare.classList.remove('show');
+      quoteShareContext = null;
+      quoteShareStatus.textContent = '';
+    }
+
+    function openQuoteShare(id){
+      const item = DATA.find(value=>String(value.id) === String(id));
+      quoteShareContext = item || {id, folio:id, cliente:''};
+      document.getElementById('quoteShareSummary').textContent = `Cotización ${quoteShareContext.folio || id}${quoteShareContext.cliente ? ` · ${quoteShareContext.cliente}` : ''}`;
+      document.getElementById('quoteShareEmailHint').textContent = quoteShareContext.email_delivery?.sent
+        ? 'Ya se envió antes. Puedes volver a enviarla o cambiar destinatarios.'
+        : 'Enviar el PDF con el formulario de correo.';
+      quoteShareStatus.textContent = '';
+      quoteShareWhatsapp.disabled = false;
+      quoteShareWhatsapp.querySelector('strong').textContent = 'WhatsApp';
+      quoteShare.classList.add('show');
+    }
+
+    document.getElementById('quoteShareClose').onclick = closeQuoteShare;
+    document.getElementById('quoteShareCancel').onclick = closeQuoteShare;
+    quoteShare.addEventListener('click', event=>{ if(event.target === quoteShare) closeQuoteShare(); });
+    document.getElementById('quoteShareEmail').onclick = ()=>{
+      if(!quoteShareContext) return;
+      const id = quoteShareContext.id;
+      quoteShare.classList.remove('show');
+      quoteShareContext = null;
+      openQuoteMail(id);
+    };
+    quoteShareWhatsapp.onclick = async ()=>{
+      if(!quoteShareContext || quoteShareWhatsapp.disabled) return;
+      const context = quoteShareContext;
+      const original = quoteShareWhatsapp.querySelector('strong').textContent;
+      quoteShareWhatsapp.disabled = true;
+      quoteShareWhatsapp.querySelector('strong').textContent = 'Preparando PDF…';
+      quoteShareStatus.textContent = '';
+      try{
+        const response = await fetch(`/api/cotizaciones/${encodeURIComponent(context.id)}/pdf`);
+        if(!response.ok){
+          let detail = 'No se pudo obtener el PDF.';
+          try{ const data = await response.json(); detail = data.error || detail; }catch(_){}
+          throw new Error(detail);
+        }
+        const blob = await response.blob();
+        const safeFolio = String(context.folio || context.id || 'cotizacion').replace(/[^a-z0-9_-]+/gi, '-');
+        const file = new File([blob], `Cotizacion-HSC-${safeFolio}.pdf`, {type:'application/pdf'});
+        const title = `Cotización HSC ${context.folio || ''}`.trim();
+        if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
+          await navigator.share({title, text:title, files:[file]});
+          quoteShareWhatsapp.disabled = false;
+          closeQuoteShare();
+          msg(true, 'Cotización compartida.');
+        }else{
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob); link.download = file.name; link.click();
+          setTimeout(()=>URL.revokeObjectURL(link.href), 1500);
+          const whatsapp = document.createElement('a');
+          whatsapp.href = `https://wa.me/?text=${encodeURIComponent(`${title}. Adjunto el PDF de la cotización.`)}`;
+          whatsapp.target = '_blank'; whatsapp.rel = 'noopener'; whatsapp.click();
+          quoteShareStatus.textContent = 'Se descargó el PDF y se abrió WhatsApp. Adjunta el archivo descargado al mensaje.';
+        }
+      }catch(error){
+        if(error?.name === 'AbortError') quoteShareStatus.textContent = 'No se compartió el archivo. Puedes intentarlo nuevamente.';
+        else quoteShareStatus.textContent = error.message || 'No se pudo preparar el PDF.';
+      }finally{
+        quoteShareWhatsapp.disabled = false;
+        quoteShareWhatsapp.querySelector('strong').textContent = original;
+      }
+    };
 
     function documentSize(value){
       const bytes = Number(value || 0);
