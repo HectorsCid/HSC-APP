@@ -12,57 +12,64 @@
   </script>
   <style>
     :root{
-      --bg:#ffffff; --card:#f9fafb; --ink:#1f2937; --muted:#6b7280;
-      --line:#e5e7eb; --brand:#374151; --ok:#22c55e; --accent:#3b82f6; --danger:#ef4444;
+      --bg:#f2f6fb; --card:#ffffff; --ink:#17243a; --muted:#65748b;
+      --line:#d8e2ee; --brand:#334155; --ok:#3d8d6b; --accent:#5f8fc7; --danger:#bd6370;
       --radius:14px;
-      --field:#ffffff;--button:#ffffff;--button-hover:#f3f4f6;--table-head:#f8fafc;
+      --field:#f8fbff;--button:#ffffff;--button-hover:#f0f5fb;--table-head:#f8fafc;
       --shadow:rgba(17,24,39,.05);--ok-flash:#dcfce7;--ok-flash-ink:#14532d;
       --err-flash:#fee2e2;--err-flash-ink:#7f1d1d;
     }
     html[data-theme="dark"]{
-      --bg:#0b1020;--card:#171d2d;--ink:#e5e7eb;--muted:#a3b2c7;
-      --line:#334155;--brand:#2563eb;--field:#20283a;--button:#20283a;
-      --button-hover:#29344a;--table-head:#20283a;--shadow:rgba(0,0,0,.3);
+      --bg:#0e1929;--card:#17253a;--ink:#edf3fa;--muted:#afbdd0;
+      --line:#354a65;--brand:#587fae;--field:#1a2a42;--button:#1b2b43;
+      --button-hover:#223650;--table-head:#1b2b43;--shadow:rgba(0,0,0,.24);
       --ok-flash:rgba(20,83,45,.28);--ok-flash-ink:#bbf7d0;
       --err-flash:rgba(127,29,29,.25);--err-flash-ink:#fecaca;
     }
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Segoe UI, Roboto, system-ui, -apple-system, sans-serif}
-    .wrap{max-width:1100px;margin:0 auto;padding:18px}
+    .wrap{max-width:1500px;margin:0 auto;padding:22px}
     .top{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
     .title{font-size:1.25rem;font-weight:800}
     .pill{font-size:.85rem;color:var(--muted)}
     .actions{display:flex;gap:10px;flex-wrap:wrap}
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 11px;border-radius:10px;border:1px solid var(--line);cursor:pointer;font-weight:700;font-size:13px;background:var(--button);color:var(--ink);text-decoration:none;white-space:nowrap}
     .btn:hover{background:var(--button-hover)}
-    .btn-primary{background:var(--brand);color:#fff;border-color:transparent}
-    .btn-accent{background:var(--accent);color:#fff;border-color:transparent}
-    .btn-ok{background:var(--ok);color:#fff;border-color:transparent}
-    .btn-danger{background:var(--danger);color:#fff;border-color:transparent}
+    .btn-primary{background:color-mix(in srgb,var(--brand) 14%,var(--button));color:color-mix(in srgb,var(--brand) 78%,var(--ink));border-color:color-mix(in srgb,var(--brand) 38%,var(--line))}
+    .btn-accent{background:color-mix(in srgb,var(--accent) 16%,var(--button));color:color-mix(in srgb,var(--accent) 76%,var(--ink));border-color:color-mix(in srgb,var(--accent) 42%,var(--line))}
+    .btn-ok{background:color-mix(in srgb,var(--ok) 14%,var(--button));color:color-mix(in srgb,var(--ok) 74%,var(--ink));border-color:color-mix(in srgb,var(--ok) 38%,var(--line))}
+    .btn-danger{background:color-mix(in srgb,var(--danger) 15%,var(--button));color:color-mix(in srgb,var(--danger) 78%,var(--ink));border-color:color-mix(in srgb,var(--danger) 40%,var(--line))}
     .btn-danger-subtle{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--line));background:transparent}
     .btn-danger-subtle:hover{background:color-mix(in srgb,var(--danger) 10%,var(--button))}
     .table-actions .btn-action-main{background:color-mix(in srgb,var(--ok) 11%,var(--button));border-color:color-mix(in srgb,var(--ok) 32%,var(--line));color:color-mix(in srgb,var(--ok) 68%,var(--ink))}
     .table-actions .btn-share{background:color-mix(in srgb,var(--accent) 10%,var(--button));border-color:color-mix(in srgb,var(--accent) 30%,var(--line));color:color-mix(in srgb,var(--accent) 66%,var(--ink))}
+    .table-actions .btn-sent{background:color-mix(in srgb,var(--ok) 12%,var(--button));border-color:color-mix(in srgb,var(--ok) 32%,var(--line));color:color-mix(in srgb,var(--ok) 70%,var(--ink))}
     .table-actions .btn-danger-subtle{border-color:color-mix(in srgb,var(--danger) 28%,var(--line));color:color-mix(in srgb,var(--danger) 62%,var(--ink))}
     .btn-mail-pending{background:var(--ok-flash)!important;border-color:color-mix(in srgb,var(--ok) 45%,var(--line))!important;color:var(--ok-flash-ink)!important}
     .tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
-    .tab-active{background:var(--brand);color:#fff;border-color:transparent}
+    .tab-active{background:color-mix(in srgb,var(--accent) 16%,var(--button));color:color-mix(in srgb,var(--accent) 76%,var(--ink));border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
     form.inline{display:inline;margin:0}
 
-    .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px;box-shadow:0 6px 20px var(--shadow)}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:0 14px 36px var(--shadow)}
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .grow{flex:1}
     input[type="search"]{width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:14px;background:var(--field);color:var(--ink);outline:none}
 
-    .table-wrap{overflow-y:auto;overflow-x:hidden;border:1px solid var(--line);border-radius:10px;background:var(--field);margin-top:10px;max-height:504px;scrollbar-gutter:stable}
+    .table-wrap{overflow-y:auto;overflow-x:hidden;border:1px solid var(--line);border-radius:14px;background:var(--field);margin-top:14px;max-height:620px;scrollbar-gutter:stable}
     table{display:block;width:100%;border-collapse:collapse;min-width:0}thead{display:none}tbody{display:block}
-    tbody tr{display:grid;grid-template-columns:minmax(150px,1.25fr) 88px 68px 105px minmax(120px,.9fr) 286px;gap:9px;align-items:center;min-height:82px;padding:9px 10px;border-bottom:1px solid var(--line)}
-    tbody tr:hover{background:var(--button-hover)}tbody td{min-width:0;padding:0;border:0;text-align:left;font-size:12px;line-height:1.3;overflow:hidden;text-overflow:ellipsis}tbody td:first-child{font-weight:800}tbody td:nth-child(2),tbody td:nth-child(3){color:var(--muted);font-size:11px}tbody td[colspan]{grid-column:1/-1!important;padding:36px 10px!important;text-align:center}
+    tbody tr{position:relative;display:grid;grid-template-columns:minmax(180px,1.25fr) 92px 70px 118px minmax(170px,1fr) 335px;gap:14px;align-items:center;min-height:78px;padding:13px 14px;border-bottom:1px solid var(--line);background:var(--field)}
+    tbody tr:hover{background:var(--button-hover)}tbody td{min-width:0;padding:0;border:0;text-align:left;font-size:12px;line-height:1.35;overflow:visible;text-overflow:ellipsis}tbody td:first-child{font-weight:800;font-size:14px}tbody td:nth-child(2),tbody td:nth-child(3){color:var(--muted);font-size:11px}tbody td[colspan]{grid-column:1/-1!important;padding:36px 10px!important;text-align:center}
     td.numeric{text-align:right;white-space:nowrap;font-weight:800}
     .summary-cell{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:220px}
-    .table-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;width:100%;max-width:286px}
-    .table-actions .btn{width:100%;min-width:0;padding:6px 4px;border-radius:9px;font-size:10px;line-height:1.1;min-height:30px;gap:3px;overflow:hidden;text-overflow:ellipsis}
+    .table-actions{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) 36px;gap:6px;width:100%;max-width:335px}
+    .table-actions .btn{width:100%;min-width:0;padding:7px 7px;border-radius:9px;font-size:11px;line-height:1.1;min-height:34px;gap:4px;overflow:hidden;text-overflow:ellipsis}
     .table-actions form{display:block;width:100%;margin:0}
+    .quote-more{font-size:18px!important;letter-spacing:1px;padding:0!important}
+    .quote-menu{display:none;position:absolute;z-index:8;right:0;top:40px;width:178px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:0 18px 45px rgba(0,0,0,.2)}
+    .quote-menu.open{display:grid;gap:3px}
+    .quote-menu .btn,.quote-menu form .btn{width:100%;justify-content:flex-start;background:transparent;border-color:transparent;color:var(--ink);font-size:12px;min-height:34px;padding:8px 9px}
+    .quote-menu .btn:hover{background:var(--button-hover)}
+    .quote-menu .btn-danger-subtle{color:var(--danger)}
     .muted{color:var(--muted)}
     .flash{display:none;margin:12px 0;padding:10px 12px;border-radius:12px;font-weight:600}
     .flash.ok{display:block;background:var(--ok-flash);border:1px solid var(--line);color:var(--ok-flash-ink)}
@@ -96,7 +103,7 @@
     @media(max-width:700px){
       .top{align-items:flex-start;flex-wrap:wrap}
       .top>.actions{width:100%}
-      .table-wrap{max-height:none}tbody tr{grid-template-columns:minmax(0,1fr) auto;gap:7px;padding:12px}tbody td:nth-child(1){grid-column:1;grid-row:1}tbody td:nth-child(2){grid-column:1;grid-row:2}tbody td:nth-child(3){grid-column:2;grid-row:1}tbody td:nth-child(4){grid-column:2;grid-row:2}tbody td:nth-child(5){grid-column:1/-1;grid-row:3}.summary-cell{max-width:none}tbody td:nth-child(6){grid-column:1/-1;grid-row:4}.table-actions{max-width:none;grid-template-columns:repeat(3,minmax(0,1fr))}.channel-grid{grid-template-columns:1fr}
+      .wrap{padding:12px}.card{padding:12px}.table-wrap{max-height:none}tbody tr{grid-template-columns:minmax(0,1fr) auto;gap:7px;padding:14px 12px}tbody td:nth-child(1){grid-column:1;grid-row:1}tbody td:nth-child(2){grid-column:1;grid-row:2}tbody td:nth-child(3){grid-column:2;grid-row:1}tbody td:nth-child(4){grid-column:2;grid-row:2}tbody td:nth-child(5){grid-column:1/-1;grid-row:3}.summary-cell{max-width:none}tbody td:nth-child(6){grid-column:1/-1;grid-row:4}.table-actions{max-width:none;grid-template-columns:repeat(3,minmax(0,1fr)) 40px}.table-actions .btn{min-height:40px}.quote-menu{right:0;top:auto;bottom:46px}.channel-grid{grid-template-columns:1fr}
     }
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
@@ -269,6 +276,10 @@
       el.className = 'flash ' + (ok ? 'ok' : 'err');
       el.textContent = t;
     };
+    document.addEventListener('click', () => {
+      tbody.querySelectorAll('.quote-menu.open').forEach(item=>item.classList.remove('open'));
+      tbody.querySelectorAll('button[data-quote-more]').forEach(item=>item.setAttribute('aria-expanded','false'));
+    });
 
     async function fetchList(){
       const urls = ['/api/cotizaciones/list?limit=100','/api/cotizaciones?limit=100','/api/quotes/list?limit=100'];
@@ -396,13 +407,16 @@
               ` : `
                 <a class="btn" title="Ver o reimprimir PDF" href="${it.view_url}" target="_blank">${lineIcon('file')}PDF</a>
                 <a class="btn btn-action-main" href="${it.facturar_url}">${lineIcon('file')}Facturar</a>
-                <button class="btn btn-share" type="button" data-quote-share="${escapeHTML(String(it.id))}" title="Enviar por correo o WhatsApp">${lineIcon('external')}Enviar</button>
-                <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/editar" onclick="return confirm('¿Corregir esta cotización conservando el mismo folio? Al generar el PDF se reemplazará la versión anterior.');">${lineIcon('edit')}Corregir</a>
-                <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">${lineIcon('copy')}Duplicar</a>
-                <button class="btn" type="button" data-quote-docs="${escapeHTML(String(it.id))}" title="Documentos para la factura">${lineIcon('folder')}Archivos</button>
-                <form class="inline" method="post" action="/cotizaciones/${encodeURIComponent(it.id)}/eliminar" onsubmit="return confirm('¿Quitar esta cotización del listado? El PDF permanecerá en Google Drive.');">
-                  <button class="btn btn-danger-subtle" type="submit">${lineIcon('trash')}Eliminar</button>
-                </form>
+                <button class="btn btn-share ${it.email_delivery?.sent?'btn-sent':''}" type="button" data-quote-share="${escapeHTML(String(it.id))}" title="${it.email_delivery?.sent?'Ya se envió por correo; puedes volver a enviarla o usar WhatsApp':'Enviar por correo o WhatsApp'}">${lineIcon(it.email_delivery?.sent?'check':'external')}${it.email_delivery?.sent?'Enviado':'Enviar'}</button>
+                <button class="btn quote-more" type="button" data-quote-more="${escapeHTML(String(it.id))}" aria-label="Más acciones" aria-expanded="false">···</button>
+                <div class="quote-menu" data-quote-menu="${escapeHTML(String(it.id))}">
+                  <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/editar" onclick="return confirm('¿Corregir esta cotización conservando el mismo folio? Al generar el PDF se reemplazará la versión anterior.');">${lineIcon('edit')}Corregir</a>
+                  <a class="btn" href="/cotizaciones/${encodeURIComponent(it.id)}/duplicar">${lineIcon('copy')}Duplicar</a>
+                  <button class="btn" type="button" data-quote-docs="${escapeHTML(String(it.id))}" title="Documentos para la factura">${lineIcon('folder')}Archivos</button>
+                  <form class="inline" method="post" action="/cotizaciones/${encodeURIComponent(it.id)}/eliminar" onsubmit="return confirm('¿Quitar esta cotización del listado? El PDF permanecerá en Google Drive.');">
+                    <button class="btn btn-danger-subtle" type="submit">${lineIcon('trash')}Eliminar</button>
+                  </form>
+                </div>
               `}
             </div>
           </td>
@@ -418,6 +432,17 @@
       });
       tbody.querySelectorAll('button[data-quote-share]').forEach(btn=>{
         btn.onclick = () => openQuoteShare(btn.getAttribute('data-quote-share'));
+      });
+      tbody.querySelectorAll('button[data-quote-more]').forEach(btn=>{
+        btn.onclick = event => {
+          event.stopPropagation();
+          const id = btn.getAttribute('data-quote-more');
+          const menu = tbody.querySelector(`[data-quote-menu="${CSS.escape(id)}"]`);
+          const shouldOpen = menu && !menu.classList.contains('open');
+          tbody.querySelectorAll('.quote-menu.open').forEach(item=>item.classList.remove('open'));
+          tbody.querySelectorAll('button[data-quote-more]').forEach(item=>item.setAttribute('aria-expanded','false'));
+          if(shouldOpen){menu.classList.add('open');btn.setAttribute('aria-expanded','true');}
+        };
       });
       tbody.querySelectorAll('button[data-quote-docs]').forEach(btn=>{
         btn.onclick = () => openQuoteDocs(btn.getAttribute('data-quote-docs'));
