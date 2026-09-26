@@ -77,15 +77,62 @@ body[data-active-mode="tech"] #reportForm .form-actions button{min-height:50px}
 body[data-active-mode="tech"] #reportForm .read-only{background:var(--surface-2);opacity:1;color:var(--muted)}
 body[data-active-mode="tech"] #reportEvidenceSlot{font-weight:700}
 
+/* Maintenance report: keep the everyday readings visible and the uncommon fields quiet. */
+body[data-active-mode="tech"] .report-heading{display:flex;align-items:center;justify-content:space-between;gap:14px}
+body[data-active-mode="tech"] .report-heading>div{min-width:0}
+body[data-active-mode="tech"] .report-heading .eyebrow{margin-bottom:4px}
+body[data-active-mode="tech"] .maintenance-report-form>.form-section>summary{gap:11px}
+body[data-active-mode="tech"] .maintenance-report-form>.form-section>summary>span:nth-child(2){min-width:0;flex:1}
+body[data-active-mode="tech"] .maintenance-report-form>.form-section>summary small{display:block;margin-top:3px;color:var(--muted);font-size:.76rem;font-weight:500;line-height:1.35}
+body[data-active-mode="tech"] :is(.report-section-number,.report-section-icon,.report-circuit-number){display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border-radius:10px;background:color-mix(in srgb,var(--brand) 12%,var(--surface-2));color:var(--brand-2);font-size:.9rem;font-weight:800}
+body[data-active-mode="tech"] .report-context-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) 94px;gap:10px}
+body[data-active-mode="tech"] .report-service-section .read-only{font-weight:650}
+body[data-active-mode="tech"] .report-measurements>.section-body{gap:11px}
+body[data-active-mode="tech"] .report-circuit-card{padding:13px;border:1px solid var(--line);border-radius:13px;background:var(--deep)}
+body[data-active-mode="tech"] .report-circuit-heading{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+body[data-active-mode="tech"] .report-circuit-heading>span{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:color-mix(in srgb,var(--brand) 13%,var(--surface-2));color:var(--brand-2);font-weight:800}
+body[data-active-mode="tech"] .report-circuit-heading b,body[data-active-mode="tech"] .report-circuit-heading small{display:block}
+body[data-active-mode="tech"] .report-circuit-heading small{margin-top:2px;color:var(--muted);font-size:.74rem}
+body[data-active-mode="tech"] .report-measure-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+body[data-active-mode="tech"] .report-measure-grid .field label{font-size:.83rem}
+body[data-active-mode="tech"] .report-measure-grid .field label small{color:var(--muted);font-size:.72rem;font-weight:500}
+body[data-active-mode="tech"] .report-measure-grid .field input{min-height:48px;padding:11px 10px}
+body[data-active-mode="tech"] .report-circuit-secondary{padding:0;overflow:hidden}
+body[data-active-mode="tech"] .form-section .report-circuit-secondary>summary{min-height:56px;padding:12px 13px;gap:10px;background:var(--surface);font-size:.94rem}
+body[data-active-mode="tech"] .form-section .report-circuit-secondary>summary>span:nth-child(2){min-width:0;flex:1}
+body[data-active-mode="tech"] .form-section .report-circuit-secondary>summary small{display:block;margin-top:2px;color:var(--muted);font-size:.73rem;font-weight:500}
+body[data-active-mode="tech"] .form-section .report-circuit-secondary>summary::after{content:'⌄';margin-left:auto;color:var(--muted);transform:none}
+body[data-active-mode="tech"] .form-section .report-circuit-secondary[open]>summary::after{transform:rotate(180deg)}
+body[data-active-mode="tech"] .report-circuit-secondary>.report-measure-grid{padding:0 13px 13px}
+body[data-active-mode="tech"] .report-fault-check{gap:11px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--deep)}
+body[data-active-mode="tech"] .report-fault-check>span{min-width:0}
+body[data-active-mode="tech"] .report-fault-check b,body[data-active-mode="tech"] .report-fault-check small{display:block}
+body[data-active-mode="tech"] .report-fault-check small{margin-top:2px;color:var(--muted);font-size:.76rem;font-weight:500}
+body[data-active-mode="tech"] .report-photo-actions{margin-top:8px}
+body[data-active-mode="tech"] .report-evidence-section{scroll-margin-top:84px}
+body[data-active-mode="tech"] .report-secondary-actions{display:flex;justify-content:flex-end;margin-top:10px}
+body[data-active-mode="tech"] .report-secondary-actions .danger{min-height:40px}
+body[data-active-mode="tech"] #reportForm .report-primary-actions{grid-template-columns:1.15fr 1fr 1.15fr}
+body[data-active-mode="tech"] .report-primary-actions .report-evidence-shortcut{display:flex;align-items:center;justify-content:center;gap:8px;padding:0 10px}
+body[data-active-mode="tech"] .report-evidence-shortcut>span:last-child{display:grid;gap:1px;text-align:left}
+body[data-active-mode="tech"] .report-evidence-shortcut small{color:var(--muted);font-size:.68rem;font-weight:700}
+
 @media(max-width:560px){
   body[data-active-mode="tech"] main{padding:15px 14px 112px}
   body[data-active-mode="tech"] .topbar{gap:7px;padding-left:calc(10px + env(safe-area-inset-left,0px));padding-right:calc(10px + env(safe-area-inset-right,0px))}
   body[data-active-mode="tech"] :is(.icon-btn,.back){width:42px;height:42px}
   body[data-active-mode="tech"] .section-head{margin-top:19px}
   body[data-active-mode="tech"] .field-row{grid-template-columns:minmax(0,1fr)}
-  body[data-active-mode="tech"] #reportForm .form-actions{grid-template-columns:1fr 1.25fr;padding:9px}
-  body[data-active-mode="tech"] #reportForm .form-actions #discardDraft{display:none}
-  body[data-active-mode="tech"] #reportForm .form-actions .primary{grid-column:auto}
+  body[data-active-mode="tech"] .report-heading{display:block}
+  body[data-active-mode="tech"] .report-heading>span:last-child{margin-top:8px}
+  body[data-active-mode="tech"] .report-context-grid{grid-template-columns:minmax(0,1fr) 82px}
+  body[data-active-mode="tech"] .report-context-grid .report-client-field{grid-column:1/-1}
+  body[data-active-mode="tech"] .report-date-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+  body[data-active-mode="tech"] .report-measure-grid{gap:7px}
+  body[data-active-mode="tech"] .report-measure-grid .field input{padding:10px 8px}
+  body[data-active-mode="tech"] .report-evidence-detail{display:none}
+  body[data-active-mode="tech"] #reportForm .report-primary-actions{grid-template-columns:1.05fr .9fr 1.05fr;padding:8px;gap:7px}
+  body[data-active-mode="tech"] #reportForm .report-primary-actions button{min-width:0;padding:0 8px;font-size:.84rem}
 }
 
 @media(hover:hover){
