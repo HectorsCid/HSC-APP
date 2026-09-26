@@ -3077,6 +3077,7 @@ def _render_operations_app(app_kind=None):
         operations_manifest_url=url_for(manifest_endpoint),
         operations_user_id=str(session.get("hsc_user_id") or "owner"),
         operations_user_name=str(session.get("hsc_user_name") or "Héctor Silva Cid"),
+        operations_client_id=str(session.get("hsc_client_id") or ""),
         operations_permissions=session.get("hsc_permissions") or {},
     )
 
@@ -3189,6 +3190,8 @@ def _scope_operaciones_payload(payload):
              for item in payload.get('tasks', []) if client_id and
              (item.get('client_id') == client_id or (not item.get('client_id') and item.get('equipment_id') in equipment_ids))]
     scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults, tasks=tasks, expenses=[], worklists=[])
+    scoped["assigned_client_id"] = client_id
+    scoped["scope_valid"] = bool(client_id and clients)
     scoped["stats"] = {
         "clients": len(clients), "equipment": len(equipment), "reports": len(reports),
         "client_photos": sum(bool(item.get("has_photo")) for item in clients),

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hsc-shell-v36';
+const CACHE_NAME = 'hsc-shell-v37';
 const SAFE_ASSETS = [
   '/static/hsc_theme.css',
   '/static/hsc_theme.js',
@@ -27,15 +27,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(async keys => {
-        const current=await caches.open(CACHE_NAME);
-        // Preserve the last authenticated shell when the update is installed offline.
-        for(const path of ['/hsc-tecnico/','/hsc-partner/']){
-          const previous=await caches.match(path);
-          if(previous&&!await current.match(path))await current.put(path,previous);
-        }
-        return Promise.all(keys.filter(key => key.startsWith('hsc-shell-') && key !== CACHE_NAME).map(key => caches.delete(key)));
-      })
+      .then(keys => Promise.all(keys.filter(key => key.startsWith('hsc-shell-') && key !== CACHE_NAME).map(key => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
@@ -49,16 +41,13 @@ self.addEventListener('fetch', event => {
     url.pathname === '/hsc-tecnico/' || url.pathname === '/hsc-partner/'
   );
   if(operationsShell){
-    const shellKey = new Request(url.origin + url.pathname, {method:'GET'});
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
-    event.respondWith(fetch(request,{signal:controller.signal}).then(async response => {
-      if(response.status>=500){const cached=await caches.match(shellKey);if(cached)return cached;}
-      if(response.ok && !response.redirected && new URL(response.url).pathname === url.pathname){
-        const copy = response.clone();
-        event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(shellKey, copy)));
-      }
-      return response;
-    }).catch(async() => await caches.match(shellKey)||new Response('HSC no respondió. Reintenta al recuperar conexión; no borres los datos del dispositivo.',{status:503,headers:{'Content-Type':'text/plain;charset=utf-8'}})).finally(()=>clearTimeout(timer)));
+    // El HTML contiene la identidad y empresa de la sesión: nunca se comparte ni
+    // se restaura desde caché. Los pendientes sin conexión viven por cuenta aparte.
+    event.respondWith(fetch(request,{signal:controller.signal}).catch(() => new Response(
+      '<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HSC sin conexión</title><body style="font-family:system-ui;background:#0f1b2d;color:#fff;padding:32px"><h1>HSC no pudo validar tu sesión</h1><p>Recupera la conexión y vuelve a abrir la app. Tus reportes pendientes siguen guardados en este dispositivo.</p><button onclick="location.reload()" style="padding:12px 18px">Reintentar</button></body></html>',
+      {status:503,headers:{'Content-Type':'text/html;charset=utf-8','Cache-Control':'no-store'}}
+    )).finally(()=>clearTimeout(timer)));
     return;
   }
   if(!SAFE_PATHS.has(url.pathname)) return;

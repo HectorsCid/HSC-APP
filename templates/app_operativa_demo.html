@@ -123,7 +123,7 @@
 </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='operations_profile.css', v='20260923-1') }}">
 </head>
-<body data-operations-shell="true" data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-pwa-install-disabled="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-app-kind="{{ operations_app_kind|default('technician') }}" data-user-id="{{ operations_user_id|default('owner') }}" data-user-name="{{ operations_user_name|default('Héctor Silva Cid') }}" data-permissions="{{ operations_permissions|default({})|tojson|forceescape }}">
+<body data-operations-shell="true" data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-pwa-install-disabled="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-app-kind="{{ operations_app_kind|default('technician') }}" data-user-id="{{ operations_user_id|default('owner') }}" data-user-name="{{ operations_user_name|default('Héctor Silva Cid') }}" data-client-id="{{ operations_client_id|default('') }}" data-permissions="{{ operations_permissions|default({})|tojson|forceescape }}">
 <div class="app">
   <header class="topbar">
     <button class="back" id="backBtn" hidden aria-label="Regresar">←</button>
@@ -149,7 +149,7 @@
     </section>
 
     <section class="view" data-view="client">
-      <article class="hero"><div class="hero-top"><div class="hero-logo">HI</div><div><h2>Holiday Inn Diamante</h2><p>HDI · Santiago de Querétaro</p></div></div><div class="address"><span>⌖</span><span>Anillo Vial Fray Junípero Serra 1500-A, Arboledas, 76140 Santiago de Querétaro, Qro.</span></div><div class="field" style="margin-top:15px"><label for="clientRound">Consultar ronda</label><select id="clientRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div><div class="stats"><div class="stat"><b id="roundLabel">R2</b><span>Ronda</span></div><div class="stat"><b id="roundReports">3</b><span>Atendidos</span></div><div class="stat"><b id="roundEquipment">6</b><span>Equipos</span></div></div><div class="progress"><i id="roundProgress"></i></div><div class="progress-label"><span>Avance del periodo</span><b id="roundProgressText"></b></div></article>
+      <article class="hero"><div class="hero-top"><div class="hero-logo">—</div><div><h2>Cargando cliente…</h2><p>Validando empresa asignada</p></div></div><div class="address"><span>⌖</span><span>La información aparecerá después de validar tu cuenta.</span></div><div class="field" style="margin-top:15px"><label for="clientRound">Consultar ronda</label><select id="clientRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div><div class="stats"><div class="stat"><b id="roundLabel">R2</b><span>Ronda</span></div><div class="stat"><b id="roundReports">0</b><span>Atendidos</span></div><div class="stat"><b id="roundEquipment">0</b><span>Equipos</span></div></div><div class="progress"><i id="roundProgress"></i></div><div class="progress-label"><span>Avance del periodo</span><b id="roundProgressText"></b></div></article>
       <div class="client-tools"><button class="secondary" id="editOperationalClient" data-permission="editClientData" title="Modificar datos del cliente">✎ Editar cliente</button><button class="secondary" id="addOperationalEquipment" data-permission="addEquipment" title="Registrar otro equipo">＋ Equipo</button><button class="secondary" id="singleWorkReport" data-permission="createReports" data-tech-only title="Crear un reporte sin elegir equipo de la póliza">📝 Reporte único</button></div>
       <section class="client-worklists" data-tech-only><div class="section-head"><h2>Trabajo para hoy</h2><button class="primary" id="newClientWorklist" type="button">＋ Crear lista</button></div><div id="clientWorklistCards"></div></section>
       <div class="section-head"><h2>Equipos</h2><span class="count" id="roundPending"></span></div><div class="filters" id="equipmentFilters"><button class="chip active" data-filter="all">Todos</button><button class="chip" data-filter="pending">Pendientes</button><button class="chip" data-filter="done">Realizados</button></div><div class="equipment-list bounded-list" id="equipmentList" style="margin-top:10px"></div>
@@ -159,7 +159,7 @@
 
     <section class="view" data-view="equipment">
       <div class="field" style="margin-bottom:12px"><label for="equipmentRound">Consultar ronda</label><select id="equipmentRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div>
-      <article class="equipment-hero"><div class="equipment-photo">❄</div><div><div class="eyebrow">HDI1</div><h2>Fábrica de hielo grande</h2><p class="card-sub">Monitowac · Holiday Inn Diamante</p><span class="tag" id="equipmentStatus">Realizado en R2</span></div></article>
+      <article class="equipment-hero"><div class="equipment-photo">❄</div><div><div class="eyebrow">—</div><h2>Selecciona un equipo</h2><p class="card-sub">Esperando datos de la empresa</p><span class="tag" id="equipmentStatus">Pendiente</span></div></article>
       <div class="actions"><button class="primary" id="newReport" data-permission="createReports" data-tech-only>＋ Nuevo reporte</button><button class="danger" id="criticalFault" data-permission="reportFaults"><span class="fault-button-icon">!</span><span>Reportar falla</span></button></div>
       <button class="secondary" type="button" data-open-repairs="equipment" data-tech-only>🔧 Historial de reparaciones</button>
       <div class="management-bar" data-tech-only><button class="secondary" id="editOperationalEquipment" data-permission="editEquipment">Editar equipo</button><button class="secondary" id="toggleOperationalEquipment" data-permission="editEquipment">Desactivar equipo</button></div>
@@ -207,9 +207,9 @@
       </form>
     </section>
     <section class="view" data-view="report">
-      <div class="form-intro"><b id="reportFormTitle">Nuevo reporte de refrigeración</b><span>Holiday Inn Diamante · HDI1 · Fábrica de hielo grande</span></div>
+      <div class="form-intro"><b id="reportFormTitle">Nuevo reporte de refrigeración</b><span>Cliente asignado · Equipo · Ronda</span></div>
       <form id="reportForm">
-        <details class="form-section" open><summary>1. Datos del servicio</summary><div class="section-body"><div class="field"><label>Cliente</label><input class="read-only" value="Holiday Inn Diamante" readonly></div><div class="field-row"><div class="field"><label>Equipo</label><input class="read-only" value="HDI1" readonly></div><div class="field"><label>Ronda</label><input class="read-only" value="R2" readonly></div></div><div class="field-row"><div class="field"><label>Fecha de inicio</label><input type="date" name="inicio" required></div><div class="field"><label>Fecha de terminación</label><input type="date" name="fin" required></div></div></div></details>
+        <details class="form-section" open><summary>1. Datos del servicio</summary><div class="section-body"><div class="field"><label>Cliente</label><input class="read-only" value="" readonly></div><div class="field-row"><div class="field"><label>Equipo</label><input class="read-only" value="" readonly></div><div class="field"><label>Ronda</label><input class="read-only" value="" readonly></div></div><div class="field-row"><div class="field"><label>Fecha de inicio</label><input type="date" name="inicio" required></div><div class="field"><label>Fecha de terminación</label><input type="date" name="fin" required></div></div></div></details>
         <details class="form-section" open><summary>2. Mediciones</summary><div class="section-body"><div class="field-row"><div class="field"><label>Presión circuito 1 (psi)</label><input inputmode="decimal" autocomplete="off" name="p1" placeholder="0"></div><div class="field"><label>Presión circuito 2 (psi)</label><input inputmode="decimal" autocomplete="off" name="p2" placeholder="0"></div></div><div class="field-row"><div class="field"><label>Temperatura circuito 1 (°C)</label><input inputmode="decimal" autocomplete="off" name="t1" placeholder="0"></div><div class="field"><label>Temperatura circuito 2 (°C)</label><input inputmode="decimal" autocomplete="off" name="t2" placeholder="0"></div></div><div class="field-row"><div class="field"><label>Amperaje circuito 1 (A)</label><input inputmode="decimal" autocomplete="off" name="a1" placeholder="0"></div><div class="field"><label>Amperaje circuito 2 (A)</label><input inputmode="decimal" autocomplete="off" name="a2" placeholder="0"></div></div></div></details>
         <details class="form-section" open><summary>3. Revisión del sistema</summary><div class="section-body"><div class="field"><label>Observaciones eléctricas</label><textarea name="electrico" placeholder="Describe lo revisado o agrega varios puntos"></textarea></div><div class="field"><label>Observaciones electrónicas</label><textarea name="electronico"></textarea></div><div class="field"><label>Observaciones mecánicas</label><textarea name="mecanico"></textarea></div></div></details>
         <details class="form-section" data-default-closed><summary>4. Correctivo y partes</summary><div class="section-body"><div class="field"><label>Rutina de mantenimiento correctivo</label><textarea name="correctivo"></textarea></div><div class="field"><label>Partes utilizadas</label><input type="hidden" name="partes"><div id="reportPartsList"></div><button class="mini-btn" type="button" id="addReportPart">＋ Agregar parte</button><p class="editor-note">Agrega solamente las refacciones realmente utilizadas y su cantidad.</p></div><div class="field"><label>Observaciones y recomendaciones</label><textarea name="notas"></textarea></div></div></details>
@@ -265,7 +265,7 @@
     </section>
 
     <section class="view" data-view="reportView">
-      <div class="document"><div class="doc-head"><div class="doc-logo">HSC</div><div class="doc-title"><b>Reporte HDI1_R2</b><span>11 de septiembre de 2026</span></div></div><div class="doc-body"><div class="doc-row"><b>Cliente</b><span data-doc-field="client">Holiday Inn Diamante</span></div><div class="doc-row"><b>Ronda</b><span data-doc-field="round">R2</span></div><div class="doc-row"><b>Fecha</b><span data-doc-field="date">11 de septiembre de 2026</span></div><div class="doc-row"><b>Equipo</b><span data-doc-field="equipment">Fábrica de hielo grande</span></div><div class="doc-row"><b>Presión 1</b><span data-doc-field="pressure1">0 psi</span></div><div class="doc-row"><b>Amperaje 1</b><span data-doc-field="amperage1">0 A</span></div><div class="doc-row"><b>Temperatura</b><span data-doc-field="temperature">0 °C</span></div></div></div>
+      <div class="document"><div class="doc-head"><div class="doc-logo">HSC</div><div class="doc-title"><b>Reporte</b><span>Sin registro seleccionado</span></div></div><div class="doc-body"><div class="doc-row"><b>Cliente</b><span data-doc-field="client">—</span></div><div class="doc-row"><b>Ronda</b><span data-doc-field="round">—</span></div><div class="doc-row"><b>Fecha</b><span data-doc-field="date">—</span></div><div class="doc-row"><b>Equipo</b><span data-doc-field="equipment">—</span></div><div class="doc-row"><b>Presión 1</b><span data-doc-field="pressure1">—</span></div><div class="doc-row"><b>Amperaje 1</b><span data-doc-field="amperage1">—</span></div><div class="doc-row"><b>Temperatura</b><span data-doc-field="temperature">—</span></div></div></div>
       <div class="section-head"><h2>Evidencias del reporte</h2><span class="count" id="reportEvidenceCount">Cargando…</span></div><div class="evidence-grid" id="reportEvidencePreview"><div class="empty">Abre un reporte para consultar sus fotografías.</div></div>
     </section>
 
@@ -290,6 +290,7 @@
       <div class="section-head"><h2>Pendientes</h2><button type="button" class="mini-btn" id="openPartnerMonthCalendar" title="Calendario del mes" aria-label="Abrir calendario del mes">▦</button></div>
       <div class="partner-dashboard">
         <aside class="workspace-panel partner-identity"><div class="partner-mark" id="partnerClientLogo">VC</div><div class="eyebrow">Cuenta de servicio</div><div class="partner-client-data"><span>Nombre</span><h2 id="partnerClientName">Visscher Caravelle</h2><span>Dirección</span><p><i>⌖</i><b id="partnerClientAddress">Dirección por completar</b></p></div><div class="partner-actions"><a class="quick-card" id="partnerPdfButton" data-action-kind="pdf" href="#" target="_blank" rel="noopener"><span class="partner-action-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 12h6M9 16h4"/></svg></span><span class="partner-action-copy"><b>Reportes PDF</b><small>Carpeta en Drive</small></span></a><button class="quick-card" data-partner-action="documents" data-action-kind="documents" type="button"><span class="partner-action-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3z"/><path d="M3 7V5h6l2 2"/></svg></span><span class="partner-action-copy"><b>Documentos</b><small>Cotizaciones y facturas</small></span></button><button class="quick-card" id="partnerRoundAction" data-action-kind="round" type="button"><span class="partner-action-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v18M17 3v18M3 7h18M3 17h18"/><path d="m10 12 2 2 4-4"/></svg></span><span class="partner-action-copy"><b>Seleccionar ronda</b><small id="partnerRoundActionStatus">Consultando R2</small></span></button><button class="quick-card" id="partnerFaultAction" data-action-kind="fault" type="button"><span class="partner-action-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19z"/><path d="M12 9v5M12 17h.01"/></svg></span><span class="partner-action-copy"><b>Reportar falla</b><small>Equipo y evidencia</small></span></button><button class="quick-card" id="partnerStyleAction" data-action-kind="style" type="button"><span class="partner-action-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2 0-.8-.7-1.4-.7-2.2 0-1.1.9-1.8 2-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8Z"/><path d="M7.5 10h.01M10 6.5h.01M15 7h.01M17.5 11h.01"/></svg></span><span class="partner-action-copy"><b>Apariencia</b><small>Tema y colores</small></span></button></div><div class="field partner-round-picker" id="partnerRoundPicker" hidden><label for="partnerRoundSelect">Ronda que deseas consultar</label><select id="partnerRoundSelect"><option value="1">Ronda 1</option><option value="2">Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div></aside>
+        <script>document.getElementById('partnerClientLogo').textContent='HSC';document.getElementById('partnerClientName').textContent='Validando empresa…';document.getElementById('partnerClientAddress').textContent='Cargando datos';</script>
         <article class="round-panel partner-summary"><div class="section-head"><div><div class="eyebrow">Ronda actual</div><h2>Avance del servicio</h2></div><strong id="partnerRound">R2</strong></div><div class="stats"><div class="stat"><b id="partnerEquipmentCount">0</b><span>Equipos</span></div><div class="stat"><b id="partnerCompletedCount">0</b><span>Atendidos</span></div><div class="stat"><b id="partnerPendingCount">0</b><span>Pendientes</span></div></div><div class="progress"><i id="partnerProgress" style="width:0"></i></div><div class="progress-label"><span id="partnerProgressDetail">Sin equipos registrados</span><b id="partnerProgressPercent">0%</b></div></article>
         <section class="workspace-panel partner-equipment-panel"><div class="section-head"><h2>Lista de equipos</h2><button class="mini-btn" data-partner-action="equipment">Ver todos</button></div><div class="equipment-list bounded-list" id="partnerEquipmentPreview"></div></section>
         <section class="workspace-panel partner-reports-panel"><div class="section-head"><h2>Reportes</h2><button class="mini-btn" data-partner-action="reports">Ver todos</button></div><div class="report-list bounded-list" id="partnerReportPreview"></div></section>
@@ -346,20 +347,21 @@
 <script>
   const clients=[];
   const equipment=[];
-  const views={clients:['HSC Técnico','Clientes'],client:['Cliente','Holiday Inn Diamante'],equipment:['Equipo','Fábrica de hielo grande'],report:['Reporte','Nuevo reporte'],agenda:['HSC Técnico','Agenda'],users:['Administración','Usuarios'],userPermissions:['Administración','Permisos'],task:['Agenda','Detalle de tarea'],reportView:['Reporte','HDI1_R2'],profile:['HSC','Mi cuenta'],expenses:['HSC','Gastos de campo'],partner:['HSC Partner','Inicio'],partnerEquipment:['HSC Partner','Equipos'],partnerReports:['HSC Partner','Reportes'],partnerFaults:['HSC Partner','Fallas reportadas'],partnerDocuments:['HSC Partner','Documentos'],inviteAccept:['Acceso','Aceptar invitación']};
+  const views={clients:['HSC Técnico','Clientes'],client:['Cliente','Detalle'],equipment:['Equipo','Detalle'],report:['Reporte','Nuevo reporte'],agenda:['HSC Técnico','Agenda'],users:['Administración','Usuarios'],userPermissions:['Administración','Permisos'],task:['Agenda','Detalle de tarea'],reportView:['Reporte','Detalle'],profile:['HSC','Mi cuenta'],expenses:['HSC','Gastos de campo'],partner:['HSC Partner','Inicio'],partnerEquipment:['HSC Partner','Equipos'],partnerReports:['HSC Partner','Reportes'],partnerFaults:['HSC Partner','Fallas reportadas'],partnerDocuments:['HSC Partner','Documentos'],inviteAccept:['Acceso','Aceptar invitación']};
   const serverRole=document.body.dataset.operationsRole||'technician';
   const appKind=document.body.dataset.appKind||'technician';
   const startsInPartner=appKind==='partner'||serverRole==='client';
+  const assignedClientId=document.body.dataset.clientId||'';
   let historyStack=[startsInPartner?'partner':'clients'], current=historyStack[0], currentMode=startsInPartner?'partner':'tech', equipmentFilter='all';
   let sessionPermissions={};try{sessionPermissions=JSON.parse(document.body.dataset.permissions||'{}')}catch(_){}
   const account={id:document.body.dataset.userId||'owner',name:document.body.dataset.userName||'Usuario HSC',isOwner:document.body.dataset.operationsOwner==='true'};
   const defaultPermissions={createReports:true,reportFaults:true,addClients:false,addEquipment:true,editEquipment:true,editClientData:false,editIds:false,switchViews:false};
   let activePermissions=account.isOwner?{...defaultPermissions,...sessionPermissions}:{...sessionPermissions};
-  let selectedRound='2', selectedEquipment='HDI1';
-  let selectedClient='HDI',showCatalog=false,clientOrderMode=false;
+  let selectedRound='2', selectedEquipment='';
+  let selectedClient=serverRole==='client'?assignedClientId:'',showCatalog=false,clientOrderMode=false;
   let matrixReports=[],matrixFaults=[],matrixTasks=[],matrixExpenses=[],matrixObservationOptions=[],operationUsers=[],userStatusFilter='all',matrixLoaded=false,selectedFault='',selectedTask='',selectedExpense='',selectedPermissionUser='',partnerDocuments=null,partnerDocumentsClient='',partnerDocumentTab='quotes',partnerDocumentCacheWarming=false;
-  const clientMeta=Object.fromEntries(clients.map((c,index)=>[c[1],{policy:true,matrixId:c[1],sortOrder:index+1,address:c[1]==='HDI'?'Anillo Vial Fray Junípero Serra 1500-A, Arboledas, Querétaro':'',photo:''}]));
-  const equipmentMeta=Object.fromEntries(equipment.map(e=>[e[0],{client:'HDI',active:true,type:'Refrigeración',location:'',model:'',serial:'',notes:'',photo:''}]));
+  const clientMeta=Object.fromEntries(clients.map((c,index)=>[c[1],{policy:true,matrixId:c[1],sortOrder:index+1,address:'',photo:''}]));
+  const equipmentMeta=Object.fromEntries(equipment.map(e=>[e[0],{client:'',active:true,type:'Refrigeración',location:'',model:'',serial:'',notes:'',photo:''}]));
   const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const clientName=id=>clients.find(c=>c[1]===id)?.[0]||id;
   const idCollator=new Intl.Collator('es',{numeric:true,sensitivity:'base'});
@@ -406,6 +408,12 @@
     return matches.length?matches[matches.length-1]:null;
   }
   function applyMatrixBootstrap(payload,preferLocalRounds=false){
+    if(serverRole==='client'){
+      const returnedIds=Array.isArray(payload.clients)?payload.clients.map(item=>String(item.id||'')):[];
+      if(!assignedClientId||payload.scope_valid!==true||String(payload.assigned_client_id||'')!==assignedClientId||returnedIds.length!==1||returnedIds[0]!==assignedClientId){
+        throw Error('La empresa asignada a esta cuenta no coincide con los datos recibidos. Se bloqueó la vista para no mostrar otro cliente.');
+      }
+    }
     if(!Array.isArray(payload.clients)||!payload.clients.length||!Array.isArray(payload.equipment))return false;
     if(typeof serverRole!=='undefined'&&serverRole==='client'&&!preferLocalRounds){
       const company=payload.clients[0].id;
@@ -435,7 +443,7 @@
       const dated=matrixReports.filter(report=>report.round===round).map(report=>report.end||report.start).filter(Boolean);
       demoRounds[round].date=dated.length?dated[dated.length-1]:'';
     }
-    selectedClient=clientMeta[keepClient]?keepClient:(clients[0]?.[1]||'');
+    selectedClient=serverRole==='client'?assignedClientId:(clientMeta[keepClient]?keepClient:(clients[0]?.[1]||''));
     selectedRound=wasLoaded&&selectedClient===keepClient?keepRound:(clientMeta[selectedClient]?.selectedRound||'2');
     selectedEquipment=equipmentMeta[keepEquipment]?.client===selectedClient?keepEquipment:(equipment.filter(item=>equipmentMeta[item[0]]?.client===selectedClient).sort(byEquipmentId)[0]?.[0]||'');
     matrixLoaded=true;
@@ -457,6 +465,16 @@
   views.payments=['Administración','Pagos a técnicos'];views.payAccount=['Pagos','Cuenta del técnico'];
   views.repairs=['HSC Técnico','Reparaciones'];views.repair=['Reparaciones','Historial de la visita'];views.repairEditor=['Reparaciones','Registrar visita'];
   views.worklists=['Agenda','Mi jornada'];views.worklist=['Mi jornada','Mi lista de equipos'];
+  function showPartnerScopeError(message){
+    if(serverRole!=='client')return;
+    $('#partnerClientLogo').textContent='!';
+    $('#partnerClientName').textContent='No se pudo validar tu empresa';
+    $('#partnerClientAddress').textContent=message||'Vuelve a intentarlo con conexión.';
+    $('#partnerEquipmentPreview').innerHTML='<div class="empty">No se mostrarán datos hasta validar la empresa de esta cuenta.</div>';
+    $('#partnerEquipmentCount').textContent='0';$('#partnerCompletedCount').textContent='0';$('#partnerPendingCount').textContent='0';
+    $('#partnerProgress').style.width='0';$('#partnerProgressDetail').textContent='Validación pendiente';$('#partnerProgressPercent').textContent='0%';
+    document.body.classList.add('operations-ready');
+  }
   async function hscFetch(url,options={},timeout=20000){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);try{const response=await fetch(url,{...options,signal:controller.signal});serverConnection=response.status===401||response.redirected?'auth':response.ok?'online':'server';const body=await response.text();return {ok:response.ok,status:response.status,redirected:response.redirected,json:async()=>JSON.parse(body)}}catch(error){serverConnection='unreachable';throw Error(error.name==='AbortError'?'El servidor tardó demasiado; tu trabajo local se conserva.':'No se pudo contactar HSC; tu trabajo local se conserva.')}finally{clearTimeout(timer)}}
   function cacheServerPayload(){localStorage.setItem(`hsc-operaciones-data-${account.id}-${appKind}`,JSON.stringify({savedAt:Date.now(),payload:lastServerPayload}));}
   async function repaintPendingState(){
@@ -485,6 +503,7 @@
         if(refresh)toast('Cambios de Google importados y visibles');return true;
       }catch(error){
         try{await repaintPendingState()}catch(localError){console.warn('Vista local:',localError)}
+        showPartnerScopeError(error.message);
         $('#matrixStatus').textContent=serverConnection==='auth'?'Sesión por renovar · trabajo local conservado':lastServerPayload?'Sin respuesta de HSC · mostrando trabajo guardado':'HSC no respondió · reintentando';
         if($('#operationsNoticeText'))$('#operationsNoticeText').textContent=error.message;
         if(refresh)toast(error.message);console.warn('Operaciones bootstrap:',error);return false;
@@ -601,7 +620,8 @@
     const entryParams=consumeNotificationDestination();
     let state={};try{state=JSON.parse(localStorage.getItem(navigationStorageKey)||'{}')}catch(_){}
     const tabState=window.history.state;if(tabState?.hscOperations&&!tabState.guard&&tabState.userId===account.id)state={...tabState};
-    if(state.client&&clientMeta[state.client])selectedClient=state.client;
+    if(serverRole==='client')selectedClient=assignedClientId;
+    else if(state.client&&clientMeta[state.client])selectedClient=state.client;
     if(state.equipment&&equipmentMeta[state.equipment]?.client===selectedClient)selectedEquipment=state.equipment;
     else selectedEquipment=equipment.find(item=>equipmentMeta[item[0]]?.client===selectedClient)?.[0]||'';
     selectClientRound(selectedClient);
