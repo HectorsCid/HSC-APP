@@ -28,7 +28,7 @@ from cfdi_drive import (
 )
 from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config, trusted_device_token
 from email_tracking import delivery_status, email_thread_headers, read_email_deliveries, record_email_delivery
-from factura_pdf_hsc import build_invoice_pdf_bytes, parse_cfdi
+from pdf_runtime import PdfRenderError, render_invoice_pdf_bytes
 import notification_center as notices
 
 # ----------------------------------------------------------------------
@@ -1276,7 +1276,7 @@ def _invoice_pdf_metadata(inv_id):
 
 def _hsc_invoice_pdf(xml_bytes, inv_id, *, internal_folio="", order_number="", quote_folio=""):
     metadata = _invoice_pdf_metadata(inv_id)
-    return build_invoice_pdf_bytes(
+    return render_invoice_pdf_bytes(
         xml_bytes,
         internal_folio=internal_folio or metadata["internal_folio"],
         order_number=order_number or metadata["order_number"],
@@ -1286,7 +1286,11 @@ def _hsc_invoice_pdf(xml_bytes, inv_id, *, internal_folio="", order_number="", q
 
 def _facturama_printable_pdf(xml_bytes, inv_id, *, internal_folio="", order_number="", quote_folio=""):
     """Personaliza facturas de ingreso y conserva el formato oficial de otros CFDI."""
-    if parse_cfdi(xml_bytes).get("cfdi_type") == "I":
+    try:
+        cfdi_type = ET.fromstring(xml_bytes).attrib.get("TipoDeComprobante", "I")
+    except (ET.ParseError, TypeError, ValueError):
+        cfdi_type = "I"
+    if cfdi_type == "I":
         return _hsc_invoice_pdf(
             xml_bytes, inv_id,
             internal_folio=internal_folio,
@@ -2665,7 +2669,7 @@ def api_invoice_pdf(inv_id):
             content = _facturama_printable_pdf(xml, inv_id)
             filename_folio = " - ".join(filter(None, [metadata.get("invoice_alias"), metadata["internal_folio"]])) or inv_id
             filename_folio = secure_filename(filename_folio) or secure_filename(inv_id) or "factura"
-        except (requests.HTTPError, ValueError, OSError) as exc:
+        except (requests.HTTPError, ValueError, OSError, PdfRenderError) as exc:
             detail = _http_error_detail(exc) if isinstance(exc, requests.HTTPError) else {"message": str(exc)}
             return jsonify({"ok": False, "error": detail}), 400
         return Response(

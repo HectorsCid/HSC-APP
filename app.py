@@ -42,7 +42,7 @@ from auth_google import (
     get_drive_service_user,
     reset_thread_google_services,
 )
-from pdf_runtime import PdfRendererBusy, render_pdf_file
+from pdf_runtime import PdfRenderError, PdfRendererBusy, render_pdf_file
 from photo_runtime import prepare_photo
 from quotation_branches import catalog_branches, select_branch, validate_branches
 
@@ -2269,6 +2269,10 @@ def generar_pdf():
         render_pdf_file(html, ruta_pdf, wait_timeout=5)
     except PdfRendererBusy:
         flash("Hay otro PDF procesándose. Inténtalo nuevamente en unos segundos.", "warning")
+        return redirect(url_for("inicio"))
+    except PdfRenderError:
+        app.logger.exception("La cotización no pudo convertirse a PDF")
+        flash("No se pudo imprimir la cotización. Tus datos siguen guardados; inténtalo nuevamente.", "error")
         return redirect(url_for("inicio"))
 
     def guardar_respaldo_local(ruta_pdf_local, cliente_nombre, sucursal_nombre, nombre_arch):

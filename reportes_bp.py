@@ -22,6 +22,7 @@ from auth_google import (
     reset_thread_google_services,
 )
 from pdf_runtime import (
+    PdfRenderError,
     PdfRendererBusy,
     pdf_render_slot,
     render_pdf_bytes,
@@ -1100,6 +1101,10 @@ def reportes_pdf(id_reporte):
     except PdfRendererBusy:
         flash("Hay otro PDF procesándose. Inténtalo nuevamente en unos segundos.", "warning")
         return redirect(url_for("reportes.reportes_prev", id_reporte=id_reporte))
+    except PdfRenderError:
+        current_app.logger.exception("El reporte %s no pudo convertirse a PDF", id_reporte)
+        flash("No se pudo imprimir el reporte. Los datos siguen guardados; inténtalo nuevamente.", "error")
+        return redirect(url_for("reportes.reportes_prev", id_reporte=id_reporte))
 
     # 2) Si se pidió forzar descarga, la damos y salimos (opcional)
     if force_download:
@@ -1598,6 +1603,9 @@ def reportes_pdf_json(id_reporte):
         pdf_bytes = _render_report_pdf_bytes(data, wait_timeout=45 if is_auto else 5)
     except PdfRendererBusy as exc:
         return jsonify({"ok": False, "error": "pdf_busy", "detail": str(exc)}), 409
+    except PdfRenderError as exc:
+        current_app.logger.exception("El reporte %s no pudo convertirse a PDF", id_reporte)
+        return jsonify({"ok": False, "error": "pdf_failed", "detail": str(exc)}), 500
 
     # 2) Guardar en Drive (dos rutas, como en reportes_pdf)
     cliente = _sanitize_name(data.get("Cliente") or "Sin Cliente")
@@ -2224,6 +2232,10 @@ def diag_pdf(token):
         pdf_bytes = render_pdf_bytes(html, base_url=current_app.root_path, wait_timeout=5)
     except PdfRendererBusy:
         flash("Hay otro PDF procesándose. Inténtalo nuevamente en unos segundos.", "warning")
+        return redirect(url_for("reportes.diag_prev_guardado", token=token))
+    except PdfRenderError:
+        current_app.logger.exception("El reporte manual %s no pudo convertirse a PDF", token)
+        flash("No se pudo imprimir el reporte. Los datos siguen guardados; inténtalo nuevamente.", "error")
         return redirect(url_for("reportes.diag_prev_guardado", token=token))
     if force_download:
         return send_file(io.BytesIO(pdf_bytes),
