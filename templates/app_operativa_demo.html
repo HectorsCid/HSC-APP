@@ -122,6 +122,7 @@
     }
 </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='operations_profile.css', v='20260923-1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='operations_technician_refresh.css', v='20260926-1') }}">
 </head>
 <body data-operations-shell="true" data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-pwa-install-disabled="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-app-kind="{{ operations_app_kind|default('technician') }}" data-user-id="{{ operations_user_id|default('owner') }}" data-user-name="{{ operations_user_name|default('Héctor Silva Cid') }}" data-client-id="{{ operations_client_id|default('') }}" data-permissions="{{ operations_permissions|default({})|tojson|forceescape }}">
 <div class="app">

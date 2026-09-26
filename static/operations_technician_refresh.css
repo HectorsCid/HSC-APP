@@ -1,0 +1,93 @@
+/* Visual refresh for the technician side of HSC Operaciones. */
+body[data-active-mode="tech"]{
+  --bg:#101827;
+  --surface:#182438;
+  --surface-2:#202e43;
+  --deep:#121d2e;
+  --line:#34465e;
+  --text:#f5f7fb;
+  --muted:#b2bfd0;
+  --brand:#6d9fd3;
+  --brand-2:#9bc3eb;
+  --topbar:rgba(16,24,39,.96);
+  --nav:rgba(16,24,39,.97);
+  --sticky:rgba(24,36,56,.97);
+  --shadow:0 12px 32px rgba(0,0,0,.18);
+}
+html[data-theme="light"] body[data-active-mode="tech"]{
+  --bg:#e8eef6;
+  --surface:#fff;
+  --surface-2:#f2f6fb;
+  --deep:#f7f9fc;
+  --line:#c4d0de;
+  --text:#17243a;
+  --muted:#53657b;
+  --brand:#477fb9;
+  --brand-2:#376fa9;
+  --topbar:rgba(255,255,255,.97);
+  --nav:rgba(255,255,255,.98);
+  --sticky:rgba(255,255,255,.98);
+  --shadow:0 12px 30px rgba(31,52,78,.10);
+}
+body[data-active-mode="tech"] .app{background:var(--bg)}
+body[data-active-mode="tech"] main{max-width:1040px;margin:0 auto}
+body[data-active-mode="tech"] .topbar{min-height:calc(66px + env(safe-area-inset-top,0px));box-shadow:0 1px 0 var(--line)}
+body[data-active-mode="tech"] .brand{border:1px solid color-mix(in srgb,var(--brand) 45%,var(--line));background:color-mix(in srgb,var(--brand) 12%,var(--surface));color:var(--brand-2);box-shadow:none}
+body[data-active-mode="tech"] .heading h1{font-size:1.22rem;font-weight:700}
+body[data-active-mode="tech"] .eyebrow{font-size:.7rem;letter-spacing:.09em}
+body[data-active-mode="tech"] :is(.icon-btn,.back){border-radius:11px;background:transparent;box-shadow:none}
+body[data-active-mode="tech"] :is(.primary,.secondary,.danger,.mini-btn){box-shadow:none;border-radius:11px;font-weight:700}
+body[data-active-mode="tech"] .primary{border-color:color-mix(in srgb,var(--brand) 70%,var(--line));background:var(--brand);color:#fff}
+body[data-active-mode="tech"] .secondary{background:var(--surface);border-color:var(--line)}
+body[data-active-mode="tech"] .danger{background:color-mix(in srgb,var(--danger) 10%,var(--surface));color:color-mix(in srgb,var(--danger) 82%,var(--text))}
+body[data-active-mode="tech"] :is(.search,.client-card,.equipment-card,.report-card,.task-card,.reminder,.user-card,.quick-card,.appearance-panel,.client-worklists){border-radius:15px;box-shadow:none}
+body[data-active-mode="tech"] :is(.client-card,.equipment-card,.report-card){padding:13px 14px}
+body[data-active-mode="tech"] .card-title{font-size:1rem;font-weight:700;line-height:1.35}
+body[data-active-mode="tech"] .card-sub{font-size:.86rem;line-height:1.45}
+body[data-active-mode="tech"] .section-head h2{font-size:1.12rem;font-weight:700}
+body[data-active-mode="tech"] .count{font-size:.86rem}
+body[data-active-mode="tech"] :is(.client-logo,.equipment-photo){border-radius:13px}
+body[data-active-mode="tech"] :is(.hero,.equipment-hero,.welcome,.invite-hero,.agenda-date){border-radius:18px;background:var(--surface);box-shadow:none;border-color:var(--line)}
+body[data-active-mode="tech"] .hero h2{font-size:1.4rem}
+body[data-active-mode="tech"] .stat{border-radius:12px;background:var(--surface-2)}
+body[data-active-mode="tech"] .stat span{font-size:.76rem}
+body[data-active-mode="tech"] .chip{border-radius:11px;padding:9px 14px}
+body[data-active-mode="tech"] .chip.active{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 13%,var(--surface));color:var(--text)}
+body[data-active-mode="tech"] .bottom-nav{box-shadow:0 -8px 24px rgba(0,0,0,.08)}
+body[data-active-mode="tech"] .nav-btn{font-size:.78rem}
+body[data-active-mode="tech"] .nav-btn span{font-size:1.15rem}
+body[data-active-mode="tech"] .nav-btn.active{color:var(--brand-2)}
+
+/* Forms: larger labels and calmer, clearer fields on a phone. */
+body[data-active-mode="tech"] :is(.field label,.repairs label,.pay-panel label){color:var(--text);font-size:.98rem;font-weight:600;line-height:1.35}
+body[data-active-mode="tech"] :is(.field input,.field select,.field textarea,.repairs input,.repairs select,.repairs textarea,.pay-panel input,.pay-panel select){min-height:52px;padding:13px 14px;border-radius:11px;background:var(--deep);font-size:1rem}
+body[data-active-mode="tech"] :is(.field textarea,.repairs textarea){min-height:112px;line-height:1.5}
+body[data-active-mode="tech"] .form-intro{padding:15px 16px;border-radius:15px;background:var(--surface);border-color:var(--line)}
+body[data-active-mode="tech"] .form-intro b{font-size:1.08rem}
+body[data-active-mode="tech"] .form-intro span{font-size:.88rem;color:var(--muted);line-height:1.45}
+body[data-active-mode="tech"] .form-section{margin-top:14px;border-radius:15px;box-shadow:none}
+body[data-active-mode="tech"] .form-section summary{min-height:58px;padding:15px 16px;font-size:1.04rem;font-weight:700}
+body[data-active-mode="tech"] .section-body{gap:16px;padding:2px 16px 18px}
+body[data-active-mode="tech"] .editor-note{font-size:.85rem}
+body[data-active-mode="tech"] .check-row{min-height:48px;padding:8px 0;font-size:.98rem}
+body[data-active-mode="tech"] #reportForm{max-width:760px;margin:0 auto}
+body[data-active-mode="tech"] [data-view="report"]>.form-intro{max-width:760px;margin:0 auto}
+body[data-active-mode="tech"] #reportForm .form-actions{bottom:74px;border-radius:14px;box-shadow:0 -8px 28px rgba(0,0,0,.12)}
+body[data-active-mode="tech"] #reportForm .form-actions button{min-height:50px}
+body[data-active-mode="tech"] #reportForm .read-only{background:var(--surface-2);opacity:1;color:var(--muted)}
+body[data-active-mode="tech"] #reportEvidenceSlot{font-weight:700}
+
+@media(max-width:560px){
+  body[data-active-mode="tech"] main{padding:15px 14px 112px}
+  body[data-active-mode="tech"] .topbar{gap:7px;padding-left:calc(10px + env(safe-area-inset-left,0px));padding-right:calc(10px + env(safe-area-inset-right,0px))}
+  body[data-active-mode="tech"] :is(.icon-btn,.back){width:42px;height:42px}
+  body[data-active-mode="tech"] .section-head{margin-top:19px}
+  body[data-active-mode="tech"] .field-row{grid-template-columns:minmax(0,1fr)}
+  body[data-active-mode="tech"] #reportForm .form-actions{grid-template-columns:1fr 1.25fr;padding:9px}
+  body[data-active-mode="tech"] #reportForm .form-actions #discardDraft{display:none}
+  body[data-active-mode="tech"] #reportForm .form-actions .primary{grid-column:auto}
+}
+
+@media(hover:hover){
+  body[data-active-mode="tech"] :is(.client-card,.equipment-card,.report-card,.secondary,.mini-btn):hover{border-color:color-mix(in srgb,var(--brand) 55%,var(--line));background:color-mix(in srgb,var(--brand) 6%,var(--surface))}
+}
