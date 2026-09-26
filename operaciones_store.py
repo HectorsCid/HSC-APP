@@ -18,7 +18,7 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "18"
+SCHEMA_VERSION = "19"
 
 
 DEFAULT_OBSERVATION_OPTIONS = {
@@ -186,14 +186,22 @@ class OperationsStore:
                 completed INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL DEFAULT 'sheets',
                 matrix_id TEXT NOT NULL DEFAULT '', report_type TEXT NOT NULL DEFAULT 'refrigeration',
                 payload_json TEXT NOT NULL DEFAULT '{}', state TEXT NOT NULL DEFAULT 'imported',
-                sync_status TEXT NOT NULL DEFAULT 'synced', updated_at TEXT NOT NULL
+                sync_status TEXT NOT NULL DEFAULT 'synced', revision INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
             )""",
             """CREATE TABLE IF NOT EXISTS operations_evidence (
                 id TEXT PRIMARY KEY, report_id TEXT NOT NULL, position INTEGER NOT NULL,
                 storage_ref TEXT NOT NULL DEFAULT '', drive_ref TEXT NOT NULL DEFAULT '',
-                sync_status TEXT NOT NULL DEFAULT 'synced', updated_at TEXT NOT NULL,
+                sync_status TEXT NOT NULL DEFAULT 'synced', actor_id TEXT NOT NULL DEFAULT '',
+                actor_name TEXT NOT NULL DEFAULT '', mutation_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL,
                 UNIQUE(report_id, position),
                 FOREIGN KEY(report_id) REFERENCES operations_reports(id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS operations_report_presence (
+                report_id TEXT NOT NULL, user_id TEXT NOT NULL, user_name TEXT NOT NULL DEFAULT '',
+                last_seen_at TEXT NOT NULL, PRIMARY KEY(report_id,user_id),
+                FOREIGN KEY(report_id) REFERENCES operations_reports(id) ON DELETE CASCADE
             )""",
             """CREATE TABLE IF NOT EXISTS operations_faults (
                 id TEXT PRIMARY KEY, client_id TEXT NOT NULL DEFAULT '',
@@ -294,6 +302,7 @@ class OperationsStore:
             "CREATE INDEX IF NOT EXISTS idx_repair_changes ON operations_repair_changes(repair_id,saved_at)",
             "CREATE TABLE IF NOT EXISTS operations_repair_photos (repair_id TEXT NOT NULL, id TEXT NOT NULL, digest TEXT NOT NULL, drive_ref TEXT NOT NULL, PRIMARY KEY(repair_id,id), FOREIGN KEY(repair_id) REFERENCES operations_repairs(id))",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_equipment ON operations_reports(equipment_id)",
+            "CREATE INDEX IF NOT EXISTS idx_operations_report_presence_seen ON operations_report_presence(report_id,last_seen_at)",
             "CREATE TABLE IF NOT EXISTS operations_report_submissions (draft_id TEXT PRIMARY KEY, report_id TEXT NOT NULL, user_id TEXT NOT NULL, confirmed_at TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_client ON operations_reports(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_faults_client ON operations_faults(client_id)",
@@ -324,6 +333,12 @@ class OperationsStore:
             if added_task_notice_choice:
                 conn.execute("UPDATE operations_tasks SET notify_client=1 WHERE id LIKE 'VISIT_%' AND status!='Solicitada'")
             self._ensure_column(conn, "operations_tasks", "notice_state", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "operations_reports", "revision", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "operations_evidence", "actor_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "operations_evidence", "actor_name", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "operations_evidence", "mutation_id", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "operations_evidence", "created_at", "TEXT NOT NULL DEFAULT ''")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_evidence_mutation ON operations_evidence(report_id,mutation_id) WHERE mutation_id <> ''")
             self._seed_observation_options(conn)
             self._remove_legacy_fault_duplicates(conn)
             self._upsert_meta(conn, "schema_version", SCHEMA_VERSION)
@@ -962,12 +977,14 @@ class OperationsStore:
         self.queue_sync(kind, equipment_id, "sheets", "upsert")
 
     def save_report_draft(self, item):
-        """Guarda el texto del reporte; las evidencias se almacenan por separado."""
+        """Guarda un borrador compartido sin reemplazar cambios ajenos por accidente."""
         self.initialize()
         equipment_id = _text(item.get("equipment_id"))
         client_id = _text(item.get("client_id"))
         round_number = _text(item.get("round"))
         payload = dict(item.get("payload")) if isinstance(item.get("payload"), dict) else {}
+        changed_fields = item.get("changed_fields")
+        changed_fields = dict(changed_fields) if isinstance(changed_fields, dict) else None
         if not equipment_id or not client_id or round_number not in {"1", "2", "3", "4"}:
             raise ValueError("Cliente, equipo y ronda son obligatorios.")
         equipment = next((row for row in self.snapshot()["equipment"] if row["id"] == equipment_id), None)
@@ -978,6 +995,15 @@ class OperationsStore:
         edit_report_id = _text(item.get("edit_report_id") or payload.get("_edit_report_id"))
         matrix_id = f"{equipment_id}_R {round_number}"
         with self.connection() as conn:
+            # Un solo borrador compartido por equipo/ronda. El bloqueo evita que
+            # dos teléfonos creen borradores distintos al abrir al mismo tiempo.
+            if self.dialect == "sqlite":
+                conn.execute("BEGIN IMMEDIATE")
+            else:
+                conn.execute(
+                    f"SELECT id FROM operations_equipment WHERE id={p} FOR UPDATE",
+                    (equipment_id,),
+                ).fetchone()
             if edit_report_id:
                 target = conn.execute(
                     f"SELECT id FROM operations_reports WHERE id={p} AND equipment_id={p} "
@@ -989,33 +1015,40 @@ class OperationsStore:
                 payload["_edit_report_id"] = edit_report_id
             if report_id:
                 found = conn.execute(
-                    f"SELECT id,equipment_id,client_id,round_number,payload_json FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
+                    f"SELECT id,equipment_id,client_id,round_number,payload_json,revision FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
                     (report_id,),
                 ).fetchone()
                 if not found:
                     raise ValueError("El borrador indicado ya no existe o ya fue finalizado.")
                 if found[1] != equipment_id or found[2] != client_id or found[3] != round_number:
                     raise ValueError("Ese borrador pertenece a otro equipo o a otra ronda.")
-                # Legacy uploads already carry their exact random draft ID. They
-                # may finish it, but unowned drafts are never auto-discovered.
-                draft_owner = json.loads(found[4] or '{}').get('_draft_user_id')
-                if payload.get('_draft_user_id') and draft_owner and draft_owner != payload['_draft_user_id']:
-                    raise ValueError("Ese borrador pertenece a otra cuenta.")
             else:
                 candidates = conn.execute(
-                    f"SELECT id,payload_json FROM operations_reports WHERE equipment_id={p} AND round_number={p} "
+                    f"SELECT id,payload_json,revision FROM operations_reports WHERE equipment_id={p} AND round_number={p} "
                     "AND source='app' AND state='draft' ORDER BY updated_at DESC",
                     (equipment_id, round_number),
                 ).fetchall()
-                found = next((row for row in candidates if json.loads(row[1] or '{}').get('_draft_user_id') == payload.get('_draft_user_id')), None)
+                found = candidates[0] if candidates else None
                 report_id = found[0] if found else f"RPT_{uuid.uuid4().hex[:16].upper()}"
+            if found:
+                try:
+                    current_payload = json.loads(found[4] if len(found) > 4 else found[1] or "{}")
+                except (TypeError, json.JSONDecodeError):
+                    current_payload = {}
+                if changed_fields is not None:
+                    current_payload.update(changed_fields)
+                    # Conserva quién inició el borrador; el autor de cada foto se
+                    # guarda por separado y no depende de este dato histórico.
+                    current_payload.setdefault("_draft_user_id", payload.get("_draft_user_id", ""))
+                    payload = current_payload
             stamp = _now()
             saved = conn.execute(
                 f"INSERT INTO operations_reports(id,equipment_id,client_id,round_number,start_at,end_at,completed,source,matrix_id,report_type,payload_json,state,sync_status,updated_at) "
                 f"VALUES ({','.join([p] * 14)}) ON CONFLICT(id) DO UPDATE SET "
                 "equipment_id=excluded.equipment_id,client_id=excluded.client_id,round_number=excluded.round_number,"
                 "start_at=excluded.start_at,end_at=excluded.end_at,matrix_id=excluded.matrix_id,report_type=excluded.report_type,"
-                "payload_json=excluded.payload_json,state='draft',sync_status='local_only',updated_at=excluded.updated_at "
+                "payload_json=excluded.payload_json,state='draft',sync_status='local_only',"
+                "revision=operations_reports.revision+1,updated_at=excluded.updated_at "
                 "WHERE operations_reports.state='draft' AND operations_reports.completed=0",
                 (report_id, equipment_id, client_id, round_number, _text(payload.get("inicio")),
                  _text(payload.get("fin")), 0, "app", matrix_id, _text(item.get("report_type")) or "refrigeration",
@@ -1023,7 +1056,7 @@ class OperationsStore:
             )
             if saved.rowcount != 1:
                 raise ValueError("El reporte ya fue finalizado; no se sobrescribió con un borrador tardío.")
-        return self.get_report_draft(equipment_id, round_number, user_id=payload.get('_draft_user_id'))
+        return self.get_report_draft(equipment_id, round_number)
 
     def ensure_report_fault(self, report_id, *, client_id, equipment_id, description, priority="Alta"):
         """Crea o actualiza la falla grave vinculada al reporte de forma idempotente."""
@@ -1577,18 +1610,18 @@ class OperationsStore:
         p = self.placeholder
         with self.connection() as conn:
             rows = conn.execute(
-                f"SELECT id,client_id,equipment_id,round_number,matrix_id,report_type,payload_json,updated_at "
+                f"SELECT id,client_id,equipment_id,round_number,matrix_id,report_type,payload_json,updated_at,revision "
                 f"FROM operations_reports WHERE equipment_id={p} AND round_number={p} "
                 "AND source='app' AND state='draft' ORDER BY updated_at DESC",
                 (_text(equipment_id), _text(round_number)),
             ).fetchall()
-        row = next((r for r in rows if json.loads(r[6] or '{}').get('_draft_user_id') == user_id), None)
+        row = rows[0] if rows else None
         if not row:
             return None
         return {
             "id": row[0], "client_id": row[1], "equipment_id": row[2], "round": row[3],
             "matrix_id": row[4], "report_type": row[5], "payload": json.loads(row[6] or "{}"),
-            "updated_at": row[7],
+            "updated_at": row[7], "revision": int(row[8] or 0),
         }
 
     def delete_report_draft(self, report_id, user_id=None):
@@ -1705,6 +1738,15 @@ class OperationsStore:
                     f"completed=1,source='app',state='completed',sync_status='pending',updated_at={p} WHERE id={p}",
                     (start_at, end_at, json.dumps(payload, ensure_ascii=False), stamp, report_id),
                 )
+            # Antes de la modalidad compartida podía existir un borrador por
+            # técnico. Se conservan, pero dejan de aparecer como editables al
+            # confirmar el reporte común.
+            conn.execute(
+                f"UPDATE operations_reports SET state='superseded',updated_at={p} "
+                f"WHERE equipment_id={p} AND client_id={p} AND round_number={p} "
+                f"AND source='app' AND state='draft' AND id!={p}",
+                (stamp, row[2], row[1], row[3], final_report_id),
+            )
             self._remember_observations(conn, payload)
             conn.execute(
                 f"INSERT INTO operations_report_submissions(draft_id,report_id,user_id,confirmed_at) "
@@ -1737,6 +1779,159 @@ class OperationsStore:
                 raise ValueError("El borrador ya no existe o ya fue finalizado.")
             conn.execute(f"DELETE FROM operations_evidence WHERE report_id={p}", (_text(report_id),))
 
+    def reserve_report_evidence(self, report_id, preferred_position, mutation_id, *, actor_id="", actor_name=""):
+        """Reserva una ranura libre de forma atómica e idempotente."""
+        self.initialize()
+        report_id, mutation_id = _text(report_id), _text(mutation_id)
+        preferred_position = int(preferred_position or 0)
+        if not report_id or not mutation_id or preferred_position not in range(1, 7):
+            raise ValueError("La fotografía no tiene un identificador o posición válidos.")
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            if self.dialect == "sqlite":
+                conn.execute("BEGIN IMMEDIATE")
+            else:
+                conn.execute(
+                    f"SELECT id FROM operations_reports WHERE id={p} FOR UPDATE", (report_id,)
+                ).fetchone()
+            report = conn.execute(
+                f"SELECT state FROM operations_reports WHERE id={p} AND source='app'", (report_id,)
+            ).fetchone()
+            if not report or report[0] != "draft":
+                raise ValueError("El borrador ya no está disponible.")
+            existing = conn.execute(
+                f"SELECT position,storage_ref,drive_ref,sync_status,actor_id,actor_name,created_at "
+                f"FROM operations_evidence WHERE report_id={p} AND mutation_id={p}",
+                (report_id, mutation_id),
+            ).fetchone()
+            if existing:
+                return {
+                    "position": int(existing[0]), "storage_ref": _text(existing[1]),
+                    "drive_ref": _text(existing[2]), "sync_status": _text(existing[3]),
+                    "actor_id": _text(existing[4]), "actor_name": _text(existing[5]),
+                    "created_at": _text(existing[6]), "mutation_id": mutation_id,
+                }
+            occupied = {
+                int(row[0]) for row in conn.execute(
+                    f"SELECT position FROM operations_evidence WHERE report_id={p}", (report_id,)
+                ).fetchall()
+            }
+            available = [slot for slot in range(1, 7) if slot not in occupied]
+            if not available:
+                raise ValueError("Este reporte ya tiene las 6 fotografías permitidas.")
+            position = preferred_position if preferred_position in available else available[0]
+            evidence_id = f"{report_id}:upload:{mutation_id[:64]}"
+            conn.execute(
+                f"INSERT INTO operations_evidence"
+                f"(id,report_id,position,storage_ref,drive_ref,sync_status,actor_id,actor_name,mutation_id,created_at,updated_at) "
+                f"VALUES ({','.join([p] * 11)})",
+                (evidence_id, report_id, position, "", "", "uploading", _text(actor_id),
+                 _text(actor_name), mutation_id, stamp, stamp),
+            )
+            conn.execute(
+                f"UPDATE operations_reports SET revision=revision+1,updated_at={p} WHERE id={p}",
+                (stamp, report_id),
+            )
+        return {"position": position, "storage_ref": "", "drive_ref": "", "sync_status": "uploading",
+                "actor_id": _text(actor_id), "actor_name": _text(actor_name), "created_at": stamp,
+                "mutation_id": mutation_id}
+
+    def complete_report_evidence(self, report_id, mutation_id, drive_ref, *, storage_ref=""):
+        """Confirma en la reserva el archivo que Drive ya recibió."""
+        self.initialize()
+        report_id, mutation_id, drive_ref = _text(report_id), _text(mutation_id), _text(drive_ref)
+        storage_ref = _text(storage_ref) or drive_ref
+        if not report_id or not mutation_id or not drive_ref:
+            raise ValueError("La evidencia no pudo confirmarse.")
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            result = conn.execute(
+                f"UPDATE operations_evidence SET storage_ref={p},drive_ref={p},sync_status='pending',updated_at={p} "
+                f"WHERE report_id={p} AND mutation_id={p}",
+                (storage_ref, drive_ref, stamp, report_id, mutation_id),
+            )
+            if result.rowcount != 1:
+                raise ValueError("La reserva de la fotografía ya no existe.")
+            conn.execute(
+                f"UPDATE operations_reports SET revision=revision+1,updated_at={p} WHERE id={p}",
+                (stamp, report_id),
+            )
+            row = conn.execute(
+                f"SELECT position,actor_id,actor_name,created_at FROM operations_evidence "
+                f"WHERE report_id={p} AND mutation_id={p}", (report_id, mutation_id),
+            ).fetchone()
+        return {"position": int(row[0]), "storage_ref": storage_ref, "drive_ref": drive_ref,
+                "actor_id": _text(row[1]), "actor_name": _text(row[2]),
+                "created_at": _text(row[3]), "mutation_id": mutation_id}
+
+    def release_report_evidence(self, report_id, mutation_id):
+        """Libera sólo una carga incompleta; nunca borra fotos ya confirmadas."""
+        self.initialize()
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            result = conn.execute(
+                f"DELETE FROM operations_evidence WHERE report_id={p} AND mutation_id={p} "
+                "AND drive_ref='' AND storage_ref=''",
+                (_text(report_id), _text(mutation_id)),
+            )
+            if result.rowcount:
+                conn.execute(
+                    f"UPDATE operations_reports SET revision=revision+1,updated_at={p} WHERE id={p}",
+                    (stamp, _text(report_id)),
+                )
+        return bool(result.rowcount)
+
+    def report_live_state(self, report_id, *, user_id="", user_name=""):
+        """Devuelve sólo metadatos ligeros y mantiene visible a quien está editando."""
+        self.initialize()
+        report_id, user_id, p, stamp = _text(report_id), _text(user_id), self.placeholder, _now()
+        with self.connection() as conn:
+            report = conn.execute(
+                f"SELECT state,revision,updated_at,payload_json FROM operations_reports WHERE id={p}",
+                (report_id,),
+            ).fetchone()
+            if not report:
+                return None
+            if user_id:
+                conn.execute(
+                    f"INSERT INTO operations_report_presence(report_id,user_id,user_name,last_seen_at) "
+                    f"VALUES ({','.join([p] * 4)}) ON CONFLICT(report_id,user_id) DO UPDATE SET "
+                    "user_name=excluded.user_name,last_seen_at=excluded.last_seen_at",
+                    (report_id, user_id, _text(user_name), stamp),
+                )
+            evidence = conn.execute(
+                f"SELECT position,actor_id,actor_name,created_at,updated_at,drive_ref,storage_ref "
+                f"FROM operations_evidence WHERE report_id={p} AND (drive_ref<>'' OR storage_ref<>'') ORDER BY position",
+                (report_id,),
+            ).fetchall()
+            presence = conn.execute(
+                f"SELECT user_id,user_name,last_seen_at FROM operations_report_presence WHERE report_id={p}",
+                (report_id,),
+            ).fetchall()
+        cutoff = datetime.now(timezone.utc).timestamp() - 20
+        participants = []
+        for row in presence:
+            try:
+                seen = datetime.fromisoformat(row[2]).timestamp()
+            except (TypeError, ValueError):
+                continue
+            if seen >= cutoff:
+                participants.append({"id": row[0], "name": row[1] or "Técnico", "last_seen_at": row[2]})
+        try:
+            payload = json.loads(report[3] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            payload = {}
+        return {
+            "state": report[0], "revision": int(report[1] or 0), "updated_at": report[2],
+            "payload": payload, "participants": participants,
+            "evidence": [
+                {"position": int(row[0]), "actor_id": _text(row[1]), "actor_name": _text(row[2]),
+                 "created_at": _text(row[3]), "updated_at": _text(row[4]),
+                 "drive_ref": _text(row[5]), "storage_ref": _text(row[6])}
+                for row in evidence
+            ],
+        }
+
     def save_report_evidence(self, report_id, position, drive_ref, *, storage_ref=""):
         """Registra la posición Foto1–Foto6 después de confirmar Drive."""
         self.initialize()
@@ -1760,6 +1955,10 @@ class OperationsStore:
                 "storage_ref=excluded.storage_ref,drive_ref=excluded.drive_ref,sync_status='pending',updated_at=excluded.updated_at",
                 (evidence_id, report_id, position, storage_ref, drive_ref, "pending", stamp),
             )
+            conn.execute(
+                f"UPDATE operations_reports SET revision=revision+1,updated_at={p} WHERE id={p}",
+                (stamp, report_id),
+            )
         return {"position": position, "storage_ref": storage_ref, "drive_ref": drive_ref}
 
     def get_report_detail(self, report_id):
@@ -1769,13 +1968,13 @@ class OperationsStore:
         with self.connection() as conn:
             row = conn.execute(
                 f"SELECT r.id,r.client_id,r.equipment_id,r.round_number,r.start_at,r.end_at,"
-                f"r.completed,r.matrix_id,r.report_type,r.payload_json,r.state,r.sync_status,"
-                f"(SELECT COUNT(*) FROM operations_evidence e WHERE e.report_id=r.id) "
+                f"r.completed,r.matrix_id,r.report_type,r.payload_json,r.state,r.sync_status,r.revision,"
+                f"(SELECT COUNT(*) FROM operations_evidence e WHERE e.report_id=r.id AND (e.drive_ref<>'' OR e.storage_ref<>'')) "
                 f"FROM operations_reports r WHERE r.id={p}", (_text(report_id),)
             ).fetchone()
             evidence_rows = conn.execute(
-                f"SELECT position,storage_ref,drive_ref FROM operations_evidence "
-                f"WHERE report_id={p} ORDER BY position", (_text(report_id),)
+                f"SELECT position,storage_ref,drive_ref,actor_id,actor_name,created_at,mutation_id FROM operations_evidence "
+                f"WHERE report_id={p} AND (drive_ref<>'' OR storage_ref<>'') ORDER BY position", (_text(report_id),)
             ).fetchall() if row else []
         if not row:
             return None
@@ -1794,9 +1993,11 @@ class OperationsStore:
             "id": row[0], "client_id": row[1], "equipment_id": row[2], "round": row[3],
             "start": row[4], "end": row[5], "completed": bool(row[6]), "matrix_id": row[7],
             "report_type": row[8], "payload": payload, "state": row[10], "sync_status": row[11],
-            "photo_count": int(row[12] or 0),
+            "revision": int(row[12] or 0), "photo_count": int(row[13] or 0),
             "evidence": [{"position": int(item[0]), "storage_ref": _text(item[1]),
-                          "drive_ref": _text(item[2])} for item in evidence_rows],
+                          "drive_ref": _text(item[2]), "actor_id": _text(item[3]),
+                          "actor_name": _text(item[4]), "created_at": _text(item[5]),
+                          "mutation_id": _text(item[6])} for item in evidence_rows],
         }
 
     def get_report_evidence_ref(self, report_id, position):

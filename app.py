@@ -4624,8 +4624,7 @@ def api_operaciones_get_report_draft():
         return jsonify({"ok": True, "configured": False, "draft": None})
     try:
         draft = OPERACIONES_STORE.get_report_draft(
-            request.args.get("equipment_id"), request.args.get("round"),
-            user_id=str(session.get('hsc_user_id') or 'owner')
+            request.args.get("equipment_id"), request.args.get("round")
         )
         return jsonify({"ok": True, "configured": True, "draft": draft})
     except Exception as exc:
@@ -4645,9 +4644,6 @@ def api_operaciones_report_detail(report_id):
         if not report and _operations_role() in {'admin', 'technician'}:
             report = OPERACIONES_STORE.get_report_submission(report_id, str(session.get('hsc_user_id') or 'owner'))
         if not report:
-            abort(404)
-        if report.get('state') == 'draft' and _operations_role() != 'admin' and (
-                report.get('payload') or {}).get('_draft_user_id') not in {None, str(session.get('hsc_user_id') or 'owner')}:
             abort(404)
         if _operations_role() == "client" and report.get("client_id") != str(session.get("hsc_client_id") or "").strip():
             abort(404)
@@ -4686,6 +4682,8 @@ def api_operaciones_save_report_draft():
         body = request.get_json(silent=True) or {}
         body['payload'] = dict(body.get('payload') or {})
         body['payload']['_draft_user_id'] = str(session.get('hsc_user_id') or 'owner')
+        body['actor_id'] = str(session.get('hsc_user_id') or 'owner')
+        body['actor_name'] = str(session.get('hsc_user_name') or 'Técnico HSC')
         draft = OPERACIONES_STORE.save_report_draft(body)
         _invalidate_operations_cache()
         return jsonify({"ok": True, "draft": draft, "sync_status": "local_only"})
@@ -4727,7 +4725,9 @@ def api_operaciones_finalize_report():
     try:
         body['payload'] = dict(body.get('payload') or {})
         body['payload']['_draft_user_id'] = str(session.get('hsc_user_id') or 'owner')
-        report = OPERACIONES_STORE.get_report_submission(body.get('id'), body['payload']['_draft_user_id']) if body.get('id') else None
+        # El borrador es compartido: si otro técnico ya confirmó la misma
+        # operación, devolvemos esa confirmación en vez de intentar recrearla.
+        report = OPERACIONES_STORE.get_report_submission(body.get('id')) if body.get('id') else None
         if report:
             if (report['client_id'], report['equipment_id'], report['round']) != (
                     str(body.get('client_id') or ''), str(body.get('equipment_id') or ''), str(body.get('round') or '')):
@@ -4764,6 +4764,7 @@ def api_operaciones_finalize_report():
 
 @app.post('/api/operaciones/reports/<path:report_id>/evidence/reset')
 def api_operaciones_reset_report_evidence(report_id):
+    """Compatibilidad: los clientes antiguos ya no deben borrar fotos compartidas."""
     denied = _operations_forbidden("admin", "technician")
     if denied:
         return denied
@@ -4774,10 +4775,9 @@ def api_operaciones_reset_report_evidence(report_id):
         return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
     try:
         report = OPERACIONES_STORE.get_report_detail(report_id)
-        if report and (report.get('payload') or {}).get('_draft_user_id') not in {None, str(session.get('hsc_user_id') or 'owner')}:
-            return jsonify(ok=False, error='Ese borrador pertenece a otra cuenta.'), 403
-        OPERACIONES_STORE.reset_report_evidence(report_id)
-        return jsonify({"ok": True})
+        if not report or report.get("state") != "draft":
+            return jsonify({"ok": False, "error": "El borrador ya no está disponible."}), 400
+        return jsonify({"ok": True, "preserved": True})
     except ValueError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:
@@ -4805,28 +4805,101 @@ def api_operaciones_upload_report_evidence(report_id, position):
     content = upload.stream.read(15 * 1024 * 1024 + 1)
     if not content or len(content) > 15 * 1024 * 1024:
         return jsonify({"ok": False, "error": "Cada fotografía debe pesar máximo 15 MB."}), 400
+    mutation_id = str(request.form.get("mutation_id") or "").strip()
+    if not mutation_id:
+        # Una pestaña que quedó abierta antes de esta actualización todavía
+        # puede terminar sin borrar ni duplicar evidencia.
+        mutation_id = f"legacy-{position}-{hashlib.sha256(content).hexdigest()[:24]}"
+    reserved = None
     try:
         report = OPERACIONES_STORE.get_report_detail(report_id)
         if not report or report.get("state") != "draft":
             return jsonify({"ok": False, "error": "El borrador ya no está disponible."}), 400
-        if (report.get('payload') or {}).get('_draft_user_id') not in {None, str(session.get('hsc_user_id') or 'owner')}:
-            return jsonify(ok=False, error='Ese borrador pertenece a otra cuenta.'), 403
+        reserved = OPERACIONES_STORE.reserve_report_evidence(
+            report_id, position, mutation_id,
+            actor_id=str(session.get('hsc_user_id') or 'owner'),
+            actor_name=str(session.get('hsc_user_name') or 'Técnico HSC'),
+        )
+        if reserved.get("drive_ref") or reserved.get("storage_ref"):
+            return jsonify({"ok": True, "evidence": {
+                "position": reserved["position"], "actor_name": reserved.get("actor_name") or "",
+                "created_at": reserved.get("created_at") or "", "mutation_id": mutation_id,
+            }})
         client = next(
             (item for item in OPERACIONES_STORE.snapshot()["clients"] if item["id"] == report["client_id"]), None
         )
         matrix_report_id = report.get("matrix_id") or report_id
         stored = store_operations_evidence(
-            (client or {}).get("name") or report["client_id"], matrix_report_id, position, content,
+            (client or {}).get("name") or report["client_id"], matrix_report_id, reserved["position"], content,
         )
-        evidence = OPERACIONES_STORE.save_report_evidence(
-            report_id, position, stored["drive_ref"], storage_ref=stored["storage_ref"],
+        evidence = OPERACIONES_STORE.complete_report_evidence(
+            report_id, mutation_id, stored["drive_ref"], storage_ref=stored["storage_ref"],
         )
-        return jsonify({"ok": True, "evidence": {"position": evidence["position"]}})
+        return jsonify({"ok": True, "evidence": {
+            "position": evidence["position"], "actor_name": evidence.get("actor_name") or "",
+            "created_at": evidence.get("created_at") or "", "mutation_id": mutation_id,
+        }})
     except (ValueError, OSError) as exc:
+        if reserved:
+            try:
+                OPERACIONES_STORE.release_report_evidence(report_id, mutation_id)
+            except Exception:
+                current_app.logger.exception("No se pudo liberar la reserva de evidencia %s", mutation_id)
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:
+        if reserved:
+            try:
+                OPERACIONES_STORE.release_report_evidence(report_id, mutation_id)
+            except Exception:
+                current_app.logger.exception("No se pudo liberar la reserva de evidencia %s", mutation_id)
         current_app.logger.exception("No se pudo subir Foto%s de %s: %s", position, report_id, exc)
         return jsonify({"ok": False, "error": f"Drive no confirmó Foto{position}."}), 502
+
+
+@app.get('/api/operaciones/reports/<path:report_id>/live')
+def api_operaciones_report_live(report_id):
+    """Estado liviano para colaboración; nunca incluye los bytes de las fotos."""
+    denied = _operations_forbidden("admin", "technician")
+    if denied:
+        return denied
+    permission_denied = _operations_permission_forbidden("createReports")
+    if permission_denied:
+        return permission_denied
+    if not OPERACIONES_STORE.enabled:
+        return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
+    try:
+        state = OPERACIONES_STORE.report_live_state(
+            report_id, user_id=str(session.get('hsc_user_id') or 'owner'),
+            user_name=str(session.get('hsc_user_name') or 'Técnico HSC'),
+        )
+        if not state:
+            abort(404)
+        for evidence in state.get("evidence", []):
+            media_version = hashlib.sha1(
+                ("drive-id-v2:" + str(evidence.get("drive_ref") or evidence.get("storage_ref") or "")).encode("utf-8")
+            ).hexdigest()[:10]
+            evidence["url"] = url_for(
+                "api_operaciones_report_evidence", report_id=report_id,
+                position=evidence["position"], v=media_version,
+            )
+            evidence.pop("storage_ref", None)
+            evidence.pop("drive_ref", None)
+        since = int(request.args.get("since") or -1)
+        changed = state["revision"] != since
+        return jsonify({
+            "ok": True, "changed": changed, "revision": state["revision"],
+            "state": state["state"], "updated_at": state["updated_at"],
+            "participants": state["participants"],
+            "evidence": state["evidence"] if changed else [],
+            "payload": state["payload"] if changed else None,
+        })
+    except ValueError:
+        return jsonify({"ok": False, "error": "Estado de colaboración inválido."}), 400
+    except Exception as exc:
+        if getattr(exc, "code", None) == 404:
+            raise
+        current_app.logger.exception("No se pudo consultar colaboración de %s: %s", report_id, exc)
+        return jsonify({"ok": False, "error": "No se pudo actualizar el reporte compartido."}), 500
 
 
 def _notify_operations_fault(fault):
