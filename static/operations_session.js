@@ -19,12 +19,13 @@
     }
   }
   window.HscOperationsSession={ready,clear:()=>localStorage.removeItem(key)};
+  const accountId=body.dataset.userId||''; // Immutable identity of this open page and its pending work.
   const originalFetch=window.fetch.bind(window);
   window.fetch=function(input,options={}){
     const url=new URL(typeof input==='string'||input instanceof URL?input:input.url,location.href);
     if(url.origin===location.origin&&url.pathname.startsWith('/api/operaciones/')){
       const headers=new Headers(options.headers||input.headers||{});
-      headers.set('X-HSC-Account',body.dataset.userId||'');
+      headers.set('X-HSC-Account',accountId);
       options={...options,headers};
     }
     return originalFetch(input,options);

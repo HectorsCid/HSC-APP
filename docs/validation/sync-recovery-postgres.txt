@@ -1,0 +1,22 @@
+ISOLATED PostgreSQL 17.11
+test_active_request_cannot_be_released (__main__.main.<locals>.RealPostgresRecoveryTests.test_active_request_cannot_be_released) ... ok
+test_confirmation_required_and_pending_bytes_preserved_and_audited (__main__.main.<locals>.RealPostgresRecoveryTests.test_confirmation_required_and_pending_bytes_preserved_and_audited) ... ok
+test_definite_rejection_recovers_automatically (__main__.main.<locals>.RealPostgresRecoveryTests.test_definite_rejection_recovers_automatically) ... ok
+test_local_failure_before_http_never_requires_manual_confirmation (__main__.main.<locals>.RealPostgresRecoveryTests.test_local_failure_before_http_never_requires_manual_confirmation) ... ok
+test_old_schema_intent_gets_stable_reference_and_stays_paused (__main__.main.<locals>.RealPostgresRecoveryTests.test_old_schema_intent_gets_stable_reference_and_stays_paused) ... ok
+test_orphan_prepared_intent_recovers_automatically_without_losing_changes (__main__.main.<locals>.RealPostgresRecoveryTests.test_orphan_prepared_intent_recovers_automatically_without_losing_changes) ... ok
+test_read_failure_after_acknowledged_write_retries_automatically (__main__.main.<locals>.RealPostgresRecoveryTests.test_read_failure_after_acknowledged_write_retries_automatically) ... ok
+test_stale_reference_cannot_release_new_attempt_of_same_operation (__main__.main.<locals>.RealPostgresRecoveryTests.test_stale_reference_cannot_release_new_attempt_of_same_operation) ... ok
+test_two_owners_exactly_one_can_resume (__main__.main.<locals>.RealPostgresRecoveryTests.test_two_owners_exactly_one_can_resume) ... ok
+test_uncertain_has_frozen_entity_revision_reason_and_exact_count (__main__.main.<locals>.RealPostgresRecoveryTests.test_uncertain_has_frozen_entity_revision_reason_and_exact_count) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 16.349s
+
+OK
+PASS real PG: actual published schema20 -> schema21 migration preserves pending report and adds leases
+PASS real PG: migration 21 -> 22 preserves report, outbox and uncertain intent
+PASS real PG: three processes migrate schema including v21 concurrently
+PASS real PG: three-process advisory lock serialization
+PASS real PG: FOR UPDATE, killed process rollback, database restart, retained pending changes and audited resume
+PASS real PG: process killed before HTTP resumes automatically, with pending report preserved

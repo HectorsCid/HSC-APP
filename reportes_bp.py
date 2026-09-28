@@ -645,6 +645,19 @@ def _resolve_path_to_id(path_str: str):
         current = parent
         for index, part in enumerate(remaining):
             is_last = index == len(remaining) - 1
+            from drive_registry import resource_key
+            registry_store = _drive_registry_store(required=False)
+            canonical = registry_store.drive_registry(resource_key(current, part, not is_last)) if registry_store else None
+            if canonical and canonical.get('state') == 'confirmed':
+                if not is_last and canonical.get('access_review'):
+                    # Keep legacy paths readable when merging would change ACLs.
+                    for candidate in [canonical['id'], *canonical['access_review']]:
+                        found = walk(candidate, remaining[index + 1:])
+                        if found:
+                            return found
+                    return None
+                current = canonical['id']
+                continue
             mime_filter = "" if is_last else " and mimeType='application/vnd.google-apps.folder'"
             safe = part.replace("'", "\\'")
             q = "name='{}' and '{}' in parents and trashed=false{}".format(
@@ -833,75 +846,35 @@ def _sanitize_name(name: str) -> str:
     # Evitar caracteres problemáticos
     return re.sub(r'[\\/:*?"<>|]+', '-', (name or "")).strip() or "Sin nombre"
 
+
+def _drive_registry_store(required=True):
+    from flask import current_app, has_app_context
+    store = current_app.extensions.get('operations_store') if has_app_context() else None
+    if not store or not store.enabled:
+        if required:
+            raise RuntimeError('La base operativa es necesaria para guardar en Drive sin duplicados.')
+        return None
+    return store
+
 def _ensure_folder(parent_id: str, name: str) -> str:
-    safe = _sanitize_name(name)
-    safe_q = safe.replace("'", "\\'")
-    q = (
-        "name='{}' and '{}' in parents and "
-        "mimeType='application/vnd.google-apps.folder' and trashed=false"
-    ).format(safe_q, parent_id)
-
-    def operation(drive):
-        found = drive.files().list(
-            q=q, spaces='drive', fields='files(id,name)', pageSize=1
-        ).execute().get('files', [])
-        if found:
-            return found[0]['id']
-        meta = {
-            "name": safe,
-            "mimeType": "application/vnd.google-apps.folder",
-            "parents": [parent_id]
-        }
-        return drive.files().create(body=meta, fields="id").execute()["id"]
-
-    return _drive_files_call(operation)
+    from drive_registry import ensure_object
+    store = _drive_registry_store()
+    return _drive_files_call(lambda drive: ensure_object(store, drive, parent_id, _sanitize_name(name)))
 
 
 def _upsert_pdf(parent_id: str, filename: str, pdf_bytes: bytes) -> str:
-    safe_name = _sanitize_name(filename)
-    safe_q = safe_name.replace("'", "\\'")
-    q = "name='{}' and '{}' in parents and trashed=false".format(safe_q, parent_id)
-
-    def operation(drive):
-        existing = drive.files().list(
-            q=q, spaces='drive', fields='files(id,name)', pageSize=1
-        ).execute().get('files', [])
-        media = MediaIoBaseUpload(
-            io.BytesIO(pdf_bytes), mimetype="application/pdf", resumable=False
-        )
-        if existing:
-            file_id = existing[0]['id']
-            drive.files().update(fileId=file_id, media_body=media).execute()
-            return file_id
-        meta = {"name": safe_name, "parents": [parent_id], "mimeType": "application/pdf"}
-        return drive.files().create(
-            body=meta, media_body=media, fields="id"
-        ).execute()["id"]
-
-    return _drive_files_call(operation)
+    return _upsert_bytes(parent_id, filename, pdf_bytes, 'application/pdf')
 
 
 def _upsert_bytes(parent_id: str, filename: str, content: bytes, mimetype: str) -> str:
     """Crea o reemplaza un archivo auxiliar dentro de una carpeta de reporte."""
-    safe_name = _sanitize_name(filename)
-    safe_q = safe_name.replace("'", "\\'")
-    q = "name='{}' and '{}' in parents and trashed=false".format(safe_q, parent_id)
-
-    def operation(drive):
-        existing = drive.files().list(
-            q=q, spaces="drive", fields="files(id,name)", pageSize=1
-        ).execute().get("files", [])
-        media = MediaIoBaseUpload(io.BytesIO(content), mimetype=mimetype, resumable=False)
-        if existing:
-            file_id = existing[0]["id"]
-            drive.files().update(fileId=file_id, media_body=media).execute()
-            return file_id
-        metadata = {"name": safe_name, "parents": [parent_id], "mimeType": mimetype}
-        return drive.files().create(
-            body=metadata, media_body=media, fields="id"
-        ).execute()["id"]
-
-    return _drive_files_call(operation)
+    from drive_registry import ensure_object
+    store = _drive_registry_store()
+    identity = re.search(r'\.([a-f0-9]{64})\.', filename)
+    immutable = bool(identity)
+    return _drive_files_call(lambda drive: ensure_object(store, drive, parent_id, _sanitize_name(filename),
+                                                        content=content, mime=mimetype, immutable=immutable,
+                                                        photo_identity=identity[1] if identity else ''))
 
 
 def store_operations_evidence(client_name: str, report_id: str, position: int, content: bytes, *, upload_id: str = "") -> dict:
@@ -920,6 +893,12 @@ def store_operations_evidence(client_name: str, report_id: str, position: int, c
     identity = hashlib.sha256((upload_id or "legacy").encode() + b"\0" + content).hexdigest()
     filename = f"{safe_report}.Foto {int(position)}.{identity}{extension}"
     drive_id = _upsert_bytes(report_folder, filename, optimized, mimetype)
+    registry_store = _drive_registry_store(required=False)
+    if registry_store:
+        from drive_registry import resource_key
+        registered = registry_store.drive_registry(resource_key(report_folder, 'photo:' + identity))
+        if registered:
+            filename = registered['name']
     storage_ref = f"{REPORTES_APPSHEET_PATH_PREFIX}/{safe_client}/{safe_report}/{filename}"
     return {"drive_ref": drive_id, "storage_ref": storage_ref}
 

@@ -225,11 +225,14 @@ AUTO_SYNC_FROM_DRIVE = True  # si no quieres en local, pon False
 OPERACIONES_STORE = OperationsStore.from_environment(
     is_render=IS_RENDER, project_root=Path(__file__).resolve().parent
 )
+app.extensions['operations_store'] = OPERACIONES_STORE
 OPERACIONES_MATRIX_AUTO_SYNC = os.environ.get("OPERACIONES_MATRIX_AUTO_SYNC", "1").lower() in {"1", "true", "yes"}
 OPERACIONES_SHEETS_SYNC_ENABLED = str(
     os.environ.get("OPERACIONES_SHEETS_SYNC_ENABLED", "0")
 ).strip().lower() in {"1", "true", "yes", "si", "sí"}
 _OPERACIONES_SYNC_LOCK = threading.Lock()
+_OPERACIONES_SYNC_TIMER_LOCK = threading.Lock()
+_OPERACIONES_SYNC_RETRY_TIMER = None
 _OPERACIONES_SYNC_LAST_ATTEMPT = 0.0
 _OPERACIONES_IMPORT_STATUS = {"error": "", "last_success": ""}
 OPERACIONES_SYNC_RETRY_SECONDS = max(
@@ -371,6 +374,8 @@ def _require_app_login():
         return None
     if session.get("hsc_authenticated") is True:
         supplied_account = request.headers.get("X-HSC-Account", "")
+        if request.path.startswith('/api/operaciones/') and request.method not in {'GET', 'HEAD', 'OPTIONS'} and not supplied_account:
+            return jsonify(ok=False, code='account_required', error='Actualiza la aplicación e inicia sesión con la cuenta que creó este pendiente. Su respaldo se conserva.'), 401
         if request.path.startswith("/api/operaciones/") and supplied_account and supplied_account != str(session.get("hsc_user_id") or "owner"):
             return jsonify(ok=False, code="account_changed", error="La sesión cambió de cuenta. Inicia sesión con la cuenta de este pendiente para enviarlo."), 401
         session_role = str(session.get("hsc_role") or "").strip().lower()
@@ -4309,6 +4314,7 @@ def _invalidate_operations_cache():
 
 
 def _operations_sync_worker(app_obj):
+    result = {}
     try:
         if OPERACIONES_MATRIX_AUTO_SYNC:
             try:
@@ -4336,6 +4342,32 @@ def _operations_sync_worker(app_obj):
     finally:
         reset_thread_google_services()
         _OPERACIONES_SYNC_LOCK.release()
+        try:
+            delivery = OPERACIONES_STORE.sheet_delivery_status(SHEET_ID)
+            if delivery['waiting_changes'] and not delivery['requires_confirmation']:
+                _request_operations_sync_retry(app_obj, .2 if result.get('synced') else OPERACIONES_SYNC_RETRY_SECONDS)
+        except Exception:
+            app_obj.logger.exception('No se pudo programar el siguiente intento de sincronización')
+
+
+def _request_operations_sync_retry(app_obj, delay):
+    """One bounded retry timer per process; durable pending work stays in SQL."""
+    global _OPERACIONES_SYNC_RETRY_TIMER
+    if not (OPERACIONES_SHEETS_SYNC_ENABLED or OPERACIONES_MATRIX_AUTO_SYNC):
+        return
+    def retry():
+        global _OPERACIONES_SYNC_RETRY_TIMER
+        with _OPERACIONES_SYNC_TIMER_LOCK:
+            _OPERACIONES_SYNC_RETRY_TIMER = None
+        with app_obj.app_context():
+            _schedule_operations_sync(force=True)
+    with _OPERACIONES_SYNC_TIMER_LOCK:
+        if _OPERACIONES_SYNC_RETRY_TIMER is not None:
+            return
+        timer = threading.Timer(max(.2, delay), retry)
+        timer.daemon = True
+        _OPERACIONES_SYNC_RETRY_TIMER = timer
+        timer.start()
 
 
 def _schedule_operations_sync(*, force=False):
@@ -4347,6 +4379,8 @@ def _schedule_operations_sync(*, force=False):
     if not force and now - _OPERACIONES_SYNC_LAST_ATTEMPT < OPERACIONES_SYNC_RETRY_SECONDS:
         return False
     if not _OPERACIONES_SYNC_LOCK.acquire(blocking=False):
+        if force:
+            _request_operations_sync_retry(current_app._get_current_object(), 1)
         return False
     _OPERACIONES_SYNC_LAST_ATTEMPT = now
     try:
@@ -4382,7 +4416,8 @@ def api_operaciones_sync_status():
     return jsonify({
         "ok": True, "automatic_enabled": OPERACIONES_SHEETS_SYNC_ENABLED or OPERACIONES_MATRIX_AUTO_SYNC,
         "pilot_clients": [] if OPERACIONES_MATRIX_AUTO_SYNC else sorted(OPERACIONES_SYNC_CLIENT_ALLOWLIST),
-        "pending": len(pending),
+        "pending": OPERACIONES_STORE.pending_sync_count(),
+        "sheet_delivery": OPERACIONES_STORE.sheet_delivery_status(SHEET_ID),
         "items": [{
             "entity_type": item["entity_type"], "entity_id": item["entity_id"],
             "attempts": item["attempts"], "last_error": item["last_error"],
@@ -4392,7 +4427,7 @@ def api_operaciones_sync_status():
 
 @app.get('/api/operaciones/diagnostics')
 def api_operaciones_diagnostics():
-    """Panel privado del propietario; no altera Google ni la base."""
+    """Panel del propietario. Recupera sólo intentos cuya seguridad consta en SQL."""
     denied = _operations_forbidden("admin")
     if denied:
         return denied
@@ -4403,19 +4438,23 @@ def api_operaciones_diagnostics():
         pending = OPERACIONES_STORE.pending_sync(50)
         result = {
             "ok": True, "storage": status,
+            "sheet_delivery": OPERACIONES_STORE.sheet_delivery_status(SHEET_ID),
             "import_status": dict(_OPERACIONES_IMPORT_STATUS),
-            "pending": len(pending),
+            "pending": OPERACIONES_STORE.pending_sync_count(),
             "pending_items": [{
                 "entity_type": item["entity_type"], "entity_id": item["entity_id"],
                 "attempts": item["attempts"], "last_error": item["last_error"],
             } for item in pending[:15]],
         }
         if request.args.get("live") == "1":
-            source = read_operaciones_matrix(
-                get_sheets_service(timeout=25), SHEET_ID,
-                include_media_refs=False, include_raw=False,
-            )
-            result["matrix"] = _operations_matrix_diagnostic(source.get("stats") or {})
+            try:
+                source = read_operaciones_matrix(
+                    get_sheets_service(timeout=25), SHEET_ID,
+                    include_media_refs=False, include_raw=False,
+                )
+                result["matrix"] = _operations_matrix_diagnostic(source.get("stats") or {})
+            except Exception:
+                result['google_error'] = 'No se pudo consultar Google. El estado y los cambios guardados en HSC siguen disponibles.'
         return jsonify(result)
     except Exception as exc:
         current_app.logger.exception("No se pudo ejecutar el diagnóstico operativo: %s", exc)
@@ -4811,6 +4850,8 @@ def api_operaciones_reset_report_evidence(report_id):
 
 @app.post('/api/operaciones/reports/<path:report_id>/evidence/<int:position>')
 def api_operaciones_upload_report_evidence(report_id, position):
+    import uuid
+    from photo_uploads import evidence_lease
     denied = _operations_forbidden("admin", "technician")
     if denied:
         return denied
@@ -4835,6 +4876,7 @@ def api_operaciones_upload_report_evidence(report_id, position):
         # puede terminar sin borrar ni duplicar evidencia.
         mutation_id = f"legacy-{position}-{hashlib.sha256(content).hexdigest()[:24]}"
     reserved = None
+    attempt_token = uuid.uuid4().hex
     try:
         report = OPERACIONES_STORE.get_report_detail(report_id)
         if not report or report.get("state") != "draft":
@@ -4845,6 +4887,8 @@ def api_operaciones_upload_report_evidence(report_id, position):
             report_id, position, mutation_id,
             actor_id=str(session.get('hsc_user_id') or 'owner'),
             actor_name=str(session.get('hsc_user_name') or 'Técnico HSC'),
+            content_hash=hashlib.sha256(content).hexdigest(), attempt_token=attempt_token,
+            content_identity=hashlib.sha256((report_id + ':' + mutation_id).encode() + b'\0' + content).hexdigest(),
         )
         if reserved.get("drive_ref") or reserved.get("storage_ref"):
             return jsonify({"ok": True, "evidence": {
@@ -4856,13 +4900,14 @@ def api_operaciones_upload_report_evidence(report_id, position):
                 f"SELECT name FROM operations_clients WHERE id={OPERACIONES_STORE.placeholder}", (report["client_id"],)
             ).fetchone()
         matrix_report_id = report.get("matrix_id") or report_id
-        stored = store_operations_evidence(
-            (client[0] if client else "") or report["client_id"], matrix_report_id, reserved["position"], content,
-            upload_id=report_id + ":" + mutation_id,
-        )
-        evidence = OPERACIONES_STORE.complete_report_evidence(
-            report_id, mutation_id, stored["drive_ref"], storage_ref=stored["storage_ref"],
-        )
+        with evidence_lease(OPERACIONES_STORE, report_id, mutation_id, attempt_token):
+            stored = store_operations_evidence(
+                (client[0] if client else "") or report["client_id"], matrix_report_id, reserved["position"], content,
+                upload_id=report_id + ":" + mutation_id,
+            )
+            evidence = OPERACIONES_STORE.complete_report_evidence(
+                report_id, mutation_id, stored["drive_ref"], storage_ref=stored["storage_ref"], lease_token=attempt_token,
+            )
         return jsonify({"ok": True, "evidence": {
             "position": evidence["position"], "actor_name": evidence.get("actor_name") or "",
             "created_at": evidence.get("created_at") or "", "mutation_id": mutation_id,
@@ -4870,7 +4915,7 @@ def api_operaciones_upload_report_evidence(report_id, position):
     except (ValueError, OSError) as exc:
         if reserved:
             try:
-                OPERACIONES_STORE.release_report_evidence(report_id, mutation_id)
+                OPERACIONES_STORE.release_report_evidence(report_id, mutation_id, lease_token=attempt_token)
             except Exception:
                 current_app.logger.exception("No se pudo liberar la reserva de evidencia %s", mutation_id)
         return jsonify(ok=False, error=str(exc), code=getattr(exc, "code", ""),
@@ -4878,11 +4923,51 @@ def api_operaciones_upload_report_evidence(report_id, position):
     except Exception as exc:
         if reserved:
             try:
-                OPERACIONES_STORE.release_report_evidence(report_id, mutation_id)
+                OPERACIONES_STORE.release_report_evidence(report_id, mutation_id, lease_token=attempt_token)
             except Exception:
                 current_app.logger.exception("No se pudo liberar la reserva de evidencia %s", mutation_id)
         current_app.logger.exception("No se pudo subir Foto%s de %s: %s", position, report_id, exc)
         return jsonify({"ok": False, "error": f"Drive no confirmó Foto{position}."}), 502
+
+
+@app.post('/api/operaciones/reports/<path:report_id>/evidence/cancel')
+def api_operaciones_cancel_report_upload(report_id):
+    denied = _operations_forbidden('admin', 'technician') or _operations_permission_forbidden('createReports')
+    if denied:
+        return denied
+    body = request.get_json(silent=True) or {}
+    try:
+        released = OPERACIONES_STORE.release_report_evidence(report_id, str(body.get('mutation_id') or ''),
+            actor_id=str(session.get('hsc_user_id') or 'owner'), cancel=True)
+        return jsonify(ok=True, released=released)
+    except ValueError as exc:
+        return jsonify(ok=False, code=getattr(exc, 'code', ''), error=str(exc)), 409
+
+
+@app.post('/api/operaciones/sync/resolve-uncertain')
+def api_operaciones_resolve_uncertain_delivery():
+    denied = _operations_forbidden('admin')
+    if denied:
+        return denied
+    body = request.get_json(silent=True) or {}
+    try:
+        recovery = OPERACIONES_STORE.resolve_sheet_delivery(SHEET_ID, str(body.get('operation_id') or ''),
+            attempt_id=str(body.get('attempt_id') or ''),
+            external_quiescent=body.get('confirm_no_request_in_flight') is True,
+            actor_id=str(session.get('hsc_user_id') or 'owner'),
+            actor_name=str(session.get('hsc_user_name') or 'Propietario'))
+        enabled = OPERACIONES_SHEETS_SYNC_ENABLED or OPERACIONES_MATRIX_AUTO_SYNC
+        try:
+            started = _schedule_operations_sync(force=True)
+        except Exception:
+            current_app.logger.exception('Entrega liberada; pendiente de iniciar el trabajador')
+            _request_operations_sync_retry(current_app._get_current_object(), 1)
+            started = False
+        queue_state = 'started' if started else 'scheduled' if enabled else 'disabled'
+        return jsonify(ok=True, recovery=recovery, queue_state=queue_state,
+                       sheet_delivery=OPERACIONES_STORE.sheet_delivery_status(SHEET_ID))
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 409
 
 
 @app.get('/api/operaciones/reports/<path:report_id>/live')
@@ -4928,6 +5013,7 @@ def api_operaciones_report_live(report_id):
             "ok": True, "changed": changed, "revision": state["revision"],
             "state": state["state"], "updated_at": state["updated_at"],
             "participants": state["participants"],
+            "pending_uploads": state.get('pending_uploads', []),
             "evidence": state["evidence"] if changed else [],
             "payload": state["payload"] if changed else None,
         })

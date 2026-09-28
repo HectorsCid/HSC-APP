@@ -19,6 +19,7 @@ from PIL import Image
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--state-dir', help='Optional directory for synthetic test state across restarts')
+parser.add_argument('--port', type=int, default=8767)
 args = parser.parse_args() if __name__ == '__main__' else parser.parse_args([])
 scratch = tempfile.TemporaryDirectory(prefix='hsc-report-browser-')
 atexit.register(lambda: os.chdir(ROOT))
@@ -61,11 +62,14 @@ def synthetic_identity():
 @app.get('/test/photo.jpg')
 def sample_photo():
     out = io.BytesIO()
-    with Image.new('RGB', (1600, 1200), '#487fad') as image:
+    width, height = int(request.args.get('width', 1600)), int(request.args.get('height', 1200))
+    if min(width, height) <= 0 or width * height > 24_000_000:
+        return 'Synthetic image dimensions out of range', 400
+    with Image.new('RGB', (width, height), '#487fad') as image:
         image.save(out, 'JPEG')
     out.seek(0)
     return send_file(out, mimetype='image/jpeg')
 
 
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=8767, use_reloader=False, threaded=True)
+    app.run(host='127.0.0.1', port=args.port, use_reloader=False, threaded=True)

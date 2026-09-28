@@ -6,7 +6,7 @@ const start = html.indexOf('  const reportEvidenceByKey=');
 const block = html.slice(start, html.indexOf("  $('#inviteClientSelect')", start));
 const elements = new Map();
 const $ = selector => {
-  if (!elements.has(selector)) elements.set(selector, {value:'', textContent:'', innerHTML:'', disabled:false, onclick:()=>{}});
+  if (!elements.has(selector)) elements.set(selector, {value:'', textContent:'', innerHTML:'', disabled:false, onclick:()=>{},insertAdjacentHTML:()=>{}});
   return elements.get(selector);
 };
 let mutationSequence=0;
@@ -14,11 +14,12 @@ const context = vm.createContext({HscPhotoPreflight:{check:async()=>[100,100]},$
   naturalWidth=100;naturalHeight=100;
   async decode(){if(this.src.includes('bad'))throw Error('invalid');}
 }, URL:{createObjectURL:f=>'blob:'+f.name,revokeObjectURL:()=>{}}, selectedEquipment:'HDI-sync',selectedRound:'2',
-  indexedDB:undefined,
+  indexedDB:undefined,account:{id:'T'},reportPhotoBackupFailed:false,confirm:()=>true,shouldSyncNow:()=>false,
   activeReportContext:{existingEvidence:[]},document:{hidden:false,addEventListener:()=>{}},setInterval:()=>0,
   crypto:{randomUUID:()=>`mutation-${++mutationSequence}`},
   draftKey:()=>`${context.selectedEquipment}-R${context.selectedRound}`, escapeHtml:s=>String(s).replaceAll('<','&lt;'),toast:()=>{}});
 vm.runInContext(block,context);context.deleteEvidencePhoto=async()=>{};
+context.persistEvidence=async(key,photos=context.evidenceForReport())=>{photos.forEach(photo=>photo.backedUp=true);return true};
 const file = (name,size=1024,type='image/jpeg')=>({name,size,type,lastModified:1});
 async function select(files){const input=$('#reportEvidence');input.files=files;await input.onchange({target:input});}
 async function capture(fileValue){const input=$('#reportEvidenceCamera');input.files=[fileValue];await input.onchange({target:input});}
@@ -41,8 +42,10 @@ async function capture(fileValue){const input=$('#reportEvidenceCamera');input.f
   await select([file('1.jpg')]);assert.match($('#evidenceError').textContent,/repetida/);
   context.selectedEquipment='HDI2';vm.runInContext('renderEvidence()',context);
   assert.match($('#evidenceStatus').textContent,/0 de 6/);
-  await select([file('good.jpg'),file('bad.jpg')]);assert.match($('#evidenceError').textContent,/No se pudo/);
-  vm.runInContext('renderEvidence()',context);assert.match($('#evidenceStatus').textContent,/0 de 6/);
+  await select([file('good.jpg'),file('bad.jpg')]);assert.match($('#evidenceError').textContent,/invalid/);
+  vm.runInContext('renderEvidence()',context);assert.match($('#evidenceStatus').textContent,/1 de 6/);
+  // Progressive persistence keeps the first photo when the second is invalid.
+  await $('#evidenceList').onclick({target:{closest:()=>({dataset:{index:'0',evidenceAction:'remove'}})}});
   await select([file('large.jpg',16*1024*1024)]);assert.match($('#evidenceError').textContent,/15 MB/);
   await select([file('photo.heic',1024,'image/heic')]);assert.match($('#evidenceStatus').textContent,/1 de 6/);
   await $('#evidenceList').onclick({target:{closest:()=>({dataset:{index:'0',evidenceAction:'remove'}})}});

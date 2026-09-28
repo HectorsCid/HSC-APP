@@ -1,5 +1,5 @@
 {% if operations_is_owner or operations_offline_shell|default(false) %}
-<link rel="stylesheet" href="/static/operations_payments.css?v=1">
+<link rel="stylesheet" href="/static/operations_payments.css?v=2">
 <section class="view pay-panel" data-view="payments">
   <div class="section-head"><div><h2>Pagos a técnicos</h2><p class="muted">Todo lo pendiente, sin importar la semana.</p></div><button class="secondary" id="payRefresh" type="button">↻ Actualizar</button></div>
   <div class="pay-total"><span>Saldo total por pagar</span><strong id="payGrandTotal">—</strong><small>Gastos por reembolsar + sueldos vencidos. El domingo no borra deudas.</small></div>
@@ -12,7 +12,7 @@
   <div class="section-head"><div><p class="muted">Cuenta del técnico</p><h2 id="payName">Cargando…</h2></div><button class="secondary" id="payDetailRefresh" type="button">↻ Actualizar</button></div>
   <p id="payDetailStatus" role="status"></p><button class="secondary" id="payResumeDetail" type="button" hidden>Ver movimiento sin confirmar</button><div id="paySummary"></div>
   <div class="pay-actions"><button class="secondary" id="paySalary" type="button">Configurar sueldo semanal</button><button class="secondary" id="payAccountExpense" type="button">＋ Registrar gasto</button></div>
-  <p class="muted">Semanas de domingo a sábado. Los gastos pendientes y aprobados se incluyen hasta liquidarlos; los rechazados o no reembolsables no se deben.</p>
+  <p class="muted">Semanas de domingo a sábado. Aprueba o liquida cada gasto desde la misma lista; también puedes cambiar toda la semana con un solo botón.</p>
   <div id="payWeeks" class="pay-weeks"></div><button id="payMore" type="button" class="secondary" hidden>Ver semanas anteriores</button>
 </section>
 <div class="modal" id="payModal"><div class="sheet pay-panel">

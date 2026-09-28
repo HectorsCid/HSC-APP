@@ -19,7 +19,7 @@ sys.path.append(str(ROOT.parent / '.work/memory-deps'))
 sys.dont_write_bytecode = True
 from measure_incident_memory import load_app
 
-MODULES = ['test_report_collaboration', 'test_report_conflicts', 'test_report_safety',
+MODULES = ['test_sync_recovery', 'test_sync_recovery_api', 'test_audit_regressions', 'test_report_collaboration', 'test_report_conflicts', 'test_report_safety',
            'test_media_memory', 'test_matrix_auto_sync', 'test_operations_readiness',
            'test_operaciones_store', 'test_operaciones_sync', 'test_operaciones_matrix', 'test_pwa', 'test_runtime_guards']
 

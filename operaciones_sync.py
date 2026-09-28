@@ -72,6 +72,7 @@ def _entity_snapshot(store, operation):
         item = store.get_report_detail(entity_id)
         if not item:
             raise ValueError("El reporte ya no existe en la base operativa.")
+        operation['_snapshot_revision'] = item['revision']
         equip = equipment.get(item.get("equipment_id"), {})
         client = clients.get(item.get("client_id"), {})
         payload = item.get("payload") or {}
@@ -182,7 +183,18 @@ def _read_index(service, spreadsheet_id, title, id_header):
     return headers, header_index, matches, rows
 
 
-def _mirror_duplicate_rows(service, spreadsheet_id, title, row_numbers, values):
+def _execute_sheet_write(request, delivery=None):
+    # Only an unacknowledged HTTP mutation requires manual recovery. Local
+    # validation errors and failed reads after an acknowledged write are safe.
+    if delivery is not None:
+        delivery['sent'] = True
+    result = request.execute()
+    if delivery is not None:
+        delivery['sent'] = False
+    return result
+
+
+def _mirror_duplicate_rows(service, spreadsheet_id, title, row_numbers, values, delivery=None):
     """Mantiene copias históricas consistentes sin borrar datos compartidos."""
     api, quoted = service.spreadsheets().values(), _quote_sheet(title)
     rows = sorted({int(value) for value in row_numbers if int(value) >= 2})
@@ -191,13 +203,14 @@ def _mirror_duplicate_rows(service, spreadsheet_id, title, row_numbers, values):
         for row_number in rows for column, _, value in values
     ]
     if data:
-        api.batchUpdate(
+        _execute_sheet_write(api.batchUpdate(
             spreadsheetId=spreadsheet_id,
             body={"valueInputOption": "USER_ENTERED", "data": data},
-        ).execute()
+        ), delivery)
 
 
 def _plan_operation(store, operation, service, spreadsheet_id, titles, indexes):
+    operation = dict(operation)
     requested_title, id_header, entity_id, values = _entity_snapshot(store, operation)
     title = _resolve_title(titles, requested_title)
     index_key = (title, id_header)
@@ -240,6 +253,7 @@ def _plan_operation(store, operation, service, spreadsheet_id, titles, indexes):
     if not required.issubset(present):
         raise ValueError(f"Faltan encabezados obligatorios en {title}.")
     return {
+        "store": store, "revision": operation.pop('_snapshot_revision', None),
         "operation": operation, "title": title, "headers": headers,
         "entity_id": entity_id, "id_header": id_header,
         "row_number": row_number, "duplicate_rows": row_matches[1:], "values": resolved,
@@ -247,6 +261,19 @@ def _plan_operation(store, operation, service, spreadsheet_id, titles, indexes):
 
 
 def _write_plan(service, spreadsheet_id, plan):
+    store, operation = plan['store'], plan['operation']
+    def prepare():
+        # Refresh row positions while holding the shared writer lock.
+        return _plan_operation(store, operation, service, spreadsheet_id,
+                               _get_sheet_titles(service, spreadsheet_id), {})
+    with store.sheet_write_guard(operation, spreadsheet_id, plan.get('revision'), prepare=prepare) as delivery:
+        fresh = delivery.pop('plan')
+        fresh['delivery'] = delivery
+        return _write_current_plan(service, spreadsheet_id, fresh)
+
+
+def _write_current_plan(service, spreadsheet_id, plan):
+    delivery = plan.get('delivery')
     title, quoted = plan["title"], _quote_sheet(plan["title"])
     row_number, values = plan["row_number"], plan["values"]
     completed = [entry for entry in values if _key(entry[1]) == _key("Realizado")]
@@ -257,7 +284,7 @@ def _write_plan(service, spreadsheet_id, plan):
         row = [""] * len(plan["headers"])
         for column, _, value in initial:
             row[column] = value
-        result = api.append(
+        result = _execute_sheet_write(api.append(
             # La matriz contiene formulas y columnas auxiliares a la derecha.
             # Si se entrega todo ese ancho, Sheets puede detectar la "tabla"
             # desde una columna posterior y desplazar la fila nueva. Anclar el
@@ -265,20 +292,20 @@ def _write_plan(service, spreadsheet_id, plan):
             # primera celda sea siempre la columna A.
             spreadsheetId=spreadsheet_id, range=f"{quoted}!A:A",
             valueInputOption="USER_ENTERED", insertDataOption="INSERT_ROWS", body={"values": [row]},
-        ).execute()
+        ), delivery)
         updated_range = _text((result.get("updates") or {}).get("updatedRange"))
         match = re.search(r"![A-Z]+(\d+)(?::[A-Z]+\d+)?$", updated_range)
         if not match:
             raise RuntimeError(f"Sheets no confirmó la fila nueva en {title}.")
         row_number = appended_row = int(match.group(1))
     elif initial:
-        api.batchUpdate(
+        _execute_sheet_write(api.batchUpdate(
             spreadsheetId=spreadsheet_id, body={
                 "valueInputOption": "USER_ENTERED",
                 "data": [{"range": f"{quoted}!{_column_name(column)}{row_number}", "values": [[value]]}
                          for column, _, value in initial],
             },
-        ).execute()
+        ), delivery)
     duplicate_rows = list(plan.get("duplicate_rows") or [])
     if appended_row is not None:
         # Google Sheets no tiene un upsert atómico. Si AppSheet u otro reintento
@@ -292,25 +319,25 @@ def _write_plan(service, spreadsheet_id, plan):
             canonical = fresh_matches[0]
             duplicate_rows = fresh_matches[1:]
             if canonical != appended_row and initial:
-                api.batchUpdate(
+                _execute_sheet_write(api.batchUpdate(
                     spreadsheetId=spreadsheet_id, body={
                         "valueInputOption": "USER_ENTERED",
                         "data": [{"range": f"{quoted}!{_column_name(column)}{canonical}", "values": [[value]]}
                                  for column, _, value in initial],
                     },
-                ).execute()
+                ), delivery)
             row_number = canonical
     # Realizado va en una petición final. Si algo anterior falla, el monitor de
     # PDFs no verá un reporte terminado a medias.
     if completed:
         column, _, value = completed[0]
-        api.update(
+        _execute_sheet_write(api.update(
             spreadsheetId=spreadsheet_id,
             range=f"{quoted}!{_column_name(column)}{row_number}",
             valueInputOption="USER_ENTERED", body={"values": [[value]]},
-        ).execute()
+        ), delivery)
     if duplicate_rows:
-        _mirror_duplicate_rows(service, spreadsheet_id, title, duplicate_rows, values)
+        _mirror_duplicate_rows(service, spreadsheet_id, title, duplicate_rows, values, delivery)
     return row_number
 
 
@@ -350,7 +377,6 @@ def sync_operations_outbox(
             }
             if not dry_run:
                 item["row"] = _write_plan(service, spreadsheet_id, plan)
-                store.mark_sync_success(operation["id"], operation["entity_type"], operation["entity_id"])
                 result["synced"] += 1
             result["items"].append(item)
         except Exception as exc:

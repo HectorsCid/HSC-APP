@@ -51,7 +51,11 @@ class _Values:
         self.fake.writes.append(("update", kwargs["range"], kwargs["body"]["values"]))
         if self.fake.fail_completion_once:
             self.fake.fail_completion_once = False
-            return _Request(failure=RuntimeError("fallo temporal"))
+            from googleapiclient.errors import HttpError
+            from httplib2 import Response
+            # A definitive rejection can be retried; a lost acknowledgement
+            # requires reconciliation (covered by test_audit_regressions).
+            return _Request(failure=HttpError(Response({'status': '429'}), b'{}'))
         return _Request({"updatedCells": 1})
 
 class _Spreadsheets:

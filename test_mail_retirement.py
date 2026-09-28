@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch
+from flask import Flask, request
 
 import smtp_mailer
 
@@ -13,13 +14,36 @@ class MailRetirementTests(unittest.TestCase):
         source = Path('app.py').read_text(encoding='utf-8-sig')
         tree = ast.parse(source)
         imports = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
+        imports.update(alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names)
         self.assertTrue({'mail_bp', 'mail_idle', 'mail_client'}.isdisjoint(imports))
         worker = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'ensure_notifications_worker')
-        namespace = {'start_notifications': MagicMock(), 'app': object()}
+        self.assertIn('app.before_request', [ast.unparse(decorator) for decorator in worker.decorator_list])
+        test_app = Flask('mail-retirement-test', static_folder=None)
+        routes = {
+            'inicio': '/',
+            'api_operaciones_tasks': '/api/operaciones/tasks',
+            'ping_root': '/ping_root',
+            'healthz': '/healthz',
+            'health': '/health',
+            'health_check': '/health-check',
+            'static': '/static/test.css',
+        }
+        for endpoint, path in routes.items():
+            test_app.add_url_rule(path, endpoint=endpoint, view_func=lambda: 'ok')
+        namespace = {'start_notifications': MagicMock(), 'app': test_app, 'request': request}
         worker.decorator_list = []
         exec(compile(ast.Module(body=[worker], type_ignores=[]), 'app.py', 'exec'), namespace)
-        namespace['ensure_notifications_worker']()
-        namespace['start_notifications'].assert_called_once_with(namespace['app'])
+        test_app.before_request(namespace['ensure_notifications_worker'])
+        client = test_app.test_client()
+        for endpoint, path in routes.items():
+            with self.subTest(endpoint=endpoint):
+                namespace['start_notifications'].reset_mock()
+                response = client.get(path)
+                self.assertEqual(response.status_code, 200)
+                if endpoint in {'inicio', 'api_operaciones_tasks'}:
+                    namespace['start_notifications'].assert_called_once_with(test_app)
+                else:
+                    namespace['start_notifications'].assert_not_called()
         self.assertNotIn('href="/correo"', Path('templates/inicio_app.html').read_text(encoding='utf-8'))
         notices = ast.parse(Path('notification_delivery.py').read_text(encoding='utf-8-sig'))
         accepts = next(node for node in notices.body if isinstance(node, ast.FunctionDef) and node.name == 'accepts_notice')

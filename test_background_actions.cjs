@@ -13,7 +13,7 @@ const find=name=>html.split(/\r?\n/).find(line=>line.trim().startsWith(`async fu
   await ctx.drainFieldActions();assert.equal(jobs.length,1);assert.equal(jobs[0].blocked,true);assert.deepEqual(posts,['L1','E1']);
   await ctx.drainFieldActions();assert.deepEqual(posts,['L1','E1'],'Un conflicto de lista no se reenvía automáticamente ni bloquea otros gastos');
   let saved={},left=false,allowStorage=false;
-  Object.assign(ctx,{releaseEvidenceMemory(){},persistEvidence:async()=>allowStorage,rememberObservationValues:()=>{},rememberPendingReportUpload:u=>saved[u.key]=u,pendingReportUploads:()=>saved,leaveFinishedReport:()=>left=true});
+  Object.assign(ctx,{account:{id:'T'},reportDrafts:()=>({}),releaseEvidenceMemory(){},persistEvidence:async()=>allowStorage,rememberObservationValues:()=>{},rememberPendingReportUpload:u=>saved[u.key]=u,pendingReportUploads:()=>saved,leaveFinishedReport:()=>left=true});
   vm.runInContext(find('queueReportOnDevice'),ctx);
   await assert.rejects(ctx.queueReportOnDevice({key:'r1',photos:[{}]}));assert.equal(left,false);assert.deepEqual(saved,{});
   allowStorage=true;await ctx.queueReportOnDevice({key:'r1',photos:[{}]});assert.equal(left,true);assert.ok(saved.r1);

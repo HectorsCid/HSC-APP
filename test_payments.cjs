@@ -9,10 +9,17 @@ const rows=[{amount:123.45,status:'Pendiente',reimbursable:true,expense_date:'20
 {amount:200,status:'Liquidado',reimbursable:true},{amount:200,status:'Reembolsado',reimbursable:true},
 {amount:200,status:'Rechazado',reimbursable:true},{amount:200,status:'Pendiente',reimbursable:false}];
 assert.equal(pay.expenseBalance(rows),22345);
+assert.deepEqual(pay.expenseAction(rows[0]),{status:'Aprobado',label:'Aprobar'});
+assert.deepEqual(pay.expenseAction(rows[1]),{status:'Liquidado',label:'Liquidar'});
+assert.equal(pay.expenseAction(rows[2]),null);
+assert.equal(pay.expenseAction(rows[5]),null);
 rows[0].status='Liquidado';assert.equal(pay.expenseBalance(rows),10000);
 assert.equal(pay.mount({account:{isOwner:false}}),null);
 const page=fs.readFileSync('templates/app_operativa_demo.html','utf8');
 assert(page.includes("if(view==='payAccount')return 'payments'"));
 assert(page.includes("if(view==='payments')return 'profile'"));
 assert(page.includes("$('#openExpenses').onclick=()=>showView('payments')"));
+assert(page.includes('updateExpenses:async(rows,status)=>'));
+const fragment=fs.readFileSync('templates/_operations_payments.html','utf8');
+assert(fragment.includes('Aprueba o liquida cada gasto desde la misma lista'));
 console.log('Pagos: deuda acumulada, centavos, domingos y acceso administrativo OK');

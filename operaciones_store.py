@@ -17,9 +17,11 @@ from pathlib import Path
 import re
 import sqlite3
 import uuid
+from operation_locks import resource_lock
+from sheet_delivery import SheetDeliveryMixin
 
 
-SCHEMA_VERSION = "20"
+SCHEMA_VERSION = "22"
 
 
 class ReportConflictError(ValueError):
@@ -127,7 +129,7 @@ def _valid_date(value):
         return False
 
 
-class OperationsStore:
+class OperationsStore(SheetDeliveryMixin):
     """Almacén relacional compatible con SQLite y PostgreSQL."""
 
     def __init__(self, database_url=None, *, local_path=None):
@@ -328,6 +330,9 @@ class OperationsStore:
             "CREATE INDEX IF NOT EXISTS idx_operations_report_presence_seen ON operations_report_presence(report_id,last_seen_at)",
             "CREATE TABLE IF NOT EXISTS operations_report_submissions (draft_id TEXT PRIMARY KEY, report_id TEXT NOT NULL, user_id TEXT NOT NULL, confirmed_at TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS operations_report_receipts (submission_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, report_json TEXT NOT NULL, confirmed_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS operations_drive_registry (resource_key TEXT PRIMARY KEY, payload_json TEXT NOT NULL, updated_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS operations_sheet_deliveries (resource_key TEXT PRIMARY KEY, operation_id TEXT NOT NULL, state TEXT NOT NULL, updated_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS operations_photo_mutations (report_id TEXT NOT NULL, mutation_id TEXT NOT NULL, content_hash TEXT NOT NULL DEFAULT '', actor_id TEXT NOT NULL DEFAULT '', PRIMARY KEY(report_id,mutation_id))",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_client ON operations_reports(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_faults_client ON operations_faults(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_faults_equipment ON operations_faults(equipment_id)",
@@ -342,6 +347,12 @@ class OperationsStore:
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_operations_clients_matrix_id ON operations_clients(matrix_id) WHERE matrix_id <> ''",
         ]
         with self.connection() as conn:
+            # Serialize startup migrations across worker processes, including
+            # the first creation and legacy-column discovery/ALTER sequence.
+            if self.dialect == 'postgres':
+                conn.execute('SELECT pg_advisory_xact_lock(72146982110421)')
+            else:
+                conn.execute('BEGIN IMMEDIATE')
             for statement in statements:
                 conn.execute(statement)
             self._ensure_column(conn, "operations_clients", "raw_json", "TEXT NOT NULL DEFAULT '{}'")
@@ -353,6 +364,10 @@ class OperationsStore:
             self._ensure_column(conn, "operations_faults", "resolution_notes", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_faults", "deleted_at", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(conn, "operations_users", "photo_ref", "TEXT NOT NULL DEFAULT ''")
+            conn.execute("CREATE TABLE IF NOT EXISTS operations_sheet_recoveries (id TEXT PRIMARY KEY, resource_key TEXT NOT NULL, attempt_id TEXT NOT NULL, payload_json TEXT NOT NULL, resumed_at TEXT NOT NULL, UNIQUE(resource_key,attempt_id))")
+            self._ensure_column(conn, "operations_sheet_deliveries", "details_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(conn, "operations_evidence", "lease_token", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(conn, "operations_evidence", "lease_until", "TEXT NOT NULL DEFAULT ''")
             added_task_notice_choice = self._ensure_column(conn, "operations_tasks", "notify_client", "INTEGER NOT NULL DEFAULT 0")
             if added_task_notice_choice:
                 conn.execute("UPDATE operations_tasks SET notify_client=1 WHERE id LIKE 'VISIT_%' AND status!='Solicitada'")
@@ -1821,6 +1836,7 @@ class OperationsStore:
                 payload = json.loads(row[4] or "{}")
             except (TypeError, json.JSONDecodeError):
                 payload = {}
+            self._expire_report_reservations(conn, report_id)
             evidence_state = conn.execute(
                 f"SELECT mutation_id,drive_ref,storage_ref FROM operations_evidence WHERE report_id={p}", (report_id,)
             ).fetchall()
@@ -1940,15 +1956,31 @@ class OperationsStore:
                 raise ValueError("El borrador ya no existe o ya fue finalizado.")
             conn.execute(f"DELETE FROM operations_evidence WHERE report_id={p}", (_text(report_id),))
 
-    def reserve_report_evidence(self, report_id, preferred_position, mutation_id, *, actor_id="", actor_name=""):
+    def _lock_report(self, conn, report_id):
+        if self.dialect == 'sqlite':
+            conn.execute('BEGIN IMMEDIATE')
+        else:
+            conn.execute(f'SELECT id FROM operations_reports WHERE id={self.placeholder} FOR UPDATE', (report_id,)).fetchone()
+
+    def _expire_report_reservations(self, conn, report_id):
+        p, now = self.placeholder, _now()
+        legacy_before = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat(timespec='microseconds')
+        deleted = conn.execute(f"DELETE FROM operations_evidence WHERE report_id={p} AND drive_ref='' AND storage_ref='' "
+                               f"AND ((lease_until<>'' AND lease_until<{p}) OR (lease_until='' AND updated_at<{p}))",
+                               (report_id, now, legacy_before))
+        if deleted.rowcount:
+            conn.execute(f'UPDATE operations_reports SET revision=revision+1,updated_at={p} WHERE id={p}', (now, report_id))
+        return deleted.rowcount
+
+    def reserve_report_evidence(self, report_id, preferred_position, mutation_id, *, actor_id="", actor_name="", content_hash="", content_identity="", attempt_token="", lease_seconds=120):
         """Reserva una ranura libre de forma atómica e idempotente."""
         self.initialize()
         report_id, mutation_id = _text(report_id), _text(mutation_id)
         preferred_position = int(preferred_position or 0)
-        if not report_id or not mutation_id or preferred_position not in range(1, 7):
+        if not report_id or not mutation_id or len(mutation_id) > 120 or preferred_position not in range(1, 7):
             raise ValueError("La fotografía no tiene un identificador o posición válidos.")
         p, stamp = self.placeholder, _now()
-        stale_before = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat(timespec="microseconds")
+        lease_until = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat(timespec='microseconds') if attempt_token else ''
         with self.connection() as conn:
             if self.dialect == "sqlite":
                 conn.execute("BEGIN IMMEDIATE")
@@ -1961,20 +1993,33 @@ class OperationsStore:
             ).fetchone()
             if not report or report[0] != "draft":
                 raise ValueError("El borrador ya no está disponible.")
-            # Una caída del proceso después de reservar y antes de subir a Drive
-            # no debe reducir para siempre los seis espacios disponibles.
-            conn.execute(
-                f"DELETE FROM operations_evidence WHERE report_id={p} "
-                f"AND drive_ref='' AND storage_ref='' AND updated_at<{p}",
-                (report_id, stale_before),
-            )
+            self._expire_report_reservations(conn, report_id)
+            identity = conn.execute(f'SELECT content_hash,actor_id FROM operations_photo_mutations WHERE report_id={p} AND mutation_id={p}', (report_id, mutation_id)).fetchone()
+            if identity and ((content_hash and identity[0] and content_hash != identity[0]) or (actor_id and identity[1] and actor_id != identity[1])):
+                raise ReportConflictError('Esta carga pertenece a otra fotografía o cuenta. El original se conserva.', code='photo_content_conflict')
+            if not identity:
+                conn.execute(f'INSERT INTO operations_photo_mutations(report_id,mutation_id,content_hash,actor_id) VALUES ({p},{p},{p},{p})', (report_id, mutation_id, content_hash, actor_id))
+            elif (content_hash and not identity[0]) or (actor_id and not identity[1]):
+                conn.execute(f'UPDATE operations_photo_mutations SET content_hash={p},actor_id={p} WHERE report_id={p} AND mutation_id={p}',
+                             (identity[0] or content_hash, identity[1] or actor_id, report_id, mutation_id))
             existing = conn.execute(
-                f"SELECT position,storage_ref,drive_ref,sync_status,actor_id,actor_name,created_at "
+                f"SELECT position,storage_ref,drive_ref,sync_status,actor_id,actor_name,created_at,lease_token,lease_until "
                 f"FROM operations_evidence WHERE report_id={p} AND mutation_id={p}",
                 (report_id, mutation_id),
             ).fetchone()
             if existing:
+                if content_hash and (not identity or not identity[0]) and (existing[1] or existing[2]):
+                    # Old records lack the raw digest. Existing immutable path
+                    # identity can prove equality; otherwise require review.
+                    if not content_identity or f'.{content_identity}.' not in existing[1]:
+                        raise ReportConflictError('No se puede verificar que el reintento sea la misma foto antigua. El original se conservó; revisa la evidencia.', code='photo_content_unverified')
+                if attempt_token and not existing[1] and not existing[2] and existing[7] and existing[7] != attempt_token:
+                    raise ReportConflictError('Esta fotografía sigue cargándose. Reintenta cuando termine o cancela la carga.', code='photos_uploading')
+                if attempt_token and not existing[1] and not existing[2]:
+                    conn.execute(f'UPDATE operations_evidence SET lease_token={p},lease_until={p},updated_at={p} WHERE report_id={p} AND mutation_id={p}',
+                                 (attempt_token, lease_until, stamp, report_id, mutation_id))
                 return {
+                    "lease_token": attempt_token or existing[7], "lease_until": lease_until or existing[8],
                     "position": int(existing[0]), "storage_ref": _text(existing[1]),
                     "drive_ref": _text(existing[2]), "sync_status": _text(existing[3]),
                     "actor_id": _text(existing[4]), "actor_name": _text(existing[5]),
@@ -1989,23 +2034,23 @@ class OperationsStore:
             if not available:
                 raise ValueError("Este reporte ya tiene las 6 fotografías permitidas.")
             position = preferred_position if preferred_position in available else available[0]
-            evidence_id = f"{report_id}:upload:{mutation_id[:64]}"
+            evidence_id = f"{report_id}:upload:{hashlib.sha256(mutation_id.encode()).hexdigest()}"
             conn.execute(
                 f"INSERT INTO operations_evidence"
-                f"(id,report_id,position,storage_ref,drive_ref,sync_status,actor_id,actor_name,mutation_id,created_at,updated_at) "
-                f"VALUES ({','.join([p] * 11)})",
+                f"(id,report_id,position,storage_ref,drive_ref,sync_status,actor_id,actor_name,mutation_id,created_at,updated_at,lease_token,lease_until) "
+                f"VALUES ({','.join([p] * 13)})",
                 (evidence_id, report_id, position, "", "", "uploading", _text(actor_id),
-                 _text(actor_name), mutation_id, stamp, stamp),
+                 _text(actor_name), mutation_id, stamp, stamp, attempt_token, lease_until),
             )
             conn.execute(
                 f"UPDATE operations_reports SET revision=revision+1,updated_at={p} WHERE id={p}",
                 (stamp, report_id),
             )
-        return {"position": position, "storage_ref": "", "drive_ref": "", "sync_status": "uploading",
+        return {"position": position, "storage_ref": "", "drive_ref": "", "sync_status": "uploading", "lease_token": attempt_token, "lease_until": lease_until,
                 "actor_id": _text(actor_id), "actor_name": _text(actor_name), "created_at": stamp,
                 "mutation_id": mutation_id}
 
-    def complete_report_evidence(self, report_id, mutation_id, drive_ref, *, storage_ref=""):
+    def complete_report_evidence(self, report_id, mutation_id, drive_ref, *, storage_ref="", lease_token=""):
         """Confirma en la reserva el archivo que Drive ya recibió."""
         self.initialize()
         report_id, mutation_id, drive_ref = _text(report_id), _text(mutation_id), _text(drive_ref)
@@ -2021,6 +2066,14 @@ class OperationsStore:
             report = conn.execute(f"SELECT state FROM operations_reports WHERE id={p}", (report_id,)).fetchone()
             if not report or report[0] != "draft":
                 raise ReportConflictError("El reporte ya no admite esta carga. Conserva la fotografía para revisarla.", code="report_completed")
+            existing = conn.execute(f'SELECT drive_ref,storage_ref,lease_token,lease_until FROM operations_evidence WHERE report_id={p} AND mutation_id={p}', (report_id, mutation_id)).fetchone()
+            if not existing:
+                raise ReportConflictError('La reserva venció o fue cancelada. Reintenta con la foto respaldada.', code='photo_lease_lost')
+            if existing[0] or existing[1]:
+                if (existing[0], existing[1]) != (drive_ref, storage_ref):
+                    raise ReportConflictError('Esta fotografía ya fue confirmada con otro archivo; se conservó el original.', code='photo_content_conflict')
+            elif existing[2] and (existing[2] != lease_token or existing[3] < stamp):
+                raise ReportConflictError('La reserva venció o cambió de intento. Reintenta la foto respaldada.', code='photo_lease_lost')
             result = conn.execute(
                 f"UPDATE operations_evidence SET storage_ref={p},drive_ref={p},sync_status='pending',updated_at={p} "
                 f"WHERE report_id={p} AND mutation_id={p}",
@@ -2040,15 +2093,32 @@ class OperationsStore:
                 "actor_id": _text(row[1]), "actor_name": _text(row[2]),
                 "created_at": _text(row[3]), "mutation_id": mutation_id}
 
-    def release_report_evidence(self, report_id, mutation_id):
+    def renew_report_evidence(self, report_id, mutation_id, lease_token, *, lease_seconds=120):
+        p, stamp = self.placeholder, _now()
+        until = (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat(timespec='microseconds')
+        with self.connection() as conn:
+            self._lock_report(conn, report_id)
+            changed = conn.execute(f"UPDATE operations_evidence SET lease_until={p},updated_at={p} WHERE report_id={p} AND mutation_id={p} "
+                                   f"AND lease_token={p} AND lease_until>={p} AND drive_ref='' AND storage_ref=''",
+                                   (until, stamp, report_id, mutation_id, lease_token, stamp))
+            return changed.rowcount == 1
+
+    def release_report_evidence(self, report_id, mutation_id, *, lease_token=None, actor_id=None, cancel=False):
         """Libera sólo una carga incompleta; nunca borra fotos ya confirmadas."""
         self.initialize()
         p, stamp = self.placeholder, _now()
         with self.connection() as conn:
+            self._lock_report(conn, report_id)
+            if actor_id is not None:
+                row = conn.execute(f'SELECT actor_id,lease_until,updated_at FROM operations_evidence WHERE report_id={p} AND mutation_id={p}', (report_id, mutation_id)).fetchone()
+                legacy_before = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat(timespec='microseconds')
+                if row and row[0] != actor_id and (row[1] > stamp or (not row[1] and row[2] >= legacy_before)):
+                    raise ReportConflictError('Sólo la cuenta que inició la carga puede cancelarla mientras está activa.', code='photo_owner_required')
+            token_clause = f' AND lease_token={p}' if lease_token is not None else ''
             result = conn.execute(
                 f"DELETE FROM operations_evidence WHERE report_id={p} AND mutation_id={p} "
-                "AND drive_ref='' AND storage_ref=''",
-                (_text(report_id), _text(mutation_id)),
+                "AND drive_ref='' AND storage_ref=''" + token_clause,
+                (_text(report_id), _text(mutation_id), *((lease_token,) if lease_token is not None else ())),
             )
             if result.rowcount:
                 conn.execute(
@@ -2062,6 +2132,8 @@ class OperationsStore:
         self.initialize()
         report_id, user_id, p, stamp = _text(report_id), _text(user_id), self.placeholder, _now()
         with self.connection() as conn:
+            self._lock_report(conn, report_id)
+            self._expire_report_reservations(conn, report_id)
             report = conn.execute(
                 f"SELECT state,revision,updated_at,payload_json FROM operations_reports WHERE id={p}",
                 (report_id,),
@@ -2080,6 +2152,7 @@ class OperationsStore:
                 f"FROM operations_evidence WHERE report_id={p} AND (drive_ref<>'' OR storage_ref<>'') ORDER BY position",
                 (report_id,),
             ).fetchall()
+            pending_uploads = conn.execute(f"SELECT mutation_id,position,actor_id,actor_name,lease_until FROM operations_evidence WHERE report_id={p} AND drive_ref='' AND storage_ref=''", (report_id,)).fetchall()
             presence = conn.execute(
                 f"SELECT user_id,user_name,last_seen_at FROM operations_report_presence WHERE report_id={p}",
                 (report_id,),
@@ -2100,6 +2173,8 @@ class OperationsStore:
         return {
             "state": report[0], "revision": int(report[1] or 0), "updated_at": report[2],
             "payload": payload, "participants": participants,
+            "pending_uploads": [{"mutation_id": row[0], "position": int(row[1]), "actor_id": row[2],
+                                 "actor_name": row[3], "lease_until": row[4], "active": True} for row in pending_uploads],
             "evidence": [
                 {"position": int(row[0]), "actor_id": _text(row[1]), "actor_name": _text(row[2]),
                  "created_at": _text(row[3]), "updated_at": _text(row[4]),
@@ -2198,6 +2273,22 @@ class OperationsStore:
         with self.connection() as conn:
             return self._queue_sync_in_transaction(conn, entity_type, entity_id, destination, action, payload)
 
+    def resource_lock(self, key, timeout=35):
+        self.initialize()
+        return resource_lock(self, key, timeout)
+
+    def drive_registry(self, key, payload=None):
+        """The caller holds the resource lock when choosing/changing a Drive ID."""
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            if payload is not None:
+                conn.execute(f"INSERT INTO operations_drive_registry(resource_key,payload_json,updated_at) VALUES ({p},{p},{p}) "
+                             "ON CONFLICT(resource_key) DO UPDATE SET payload_json=excluded.payload_json,updated_at=excluded.updated_at",
+                             (key, json.dumps(payload), _now()))
+            row = conn.execute(f"SELECT payload_json FROM operations_drive_registry WHERE resource_key={p}", (key,)).fetchone()
+        return json.loads(row[0]) if row else None
+
     def _queue_sync_in_transaction(self, conn, entity_type, entity_id, destination, action, payload=None):
         stamp = _now()
         operation_id = uuid.uuid4().hex
@@ -2227,11 +2318,17 @@ class OperationsStore:
             "attempts": row[6], "last_error": row[7],
         } for row in rows]
 
-    def mark_sync_success(self, operation_id, entity_type="", entity_id=""):
+    def mark_sync_success(self, operation_id, entity_type="", entity_id="", *, connection=None, expected_revision=None):
         """Confirma una salida y actualiza el estado visible de su entidad."""
         self.initialize()
         p, stamp = self.placeholder, _now()
-        with self.connection() as conn:
+        with (nullcontext(connection) if connection is not None else self.connection()) as conn:
+            if connection is None:
+                self._lock_sync_entity(conn, entity_type, entity_id)
+            if entity_type == 'report' and expected_revision is not None:
+                row = conn.execute(f'SELECT revision FROM operations_reports WHERE id={p}', (entity_id,)).fetchone()
+                if not row or int(row[0]) != int(expected_revision):
+                    return False
             confirmed = conn.execute(
                 f"UPDATE operations_sync_outbox SET status='synced',attempts=attempts+1,"
                 f"last_error='',updated_at={p} WHERE id={p}",
@@ -2256,6 +2353,7 @@ class OperationsStore:
         p, stamp = self.placeholder, _now()
         message = _text(error)[:1000]
         with self.connection() as conn:
+            self._lock_sync_entity(conn, entity_type, entity_id)
             changed = conn.execute(
                 f"UPDATE operations_sync_outbox SET status='failed',attempts=attempts+1,"
                 f"last_error={p},updated_at={p} WHERE id={p}",
@@ -2272,3 +2370,13 @@ class OperationsStore:
                     f"UPDATE {table} SET sync_status='failed',updated_at={p} WHERE id={p}",
                     (stamp, _text(entity_id)),
                 )
+
+    def _lock_sync_entity(self, conn, entity_type, entity_id):
+        # Match finalization's entity -> outbox lock order on failure/ack too.
+        if self.dialect == 'sqlite':
+            conn.execute('BEGIN IMMEDIATE')
+        else:
+            table = {'report': 'operations_reports', 'fault': 'operations_faults',
+                     'client': 'operations_clients', 'equipment': 'operations_equipment'}.get(entity_type)
+            if table:
+                conn.execute(f'SELECT id FROM {table} WHERE id=%s FOR UPDATE', (entity_id,)).fetchone()
