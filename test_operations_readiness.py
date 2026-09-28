@@ -104,23 +104,24 @@ class ReadinessTests(unittest.TestCase):
         self.store.import_matrix_snapshot(self.matrix)
         self.assertEqual(self.store.snapshot()['equipment'][0]['name'], 'Nombre HSC')
 
-    def test_drafts_isolated_by_account(self):
+    def test_draft_is_shared_between_technician_accounts(self):
         first, second = self.draft('tech1'), self.draft('tech2')
-        self.assertNotEqual(first['id'], second['id'])
+        self.assertEqual(first['id'], second['id'])
         self.assertEqual(self.store.get_report_draft('UDA14', '1', user_id='tech1')['id'], first['id'])
-        with self.assertRaises(ValueError):
-            self.draft('tech2', id=first['id'])
+        self.assertEqual(self.store.get_report_draft('UDA14', '1', user_id='tech2')['id'], first['id'])
+        self.assertEqual(self.draft('tech2', id=first['id'], changed_fields={})['id'], first['id'])
+        # El botón Descartar sólo limpia el dispositivo. La eliminación remota
+        # conserva la protección del usuario que inició el borrador.
         with self.assertRaises(ValueError):
             self.store.delete_report_draft(first['id'], user_id='tech2')
         self.store.finalize_report(first['id'])
         self.assertIsNone(self.store.get_report_draft('UDA14', '1', user_id='tech1'))
-        self.assertEqual(self.store.get_report_draft('UDA14', '1', user_id='tech2')['id'], second['id'])
-        with self.assertRaisesRegex(ValueError, 'ya tiene reporte'):
-            self.store.finalize_report(second['id'])
+        self.assertIsNone(self.store.get_report_draft('UDA14', '1', user_id='tech2'))
+        self.assertEqual(self.store.finalize_report(second['id'])['id'], first['id'])
 
-    def test_legacy_pending_upload_can_finish_without_discovering_other_drafts(self):
+    def test_legacy_pending_upload_reuses_discovered_shared_draft(self):
         legacy = self.draft()
-        self.assertIsNone(self.store.get_report_draft('UDA14', '1', user_id='tech1'))
+        self.assertEqual(self.store.get_report_draft('UDA14', '1', user_id='tech1')['id'], legacy['id'])
         resumed = self.draft('tech1', id=legacy['id'])
         self.assertEqual(resumed['id'], legacy['id'])
 

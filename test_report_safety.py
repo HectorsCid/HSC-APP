@@ -1,6 +1,8 @@
 """No external services: loss of acknowledgements, atomic saves and ownership."""
 import ast
+import hashlib
 import io
+from datetime import datetime
 from pathlib import Path
 import tempfile
 import threading
@@ -54,8 +56,9 @@ class ReportSafetyTests(unittest.TestCase):
         self.assertEqual(self.store.pending_sync(), [])
         self.assertTrue(self.store.finalize_report(draft['id'])['completed'])
 
-    def test_concurrent_technicians_cannot_finish_two_reports_for_same_round(self):
+    def test_concurrent_technicians_confirm_the_same_shared_report(self):
         drafts = [self.draft('T1'), self.draft('T2')]
+        self.assertEqual(drafts[0]['id'], drafts[1]['id'])
         barrier = threading.Barrier(2)
         success, failures = [], []
         def finish(draft):
@@ -68,9 +71,9 @@ class ReportSafetyTests(unittest.TestCase):
         for thread in threads: thread.start()
         for thread in threads: thread.join(5)
         self.assertFalse(any(thread.is_alive() for thread in threads))
-        self.assertEqual(len(success), 1)
-        self.assertEqual(len(failures), 1)
-        self.assertIn('ya tiene reporte', failures[0])
+        self.assertEqual(len(success), 2)
+        self.assertEqual(failures, [])
+        self.assertEqual(success[0]['id'], success[1]['id'])
         self.assertEqual(len(self.store.pending_sync()), 1)
 
     def test_completed_report_cannot_be_resurrected_as_draft(self):
@@ -92,7 +95,15 @@ class ReportSafetyTests(unittest.TestCase):
             _operations_role=lambda: 'technician', _invalidate_operations_cache=Mock(),
             _schedule_operations_sync=Mock(), _notify_operations_fault=Mock())
         ns.update(time=SimpleNamespace(monotonic=lambda: 1), _prepare_operaciones_payload=lambda p: p,
-            _scope_operaciones_payload=lambda p: p, _OPERACIONES_IMPORT_STATUS={'error': ''})
+            _scope_operaciones_payload=lambda p: p, _OPERACIONES_IMPORT_STATUS={'error': ''},
+            read_operaciones_matrix=lambda *args, **kwargs: self.store.snapshot(),
+            get_sheets_service=lambda **kwargs: object(), SHEET_ID='test',
+            _complete_legacy_operations_relations=lambda payload: payload,
+            _queue_matrix_duplicate_repairs=lambda stats: 0,
+            reset_thread_google_services=Mock(), datetime=datetime, hashlib=hashlib,
+            store_operations_evidence=lambda *args, **kwargs: {
+                'drive_ref': 'drive-shared', 'storage_ref': 'storage-shared'
+            })
         exec(compile(ast.Module(body=functions, type_ignores=[]), 'app.py', 'exec'), ns)
         client = app.test_client()
         client.audit_namespace = ns
@@ -105,16 +116,19 @@ class ReportSafetyTests(unittest.TestCase):
             response = client.get(path)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.get_json()['equipment'][0]['id'], 'A1')
-        client.audit_namespace['_schedule_operations_sync'].assert_called_once_with(force=True)
+        client.audit_namespace['_schedule_operations_sync'].assert_not_called()
 
-    def test_api_does_not_modify_another_users_draft_or_photos(self):
+    def test_api_allows_authorized_technicians_to_collaborate_on_shared_draft(self):
         draft = self.draft('T2')
         client = self.api()
-        self.assertEqual(client.get('/api/operaciones/reports/' + draft['id']).status_code, 404)
-        self.assertEqual(client.post('/api/operaciones/reports/' + draft['id'] + '/evidence/reset').status_code, 403)
+        self.assertEqual(client.get('/api/operaciones/reports/' + draft['id']).status_code, 200)
+        reset = client.post('/api/operaciones/reports/' + draft['id'] + '/evidence/reset')
+        self.assertEqual(reset.status_code, 200)
+        self.assertTrue(reset.get_json()['preserved'])
         response = client.post('/api/operaciones/reports/' + draft['id'] + '/evidence/1',
-            data={'file': (io.BytesIO(b'test'), 'test.jpg', 'image/jpeg')})
-        self.assertEqual(response.status_code, 403)
+            data={'file': (io.BytesIO(b'test'), 'test.jpg', 'image/jpeg'), 'mutation_id': 'shared-photo'})
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(response.get_json()['evidence']['position'], 1)
 
     def test_api_retry_of_edit_resolves_original_folio(self):
         original = self.store.finalize_report(self.draft()['id'])

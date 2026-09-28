@@ -9,17 +9,29 @@ const $ = selector => {
   if (!elements.has(selector)) elements.set(selector, {value:'', textContent:'', innerHTML:'', disabled:false, onclick:()=>{}});
   return elements.get(selector);
 };
+let mutationSequence=0;
 const context = vm.createContext({$, Map, Set, Number, String, Image:class {
   naturalWidth=100;naturalHeight=100;
   async decode(){if(this.src.includes('bad'))throw Error('invalid');}
-}, URL:{createObjectURL:f=>'blob:'+f.name,revokeObjectURL:()=>{}}, selectedEquipment:'HDI1',selectedRound:'2',
+}, URL:{createObjectURL:f=>'blob:'+f.name,revokeObjectURL:()=>{}}, selectedEquipment:'HDI-sync',selectedRound:'2',
   indexedDB:undefined,
+  activeReportContext:{existingEvidence:[]},document:{hidden:false,addEventListener:()=>{}},setInterval:()=>0,
+  crypto:{randomUUID:()=>`mutation-${++mutationSequence}`},
   draftKey:()=>`${context.selectedEquipment}-R${context.selectedRound}`, escapeHtml:s=>String(s).replaceAll('<','&lt;'),toast:()=>{}});
 vm.runInContext(block,context);
 const file = (name,size=1024,type='image/jpeg')=>({name,size,type,lastModified:1});
 async function select(files){const input=$('#reportEvidence');input.files=files;await input.onchange({target:input});}
 async function capture(fileValue){const input=$('#reportEvidenceCamera');input.files=[fileValue];await input.onchange({target:input});}
 (async()=>{
+  await select([file('first.jpg'),file('second.jpg'),file('third.jpg')]);
+  const firstBatch=vm.runInContext('evidenceForReport()',context);
+  context.activeReportContext.existingEvidence=firstBatch.map(photo=>({position:photo.slot,mutation_id:photo.mutationId}));
+  vm.runInContext('renderEvidence()',context);
+  assert.match($('#evidencePickerHint').textContent,/Quedan 3/);
+  await select([file('fourth.jpg'),file('fifth.jpg'),file('sixth.jpg')]);
+  assert.match($('#evidenceStatus').textContent,/6 de 6/);
+  assert.deepEqual(Array.from(vm.runInContext('evidenceForReport().map(photo=>photo.slot)',context)),[1,2,3,4,5,6]);
+  context.selectedEquipment='HDI1';context.activeReportContext.existingEvidence=[];
   await select(Array.from({length:6},(_,i)=>file(`${i}.jpg`)));
   assert.match($('#evidenceStatus').textContent,/6 de 6/);
   assert.match($('#evidenceList').innerHTML,/Foto 6/);

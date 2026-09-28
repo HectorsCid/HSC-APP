@@ -54,8 +54,12 @@ class PwaTests(unittest.TestCase):
         self.assertNotEqual(technician_manifest["id"], partner_manifest["id"])
 
     def test_operations_apps_expose_their_own_install_identity(self):
-        technician = self.client.get("/hsc-tecnico/").get_data(as_text=True)
-        partner = self.client.get("/hsc-partner/").get_data(as_text=True)
+        technician_response = self.client.get("/hsc-tecnico/")
+        partner_response = self.client.get("/hsc-partner/")
+        self.assertIn("no-store", technician_response.headers.get("Cache-Control", ""))
+        self.assertIn("no-store", partner_response.headers.get("Cache-Control", ""))
+        technician = technician_response.get_data(as_text=True)
+        partner = partner_response.get_data(as_text=True)
         self.assertIn('/manifest-hsc-tecnico.webmanifest', technician)
         self.assertIn('data-app-kind="technician"', technician)
         self.assertIn('Instalar HSC Técnico', technician)

@@ -9,7 +9,7 @@ etapa de la transición.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -658,7 +658,8 @@ class OperationsStore:
             reports = conn.execute(
                 "SELECT r.id,r.equipment_id,r.client_id,r.round_number,r.start_at,r.end_at,r.completed,"
                 "r.matrix_id,r.report_type,r.state,r.sync_status,"
-                "(SELECT COUNT(*) FROM operations_evidence e WHERE e.report_id=r.id) "
+                "(SELECT COUNT(*) FROM operations_evidence e WHERE e.report_id=r.id "
+                "AND (e.drive_ref<>'' OR e.storage_ref<>'')) "
                 "FROM operations_reports r ORDER BY r.start_at,r.id"
             ).fetchall()
             faults = conn.execute(
@@ -1035,12 +1036,18 @@ class OperationsStore:
                     current_payload = json.loads(found[4] if len(found) > 4 else found[1] or "{}")
                 except (TypeError, json.JSONDecodeError):
                     current_payload = {}
+                draft_owner = _text(current_payload.get("_draft_user_id"))
                 if changed_fields is not None:
                     current_payload.update(changed_fields)
                     # Conserva quién inició el borrador; el autor de cada foto se
                     # guarda por separado y no depende de este dato histórico.
                     current_payload.setdefault("_draft_user_id", payload.get("_draft_user_id", ""))
                     payload = current_payload
+                if draft_owner:
+                    # Incluso un cliente antiguo que envía el formulario completo
+                    # no puede apropiarse del borrador compartido ni cambiar quién
+                    # está autorizado para eliminarlo remotamente.
+                    payload["_draft_user_id"] = draft_owner
             stamp = _now()
             saved = conn.execute(
                 f"INSERT INTO operations_reports(id,equipment_id,client_id,round_number,start_at,end_at,completed,source,matrix_id,report_type,payload_json,state,sync_status,updated_at) "
@@ -1056,6 +1063,33 @@ class OperationsStore:
             )
             if saved.rowcount != 1:
                 raise ValueError("El reporte ya fue finalizado; no se sobrescribió con un borrador tardío.")
+            if edit_report_id:
+                # Un borrador de edición debe trabajar con el juego completo de
+                # evidencias. Así, agregar una fotografía no sustituye ni oculta
+                # las que ya tenía el reporte finalizado.
+                occupied = {
+                    int(row[0]) for row in conn.execute(
+                        f"SELECT position FROM operations_evidence WHERE report_id={p}",
+                        (report_id,),
+                    ).fetchall()
+                }
+                original_evidence = conn.execute(
+                    f"SELECT position,storage_ref,drive_ref,sync_status,actor_id,actor_name,"
+                    f"mutation_id,created_at,updated_at FROM operations_evidence "
+                    f"WHERE report_id={p} ORDER BY position",
+                    (edit_report_id,),
+                ).fetchall()
+                for evidence in original_evidence:
+                    position = int(evidence[0])
+                    if position in occupied:
+                        continue
+                    conn.execute(
+                        f"INSERT INTO operations_evidence"
+                        f"(id,report_id,position,storage_ref,drive_ref,sync_status,actor_id,actor_name,mutation_id,created_at,updated_at) "
+                        f"VALUES ({','.join([p] * 11)})",
+                        (f"{report_id}:original:{position}", report_id, *evidence),
+                    )
+                    occupied.add(position)
         return self.get_report_draft(equipment_id, round_number)
 
     def ensure_report_fault(self, report_id, *, client_id, equipment_id, description, priority="Alta"):
@@ -1703,6 +1737,10 @@ class OperationsStore:
             end_at = _text(payload.get("fin"))
             if not start_at or not end_at:
                 raise ValueError("Captura las fechas de inicio y terminación antes de finalizar.")
+            if not _valid_date(start_at) or not _valid_date(end_at):
+                raise ValueError("Las fechas del reporte no tienen un formato válido.")
+            if end_at < start_at:
+                raise ValueError("La fecha de terminación no puede ser anterior a la fecha de inicio.")
             final_report_id = report_id
             if edit_report_id:
                 target = conn.execute(
@@ -1715,19 +1753,20 @@ class OperationsStore:
                 final_report_id = edit_report_id
                 conn.execute(
                     f"UPDATE operations_reports SET start_at={p},end_at={p},payload_json={p},"
-                    f"completed=1,source='app',state='completed',sync_status='pending',updated_at={p} WHERE id={p}",
+                    f"completed=1,source='app',state='completed',sync_status='pending',revision=revision+1,updated_at={p} WHERE id={p}",
                     (start_at, end_at, json.dumps(payload, ensure_ascii=False), stamp, final_report_id),
                 )
                 draft_evidence = conn.execute(
-                    f"SELECT position,storage_ref,drive_ref,sync_status,updated_at FROM operations_evidence "
+                    f"SELECT position,storage_ref,drive_ref,sync_status,actor_id,actor_name,mutation_id,created_at,updated_at FROM operations_evidence "
                     f"WHERE report_id={p} ORDER BY position", (report_id,),
                 ).fetchall()
                 if draft_evidence:
                     conn.execute(f"DELETE FROM operations_evidence WHERE report_id={p}", (final_report_id,))
                     for evidence in draft_evidence:
                         conn.execute(
-                            f"INSERT INTO operations_evidence(id,report_id,position,storage_ref,drive_ref,sync_status,updated_at) "
-                            f"VALUES ({','.join([p] * 7)})",
+                            f"INSERT INTO operations_evidence"
+                            f"(id,report_id,position,storage_ref,drive_ref,sync_status,actor_id,actor_name,mutation_id,created_at,updated_at) "
+                            f"VALUES ({','.join([p] * 11)})",
                             (f"{final_report_id}:foto:{evidence[0]}", final_report_id, *evidence),
                         )
                 conn.execute(f"DELETE FROM operations_evidence WHERE report_id={p}", (report_id,))
@@ -1735,7 +1774,7 @@ class OperationsStore:
             else:
                 conn.execute(
                     f"UPDATE operations_reports SET start_at={p},end_at={p},payload_json={p},"
-                    f"completed=1,source='app',state='completed',sync_status='pending',updated_at={p} WHERE id={p}",
+                    f"completed=1,source='app',state='completed',sync_status='pending',revision=revision+1,updated_at={p} WHERE id={p}",
                     (start_at, end_at, json.dumps(payload, ensure_ascii=False), stamp, report_id),
                 )
             # Antes de la modalidad compartida podía existir un borrador por
@@ -1787,6 +1826,7 @@ class OperationsStore:
         if not report_id or not mutation_id or preferred_position not in range(1, 7):
             raise ValueError("La fotografía no tiene un identificador o posición válidos.")
         p, stamp = self.placeholder, _now()
+        stale_before = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat(timespec="microseconds")
         with self.connection() as conn:
             if self.dialect == "sqlite":
                 conn.execute("BEGIN IMMEDIATE")
@@ -1799,6 +1839,13 @@ class OperationsStore:
             ).fetchone()
             if not report or report[0] != "draft":
                 raise ValueError("El borrador ya no está disponible.")
+            # Una caída del proceso después de reservar y antes de subir a Drive
+            # no debe reducir para siempre los seis espacios disponibles.
+            conn.execute(
+                f"DELETE FROM operations_evidence WHERE report_id={p} "
+                f"AND drive_ref='' AND storage_ref='' AND updated_at<{p}",
+                (report_id, stale_before),
+            )
             existing = conn.execute(
                 f"SELECT position,storage_ref,drive_ref,sync_status,actor_id,actor_name,created_at "
                 f"FROM operations_evidence WHERE report_id={p} AND mutation_id={p}",
@@ -1900,7 +1947,7 @@ class OperationsStore:
                     (report_id, user_id, _text(user_name), stamp),
                 )
             evidence = conn.execute(
-                f"SELECT position,actor_id,actor_name,created_at,updated_at,drive_ref,storage_ref "
+                f"SELECT position,actor_id,actor_name,created_at,updated_at,drive_ref,storage_ref,mutation_id "
                 f"FROM operations_evidence WHERE report_id={p} AND (drive_ref<>'' OR storage_ref<>'') ORDER BY position",
                 (report_id,),
             ).fetchall()
@@ -1927,7 +1974,8 @@ class OperationsStore:
             "evidence": [
                 {"position": int(row[0]), "actor_id": _text(row[1]), "actor_name": _text(row[2]),
                  "created_at": _text(row[3]), "updated_at": _text(row[4]),
-                 "drive_ref": _text(row[5]), "storage_ref": _text(row[6])}
+                 "drive_ref": _text(row[5]), "storage_ref": _text(row[6]),
+                 "mutation_id": _text(row[7])}
                 for row in evidence
             ],
         }

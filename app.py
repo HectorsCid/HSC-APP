@@ -429,7 +429,8 @@ def _security_headers(response):
     response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
     if IS_RENDER:
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-    if request.path.startswith(("/factur", "/api/", "/pagos", "/clientes", "/acceso", "/correo")):
+    if request.path.startswith(("/factur", "/api/", "/pagos", "/clientes", "/acceso", "/correo",
+                                "/hsc-tecnico/", "/hsc-partner/", "/app-operativa-demo")):
         response.headers.setdefault("Cache-Control", "no-store, private")
     if request.path == "/service-worker.js":
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -4645,7 +4646,9 @@ def api_operaciones_report_detail(report_id):
     try:
         report = OPERACIONES_STORE.get_report_detail(report_id)
         if not report and _operations_role() in {'admin', 'technician'}:
-            report = OPERACIONES_STORE.get_report_submission(report_id, str(session.get('hsc_user_id') or 'owner'))
+            # El borrador es compartido: cualquier técnico autorizado debe poder
+            # reconocer que otro ya lo finalizó y retirar su pendiente local.
+            report = OPERACIONES_STORE.get_report_submission(report_id)
         if not report:
             abort(404)
         if _operations_role() == "client" and report.get("client_id") != str(session.get("hsc_client_id") or "").strip():
@@ -4871,10 +4874,19 @@ def api_operaciones_report_live(report_id):
     if not OPERACIONES_STORE.enabled:
         return jsonify({"ok": False, "error": "La base operativa todavía no está conectada."}), 503
     try:
+        user_id = str(session.get('hsc_user_id') or 'owner')
+        user_name = str(session.get('hsc_user_name') or 'Técnico HSC')
+        resolved_report_id = report_id
         state = OPERACIONES_STORE.report_live_state(
-            report_id, user_id=str(session.get('hsc_user_id') or 'owner'),
-            user_name=str(session.get('hsc_user_name') or 'Técnico HSC'),
+            resolved_report_id, user_id=user_id, user_name=user_name,
         )
+        if not state:
+            confirmed = OPERACIONES_STORE.get_report_submission(report_id)
+            if confirmed:
+                resolved_report_id = confirmed["id"]
+                state = OPERACIONES_STORE.report_live_state(
+                    resolved_report_id, user_id=user_id, user_name=user_name,
+                )
         if not state:
             abort(404)
         for evidence in state.get("evidence", []):
@@ -4882,7 +4894,7 @@ def api_operaciones_report_live(report_id):
                 ("drive-id-v2:" + str(evidence.get("drive_ref") or evidence.get("storage_ref") or "")).encode("utf-8")
             ).hexdigest()[:10]
             evidence["url"] = url_for(
-                "api_operaciones_report_evidence", report_id=report_id,
+                "api_operaciones_report_evidence", report_id=resolved_report_id,
                 position=evidence["position"], v=media_version,
             )
             evidence.pop("storage_ref", None)
