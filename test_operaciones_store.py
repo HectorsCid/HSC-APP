@@ -195,7 +195,7 @@ def test_report_draft_is_durable_and_does_not_queue_google(tmp_path):
     first = store.save_report_draft({"client_id": "UVMQ", "equipment_id": "UVMQ1",
                                      "round": "3", "report_type": "refrigeration",
                                      "payload": {"inicio": "2026-09-12", "p1": "120"}})
-    second = store.save_report_draft({"id": first["id"], "client_id": "UVMQ",
+    second = store.save_report_draft({"id": first["id"], "base_values": first["payload"], "client_id": "UVMQ",
                                       "equipment_id": "UVMQ1", "round": "3",
                                       "payload": {"inicio": "2026-09-12", "p1": "125"}})
 
@@ -311,7 +311,7 @@ def test_editing_completed_report_keeps_folio_and_removes_temporary_draft(tmp_pa
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
     store.import_matrix_snapshot(_payload())
     draft = store.save_report_draft({
-        "edit_report_id": "UVMQ1_R 2", "client_id": "UVMQ", "equipment_id": "UVMQ1",
+        "edit_report_id": "UVMQ1_R 2", "base_values": store.get_report_detail("UVMQ1_R 2")["payload"], "client_id": "UVMQ", "equipment_id": "UVMQ1",
         "round": "2", "payload": {"inicio": "2026-09-13", "fin": "2026-09-13", "p1": "135"},
     })
     store.save_report_evidence(draft["id"], 1, "foto-editada.jpg")

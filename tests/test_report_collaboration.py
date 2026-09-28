@@ -38,7 +38,7 @@ class ReportCollaborationTests(unittest.TestCase):
             "id": first["id"], "client_id": "C1", "equipment_id": "EQ1", "round": "1",
             "payload": {"inicio": "2026-09-25", "fin": "2026-09-25", "notas": "Copia vieja",
                         "p1": "65", "_draft_user_id": "tech-b"},
-            "changed_fields": {"p1": "65"},
+            "changed_fields": {"p1": "65"}, "base_values": {"p1": ""},
         })
         self.assertEqual("Primero", second["payload"]["notas"])
         self.assertEqual("65", second["payload"]["p1"])
@@ -54,7 +54,7 @@ class ReportCollaborationTests(unittest.TestCase):
             "id": "", "client_id": "C1", "equipment_id": "EQ1", "round": "1",
             "payload": {"inicio": "2026-09-25", "fin": "2026-09-25",
                         "notas": "Copia offline antigua", "p1": "72"},
-            "changed_fields": {"p1": "72"},
+            "changed_fields": {"p1": "72"}, "base_values": {"p1": ""},
         })
         self.assertEqual(shared["id"], retried["id"])
         self.assertEqual("Cambio reciente del técnico conectado", retried["payload"]["notas"])
@@ -137,7 +137,7 @@ class ReportCollaborationTests(unittest.TestCase):
         original = self.store.finalize_report(original_draft["id"])
 
         edit = self.store.save_report_draft({
-            "edit_report_id": original["id"], "client_id": "C1",
+            "edit_report_id": original["id"], "base_values": original["payload"], "client_id": "C1",
             "equipment_id": "EQ1", "round": "4",
             "payload": {"inicio": "2026-09-25", "fin": "2026-09-26"},
         })
@@ -171,7 +171,7 @@ class ReportCollaborationTests(unittest.TestCase):
             self.store.finalize_report(invalid["id"])
 
         reversed_dates = self.store.save_report_draft({
-            "id": invalid["id"], "client_id": "C1", "equipment_id": "EQ1", "round": "1",
+            "id": invalid["id"], "base_values": invalid["payload"], "client_id": "C1", "equipment_id": "EQ1", "round": "1",
             "payload": {"inicio": "2026-09-28", "fin": "2026-09-27"},
         })
         with self.assertRaisesRegex(ValueError, "anterior"):

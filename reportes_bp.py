@@ -904,7 +904,7 @@ def _upsert_bytes(parent_id: str, filename: str, content: bytes, mimetype: str) 
     return _drive_files_call(operation)
 
 
-def store_operations_evidence(client_name: str, report_id: str, position: int, content: bytes) -> dict:
+def store_operations_evidence(client_name: str, report_id: str, position: int, content: bytes, *, upload_id: str = "") -> dict:
     """Guarda evidencia y devuelve referencias para la app y para AppSheet."""
     if not REPORTES_ROOT_ID:
         raise RuntimeError("REPORTES_ROOT_ID no configurado")
@@ -914,9 +914,11 @@ def store_operations_evidence(client_name: str, report_id: str, position: int, c
     client_folder = _ensure_folder(REPORTES_ROOT_ID, safe_client)
     report_folder = _ensure_folder(client_folder, safe_report)
     extension = ".png" if mimetype == "image/png" else ".jpg"
-    # El nombre es deliberadamente estable: si la conexión corta una subida,
-    # el reintento reemplaza la misma posición en lugar de crear duplicados.
-    filename = f"{safe_report}.Foto {int(position)}{extension}"
+    # Identidad estable para ESTE archivo, nunca para una posición reutilizable.
+    # Incluye el contenido: un reintento mal formado tampoco modifica otra foto.
+    import hashlib
+    identity = hashlib.sha256((upload_id or "legacy").encode() + b"\0" + content).hexdigest()
+    filename = f"{safe_report}.Foto {int(position)}.{identity}{extension}"
     drive_id = _upsert_bytes(report_folder, filename, optimized, mimetype)
     storage_ref = f"{REPORTES_APPSHEET_PATH_PREFIX}/{safe_client}/{safe_report}/{filename}"
     return {"drive_ref": drive_id, "storage_ref": storage_ref}

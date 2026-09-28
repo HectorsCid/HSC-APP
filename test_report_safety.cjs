@@ -8,7 +8,7 @@ assert.ok(html.includes("for(const name of ['t1','t2'])"),'Ambas temperaturas de
 (async()=>{
   let full=true,photoSaved=false,localWrites=0;
   const ctx=vm.createContext({activeReportContext:{key:'T1:A1:R1'},evidenceBusy:false,
-    reportLocalBackupFailed:false,collectReportData:()=>({p1:'33'}),
+    releaseEvidenceMemory(){},persistReportContext(ctx,data){if(full)throw Error('quota');localWrites++;},reportLocalBackupFailed:false,collectReportData:()=>({p1:'33'}),
     localStorage:{setItem(){if(full)throw Error('quota');localWrites++;}},
     persistEvidence:async()=>photoSaved,evidenceForReport:()=>[{}],
     current:'report',editorDirty:false,toast(){},saveActiveReportDraft(){},
@@ -35,16 +35,16 @@ assert.ok(html.includes("for(const name of ['t1','t2'])"),'Ambas temperaturas de
   editor.account.id='T2';await assert.rejects(editor.loadCompletedReportForEdit('R1'),/edición vacía/);
 
   let resetCalls=0,cleared=0;
-  const upload={id:'draft-edit',key:'local',client:'A',equipment:'A1',round:'1',photos:[],data:{p1:'33'}};
-  const report={id:'original',client_id:'A',equipment_id:'A1',round:'1',matrix_id:'A1_R 1',state:'completed',completed:true};
-  const worker=vm.createContext({hscFetch:async()=>({ok:true,json:async()=>({ok:true,report})}),
+  const upload={id:'draft-edit',key:'local',client:'A',equipment:'A1',round:'1',photos:[],submissionId:'submission-test',data:{p1:'33'}};
+  const report={submission_id:'submission-test',id:'original',client_id:'A',equipment_id:'A1',round:'1',matrix_id:'A1_R 1',state:'completed',completed:true};
+  const worker=vm.createContext({HscReportCollaboration:require('./static/report_collaboration.js'),hscFetch:async()=>({ok:true,json:async()=>({ok:true,report})}),
     operationsPost:async url=>{assert.equal(url,'/api/operaciones/reports/finalize');return {report};},
     fieldRevision:0,lastServerPayload:{reports:[]},matrixReports:[{id:'offline:local'}],matrixFaults:[],
     cacheServerPayload(){},completePendingReportUpload:async()=>cleared++,refreshRound(){},toast(){},
     URL:{revokeObjectURL(){}},backgroundReportUploads:new Map(),
   });
   const recovery=html.slice(html.indexOf('  async function recoverConfirmedReportUpload('),html.indexOf('  async function restoreEvidence('));
-  vm.runInContext(recovery,worker);
+  vm.runInContext(line('function reportSubmissionBody(')+'\n'+line('function requireReportReceipt(')+'\n'+recovery,worker);
   assert.equal(await worker.recoverConfirmedReportUpload(upload),true);assert.equal(cleared,1);
   assert.equal(worker.matrixReports[0].id,'original');
   worker.operationsPost=async()=>{throw Error('fault delivery transaction incomplete')};

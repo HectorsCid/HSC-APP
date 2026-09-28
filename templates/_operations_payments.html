@@ -1,4 +1,4 @@
-{% if operations_is_owner %}
+{% if operations_is_owner or operations_offline_shell|default(false) %}
 <link rel="stylesheet" href="/static/operations_payments.css?v=1">
 <section class="view pay-panel" data-view="payments">
   <div class="section-head"><div><h2>Pagos a técnicos</h2><p class="muted">Todo lo pendiente, sin importar la semana.</p></div><button class="secondary" id="payRefresh" type="button">↻ Actualizar</button></div>

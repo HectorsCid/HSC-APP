@@ -28,6 +28,27 @@ class MediaMemoryTests(unittest.TestCase):
         reports._clear_pdf_photo_cache()
         self.addCleanup(reports._clear_pdf_photo_cache)
 
+    def test_large_png_is_rejected_before_decoding_pixels(self):
+        raw = photo_bytes((6000, 4000), fmt="PNG")
+        with patch.object(Image.Image, "load", side_effect=AssertionError("Must not decode 24 MP")):
+            with self.assertRaisesRegex(ValueError, "demasiada memoria"):
+                photo_runtime.prepare_photo(raw)
+
+    def test_evidence_names_are_immutable_per_upload_and_content(self):
+        names = []
+        def upsert(folder, name, content, mime):
+            names.append(name)
+            return name
+        with patch.object(reports, "REPORTES_ROOT_ID", "fake-root"), \
+             patch.object(reports, "_ensure_folder", return_value="fake-folder"), \
+             patch.object(reports, "_optimize_photo_bytes", side_effect=lambda content: (content, "image/jpeg")), \
+             patch.object(reports, "_upsert_bytes", side_effect=upsert):
+            for upload, content in [("draft-A:photo", b"one"), ("draft-A:photo", b"one"),
+                                    ("draft-B:photo", b"two"), ("draft-A:photo", b"changed")]:
+                reports.store_operations_evidence("Client", "E_R 1", 1, content, upload_id=upload)
+        self.assertEqual(names[0], names[1])
+        self.assertEqual(len(set(names)), 3)
+
     def test_thumbnail_reduces_pixels_before_exif_copy_and_keeps_rotation(self):
         raw = photo_bytes(orientation=6)
         transpose = photo_runtime.ImageOps.exif_transpose

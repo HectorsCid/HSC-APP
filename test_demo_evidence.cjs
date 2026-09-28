@@ -10,7 +10,7 @@ const $ = selector => {
   return elements.get(selector);
 };
 let mutationSequence=0;
-const context = vm.createContext({$, Map, Set, Number, String, Image:class {
+const context = vm.createContext({HscPhotoPreflight:{check:async()=>[100,100]},$, Map, Set, Number, String, Image:class {
   naturalWidth=100;naturalHeight=100;
   async decode(){if(this.src.includes('bad'))throw Error('invalid');}
 }, URL:{createObjectURL:f=>'blob:'+f.name,revokeObjectURL:()=>{}}, selectedEquipment:'HDI-sync',selectedRound:'2',
@@ -18,7 +18,7 @@ const context = vm.createContext({$, Map, Set, Number, String, Image:class {
   activeReportContext:{existingEvidence:[]},document:{hidden:false,addEventListener:()=>{}},setInterval:()=>0,
   crypto:{randomUUID:()=>`mutation-${++mutationSequence}`},
   draftKey:()=>`${context.selectedEquipment}-R${context.selectedRound}`, escapeHtml:s=>String(s).replaceAll('<','&lt;'),toast:()=>{}});
-vm.runInContext(block,context);
+vm.runInContext(block,context);context.deleteEvidencePhoto=async()=>{};
 const file = (name,size=1024,type='image/jpeg')=>({name,size,type,lastModified:1});
 async function select(files){const input=$('#reportEvidence');input.files=files;await input.onchange({target:input});}
 async function capture(fileValue){const input=$('#reportEvidenceCamera');input.files=[fileValue];await input.onchange({target:input});}
@@ -36,7 +36,7 @@ async function capture(fileValue){const input=$('#reportEvidenceCamera');input.f
   assert.match($('#evidenceStatus').textContent,/6 de 6/);
   assert.match($('#evidenceList').innerHTML,/Foto 6/);
   await select([file('extra.jpg')]);assert.match($('#evidenceError').textContent,/Quedan 0/);
-  $('#evidenceList').onclick({target:{closest:()=>({dataset:{index:'0',evidenceAction:'remove'}})}});
+  await $('#evidenceList').onclick({target:{closest:()=>({dataset:{index:'0',evidenceAction:'remove'}})}});
   assert.match($('#evidenceStatus').textContent,/5 de 6/);
   await select([file('1.jpg')]);assert.match($('#evidenceError').textContent,/repetida/);
   context.selectedEquipment='HDI2';vm.runInContext('renderEvidence()',context);
@@ -45,7 +45,7 @@ async function capture(fileValue){const input=$('#reportEvidenceCamera');input.f
   vm.runInContext('renderEvidence()',context);assert.match($('#evidenceStatus').textContent,/0 de 6/);
   await select([file('large.jpg',16*1024*1024)]);assert.match($('#evidenceError').textContent,/15 MB/);
   await select([file('photo.heic',1024,'image/heic')]);assert.match($('#evidenceStatus').textContent,/1 de 6/);
-  $('#evidenceList').onclick({target:{closest:()=>({dataset:{index:'0',evidenceAction:'remove'}})}});
+  await $('#evidenceList').onclick({target:{closest:()=>({dataset:{index:'0',evidenceAction:'remove'}})}});
   $('#reportEvidenceSlot').value='3';await capture(file('camera.jpg'));
   assert.match($('#evidenceList').innerHTML,/Foto 3/);
   await select([file('a.jpg')]);

@@ -9,7 +9,7 @@ from pdf_runtime import log_memory_event, pdf_render_slot, release_pdf_memory
 
 
 MAX_SOURCE_PIXELS = 80_000_000
-MAX_DECODE_PIXELS = 25_000_000
+MAX_DECODE_PIXELS = 12_000_000
 MAX_PHOTO_BYTES = 20 * 1024 * 1024
 
 

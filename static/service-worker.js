@@ -1,10 +1,16 @@
-const CACHE_NAME = 'hsc-shell-v37';
+const CACHE_NAME = 'hsc-shell-v40';
 const SAFE_ASSETS = [
   '/static/hsc_theme.css',
   '/static/hsc_theme.js',
   '/static/hsc_inputs.js',
   '/static/pwa.js',
   '/static/operations_offline.js',
+  '/static/report_collaboration.js',
+  '/static/photo_preflight.js',
+  '/static/operations_session.js',
+  '/static/operations_technician_refresh.css',
+  '/offline/technician',
+  '/offline/partner',
   '/static/operations_worklists.js',
   '/static/operations_repairs.js',
   '/static/operations_repairs.css',
@@ -42,12 +48,10 @@ self.addEventListener('fetch', event => {
   );
   if(operationsShell){
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
-    // El HTML contiene la identidad y empresa de la sesión: nunca se comparte ni
-    // se restaura desde caché. Los pendientes sin conexión viven por cuenta aparte.
-    event.respondWith(fetch(request,{signal:controller.signal}).catch(() => new Response(
-      '<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HSC sin conexión</title><body style="font-family:system-ui;background:#0f1b2d;color:#fff;padding:32px"><h1>HSC no pudo validar tu sesión</h1><p>Recupera la conexión y vuelve a abrir la app. Tus reportes pendientes siguen guardados en este dispositivo.</p><button onclick="location.reload()" style="padding:12px 18px">Reintentar</button></body></html>',
-      {status:503,headers:{'Content-Type':'text/html;charset=utf-8','Cache-Control':'no-store'}}
-    )).finally(()=>clearTimeout(timer)));
+    // Never cache personalized HTML. Fall back only to an identity-free shell.
+    const unavailable=()=>new Response('Conéctate una vez para preparar HSC en este dispositivo.',{status:503,headers:{'Content-Type':'text/plain;charset=utf-8'}});
+    const fallback=async()=>await caches.match(url.pathname==='/hsc-partner/'?'/offline/partner':'/offline/technician')||unavailable();
+    event.respondWith(fetch(request,{signal:controller.signal}).then(response=>response.status>=500?fallback():response).catch(fallback).finally(()=>clearTimeout(timer)));
     return;
   }
   if(!SAFE_PATHS.has(url.pathname)) return;

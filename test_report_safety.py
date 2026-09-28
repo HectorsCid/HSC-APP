@@ -133,7 +133,7 @@ class ReportSafetyTests(unittest.TestCase):
     def test_api_retry_of_edit_resolves_original_folio(self):
         original = self.store.finalize_report(self.draft()['id'])
         edit = self.draft(edit_report_id=original['id'])
-        body = dict(edit, payload=dict(edit['payload']))
+        body = dict(edit, payload=dict(edit['payload']), submission_id='retry-edit', photo_mutation_ids=[])
         client = self.api()
         with patch.dict('sys.modules', {'notification_delivery': SimpleNamespace(enqueue=Mock())}):
             for _ in range(2):
@@ -143,6 +143,36 @@ class ReportSafetyTests(unittest.TestCase):
         recovered = client.get('/api/operaciones/reports/' + edit['id'])
         self.assertEqual(recovered.status_code, 200)
         self.assertEqual(recovered.get_json()['report']['id'], original['id'])
+
+    def test_api_does_not_acknowledge_another_technicians_submission(self):
+        draft = self.draft()
+        body = dict(draft, payload=dict(draft['payload']), changed_fields={},
+                    submission_id='T1-submission', photo_mutation_ids=[])
+        client = self.api()
+        with patch.dict('sys.modules', {'notification_delivery': SimpleNamespace(enqueue=Mock())}):
+            first = client.post('/api/operaciones/reports/finalize', json=body)
+            self.assertEqual(first.status_code, 200, first.get_json())
+            with client.session_transaction() as saved:
+                saved['hsc_user_id'] = 'T2'
+            other = dict(body, submission_id='T2-submission')
+            other['payload'] = dict(body['payload'], notas='Unsent offline work')
+            other['changed_fields'] = {'notas': 'Unsent offline work'}
+            rejected = client.post('/api/operaciones/reports/finalize', json=other)
+            self.assertEqual(rejected.status_code, 409)
+            self.assertEqual(rejected.get_json()['code'], 'report_completed')
+            forged_retry = client.post('/api/operaciones/reports/finalize', json=body)
+            self.assertEqual(forged_retry.status_code, 409)
+
+    def test_api_waits_for_all_reserved_photographs(self):
+        draft = self.draft()
+        self.store.reserve_report_evidence(draft['id'], 1, 'photo-uploading', actor_id='T2')
+        body = dict(draft, payload=dict(draft['payload']), changed_fields={},
+                    submission_id='waiting-for-photos', photo_mutation_ids=[])
+        client = self.api()
+        response = client.post('/api/operaciones/reports/finalize', json=body)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()['code'], 'photos_uploading')
+        self.assertEqual(self.store.pending_sync(), [])
 
 
 if __name__ == '__main__':

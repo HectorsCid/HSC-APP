@@ -2,6 +2,7 @@ import threading
 import time
 import unittest
 import ssl
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import auth_google
@@ -23,7 +24,7 @@ class _FakeHTML:
             type(self).max_active = max(type(self).max_active, type(self).active)
         try:
             time.sleep(0.08)
-            return b"%PDF-test"
+            return b"%PDF-test" + b" " * 100
         finally:
             with self.state_lock:
                 type(self).active -= 1
@@ -38,14 +39,18 @@ class RuntimeGuardTests(unittest.TestCase):
         def render():
             results.append(pdf_runtime.render_pdf_bytes("<p>ok</p>", wait_timeout=2))
 
-        with patch.object(pdf_runtime, "HTML", _FakeHTML):
+        def worker(command, *, operation):
+            output = Path(command[command.index('--output') + 1])
+            output.write_bytes(_FakeHTML().write_pdf())
+
+        with patch.object(pdf_runtime, "_run_pdf_worker", side_effect=worker):
             threads = [threading.Thread(target=render) for _ in range(2)]
             for thread in threads:
                 thread.start()
             for thread in threads:
                 thread.join()
 
-        self.assertEqual(results, [b"%PDF-test", b"%PDF-test"])
+        self.assertEqual(results, [b"%PDF-test" + b" " * 100] * 2)
         self.assertEqual(_FakeHTML.max_active, 1)
 
     def test_google_services_are_reused_in_thread_but_not_shared_between_threads(self):

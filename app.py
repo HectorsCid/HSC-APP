@@ -351,6 +351,7 @@ def _require_app_login():
         "acceso", "healthz", "health", "health_check", "ping_root",
         "pwa_manifest", "pwa_technician_manifest", "pwa_partner_manifest", "pwa_service_worker",
         "accept_operations_invite",
+        "operations_offline_shell",
     }:
         return None
     if endpoint == "static" and (
@@ -369,6 +370,9 @@ def _require_app_login():
     if not password and not IS_RENDER:
         return None
     if session.get("hsc_authenticated") is True:
+        supplied_account = request.headers.get("X-HSC-Account", "")
+        if request.path.startswith("/api/operaciones/") and supplied_account and supplied_account != str(session.get("hsc_user_id") or "owner"):
+            return jsonify(ok=False, code="account_changed", error="La sesión cambió de cuenta. Inicia sesión con la cuenta de este pendiente para enviarlo."), 401
         session_role = str(session.get("hsc_role") or "").strip().lower()
         if session_role in {"technician", "client"} and OPERACIONES_STORE.enabled:
             try:
@@ -3095,6 +3099,20 @@ def hsc_tecnico():
     return _render_operations_app("technician")
 
 
+@app.get('/offline/<app_kind>')
+def operations_offline_shell(app_kind):
+    """Public, identity-free structure; account data stays in local account storage."""
+    if app_kind not in {"technician", "partner"}:
+        abort(404)
+    return render_template(
+        'app_operativa_demo.html', operations_offline_shell=True,
+        operations_role='', operations_is_owner=False, operations_app_kind=app_kind,
+        operations_app_name='HSC Partner' if app_kind == 'partner' else 'HSC Técnico',
+        operations_manifest_url='/manifest-hsc-partner.webmanifest' if app_kind == 'partner' else '/manifest-hsc-tecnico.webmanifest',
+        operations_user_id='', operations_user_name='', operations_client_id='', operations_permissions={},
+    )
+
+
 @app.route('/hsc-partner/')
 def hsc_partner():
     """Entrada instalable independiente para clientes y vista Partner del administrador."""
@@ -4647,7 +4665,8 @@ def api_operaciones_report_detail(report_id):
         report = OPERACIONES_STORE.get_report_detail(report_id)
         if not report and _operations_role() in {'admin', 'technician'}:
             # El borrador es compartido: cualquier técnico autorizado debe poder
-            # reconocer que otro ya lo finalizó y retirar su pendiente local.
+            # reconocer que otro ya lo finalizó. Retirar un pendiente requiere
+            # además el recibo específico de su envío.
             report = OPERACIONES_STORE.get_report_submission(report_id)
         if not report:
             abort(404)
@@ -4694,7 +4713,8 @@ def api_operaciones_save_report_draft():
         _invalidate_operations_cache()
         return jsonify({"ok": True, "draft": draft, "sync_status": "local_only"})
     except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(ok=False, error=str(exc), code=getattr(exc, "code", ""),
+                       conflicts=getattr(exc, "conflicts", []), report_id=getattr(exc, "report_id", "")), 409 if getattr(exc, "code", "") else 400
     except Exception as exc:
         current_app.logger.exception("No se pudo guardar el borrador operativo: %s", exc)
         return jsonify({"ok": False, "error": "No se pudo guardar el borrador."}), 500
@@ -4731,16 +4751,11 @@ def api_operaciones_finalize_report():
     try:
         body['payload'] = dict(body.get('payload') or {})
         body['payload']['_draft_user_id'] = str(session.get('hsc_user_id') or 'owner')
-        # El borrador es compartido: si otro técnico ya confirmó la misma
-        # operación, devolvemos esa confirmación en vez de intentar recrearla.
-        report = OPERACIONES_STORE.get_report_submission(body.get('id')) if body.get('id') else None
-        if report:
-            if (report['client_id'], report['equipment_id'], report['round']) != (
-                    str(body.get('client_id') or ''), str(body.get('equipment_id') or ''), str(body.get('round') or '')):
-                raise ValueError('La confirmación pertenece a otro equipo o ronda.')
-        else:
+        # Sólo el recibo de este envío permite retirar su respaldo local.
+        report = OPERACIONES_STORE.get_report_receipt(body)
+        if not report:
             draft = OPERACIONES_STORE.save_report_draft(body)
-            report = OPERACIONES_STORE.finalize_report(draft["id"])
+            report = OPERACIONES_STORE.finalize_report(draft["id"], submission=body)
         try:
             from notification_delivery import enqueue
             from urllib.parse import urlencode
@@ -4756,13 +4771,16 @@ def api_operaciones_finalize_report():
                 report["id"], client_id=report["client_id"], equipment_id=report["equipment_id"],
                 description=payload.get("falla_descripcion"),
                 priority=payload.get("falla_prioridad") or "Alta",
+                expected_revision=report.get("revision"),
             )
-            _notify_operations_fault(fault)
+            if fault:
+                _notify_operations_fault(fault)
         _invalidate_operations_cache()
         _schedule_operations_sync(force=True)
         return jsonify({"ok": True, "report": report, "fault": fault, "sync_status": "pending"})
     except ValueError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(ok=False, error=str(exc), code=getattr(exc, "code", ""),
+                       conflicts=getattr(exc, "conflicts", []), report_id=getattr(exc, "report_id", "")), 409 if getattr(exc, "code", "") else 400
     except Exception as exc:
         current_app.logger.exception("No se pudo finalizar el reporte operativo: %s", exc)
         return jsonify({"ok": False, "error": "No se pudo finalizar el reporte."}), 500
@@ -4820,7 +4838,9 @@ def api_operaciones_upload_report_evidence(report_id, position):
     try:
         report = OPERACIONES_STORE.get_report_detail(report_id)
         if not report or report.get("state") != "draft":
-            return jsonify({"ok": False, "error": "El borrador ya no está disponible."}), 400
+            completed = report or OPERACIONES_STORE.get_report_submission(report_id)
+            return jsonify(ok=False, code="report_completed", report_id=(completed or {}).get("id", ""),
+                           error="El reporte ya no admite fotos. Conservamos la fotografía para revisarla como edición."), 409
         reserved = OPERACIONES_STORE.reserve_report_evidence(
             report_id, position, mutation_id,
             actor_id=str(session.get('hsc_user_id') or 'owner'),
@@ -4831,12 +4851,14 @@ def api_operaciones_upload_report_evidence(report_id, position):
                 "position": reserved["position"], "actor_name": reserved.get("actor_name") or "",
                 "created_at": reserved.get("created_at") or "", "mutation_id": mutation_id,
             }})
-        client = next(
-            (item for item in OPERACIONES_STORE.snapshot()["clients"] if item["id"] == report["client_id"]), None
-        )
+        with OPERACIONES_STORE.connection() as conn:
+            client = conn.execute(
+                f"SELECT name FROM operations_clients WHERE id={OPERACIONES_STORE.placeholder}", (report["client_id"],)
+            ).fetchone()
         matrix_report_id = report.get("matrix_id") or report_id
         stored = store_operations_evidence(
-            (client or {}).get("name") or report["client_id"], matrix_report_id, reserved["position"], content,
+            (client[0] if client else "") or report["client_id"], matrix_report_id, reserved["position"], content,
+            upload_id=report_id + ":" + mutation_id,
         )
         evidence = OPERACIONES_STORE.complete_report_evidence(
             report_id, mutation_id, stored["drive_ref"], storage_ref=stored["storage_ref"],
@@ -4851,7 +4873,8 @@ def api_operaciones_upload_report_evidence(report_id, position):
                 OPERACIONES_STORE.release_report_evidence(report_id, mutation_id)
             except Exception:
                 current_app.logger.exception("No se pudo liberar la reserva de evidencia %s", mutation_id)
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(ok=False, error=str(exc), code=getattr(exc, "code", ""),
+                       report_id=getattr(exc, "report_id", "")), 409 if getattr(exc, "code", "") else 400
     except Exception as exc:
         if reserved:
             try:
@@ -5136,9 +5159,14 @@ def _serve_operations_thumbnail(kind, record_id, photo_ref):
             response.headers["X-HSC-Thumbnail"] = "generated"
         except Exception as exc:
             current_app.logger.warning("No se pudo optimizar foto %s/%s: %s", kind, record_id, exc)
-            response = original_response
-            response.headers["X-HSC-Thumbnail"] = "original"
+            # A busy renderer must not send an unbounded full-resolution image
+            # to a phone. The UI keeps its placeholder and retries briefly.
+            response = make_response("Miniatura temporalmente no disponible", 503)
+            response.headers["X-HSC-Thumbnail"] = "unavailable"
+            response.headers["Retry-After"] = "2"
             usable_thumbnail = False
+        finally:
+            original_response.close()
     response.headers["Cache-Control"] = (
         "private, max-age=2592000, immutable" if usable_thumbnail else "no-store, max-age=0"
     )

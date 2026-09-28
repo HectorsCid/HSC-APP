@@ -41,12 +41,13 @@ class MatrixIdentityTests(unittest.TestCase):
             self.store.save_equipment([{'id': 'UDA14', 'client_id': 'TT', 'name': 'Otro'}])
         self.assertEqual(self.store.snapshot()['equipment'][0]['client_id'], 'UDA')
 
-    def test_duplicate_ids_block_writer(self):
+    def test_duplicate_ids_are_explicit_in_repair_plan(self):
         fake = SimpleNamespace()
         indexes = {('Equipos', 'ID_Equipo'): (['ID_Equipo', 'ID_Cliente', 'NombreEquipo'],
-                  {'idequipo': 0, 'idcliente': 1, 'nombreequipo': 2}, {'UDA14': [2, 7]})}
-        with self.assertRaisesRegex(ValueError, 'duplicado'):
-            _plan_operation(self.store, {'entity_type': 'equipment', 'entity_id': 'UDA14'}, fake, 'test', ['Equipos'], indexes)
+                  {'idequipo': 0, 'idcliente': 1, 'nombreequipo': 2}, {'UDA14': [2, 7]}, [])}
+        plan = _plan_operation(self.store, {'entity_type': 'equipment', 'entity_id': 'UDA14'}, fake, 'test', ['Equipos'], indexes)
+        self.assertEqual(plan['row_number'], 2)
+        self.assertEqual(plan['duplicate_rows'], [7])
 
     def test_incoming_runs_even_when_outgoing_fails(self):
         module = ast.parse(Path('app.py').read_text(encoding='utf-8-sig'))
@@ -61,7 +62,7 @@ class MatrixIdentityTests(unittest.TestCase):
         ns = {'datetime': datetime, '_OPERACIONES_IMPORT_STATUS': {}, 'OPERACIONES_MATRIX_AUTO_SYNC': True, 'OPERACIONES_STORE': SimpleNamespace(import_matrix_snapshot=lambda p: calls.append('import')),
               'get_sheets_write_service': fail, 'sync_operations_outbox': fail, 'SHEET_ID': 'test',
               'get_sheets_service': lambda **kw: None, 'read_operaciones_matrix': lambda *a, **kw: {'stats': {}},
-              '_operations_migration_checks': lambda p: {'ready': True}, '_complete_legacy_operations_relations': lambda p: p,
+              '_queue_matrix_duplicate_repairs': lambda stats: 0, '_operations_migration_checks': lambda p: {'ready': True}, '_complete_legacy_operations_relations': lambda p: p,
               '_invalidate_operations_cache': lambda: calls.append('invalidate'), 'reset_thread_google_services': lambda: None,
               '_OPERACIONES_SYNC_LOCK': SimpleNamespace(release=lambda: calls.append('release'))}
         exec(compile(ast.Module(body=[fn], type_ignores=[]), 'app.py', 'exec'), ns)

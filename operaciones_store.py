@@ -8,9 +8,10 @@ etapa de la transición.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -18,7 +19,29 @@ import sqlite3
 import uuid
 
 
-SCHEMA_VERSION = "19"
+SCHEMA_VERSION = "20"
+
+
+class ReportConflictError(ValueError):
+    """A recoverable conflict: the caller must retain its local proposal."""
+
+    def __init__(self, message, *, code="report_conflict", conflicts=None, report_id=""):
+        super().__init__(message)
+        self.code = code
+        self.conflicts = conflicts or []
+        self.report_id = report_id
+
+
+def _report_value(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return "" if value is None else str(value)
+
+
+def _report_fingerprint(item):
+    fields = ("client_id", "equipment_id", "round", "edit_report_id", "payload", "changed_fields", "photo_mutation_ids")
+    body = {key: item.get(key) for key in fields}
+    return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
 
 
 DEFAULT_OBSERVATION_OPTIONS = {
@@ -304,6 +327,7 @@ class OperationsStore:
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_equipment ON operations_reports(equipment_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_report_presence_seen ON operations_report_presence(report_id,last_seen_at)",
             "CREATE TABLE IF NOT EXISTS operations_report_submissions (draft_id TEXT PRIMARY KEY, report_id TEXT NOT NULL, user_id TEXT NOT NULL, confirmed_at TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS operations_report_receipts (submission_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, report_json TEXT NOT NULL, confirmed_at TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_operations_reports_client ON operations_reports(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_faults_client ON operations_faults(client_id)",
             "CREATE INDEX IF NOT EXISTS idx_operations_faults_equipment ON operations_faults(equipment_id)",
@@ -988,9 +1012,6 @@ class OperationsStore:
         changed_fields = dict(changed_fields) if isinstance(changed_fields, dict) else None
         if not equipment_id or not client_id or round_number not in {"1", "2", "3", "4"}:
             raise ValueError("Cliente, equipo y ronda son obligatorios.")
-        equipment = next((row for row in self.snapshot()["equipment"] if row["id"] == equipment_id), None)
-        if not equipment or equipment["client_id"] != client_id:
-            raise ValueError("El equipo no pertenece al cliente seleccionado.")
         p = self.placeholder
         report_id = _text(item.get("id"))
         edit_report_id = _text(item.get("edit_report_id") or payload.get("_edit_report_id"))
@@ -1005,6 +1026,20 @@ class OperationsStore:
                     f"SELECT id FROM operations_equipment WHERE id={p} FOR UPDATE",
                     (equipment_id,),
                 ).fetchone()
+            equipment = conn.execute(
+                f"SELECT client_id FROM operations_equipment WHERE id={p}", (equipment_id,)
+            ).fetchone()
+            if not equipment or equipment[0] != client_id:
+                raise ValueError("El equipo no pertenece al cliente seleccionado.")
+            completed = conn.execute(
+                f"SELECT id FROM operations_reports WHERE equipment_id={p} AND client_id={p} "
+                f"AND round_number={p} AND completed=1", (equipment_id, client_id, round_number),
+            ).fetchone()
+            if completed and not edit_report_id:
+                raise ReportConflictError(
+                    "Otro técnico ya finalizó este reporte. Tus cambios se conservan; abre una edición para revisarlos.",
+                    code="report_completed", report_id=completed[0],
+                )
             if edit_report_id:
                 target = conn.execute(
                     f"SELECT id FROM operations_reports WHERE id={p} AND equipment_id={p} "
@@ -1020,7 +1055,7 @@ class OperationsStore:
                     (report_id,),
                 ).fetchone()
                 if not found:
-                    raise ValueError("El borrador indicado ya no existe o ya fue finalizado.")
+                    raise ReportConflictError("El borrador indicado ya no existe o ya fue finalizado.", code="report_completed")
                 if found[1] != equipment_id or found[2] != client_id or found[3] != round_number:
                     raise ValueError("Ese borrador pertenece a otro equipo o a otra ronda.")
             else:
@@ -1031,18 +1066,41 @@ class OperationsStore:
                 ).fetchall()
                 found = candidates[0] if candidates else None
                 report_id = found[0] if found else f"RPT_{uuid.uuid4().hex[:16].upper()}"
-            if found:
+            if found or edit_report_id:
                 try:
-                    current_payload = json.loads(found[4] if len(found) > 4 else found[1] or "{}")
+                    current_payload = (json.loads(found[4] if len(found) > 4 else found[1] or "{}")
+                                       if found else self.get_report_detail(edit_report_id, connection=conn)["payload"])
                 except (TypeError, json.JSONDecodeError):
                     current_payload = {}
+                if not found:
+                    current_payload.pop("_draft_user_id", None)
                 draft_owner = _text(current_payload.get("_draft_user_id"))
-                if changed_fields is not None:
-                    current_payload.update(changed_fields)
-                    # Conserva quién inició el borrador; el autor de cada foto se
-                    # guarda por separado y no depende de este dato histórico.
-                    current_payload.setdefault("_draft_user_id", payload.get("_draft_user_id", ""))
-                    payload = current_payload
+                changes = changed_fields if changed_fields is not None else payload
+                changes = {key: value for key, value in changes.items() if not key.startswith("_")}
+                revision = int(found[5] if len(found) > 4 else found[2] or 0) if found else -1
+                baseline = item.get("base_values")
+                trusted_revision = item.get("base_revision") is not None and str(item["base_revision"]) == str(revision)
+                conflicts = []
+                for key, value in changes.items():
+                    remote = current_payload.get(key)
+                    if _report_value(remote) == _report_value(value):
+                        continue  # Retry after a lost acknowledgement.
+                    if isinstance(baseline, dict) and key in baseline:
+                        safe = _report_value(remote) == _report_value(baseline[key])
+                    else:
+                        safe = trusted_revision
+                    if not safe:
+                        conflicts.append({"field": key, "remote": remote, "local": value})
+                if conflicts:
+                    raise ReportConflictError("Hay cambios de otro técnico. Revisa los campos señalados antes de guardar.", conflicts=conflicts)
+                current_payload.update(changes)
+                current_payload.setdefault("_draft_user_id", payload.get("_draft_user_id", ""))
+                payload = current_payload
+                if edit_report_id:
+                    previous_edit = _text(payload.get("_edit_report_id"))
+                    if previous_edit and previous_edit != edit_report_id:
+                        raise ReportConflictError("El borrador corresponde a otra edición.")
+                    payload["_edit_report_id"] = edit_report_id
                 if draft_owner:
                     # Incluso un cliente antiguo que envía el formulario completo
                     # no puede apropiarse del borrador compartido ni cambiar quién
@@ -1090,9 +1148,10 @@ class OperationsStore:
                         (f"{report_id}:original:{position}", report_id, *evidence),
                     )
                     occupied.add(position)
-        return self.get_report_draft(equipment_id, round_number)
+            result = self.get_report_draft(equipment_id, round_number, connection=conn)
+        return result
 
-    def ensure_report_fault(self, report_id, *, client_id, equipment_id, description, priority="Alta"):
+    def ensure_report_fault(self, report_id, *, client_id, equipment_id, description, priority="Alta", expected_revision=None):
         """Crea o actualiza la falla grave vinculada al reporte de forma idempotente."""
         report_id, description = _text(report_id), _text(description)
         if not report_id or not description:
@@ -1100,6 +1159,17 @@ class OperationsStore:
         fault_id = f"FALLA_REPORTE_{re.sub(r'[^A-Za-z0-9_-]+', '_', report_id)[:80]}"
         p, stamp = self.placeholder, _now()
         with self.connection() as conn:
+            if expected_revision is not None:
+                if self.dialect == "sqlite":
+                    conn.execute("BEGIN IMMEDIATE")
+                current = conn.execute(
+                    f"SELECT revision FROM operations_reports WHERE id={p}" + (" FOR UPDATE" if self.dialect != "sqlite" else ""),
+                    (report_id,),
+                ).fetchone()
+                # A recovered receipt is immutable. Its side effects must not
+                # replace a fault already revised by a later report edition.
+                if not current or int(current[0]) != int(expected_revision):
+                    return None
             conn.execute(
                 f"INSERT INTO operations_faults"
                 f"(id,client_id,equipment_id,report_id,description,priority,status,reported_at,source,raw_json,sync_status,updated_at) "
@@ -1109,9 +1179,9 @@ class OperationsStore:
                 (fault_id, _text(client_id), _text(equipment_id), report_id, description,
                  _text(priority) or "Alta", "Reportada", stamp, "app", "{}", "pending", stamp),
             )
-        self.queue_sync("fault", fault_id, "sheets", "upsert", {
-            "client_id": _text(client_id), "equipment_id": _text(equipment_id), "report_id": report_id,
-        })
+            self._queue_sync_in_transaction(conn, "fault", fault_id, "sheets", "upsert", {
+                "client_id": _text(client_id), "equipment_id": _text(equipment_id), "report_id": report_id,
+            })
         return next(row for row in self.snapshot()["faults"] if row["id"] == fault_id)
 
     def save_fault(self, item):
@@ -1639,10 +1709,10 @@ class OperationsStore:
         })
         return next(row for row in self.snapshot()["faults"] if row["id"] == fault_id)
 
-    def get_report_draft(self, equipment_id, round_number, user_id=None):
+    def get_report_draft(self, equipment_id, round_number, user_id=None, *, connection=None):
         self.initialize()
         p = self.placeholder
-        with self.connection() as conn:
+        with (nullcontext(connection) if connection is not None else self.connection()) as conn:
             rows = conn.execute(
                 f"SELECT id,client_id,equipment_id,round_number,matrix_id,report_type,payload_json,updated_at,revision "
                 f"FROM operations_reports WHERE equipment_id={p} AND round_number={p} "
@@ -1663,6 +1733,10 @@ class OperationsStore:
         self.initialize()
         report_id, p = _text(report_id), self.placeholder
         with self.connection() as conn:
+            if self.dialect == "sqlite":
+                conn.execute("BEGIN IMMEDIATE")
+            else:
+                conn.execute(f"SELECT id FROM operations_reports WHERE id={p} FOR UPDATE", (report_id,)).fetchone()
             found = conn.execute(
                 f"SELECT id,payload_json FROM operations_reports WHERE id={p} AND source='app' AND state='draft'",
                 (report_id,),
@@ -1693,7 +1767,22 @@ class OperationsStore:
             return report
         return None
 
-    def finalize_report(self, report_id):
+    def get_report_receipt(self, submission, *, connection=None):
+        self.initialize()
+        ident = _text(submission.get("submission_id"))
+        if not ident or len(ident) > 120:
+            raise ReportConflictError("Actualiza la aplicación antes de finalizar; tu respaldo se conserva.", code="client_update_required")
+        with (nullcontext(connection) if connection is not None else self.connection()) as conn:
+            row = conn.execute(
+                f"SELECT fingerprint,report_json FROM operations_report_receipts WHERE submission_id={self.placeholder}", (ident,)
+            ).fetchone()
+        if not row:
+            return None
+        if row[0] != _report_fingerprint(submission):
+            raise ReportConflictError("Este envío ya confirmó otros datos. Conservamos tu propuesta local.")
+        return json.loads(row[1])
+
+    def finalize_report(self, report_id, *, submission=None):
         """Finaliza un borrador sin perderlo y lo deja listo para sincronización."""
         self.initialize()
         report_id = _text(report_id)
@@ -1711,11 +1800,19 @@ class OperationsStore:
                     f"SELECT id FROM operations_equipment WHERE id=(SELECT equipment_id "
                     f"FROM operations_reports WHERE id={p}) FOR UPDATE", (report_id,),
                 ).fetchone()
+                # Photo reservations and finalization use the same report lock.
+                conn.execute(f"SELECT id FROM operations_reports WHERE id={p} FOR UPDATE", (report_id,)).fetchone()
+            if submission is not None:
+                receipt = self.get_report_receipt(submission, connection=conn)
+                if receipt:
+                    return receipt
             row = conn.execute(
                 f"SELECT id,client_id,equipment_id,round_number,payload_json FROM operations_reports "
                 f"WHERE id={p} AND source='app' AND state='draft'", (report_id,),
             ).fetchone()
             if not row:
+                if submission is not None:
+                    raise ReportConflictError("Otro técnico ya finalizó este reporte. Revisa tus cambios pendientes.", code="report_completed")
                 confirmed = self.get_report_submission(report_id)
                 if confirmed:
                     return confirmed
@@ -1724,6 +1821,24 @@ class OperationsStore:
                 payload = json.loads(row[4] or "{}")
             except (TypeError, json.JSONDecodeError):
                 payload = {}
+            evidence_state = conn.execute(
+                f"SELECT mutation_id,drive_ref,storage_ref FROM operations_evidence WHERE report_id={p}", (report_id,)
+            ).fetchall()
+            if any(not item[1] and not item[2] for item in evidence_state):
+                raise ReportConflictError("Hay fotografías cargándose. Espera a que se confirmen antes de finalizar.", code="photos_uploading")
+            if submission is not None:
+                if (row[1], row[2], row[3]) != tuple(_text(submission.get(k)) for k in ("client_id", "equipment_id", "round")):
+                    raise ValueError("El envío no corresponde a este equipo y ronda.")
+                conflicts = [{"field": key, "local": value, "remote": payload.get(key)}
+                             for key, value in (submission.get("changed_fields") or {}).items()
+                             if not key.startswith("_") and _report_value(payload.get(key)) != _report_value(value)]
+                if conflicts:
+                    raise ReportConflictError("El reporte cambió durante la finalización. Revisa tus campos pendientes.", conflicts=conflicts)
+                requested_photos = submission.get("photo_mutation_ids")
+                if not isinstance(requested_photos, list) or len(requested_photos) > 6:
+                    raise ValueError("Falta la lista de fotografías que este envío debe confirmar.")
+                if not set(requested_photos).issubset({item[0] for item in evidence_state}):
+                    raise ReportConflictError("Faltan fotografías de este envío por confirmar.", code="photos_uploading")
             edit_report_id = _text(payload.pop("_edit_report_id", ""))
             if not edit_report_id:
                 existing = conn.execute(
@@ -1803,7 +1918,14 @@ class OperationsStore:
                 "completed": True, "payload": payload,
                 "evidence": [{"position": item[0], "drive_ref": item[1]} for item in evidence],
             })
-        return self.get_report_detail(final_report_id)
+            result = self.get_report_detail(final_report_id, connection=conn)
+            if submission is not None:
+                result["submission_id"] = _text(submission["submission_id"])
+                conn.execute(
+                    f"INSERT INTO operations_report_receipts(submission_id,fingerprint,report_json,confirmed_at) VALUES ({','.join([p]*4)})",
+                    (result["submission_id"], _report_fingerprint(submission), json.dumps(result, ensure_ascii=False), stamp),
+                )
+        return result
 
     def reset_report_evidence(self, report_id):
         """Prepara un nuevo intento de subida para un borrador."""
@@ -1892,6 +2014,13 @@ class OperationsStore:
             raise ValueError("La evidencia no pudo confirmarse.")
         p, stamp = self.placeholder, _now()
         with self.connection() as conn:
+            if self.dialect == "sqlite":
+                conn.execute("BEGIN IMMEDIATE")
+            else:
+                conn.execute(f"SELECT id FROM operations_reports WHERE id={p} FOR UPDATE", (report_id,)).fetchone()
+            report = conn.execute(f"SELECT state FROM operations_reports WHERE id={p}", (report_id,)).fetchone()
+            if not report or report[0] != "draft":
+                raise ReportConflictError("El reporte ya no admite esta carga. Conserva la fotografía para revisarla.", code="report_completed")
             result = conn.execute(
                 f"UPDATE operations_evidence SET storage_ref={p},drive_ref={p},sync_status='pending',updated_at={p} "
                 f"WHERE report_id={p} AND mutation_id={p}",
@@ -2009,11 +2138,11 @@ class OperationsStore:
             )
         return {"position": position, "storage_ref": storage_ref, "drive_ref": drive_ref}
 
-    def get_report_detail(self, report_id):
+    def get_report_detail(self, report_id, *, connection=None):
         """Carga el detalle pesado sólo cuando alguien abre un reporte."""
         self.initialize()
         p = self.placeholder
-        with self.connection() as conn:
+        with (nullcontext(connection) if connection is not None else self.connection()) as conn:
             row = conn.execute(
                 f"SELECT r.id,r.client_id,r.equipment_id,r.round_number,r.start_at,r.end_at,"
                 f"r.completed,r.matrix_id,r.report_type,r.payload_json,r.state,r.sync_status,r.revision,"
@@ -2037,6 +2166,8 @@ class OperationsStore:
         for name, column in aliases.items():
             if name not in payload and column in payload:
                 payload[name] = payload[column]
+        payload.setdefault("inicio", row[4] or "")
+        payload.setdefault("fin", row[5] or "")
         return {
             "id": row[0], "client_id": row[1], "equipment_id": row[2], "round": row[3],
             "start": row[4], "end": row[5], "completed": bool(row[6]), "matrix_id": row[7],

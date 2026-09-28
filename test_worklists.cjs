@@ -16,6 +16,6 @@ assert.equal(overlay({worklists:[{...list,title:'Vieja'}]},queued).worklists[0].
 queued[0].blocked=true;queued[0].error='Conflicto';
 assert.equal(overlay({},queued).worklists[0].sync_error,'Conflicto');
 const html=fs.readFileSync('templates/app_operativa_demo.html','utf8');
-assert(html.includes("if(view==='worklist')return 'worklists'"));
+assert(html.includes("if(view==='worklist')return 'client'"));
 assert(html.includes("if(view==='worklists')return 'agenda'"));
 console.log('OK: jornada por ID/ronda, progreso sin duplicar, pendientes locales, revisión y navegación jerárquica.');

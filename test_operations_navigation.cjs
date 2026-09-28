@@ -5,7 +5,7 @@ const html = fs.readFileSync('templates/app_operativa_demo.html', 'utf8');
 const source = html.slice(html.indexOf('  function applyMatrixBootstrap('), html.indexOf('  async function loadMatrixData('));
 const element = {classList:{toggle(){},add(){}},textContent:'',innerHTML:''};
 const context = vm.createContext({
-  views:{},
+  views:{},serverRole:'technician',account:{id:'T1',isOwner:false},appKind:'technician',
   clients:[],equipment:[],clientMeta:{B:{}},equipmentMeta:{B1:{client:'B'}},
   matrixLoaded:true,selectedClient:'B',selectedEquipment:'B1',selectedRound:'3',
   matrixReports:[],matrixFaults:[],matrixTasks:[],matrixExpenses:[],matrixObservationOptions:[],
@@ -39,7 +39,7 @@ console.log('OK: recargas conservan empresa/equipo/ronda, navegación por cuenta
 const restoreSource=html.slice(html.indexOf('  let restoringReportOpen=false;'),html.indexOf("  window.addEventListener('popstate'"));
 let address=new URL('https://hsc.test/hsc-partner/?client=B&fault=F1&v=release#hsc-partner');
 const nav=vm.createContext({URL,URLSearchParams,location:{get href(){return address.href},get search(){return address.search}},
-  account:{id:'C1',isOwner:false},appKind:'partner',serverRole:'client',navigationStorageKey:'nav',
+  account:{id:'C1',isOwner:false},assignedClientId:'B',appKind:'partner',serverRole:'client',navigationStorageKey:'nav',
   localStorage:{getItem:()=>JSON.stringify({view:'partner',client:'B',equipment:'B1',round:'3',mode:'partner'})},
   clientMeta:{B:{}},equipmentMeta:{B1:{client:'B'}},equipment:[['B1']],selectedClient:'B',selectedEquipment:'B1',selectedRound:'3',currentMode:'partner',
   matrixFaults:[{id:'F1',client_id:'B'}],opened:0,historyStack:[],current:'partner',
