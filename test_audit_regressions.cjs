@@ -60,6 +60,11 @@ test('a no-op journal without a server id does not leave a permanent pending ban
   vm.runInContext(section('  function pendingReportDraftCount()','  function updateOfflineSyncUi()'),ctx);
   assert.equal(ctx.pendingReportDraftCount(),0);
 });
+test('a completed receipt without newer changes does not leave a permanent pending banner',()=>{
+  const ctx=vm.createContext({pendingReportUploads:()=>({}),reportDrafts:()=>({r:{key:'r',data:{p1:'10'},baseValues:{p1:'10'},draftId:'D1',completedRemotely:true}}),HscReportCollaboration:require('./static/report_collaboration.js')});
+  vm.runInContext(section('  function pendingReportDraftCount()','  function pendingSyncSummary()'),ctx);
+  assert.equal(ctx.pendingReportDraftCount(),0);
+});
 test('discard deletes the shared draft and every local copy only after confirmation',async()=>{
   const elements=new Map(),$=key=>{if(!elements.has(key))elements.set(key,{});return elements.get(key)},requests=[],forgotten=[],cleared=[];
   const ctx=vm.createContext({$,activeReportContext:{key:'r',draftId:'D1',equipment:'E',round:1},confirm:()=>true,evidenceBusy:false,
@@ -69,6 +74,16 @@ test('discard deletes the shared draft and every local copy only after confirmat
     releaseEvidenceMemory(){},updateOfflineSyncUi(){},canonicalPath:()=>[],showView(){},browserHistoryReady:false,toast(){}});
   vm.runInContext(section("  $('#discardDraft').onclick=async()=>{",'  function localPendingReport('),ctx);
   await $('#discardDraft').onclick();assert.deepEqual(requests,['/api/operaciones/reports/draft/D1']);assert.deepEqual(cleared,['r']);assert.deepEqual(forgotten,['S1','r']);
+});
+test('replacing shared evidence waits for the edit draft to be created',async()=>{
+  const requests=[];let saves=0,refreshed=0;
+  const context={key:'r',draftId:'',existingEvidence:[{mutation_id:'M1',position:1}]};
+  const ctx=vm.createContext({activeReportContext:context,shouldSyncNow:()=>true,confirm:()=>true,
+    saveActiveReportDraft:async()=>{saves+=1;context.draftId='D1'},operationsDelete:async url=>requests.push(url),
+    localReportStore:{photo(){}},deleteEvidencePhoto:async()=>{},refreshReportCollaboration:async()=>{refreshed+=1}});
+  vm.runInContext(section('  async function removeSharedEvidence(','  function renderExistingEvidence()'),ctx);
+  assert.equal(await ctx.removeSharedEvidence('M1',1),true);assert.equal(saves,1);
+  assert.deepEqual(requests,['/api/operaciones/reports/D1/evidence/M1']);assert.equal(refreshed,1);
 });
 test('permission failure preserves the image until explicit recovery succeeds',async()=>{
   const {ctx,photos,$}=photoEditor();ctx.openEvidenceDb=async()=>{throw new DOMException('denied','SecurityError')};
