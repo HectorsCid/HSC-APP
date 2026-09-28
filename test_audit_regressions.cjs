@@ -33,6 +33,11 @@ test('a late acknowledgement only removes the versions it actually confirmed',()
   b.save(context,{p1:'10',p2:'80'});a.forget(context.key,sent.localVersions);
   assert.equal(b.drafts()[context.key].data.p2,'80');
 });
+test('explicit discard removes every editor record and photo marker for that report',()=>{
+  const {a,b}=localEditors(),context=draft();a.save(context,{p1:'70',p2:'20'});b.save(context,{p1:'10',p2:'80'});
+  a.photo(context.key,'photo-a',false);b.photo(context.key,'photo-b',true);a.forgetAll(context.key);
+  assert.equal(a.drafts()[context.key],undefined);
+});
 test('pending submissions stay isolated by account and cannot be resurrected',()=>{
   const {a,b,other}=localEditors(),upload={key:'A:E:R',accountId:'A',submissionId:'one',data:{p1:'70'}};
   a.rememberPending(upload);b.rememberPending({...upload,submissionId:'two'});assert.equal(Object.values(a.pending()).length,2);
@@ -50,14 +55,20 @@ test('pending indicator counts the new per-window journal',()=>{
   vm.runInContext(section('  function pendingReportDraftCount()','  function updateOfflineSyncUi()'),ctx);
   assert.equal(ctx.pendingReportDraftCount(),1);
 });
-test('discard only removes this window photos and the draft versions shown to the user',async()=>{
-  const elements=new Map(),$=key=>{if(!elements.has(key))elements.set(key,{});return elements.get(key)},deleted=[],forgotten=[];
-  const ctx=vm.createContext({$,activeReportContext:{key:'r',equipment:'E',round:1,localVersions:{A:'v1',B:'v2'}},reportEditorId:'A',
-    confirm:()=>true,evidenceBusy:false,reportDraftSaveTimer:0,clearTimeout(){},reportDraftFlights:new Map(),reportPhotoFlights:new Map(),
-    evidenceForReport:()=>[{mutationId:'mine',editorId:'A'},{mutationId:'theirs',editorId:'B'},{mutationId:'confirmed',editorId:'A',uploaded:true}],
-    deleteEvidencePhoto:async(key,id)=>deleted.push(id),forgetReportDraft:(key,versions)=>forgotten.push(versions),releaseEvidenceMemory(){},canonicalPath:()=>[],showView(){},browserHistoryReady:false,toast(){}});
-  vm.runInContext(html.split(/\r?\n/).find(line=>line.startsWith("  $('#discardDraft').onclick=")),ctx);
-  await $('#discardDraft').onclick();assert.deepEqual(deleted,['mine']);assert.deepEqual(JSON.parse(JSON.stringify(forgotten)),[{A:'v1',B:'v2'}]);
+test('a no-op journal without a server id does not leave a permanent pending banner',()=>{
+  const ctx=vm.createContext({pendingReportUploads:()=>({}),reportDrafts:()=>({r:{key:'r',data:{p1:'10'},baseValues:{p1:'10'},draftId:''}}),HscReportCollaboration:require('./static/report_collaboration.js')});
+  vm.runInContext(section('  function pendingReportDraftCount()','  function updateOfflineSyncUi()'),ctx);
+  assert.equal(ctx.pendingReportDraftCount(),0);
+});
+test('discard deletes the shared draft and every local copy only after confirmation',async()=>{
+  const elements=new Map(),$=key=>{if(!elements.has(key))elements.set(key,{});return elements.get(key)},requests=[],forgotten=[],cleared=[];
+  const ctx=vm.createContext({$,activeReportContext:{key:'r',draftId:'D1',equipment:'E',round:1},confirm:()=>true,evidenceBusy:false,
+    reportDraftSaveTimer:0,clearTimeout(){},reportDraftFlights:new Map(),reportPhotoFlights:new Map(),shouldSyncNow:()=>true,
+    operationsDelete:async url=>requests.push(url),pendingReportUploads:()=>({one:{key:'r',submissionId:'S1'}}),
+    forgetPendingReportUpload:(key,id)=>forgotten.push(id),clearEvidenceDraft:async key=>cleared.push(key),forgetAllReportDrafts:key=>forgotten.push(key),
+    releaseEvidenceMemory(){},updateOfflineSyncUi(){},canonicalPath:()=>[],showView(){},browserHistoryReady:false,toast(){}});
+  vm.runInContext(section("  $('#discardDraft').onclick=async()=>{",'  function localPendingReport('),ctx);
+  await $('#discardDraft').onclick();assert.deepEqual(requests,['/api/operaciones/reports/draft/D1']);assert.deepEqual(cleared,['r']);assert.deepEqual(forgotten,['S1','r']);
 });
 test('permission failure preserves the image until explicit recovery succeeds',async()=>{
   const {ctx,photos,$}=photoEditor();ctx.openEvidenceDb=async()=>{throw new DOMException('denied','SecurityError')};

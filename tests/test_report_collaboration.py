@@ -90,6 +90,37 @@ class ReportCollaborationTests(unittest.TestCase):
         self.assertEqual("photo-a", state["evidence"][0]["mutation_id"])
         self.assertEqual("Beto", state["participants"][0]["name"])
 
+    def test_confirmed_evidence_can_be_removed_from_a_draft_and_its_slot_reused(self):
+        draft = self.store.save_report_draft({
+            "client_id": "C1", "equipment_id": "EQ1", "round": "2",
+            "payload": {"inicio": "2026-09-25", "fin": "2026-09-25", "_draft_user_id": "tech-a"},
+        })
+        self.store.reserve_report_evidence(draft["id"], 1, "wrong-photo", actor_id="tech-a")
+        self.store.complete_report_evidence(draft["id"], "wrong-photo", "drive-wrong")
+
+        removed = self.store.delete_report_evidence(
+            draft["id"], "wrong-photo", actor_id="tech-a"
+        )
+        self.assertEqual(1, removed["position"])
+        self.assertEqual([], self.store.report_live_state(draft["id"])["evidence"])
+        replacement = self.store.reserve_report_evidence(
+            draft["id"], 1, "right-photo", actor_id="tech-a"
+        )
+        self.assertEqual(1, replacement["position"])
+
+    def test_technician_cannot_remove_another_technicians_photo_but_admin_can(self):
+        draft = self.store.save_report_draft({
+            "client_id": "C1", "equipment_id": "EQ1", "round": "2",
+            "payload": {"inicio": "2026-09-25", "fin": "2026-09-25"},
+        })
+        self.store.reserve_report_evidence(draft["id"], 1, "shared-photo", actor_id="tech-a")
+        self.store.complete_report_evidence(draft["id"], "shared-photo", "drive-shared")
+        with self.assertRaisesRegex(ValueError, "otro técnico"):
+            self.store.delete_report_evidence(draft["id"], "shared-photo", actor_id="tech-b")
+        self.assertTrue(self.store.delete_report_evidence(
+            draft["id"], "shared-photo", actor_id="owner", allow_any=True
+        ))
+
     def test_two_simultaneous_uploads_never_take_the_same_slot(self):
         draft = self.store.save_report_draft({
             "client_id": "C1", "equipment_id": "EQ1", "round": "3",

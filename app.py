@@ -4771,6 +4771,8 @@ def api_operaciones_delete_report_draft(report_id):
         deleted = OPERACIONES_STORE.delete_report_draft(report_id, user_id=str(session.get('hsc_user_id') or 'owner'))
         _invalidate_operations_cache()
         return jsonify({"ok": True, "deleted": deleted})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc), "code": getattr(exc, "code", "")}), 409
     except Exception as exc:
         current_app.logger.exception("No se pudo descartar el borrador %s: %s", report_id, exc)
         return jsonify({"ok": False, "error": "No se pudo descartar el borrador."}), 500
@@ -4942,6 +4944,26 @@ def api_operaciones_cancel_report_upload(report_id):
         return jsonify(ok=True, released=released)
     except ValueError as exc:
         return jsonify(ok=False, code=getattr(exc, 'code', ''), error=str(exc)), 409
+
+
+@app.delete('/api/operaciones/reports/<path:report_id>/evidence/<path:mutation_id>')
+def api_operaciones_delete_report_evidence(report_id, mutation_id):
+    denied = _operations_forbidden('admin', 'technician') or _operations_permission_forbidden('createReports')
+    if denied:
+        return denied
+    try:
+        deleted = OPERACIONES_STORE.delete_report_evidence(
+            report_id, mutation_id,
+            actor_id=str(session.get('hsc_user_id') or 'owner'),
+            allow_any=_operations_role() == 'admin',
+        )
+        _invalidate_operations_cache()
+        return jsonify(ok=True, deleted=bool(deleted), evidence=deleted)
+    except ValueError as exc:
+        return jsonify(ok=False, code=getattr(exc, 'code', ''), error=str(exc)), 409
+    except Exception as exc:
+        current_app.logger.exception("No se pudo quitar la evidencia %s de %s: %s", mutation_id, report_id, exc)
+        return jsonify(ok=False, error="No se pudo quitar la fotografía. Intenta de nuevo."), 500
 
 
 @app.post('/api/operaciones/sync/resolve-uncertain')

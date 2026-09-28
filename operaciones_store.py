@@ -2127,6 +2127,48 @@ class OperationsStore(SheetDeliveryMixin):
                 )
         return bool(result.rowcount)
 
+    def delete_report_evidence(self, report_id, mutation_id, *, actor_id=None, allow_any=False):
+        """Quita una fotografía confirmada únicamente mientras el reporte siga en borrador."""
+        self.initialize()
+        report_id, mutation_id = _text(report_id), _text(mutation_id)
+        if not report_id or not mutation_id:
+            raise ValueError("La fotografía no tiene un identificador válido.")
+        p, stamp = self.placeholder, _now()
+        with self.connection() as conn:
+            self._lock_report(conn, report_id)
+            report = conn.execute(
+                f"SELECT state FROM operations_reports WHERE id={p} AND source='app'", (report_id,)
+            ).fetchone()
+            if not report or report[0] != "draft":
+                raise ReportConflictError(
+                    "El reporte ya fue finalizado; sus evidencias sólo pueden cambiarse desde una edición.",
+                    code="report_completed",
+                )
+            row = conn.execute(
+                f"SELECT position,actor_id,drive_ref,storage_ref FROM operations_evidence "
+                f"WHERE report_id={p} AND mutation_id={p}", (report_id, mutation_id),
+            ).fetchone()
+            if not row:
+                return None
+            if actor_id is not None and not allow_any and _text(row[1]) != _text(actor_id):
+                raise ReportConflictError(
+                    "Esta fotografía fue agregada por otro técnico. Pídele que la quite o usa la cuenta administradora.",
+                    code="photo_owner_required",
+                )
+            conn.execute(
+                f"DELETE FROM operations_evidence WHERE report_id={p} AND mutation_id={p}",
+                (report_id, mutation_id),
+            )
+            conn.execute(
+                f"UPDATE operations_reports SET revision=revision+1,updated_at={p} WHERE id={p}",
+                (stamp, report_id),
+            )
+        return {
+            "position": int(row[0]), "actor_id": _text(row[1]),
+            "drive_ref": _text(row[2]), "storage_ref": _text(row[3]),
+            "mutation_id": mutation_id,
+        }
+
     def report_live_state(self, report_id, *, user_id="", user_name=""):
         """Devuelve sólo metadatos ligeros y mantiene visible a quien está editando."""
         self.initialize()

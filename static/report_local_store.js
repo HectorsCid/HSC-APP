@@ -71,6 +71,11 @@
       for(const [storageKey,row] of entries('record'))if(row.key===key&&(versions?versions[row.editorId]===row.version:row.editorId===editorId))storage.removeItem(storageKey);
       notify(key);
     }
+    function forgetAll(key){
+      for(const [storageKey,row] of entries('record'))if(row.key===key)storage.removeItem(storageKey);
+      for(const [storageKey,row] of entries('photo'))if(row.key===key)storage.removeItem(storageKey);
+      notify(key);
+    }
     function resolve(key,field,chosen){
       const row=drafts()[key];if(!row)return null;
       return save({...row,localBaseline:row.baseValues},{...row.data,[field]:chosen},[field]);
@@ -95,7 +100,7 @@
       for(const [storageKey,row] of entries('pending'))if(row.key===key&&row.submissionId===submissionId)storage.removeItem(storageKey);
       notify(key);
     }
-    return {prefix,drafts,save,forget,resolve,photo,pending,rememberPending,forgetPending};
+    return {prefix,drafts,save,forget,forgetAll,resolve,photo,pending,rememberPending,forgetPending};
   }
   const api={create,legacyId};if(typeof module!=='undefined'&&module.exports)module.exports=api;root.HscReportLocal=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

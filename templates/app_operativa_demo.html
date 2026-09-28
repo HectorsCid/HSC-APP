@@ -271,6 +271,7 @@
     <section class="view" data-view="reportView">
       <div class="document"><div class="doc-head"><div class="doc-logo">HSC</div><div class="doc-title"><b>Reporte</b><span>Sin registro seleccionado</span></div></div><div class="doc-body"><div class="doc-row"><b>Cliente</b><span data-doc-field="client">—</span></div><div class="doc-row"><b>Ronda</b><span data-doc-field="round">—</span></div><div class="doc-row"><b>Fecha</b><span data-doc-field="date">—</span></div><div class="doc-row"><b>Equipo</b><span data-doc-field="equipment">—</span></div><div class="doc-row"><b>Presión 1</b><span data-doc-field="pressure1">—</span></div><div class="doc-row"><b>Amperaje 1</b><span data-doc-field="amperage1">—</span></div><div class="doc-row"><b>Temperatura</b><span data-doc-field="temperature">—</span></div></div></div>
       <div class="section-head"><h2>Evidencias del reporte</h2><span class="count" id="reportEvidenceCount">Cargando…</span></div><div class="evidence-grid" id="reportEvidencePreview"><div class="empty">Abre un reporte para consultar sus fotografías.</div></div>
+      <div class="actions"><button class="secondary" type="button" id="editCompletedReport" data-permission="createReports" data-tech-only hidden>✎ Editar reporte</button></div>
     </section>
 
     {% include '_operations_profile.html' %}
@@ -553,7 +554,7 @@
   function wifiIsRecognized(){const connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;return connection?.type==='wifi'}
   function shouldSyncNow(manual=false){return navigator.onLine!==false&&HscOffline.canSend(offlineSyncMode(),(navigator.connection||navigator.mozConnection||navigator.webkitConnection)?.type,manual)}
   function pendingReportDraftCount(){
-    try{const drafts=reportDrafts(),queued=pendingReportUploads();return Object.values(drafts).filter(row=>!queued[row.key]&&(!row.draftId||row.completedRemotely||row.conflicts?.length||row.pendingPhotoIds?.length||Object.keys(HscReportCollaboration.changes(row.data||{},row.baseValues||{})).length)).length}catch(_){return 0}
+    try{const drafts=reportDrafts(),queued=pendingReportUploads();return Object.values(drafts).filter(row=>!queued[row.key]&&(row.completedRemotely||row.conflicts?.length||row.pendingPhotoIds?.length||Object.keys(HscReportCollaboration.changes(row.data||{},row.baseValues||{})).length)).length}catch(_){return 0}
   }
   function updateOfflineSyncUi(){const mode=offlineSyncMode(),pending=(typeof pendingReportUploads==='function'?Object.keys(pendingReportUploads()).length:0)+pendingFieldCount+pendingReportDraftCount(),state=$('#offlineSyncState'),description=$('#offlineSyncDescription'),select=$('#offlineSyncMode'),reason=mode==='offline'?'Envíos pausados por tu elección':mode==='wifi'&&!wifiIsRecognized()?'Wi‑Fi no identificado: envíos en espera':serverConnection==='auth'?'Renueva tu sesión':serverConnection==='unreachable'?'HSC sin respuesta: reintentando':serverConnection==='server'?'Servidor no disponible: reintentando':serverConnection==='checking'?'Comprobando servidor':'';if(select)select.value=mode;if(state){state.textContent=reason||(pending?`${pending} pendiente${pending===1?'':'s'}`:'Servidor conectado');state.classList.toggle('pending',Boolean(reason)||pending>0)}if(description)description.textContent=mode==='offline'?'Tu trabajo se guarda en este dispositivo. Elige Automático para reanudar o Enviar ahora para un envío puntual.':mode==='wifi'?'Sólo se envía al reconocer Wi‑Fi. Si este teléfono no identifica el tipo de red, pulsa Sincronizar ahora para autorizar el envío con la conexión disponible.':`${pending} envío(s) pendientes. Los errores de servidor o sesión no cambian tu preferencia de conexión.`;const banner=$('#syncConnectionBanner');if(banner){banner.hidden=!reason&&!pending;banner.querySelector('span').textContent=`${reason||'Trabajo guardado en este dispositivo'}${pending?` · ${pending} envío(s) pendientes`:''}`;}}
   function renderProfileIdentity(){const avatar=$('#profileAvatar'),fallback=account.name.split(/\s+/).map(part=>part[0]).join('').slice(0,2).toUpperCase();avatar.innerHTML=photoMarkup(profilePhotoUrl,fallback);hydratePhotos(avatar,1);$('#profileName').textContent=account.name;}
@@ -756,10 +757,12 @@
     $('#reportEvidenceCount').textContent=`${reportedCount||evidence.length} fotografía(s)`;
     $('#reportEvidencePreview').innerHTML=evidence.length?evidence.map(item=>`<figure class="evidence-thumb"><img src="${escapeHtml(item.url)}" alt="Foto ${Number(item.position)||''}" loading="lazy"><figcaption>Foto ${Number(item.position)||''}</figcaption></figure>`).join(''):'<div class="empty">Este reporte no tiene fotografías disponibles.</div>';
   }
+  let reportViewEditEquipment='',explicitReportEdit=false;
   function bindRoundReports(){
     $$('[data-round-report]').forEach(button=>button.onclick=async()=>{
       const e=equipment.find(row=>row[0]===button.dataset.roundReport),report=reportForEquipment(e[0]),view=$('[data-view="reportView"]');
       selectedEquipment=e[0];selectedClient=equipmentMeta[e[0]].client;
+      reportViewEditEquipment=report?.completed?e[0]:'';$('#editCompletedReport').hidden=currentMode==='partner'||!reportViewEditEquipment||!can('createReports');
       view.querySelector('.doc-title b').textContent=`Reporte ${report?.id||`${e[0]}_R${selectedRound}`}`;
       view.querySelector('.doc-title span').textContent=report?.end||report?.start||demoRounds[selectedRound].date;
       const meta=equipmentMeta[e[0]],set=(field,value)=>{const target=view.querySelector(`[data-doc-field="${field}"]`);if(target)target.textContent=value||'Por registrar'};
@@ -770,6 +773,7 @@
       if(report?.id){try{const response=await fetch(`/api/operaciones/reports/${encodeURIComponent(report.id)}`,{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error();applyReportMeasurements(set,payload.report.payload);renderReportEvidence(payload.report.evidence,payload.report.photo_count)}catch(_){applyReportMeasurements(set,{});renderReportEvidence([],report.photo_count)}}
     });
   }
+  $('#editCompletedReport').onclick=async()=>{if(!reportViewEditEquipment)return;selectedEquipment=reportViewEditEquipment;selectedClient=equipmentMeta[selectedEquipment].client;explicitReportEdit=true;try{await $('#newReport').onclick()}finally{explicitReportEdit=false}};
   function faultCards(rows,showClient=false){
     if(!rows.length)return '<div class="empty">No hay fallas reportadas para este cliente.</div>';
     return rows.map(fault=>{
@@ -1222,6 +1226,7 @@
   const localReportStore=HscReportLocal.create(localStorage,account.id,reportEditorId,key=>reportChannel?.postMessage({key,editorId:reportEditorId}));
   function reportDrafts(){return localReportStore.drafts()}
   function forgetReportDraft(key,versions){localReportStore.forget(key,versions)}
+  function forgetAllReportDrafts(key){localReportStore.forgetAll(key);try{localStorage.removeItem(key);localStorage.removeItem(reportBaselineKey(key))}catch(_){}}
   function persistReportContext(context,data){
     context.localData={...data};const saved=localReportStore.save(context,data);
     context.localVersions=saved.localVersions;context.proposalIds=saved.proposalIds;
@@ -1308,7 +1313,8 @@
     form.reset();
     if(!clientMeta[equipmentMeta[e[0]].client].policy){openStandaloneReport('refrigeracion',e[0]);return false;}
     const completedReport=reportForEquipment(e[0],String(selectedRound)),saved=reportDrafts()[key];
-    if(completedReport&&!restoringReportOpen&&!pending&&!confirm(`Este equipo ya tiene el reporte ${completedReport.matrix_id||completedReport.id} en R${selectedRound}. ¿Quieres editarlo conservando el mismo folio?`))return false;
+    if(completedReport&&!restoringReportOpen&&!pending&&!explicitReportEdit&&!confirm(`Este equipo ya tiene el reporte ${completedReport.matrix_id||completedReport.id} en R${selectedRound}. ¿Quieres editarlo conservando el mismo folio?`))return false;
+    explicitReportEdit=false;
     const context={client:equipmentMeta[e[0]].client,equipment:e[0],round:String(selectedRound),key,draftId:saved?.completedRemotely?'':saved?.draftId||'',editReportId:completedReport?.id||saved?.editReportId||'',existingEvidence:[],revision:saved?.revision??-1,serverPayload:{},localBaseline:{},conflicts:[],completedRemotely:false,requestId:++reportOpenSequence};activeReportContext=context;
     const fixed=[...form.querySelectorAll('input[readonly]')];fixed[0].value=clientName(context.client);fixed[1].value=context.equipment;fixed[2].value=`R${context.round}`;
     $('#reportFormTitle').textContent=context.editReportId?'Editar reporte de refrigeración':'Nuevo reporte de refrigeración';views.report[1]=context.editReportId?'Editar reporte':'Nuevo reporte';
@@ -1328,7 +1334,7 @@
       if(!shouldSyncNow()){$('#reportCollaborationStatus').textContent='Modo sin conexión · respaldo en este dispositivo';return true;}
       const response=await hscFetch(`/api/operaciones/reports/draft?equipment_id=${encodeURIComponent(context.equipment)}&round=${encodeURIComponent(context.round)}`,{headers:{Accept:'application/json'}}),payload=await response.json();
       if(activeReportContext!==context||current!=='report')return true;
-      if(response.ok&&payload.ok&&payload.draft){context.draftId=payload.draft.id;context.editReportId=payload.draft.payload?._edit_report_id||context.editReportId;acceptReportState(context,payload.draft.payload||{},payload.draft.revision)}
+      if(response.ok&&payload.ok&&payload.draft){context.draftId=payload.draft.id;context.editReportId=payload.draft.payload?._edit_report_id||context.editReportId;$('#discardDraft').hidden=false;acceptReportState(context,payload.draft.payload||{},payload.draft.revision)}
       if(response.ok&&payload.ok){await saveActiveReportDraft(false);await refreshReportCollaboration(true)}
     }catch(_){$('#reportCollaborationStatus').textContent='Reporte compartido · trabajando sin conexión'}
     return true;
@@ -1364,7 +1370,7 @@
           if(!shouldSyncNow(manual)){if(context===activeReportContext)$('#reportDateStatus').textContent='Guardado en este teléfono · pendiente de conexión';if(showMessage)toast('Borrador guardado en este dispositivo');return null}
           if(context.draftId&&!Object.keys(changes).length){if(context===activeReportContext)$('#reportDateStatus').textContent='Cambios compartidos guardados';return result||{id:context.draftId,payload:context.serverPayload};}
           const response=await operationsPost('/api/operaciones/reports/draft',{id:context.draftId||'',edit_report_id:context.editReportId||'',client_id:context.client,equipment_id:context.equipment,round:context.round,report_type:'refrigeration',payload:data,changed_fields:changes,base_values:base,base_revision:context.revision});
-          result=response.draft;context.draftId=result.id;acceptReportState(context,result.payload||{},result.revision,data);
+          result=response.draft;context.draftId=result.id;if(context===activeReportContext)$('#discardDraft').hidden=false;acceptReportState(context,result.payload||{},result.revision,data);
         }while(!context.conflicts.length&&Object.keys(changedReportFields(context.localData,context.localBaseline)).length);
         if(context===activeReportContext)$('#reportDateStatus').textContent=context.conflicts.length?'Revisa los cambios en conflicto':'Cambios compartidos guardados';
         if(showMessage)toast(`Borrador compartido guardado · ${context.equipment} · R${context.round}`);
@@ -1380,7 +1386,19 @@
     reportDraftFlights.set(context.key,flight);return flight;
   }
   $('#saveDraft').onclick=async()=>{try{const context=activeReportContext;if(!context)return;backupReportText();if(evidenceForReport().length&&!await persistEvidence())throw Error('No se pudieron respaldar las fotos.');toast('Borrador guardado en este dispositivo');saveActiveReportDraft(false)}catch(error){toast(error.message)}};
-  $('#discardDraft').onclick=async()=>{const context=activeReportContext;if(!context||!confirm(`¿Descartar los cambios visibles de ${context.equipment} · R${context.round} y las fotos agregadas desde esta ventana? Los respaldos nuevos de otras ventanas y el reporte compartido se conservarán.`))return;if(evidenceBusy){toast('Espera a que termine la preparación de fotografías.');return}const versions={...context.localVersions},ownedPhotos=evidenceForReport().filter(photo=>photo.editorId===reportEditorId&&!photo.uploaded).map(photo=>photo.mutationId),button=$('#discardDraft');button.disabled=true;context.discarding=true;clearTimeout(reportDraftSaveTimer);try{await reportDraftFlights.get(context.key);await reportPhotoFlights.get(context.key);for(const mutation of ownedPhotos)await deleteEvidencePhoto(context.key,mutation);forgetReportDraft(context.key,versions);releaseEvidenceMemory(context.key);activeReportContext=null;historyStack=canonicalPath('equipment');current='__discarded_report__';showView('equipment',false);if(browserHistoryReady)writeBrowserNavigation(true,false,'equipment',historyStack);toast('Cambios descartados; se conservaron los respaldos de otras ventanas')}catch(error){context.discarding=false;toast(error.message)}finally{button.disabled=false}};
+  $('#discardDraft').onclick=async()=>{
+    const context=activeReportContext;if(!context||!confirm(`¿Descartar por completo el borrador de ${context.equipment} · R${context.round}? Se eliminarán sus cambios y fotografías compartidas.`))return;
+    if(evidenceBusy){toast('Espera a que termine la preparación de fotografías.');return}
+    const button=$('#discardDraft');button.disabled=true;context.discarding=true;clearTimeout(reportDraftSaveTimer);
+    try{
+      await reportDraftFlights.get(context.key);await reportPhotoFlights.get(context.key);
+      if(context.draftId){if(!shouldSyncNow(true))throw Error('Necesitas conexión para descartar el borrador compartido sin que vuelva a aparecer.');await operationsDelete(`/api/operaciones/reports/draft/${encodeURIComponent(context.draftId)}`)}
+      for(const upload of Object.values(pendingReportUploads()).filter(row=>row.key===context.key))forgetPendingReportUpload(context.key,upload.submissionId);
+      await clearEvidenceDraft(context.key);forgetAllReportDrafts(context.key);releaseEvidenceMemory(context.key);updateOfflineSyncUi();
+      activeReportContext=null;historyStack=canonicalPath('equipment');current='__discarded_report__';showView('equipment',false);if(browserHistoryReady)writeBrowserNavigation(true,false,'equipment',historyStack);
+      toast('Borrador y fotografías descartados');
+    }catch(error){context.discarding=false;toast(error.message||'No se pudo descartar el borrador; se conservó para no perder información')}finally{button.disabled=false}
+  };
   function localPendingReport(upload){return {id:`offline:${upload.key}`,matrix_id:`offline:${upload.key}`,client_id:upload.client,equipment_id:upload.equipment,round:String(upload.round),completed:true,state:'pending_upload',pending_upload:true,start:upload.data?.inicio||'',end:upload.data?.fin||'',payload:upload.data||{}}}
   function leaveFinishedReport(upload,message){const local=localPendingReport(upload);matrixReports=[...matrixReports.filter(item=>item.id!==local.id),local];demoRounds[upload.round].done=[...new Set([...demoRounds[upload.round].done,upload.equipment])];activeReportContext=null;historyStack=canonicalPath('equipment');current='__completed_report__';showView('equipment',false);if(browserHistoryReady)writeBrowserNavigation(true,false,'equipment',historyStack);refreshRound();toast(message)}
   async function queueReportOnDevice(upload){if(upload.photos.length&&!await persistEvidence())throw Error('No se pudo respaldar las fotos en este dispositivo. Mantén el formulario abierto y vuelve a intentar.');upload.accountId=account.id;upload.localVersions=reportDrafts()[upload.key]?.localVersions||{};rememberObservationValues(upload.data);rememberPendingReportUpload(upload);if(!Object.values(pendingReportUploads()).some(row=>row.submissionId===upload.submissionId))throw Error('No hay espacio para respaldar el reporte. El formulario sigue abierto.');releaseEvidenceMemory(upload.key);leaveFinishedReport(upload,`Reporte guardado en este dispositivo · envío pendiente`)}
@@ -1703,7 +1721,17 @@
   }
   setInterval(()=>refreshReportCollaboration(false),5000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshReportCollaboration(true)});
-  function renderExistingEvidence(){const localMutations=new Set(evidenceForReport().map(photo=>photo.mutationId)),rows=(activeReportContext?.existingEvidence||[]).filter(item=>!localMutations.has(item.mutation_id)),target=$('#existingEvidenceList');target.innerHTML=rows.length?`<div class="editor-note" style="grid-column:1/-1">${rows.length} foto(s) ya compartidas en este reporte.</div>`+rows.map(item=>{const author=item.actor_name?` · ${escapeHtml(item.actor_name)}`:'';return `<figure class="evidence-thumb"><img src="${escapeHtml(item.url||'')}" alt="Evidencia actual ${item.position}" loading="lazy"><figcaption>Foto ${item.position}${author}</figcaption></figure>`}).join(''):''}
+  async function removeSharedEvidence(mutationId,position){
+    const context=activeReportContext;if(!context?.draftId)throw Error('Primero guarda el borrador para poder cambiar esta fotografía.');
+    if(!shouldSyncNow(true))throw Error('Necesitas conexión para quitar una fotografía ya compartida.');
+    if(!confirm(`¿Quitar la Foto ${position}? Después podrás elegir su reemplazo.`))return false;
+    await operationsDelete(`/api/operaciones/reports/${encodeURIComponent(context.draftId)}/evidence/${encodeURIComponent(mutationId)}`);
+    context.existingEvidence=(context.existingEvidence||[]).filter(item=>item.mutation_id!==mutationId);
+    localReportStore.photo(context.key,mutationId,false,true);
+    await deleteEvidencePhoto(context.key,mutationId).catch(()=>{});await refreshReportCollaboration(true);return true;
+  }
+  function renderExistingEvidence(){const localMutations=new Set(evidenceForReport().map(photo=>photo.mutationId)),rows=(activeReportContext?.existingEvidence||[]).filter(item=>!localMutations.has(item.mutation_id)),target=$('#existingEvidenceList');target.innerHTML=rows.length?`<div class="editor-note" style="grid-column:1/-1">${rows.length} foto(s) ya compartidas en este reporte.</div>`+rows.map(item=>{const author=item.actor_name?` · ${escapeHtml(item.actor_name)}`:'';const remove=item.mutation_id?`<button class="mini-btn" type="button" data-remove-shared-evidence="${escapeHtml(item.mutation_id)}" data-position="${Number(item.position)}">Quitar y reemplazar</button>`:'';return `<figure class="evidence-thumb"><img src="${escapeHtml(item.url||'')}" alt="Evidencia actual ${item.position}" loading="lazy"><figcaption>Foto ${item.position}${author}</figcaption>${remove}</figure>`}).join(''):''}
+  $('#existingEvidenceList').onclick=async event=>{const button=event.target.closest('[data-remove-shared-evidence]');if(!button||evidenceBusy)return;evidenceBusy=true;button.disabled=true;try{if(await removeSharedEvidence(button.dataset.removeSharedEvidence,Number(button.dataset.position))){renderExistingEvidence();renderEvidence();toast(`Foto ${button.dataset.position} retirada · ya puedes elegir otra`)}}catch(error){$('#evidenceError').textContent=error.message}finally{evidenceBusy=false;renderEvidence()}};
   function renderEvidence(){
     const photos=evidenceForReport(),vacant=vacantEvidenceSlots(photos),slotPicker=$('#reportEvidenceSlot'),current=Number(slotPicker.value),totalMb=photos.reduce((sum,photo)=>sum+photo.file.size,0)/1048576,serverCount=(activeReportContext?.existingEvidence||[]).length;
     const occupiedCount=Math.min(6,new Set([...(activeReportContext?.existingEvidence||[]).map(item=>item.position),...photos.map(photo=>photo.slot)]).size);
@@ -1717,12 +1745,12 @@
     $('#evidenceStatus').textContent=`${occupiedCount} de 6 fotos · ${totalMb.toFixed(totalMb>=10?1:2)} MB locales · ${selectedEquipment} · R${selectedRound}${serverCount?' · compartidas':''}`;
     $('#reportEvidenceSummary').textContent=`${occupiedCount} de 6 fotografías`;
     $('#reportEvidenceActionCount').textContent=`${occupiedCount}/6`;
-    $('#evidenceList').innerHTML=photos.map((photo,index)=>{const choices=[photo.slot,...vacant].sort((a,b)=>a-b);return `<article class="form-section" style="padding:10px;margin:0;min-width:0"><img src="${escapeHtml(photo.url)}" alt="Foto ${photo.slot}" style="width:100%;height:130px;object-fit:contain;border-radius:10px"><label><b>Posición</b><select data-evidence-slot data-index="${index}" ${photo.uploaded?'disabled':''}>${choices.map(slot=>`<option value="${slot}" ${slot===photo.slot?'selected':''}>Foto ${slot}</option>`).join('')}</select></label><p class="editor-note" style="overflow-wrap:anywhere">${escapeHtml(photo.file.name)}${photo.uploaded?' · confirmada en el servidor':photo.backedUp?' · respaldo local confirmado':' · SIN RESPALDO'}</p><button class="mini-btn" type="button" data-evidence-action="remove" data-index="${index}" ${photo.uploaded?'disabled':''}>${photo.uploaded?'Guardada':'Quitar Foto '+photo.slot}</button></article>`}).join('');
+    $('#evidenceList').innerHTML=photos.map((photo,index)=>{const choices=[photo.slot,...vacant].sort((a,b)=>a-b);return `<article class="form-section" style="padding:10px;margin:0;min-width:0"><img src="${escapeHtml(photo.url)}" alt="Foto ${photo.slot}" style="width:100%;height:130px;object-fit:contain;border-radius:10px"><label><b>Posición</b><select data-evidence-slot data-index="${index}" ${photo.uploaded?'disabled':''}>${choices.map(slot=>`<option value="${slot}" ${slot===photo.slot?'selected':''}>Foto ${slot}</option>`).join('')}</select></label><p class="editor-note" style="overflow-wrap:anywhere">${escapeHtml(photo.file.name)}${photo.uploaded?' · confirmada en el servidor':photo.backedUp?' · respaldo local confirmado':' · SIN RESPALDO'}</p><button class="mini-btn" type="button" data-evidence-action="remove" data-index="${index}">${photo.uploaded?'Quitar y reemplazar':'Quitar Foto '+photo.slot}</button></article>`}).join('');
   }
   $('#evidenceList').onclick=async event=>{
     const button=event.target.closest('[data-evidence-action]');if(!button||evidenceBusy)return;
-    const photos=evidenceForReport(),index=Number(button.dataset.index),photo=photos[index];if(!photo||photo.uploaded)return;
-    if(button.dataset.evidenceAction==='remove')try{if(reportPhotoFlights.has(draftKey())){toast('Cancela el intento activo o espera su confirmación antes de quitar la foto.');return}if(!photo.backedUp&&!confirm('Esta foto NO tiene respaldo. ¿Descartarla conscientemente?'))return;if(photo.backedUp)await deleteEvidencePhoto(draftKey(),photo.mutationId);URL.revokeObjectURL(photo.url);photos.splice(index,1);renderEvidence()}catch(error){$('#evidenceError').textContent=error.message}
+    const photos=evidenceForReport(),index=Number(button.dataset.index),photo=photos[index];if(!photo)return;
+    if(button.dataset.evidenceAction==='remove')try{if(reportPhotoFlights.has(draftKey())){toast('Cancela el intento activo o espera su confirmación antes de quitar la foto.');return}if(photo.uploaded&&!await removeSharedEvidence(photo.mutationId,photo.slot))return;if(!photo.uploaded&&!photo.backedUp&&!confirm('Esta foto NO tiene respaldo. ¿Descartarla conscientemente?'))return;if(!photo.uploaded&&photo.backedUp)await deleteEvidencePhoto(draftKey(),photo.mutationId);URL.revokeObjectURL(photo.url);photos.splice(index,1);renderExistingEvidence();renderEvidence();if(photo.uploaded)toast(`Foto ${photo.slot} retirada · ya puedes elegir otra`)}catch(error){$('#evidenceError').textContent=error.message}
   };
   $('#evidenceList').onchange=async event=>{const picker=event.target.closest('[data-evidence-slot]');if(!picker||evidenceBusy)return;const photos=evidenceForReport(),photo=photos[Number(picker.dataset.index)],slot=Number(picker.value);if(!photo||photos.some(item=>item!==photo&&item.slot===slot))return;photo.slot=slot;renderEvidence();try{await persistEvidence()}catch(_){$('#evidenceError').textContent='La posición se conserva abierta, pero no se pudo actualizar su respaldo.'}};
   async function handleEvidenceSelection(event){
