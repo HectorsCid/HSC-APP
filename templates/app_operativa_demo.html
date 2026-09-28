@@ -1228,10 +1228,14 @@
   const reportEditorId=crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const reportChannel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel(`hsc-report-${account.id}`):null;
   const localReportStore=HscReportLocal.create(localStorage,account.id,reportEditorId,key=>reportChannel?.postMessage({key,editorId:reportEditorId}));
+  const reportDiscardMarkerKey=key=>`${localReportStore.prefix}discard:${encodeURIComponent(key)}`;
+  function reportDiscardMarker(key){return Number(localStorage.getItem(reportDiscardMarkerKey(key))||0)}
+  function reportContextWasDiscarded(context){const marker=reportDiscardMarker(context?.key);return Boolean(marker&&Number(context?.localSessionStartedAt||context?.time||0)<=marker)}
   function reportDrafts(){return localReportStore.drafts()}
   function forgetReportDraft(key,versions){localReportStore.forget(key,versions)}
-  function forgetAllReportDrafts(key){localReportStore.forgetAll(key);try{localStorage.removeItem(key);localStorage.removeItem(reportBaselineKey(key))}catch(_){}}
+  function forgetAllReportDrafts(key){try{localStorage.setItem(reportDiscardMarkerKey(key),String(Date.now()))}catch(_){}localReportStore.forgetAll(key);try{localStorage.removeItem(key);localStorage.removeItem(reportBaselineKey(key))}catch(_){}}
   function persistReportContext(context,data){
+    if(context?.discarding||reportContextWasDiscarded(context))return null;
     context.localData={...data};const saved=localReportStore.save(context,data);
     context.localVersions=saved.localVersions;context.proposalIds=saved.proposalIds;
     context.conflicts=[...(context.conflicts||[]).filter(row=>row.source!=='window'),...saved.localConflicts];
@@ -1263,6 +1267,13 @@
     persistReportContext(context,context===activeReportContext?collectReportData():merged.values);
   }
   function scheduleReportDraftSave(){clearTimeout(reportDraftSaveTimer);reportDraftSaveTimer=setTimeout(()=>saveActiveReportDraft(false),700)}
+  async function discardPendingReportCopy(key){
+    const saved=reportDrafts()[key];if(!saved)return false;
+    const context=activeReportContext?.key===key?activeReportContext:null;if(context)context.discarding=true;
+    clearTimeout(reportDraftSaveTimer);await reportDraftFlights.get(key);await reportPhotoFlights.get(key);
+    await clearEvidenceDraft(key).catch(()=>{});forgetAllReportDrafts(key);if(activeReportContext?.key===key)activeReportContext=null;
+    updateOfflineSyncUi();return true;
+  }
   async function reconcileCompletedReportDrafts(manual=false){
     if(!shouldSyncNow(manual))return;
     for(const saved of Object.values(reportDrafts()).filter(row=>row.completedRemotely)){
@@ -1272,7 +1283,7 @@
         if(!response.ok||!payload.ok||payload.report?.state!=='completed')continue;
         const remote=payload.report.payload||{},records=await evidenceRecordsForKey(saved.key),changes=HscReportCollaboration.changes(saved.data||{},remote);
         if(!Object.keys(changes).length&&!records.length&&!saved.conflicts?.length&&!saved.pendingPhotoIds?.length){forgetAllReportDrafts(saved.key);continue}
-        const context={...saved,serverPayload:remote,localBaseline:remote,completedRemotely:true};persistReportContext(context,saved.data||{});
+        const context={...saved,serverPayload:remote,localBaseline:remote,completedRemotely:true};if(!reportContextWasDiscarded(context))persistReportContext(context,saved.data||{});
       }catch(_){}
     }
   }
@@ -1293,7 +1304,7 @@
   $('#reportPendingReviewList').onclick=async event=>{
     const review=event.target.closest('[data-review-local-report]'),discard=event.target.closest('[data-discard-local-report]'),key=review?.dataset.reviewLocalReport||discard?.dataset.discardLocalReport;if(!key)return;
     const saved=reportDrafts()[key];if(!saved){updateOfflineSyncUi();return}
-    if(discard){if(!confirm(`¿Descartar la copia local de ${saved.equipment||'este reporte'} · R${saved.round||''}? El reporte terminado en HSC no se borrará.`))return;await clearEvidenceDraft(key).catch(()=>{});forgetAllReportDrafts(key);updateOfflineSyncUi();toast('Copia local descartada · el reporte terminado se conserva');return}
+    if(discard){if(!confirm(`¿Descartar la copia local de ${saved.equipment||'este reporte'} · R${saved.round||''}? El reporte terminado en HSC no se borrará.`))return;if(await discardPendingReportCopy(key))toast('Copia local descartada · el reporte terminado se conserva');return}
     if(!equipmentMeta[saved.equipment]){toast('El equipo ya no está disponible en esta cuenta.');return}
     selectedEquipment=saved.equipment;selectedClient=saved.client||equipmentMeta[selectedEquipment].client;selectedRound=String(saved.round||selectedRound);refreshRound();explicitReportEdit=true;try{await $('#newReport').onclick()}finally{explicitReportEdit=false}
   };
@@ -1340,7 +1351,7 @@
     const completedReport=reportForEquipment(e[0],String(selectedRound)),saved=reportDrafts()[key];
     if(completedReport&&!restoringReportOpen&&!pending&&!explicitReportEdit&&!confirm(`Este equipo ya tiene el reporte ${completedReport.matrix_id||completedReport.id} en R${selectedRound}. ¿Quieres editarlo conservando el mismo folio?`))return false;
     explicitReportEdit=false;
-    const context={client:equipmentMeta[e[0]].client,equipment:e[0],round:String(selectedRound),key,draftId:saved?.completedRemotely?'':saved?.draftId||'',editReportId:completedReport?.id||saved?.editReportId||'',existingEvidence:[],revision:saved?.revision??-1,serverPayload:{},localBaseline:{},conflicts:[],completedRemotely:false,requestId:++reportOpenSequence};activeReportContext=context;
+    const context={client:equipmentMeta[e[0]].client,equipment:e[0],round:String(selectedRound),key,draftId:saved?.completedRemotely?'':saved?.draftId||'',editReportId:completedReport?.id||saved?.editReportId||'',existingEvidence:[],revision:saved?.revision??-1,serverPayload:{},localBaseline:{},conflicts:[],completedRemotely:false,localSessionStartedAt:Math.max(Date.now(),reportDiscardMarker(key)+1),requestId:++reportOpenSequence};activeReportContext=context;
     const fixed=[...form.querySelectorAll('input[readonly]')];fixed[0].value=clientName(context.client);fixed[1].value=context.equipment;fixed[2].value=`R${context.round}`;
     $('#reportFormTitle').textContent=context.editReportId?'Editar reporte de refrigeración':'Nuevo reporte de refrigeración';views.report[1]=context.editReportId?'Editar reporte':'Nuevo reporte';
     $('#reportFormContext').textContent=`${clientName(context.client)} · ${e[0]} · ${e[1]} · R${context.round}`;
@@ -1384,7 +1395,7 @@
   }
   async function saveReportContext(context,showMessage=false,manual=false){
     if(reportDraftFlights.has(context.key))return reportDraftFlights.get(context.key);
-    if(context.discarding||context.completedRemotely||context.conflicts?.length||pendingReportUploads()[context.key])return null;
+    if(context.discarding||reportContextWasDiscarded(context)||context.completedRemotely||context.conflicts?.length||pendingReportUploads()[context.key])return null;
     const flight=Promise.resolve().then(async()=>{
       let result=null;
       try{

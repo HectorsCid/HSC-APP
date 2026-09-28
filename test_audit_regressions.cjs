@@ -77,6 +77,21 @@ test('manual sync removes an identical local receipt after confirming the comple
   vm.runInContext(section('  async function reconcileCompletedReportDrafts(','  async function resumeReportDrafts('),ctx);
   await ctx.reconcileCompletedReportDrafts(true);assert.deepEqual(forgotten,['r']);
 });
+test('discard waits for an in-flight save and blocks that editor before deleting',async()=>{
+  let release,forgotten=0,updated=0;const flight=new Promise(resolve=>release=resolve),context={key:'r',discarding:false};
+  const ctx=vm.createContext({reportDrafts:()=>({r:{key:'r'}}),activeReportContext:context,clearTimeout(){},reportDraftSaveTimer:1,
+    reportDraftFlights:new Map([['r',flight]]),reportPhotoFlights:new Map(),clearEvidenceDraft:async()=>{},
+    forgetAllReportDrafts:()=>{forgotten+=1},updateOfflineSyncUi:()=>{updated+=1}});
+  vm.runInContext(section('  async function discardPendingReportCopy(','  async function reconcileCompletedReportDrafts('),ctx);
+  const pending=ctx.discardPendingReportCopy('r');await tick();assert.equal(context.discarding,true);assert.equal(forgotten,0);
+  release();assert.equal(await pending,true);assert.equal(forgotten,1);assert.equal(updated,1);assert.equal(ctx.activeReportContext,null);
+});
+test('a discard marker rejects responses from an older editor session',()=>{
+  const disk=new Map([['prefix:discard:r','200']]),localStorage={getItem:key=>disk.get(key)||null},ctx=vm.createContext({localReportStore:{prefix:'prefix:'},localStorage});
+  vm.runInContext(section('  const reportDiscardMarkerKey=','  function reportDrafts()'),ctx);
+  assert.equal(ctx.reportContextWasDiscarded({key:'r',localSessionStartedAt:100}),true);
+  assert.equal(ctx.reportContextWasDiscarded({key:'r',localSessionStartedAt:201}),false);
+});
 test('discard deletes the shared draft and every local copy only after confirmation',async()=>{
   const elements=new Map(),$=key=>{if(!elements.has(key))elements.set(key,{});return elements.get(key)},requests=[],forgotten=[],cleared=[];
   const ctx=vm.createContext({$,activeReportContext:{key:'r',draftId:'D1',equipment:'E',round:1},confirm:()=>true,evidenceBusy:false,
@@ -124,7 +139,7 @@ test('first five photos are durable before the sixth compression can be suspende
 
 test('two offline editors preserve both disjoint changes in durable recovery',()=>{
   const disk=new Map(),localStorage={getItem:k=>disk.get(k)||null,setItem:(k,v)=>disk.set(k,v),removeItem:k=>disk.delete(k),get length(){return disk.size},key:i=>[...disk.keys()][i]};
-  function editor(id){const ctx=vm.createContext({localStorage,reportDraftStorageKey:'account-T1',reportBaselineKey:k=>k+':base',account:{id:'T1'},reportEditorId:id,HscReportCollaboration:require('./static/report_collaboration.js'),localReportStore:require('./static/report_local_store.js').create(localStorage,'T1',id),reportChannel:null,window:{addEventListener(){}}});
+  function editor(id){const ctx=vm.createContext({localStorage,reportDraftStorageKey:'account-T1',reportBaselineKey:k=>k+':base',account:{id:'T1'},reportEditorId:id,HscReportCollaboration:require('./static/report_collaboration.js'),localReportStore:require('./static/report_local_store.js').create(localStorage,'T1',id),reportContextWasDiscarded:()=>false,reportChannel:null,window:{addEventListener(){}}});
     vm.runInContext(section('  function reportDrafts()','  function renderReportConflicts()'),ctx);return ctx;}
   const a=editor('tab-a'),b=editor('tab-b'),common={key:'T1:E1:R1',equipment:'E1',client:'C',round:'1',localBaseline:{p1:'10',p2:'20'}};
   a.persistReportContext({...common},{p1:'70',p2:'20'});

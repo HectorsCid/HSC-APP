@@ -25,6 +25,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   let form={inicio:'2026-09-29',fin:'2026-09-29',notas:'old'},pending=[],calls=[];
   const context={key:'draft',client:'C',equipment:'E',round:'1',localBaseline:{inicio:'2026-09-28',fin:'2026-09-28',notas:'old'},revision:1,draftId:'R',conflicts:[]};
   const editor=vm.createContext({activeReportContext:context,reportDraftFlights:new Map(),HscReportCollaboration:rules,
+    reportContextWasDiscarded:()=>false,
     collectReportData:()=>({...form}),fillReportFields:values=>{form={...values}},ensureReportDates(){},renderReportConflicts(){},
     persistReportContext:(ctx,data)=>ctx.localData={...data},pendingReportUploads:()=>({}),shouldSyncNow:()=>true,toast(){},$:()=>({textContent:'',elements:{inicio:{get value(){return form.inicio}}}}),
     operationsPost:async(url,body)=>{calls.push(body);return new Promise(resolve=>pending.push(resolve))}
