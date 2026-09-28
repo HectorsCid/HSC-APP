@@ -46,7 +46,8 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   let drafts={local:{key:'local',data:{p1:'newer'},baseValues:{p1:'old'}}},records=[{mutationId:'confirmed'},{mutationId:'later'}],forgotten=0;
   const cleanup=vm.createContext({account:{id:'T'},HscReportCollaboration:rules,localStorage:{removeItem(){}},reportBaselineKey:key=>key+':base',
     reportDrafts:()=>drafts,deleteEvidencePhoto:async(key,id)=>{records=records.filter(row=>row.mutationId!==id)},evidenceRecordsForKey:async()=>records,
-    persistReportContext:(ctx,data)=>drafts[ctx.key]={...ctx,data},forgetReportDraft:key=>delete drafts[key],forgetPendingReportUpload:()=>forgotten++,
+    persistReportContext:(ctx,data)=>drafts[ctx.key]={...ctx,data},forgetReportDraft:()=>{},forgetAllReportDrafts:key=>delete drafts[key],
+    localReportStore:{retireConfirmed:(key,data)=>{if(drafts[key]&&rules.changes(drafts[key].data||{},data||{})&&Object.keys(rules.changes(drafts[key].data||{},data||{})).length===0)delete drafts[key]}},forgetPendingReportUpload:()=>forgotten++,
     URL:{revokeObjectURL(){}},reportEvidenceByKey:new Map(),loadedEvidenceKeys:new Set(),backgroundReportUploads:new Map()});
   vm.runInContext(section('  async function completePendingReportUpload(','  function blockReportUpload('),cleanup);
   await cleanup.completePendingReportUpload({key:'local',id:'R',data:{p1:'old'},photos:[{mutationId:'confirmed'}]});

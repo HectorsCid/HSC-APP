@@ -38,6 +38,12 @@ test('explicit discard removes every editor record and photo marker for that rep
   a.photo(context.key,'photo-a',false);b.photo(context.key,'photo-b',true);a.forgetAll(context.key);
   assert.equal(a.drafts()[context.key],undefined);
 });
+test('a confirmed report retires identical copies from every window but preserves different work',()=>{
+  const {a,b}=localEditors(),context=draft();a.save(context,{p1:'70',p2:'20'});b.save(context,{p1:'70',p2:'20'});
+  a.retireConfirmed(context.key,{p1:'70',p2:'20'});assert.equal(a.drafts()[context.key],undefined);
+  a.save(context,{p1:'70',p2:'20'});b.save(context,{p1:'70',p2:'80'});a.retireConfirmed(context.key,{p1:'70',p2:'20'});
+  assert.equal(a.drafts()[context.key].data.p2,'80');
+});
 test('pending submissions stay isolated by account and cannot be resurrected',()=>{
   const {a,b,other}=localEditors(),upload={key:'A:E:R',accountId:'A',submissionId:'one',data:{p1:'70'}};
   a.rememberPending(upload);b.rememberPending({...upload,submissionId:'two'});assert.equal(Object.values(a.pending()).length,2);

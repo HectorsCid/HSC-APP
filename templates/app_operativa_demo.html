@@ -1627,14 +1627,15 @@
     try{localStorage.removeItem(`hsc-report-detail-${account.id}:${upload.editReportId||upload.id}`)}catch(_){}
     const mutations=new Set(upload.photoMutationIds||upload.photos.map(photo=>photo.mutationId));
     for(const mutation of mutations)await deleteEvidencePhoto(upload.key,mutation);
+    forgetReportDraft(upload.key,upload.localVersions);localReportStore.retireConfirmed(upload.key,upload.data||{});
     const remaining=await evidenceRecordsForKey(upload.key),saved=reportDrafts()[upload.key];
-    const newer=saved&&Object.keys(HscReportCollaboration.changes(saved.data||{},upload.data||{})).length;
+    const newer=saved&&(Object.keys(HscReportCollaboration.changes(saved.data||{},upload.data||{})).length||saved.conflicts?.length||saved.pendingPhotoIds?.length);
     if(remaining.length||newer){
-      const context={...(saved||upload),draftId:upload.id,localBaseline:saved?.baseValues||upload.baseValues||{},completedRemotely:true};
+      const context={...(saved||upload),draftId:upload.id,localBaseline:upload.data||{},serverPayload:upload.data||{},completedRemotely:true};
       persistReportContext(context,saved?.data||upload.data);
     }else{
       try{localStorage.removeItem(upload.key);localStorage.removeItem(reportBaselineKey(upload.key))}catch(_){}
-      forgetReportDraft(upload.key,upload.localVersions);
+      forgetAllReportDrafts(upload.key);
     }
     forgetPendingReportUpload(upload.key,upload.submissionId);
     upload.photos.forEach(photo=>URL.revokeObjectURL(photo.url));reportEvidenceByKey.delete(upload.key);loadedEvidenceKeys.delete(upload.key);backgroundReportUploads.delete(upload.key);
