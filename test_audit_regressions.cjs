@@ -83,14 +83,20 @@ test('manual sync removes an identical local receipt after confirming the comple
   vm.runInContext(section('  async function reconcileCompletedReportDrafts(','  async function resumeReportDrafts('),ctx);
   await ctx.reconcileCompletedReportDrafts(true);assert.deepEqual(forgotten,['r']);
 });
-test('discard waits for an in-flight save and blocks that editor before deleting',async()=>{
+test('discard hides immediately and cleans again after an in-flight save settles',async()=>{
   let release,forgotten=0,updated=0;const flight=new Promise(resolve=>release=resolve),context={key:'r',discarding:false};
   const ctx=vm.createContext({reportDrafts:()=>({r:{key:'r'}}),activeReportContext:context,clearTimeout(){},reportDraftSaveTimer:1,
     reportDraftFlights:new Map([['r',flight]]),reportPhotoFlights:new Map(),clearEvidenceDraft:async()=>{},
     forgetAllReportDrafts:()=>{forgotten+=1},updateOfflineSyncUi:()=>{updated+=1}});
   vm.runInContext(section('  async function discardPendingReportCopy(','  async function reconcileCompletedReportDrafts('),ctx);
-  const pending=ctx.discardPendingReportCopy('r');await tick();assert.equal(context.discarding,true);assert.equal(forgotten,0);
-  release();assert.equal(await pending,true);assert.equal(forgotten,1);assert.equal(updated,1);assert.equal(ctx.activeReportContext,null);
+  const pending=ctx.discardPendingReportCopy('r');await tick();assert.equal(context.discarding,true);assert.equal(await pending,true);assert.equal(forgotten,1);assert.equal(updated,1);assert.equal(ctx.activeReportContext,null);
+  release();await tick();assert.equal(forgotten,2);assert.equal(updated,2);
+});
+test('discard also removes the legacy draft so migration cannot restore it',()=>{
+  const disk=new Map([['legacy',JSON.stringify({r:{key:'r',data:{p1:'10'}}})]]),localStorage={getItem:key=>disk.get(key)||null,setItem:(key,value)=>disk.set(key,value),removeItem:key=>disk.delete(key)};
+  const ctx=vm.createContext({localStorage,reportDraftStorageKey:'legacy',reportDiscardMarkerKey:key=>'discard:'+key,localReportStore:{forgetAll(){}},reportBaselineKey:key=>key+':base'});
+  vm.runInContext(section('  function forgetAllReportDrafts(','  function persistReportContext('),ctx);ctx.forgetAllReportDrafts('r');
+  assert.equal(JSON.parse(disk.get('legacy')).r,undefined);
 });
 test('a discard marker rejects responses from an older editor session',()=>{
   const disk=new Map([['prefix:discard:r','200']]),localStorage={getItem:key=>disk.get(key)||null},ctx=vm.createContext({localReportStore:{prefix:'prefix:'},localStorage});
