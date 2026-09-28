@@ -1156,13 +1156,27 @@ class OperationsStore(SheetDeliveryMixin):
                     position = int(evidence[0])
                     if position in occupied:
                         continue
+                    mutation_id = _text(evidence[6]) or f"legacy-original-{position}"
                     conn.execute(
                         f"INSERT INTO operations_evidence"
                         f"(id,report_id,position,storage_ref,drive_ref,sync_status,actor_id,actor_name,mutation_id,created_at,updated_at) "
                         f"VALUES ({','.join([p] * 11)})",
-                        (f"{report_id}:original:{position}", report_id, *evidence),
+                        (f"{report_id}:original:{position}", report_id, position, evidence[1], evidence[2],
+                         evidence[3], evidence[4], evidence[5], mutation_id, evidence[7], evidence[8]),
                     )
                     occupied.add(position)
+                # Imported and older reports did not always have mutation IDs.
+                # Give inherited evidence a stable handle so it can be replaced
+                # from an explicit report edition.
+                legacy_evidence = conn.execute(
+                    f"SELECT id,position FROM operations_evidence WHERE report_id={p} AND mutation_id=''",
+                    (report_id,),
+                ).fetchall()
+                for evidence_id, position in legacy_evidence:
+                    conn.execute(
+                        f"UPDATE operations_evidence SET mutation_id={p} WHERE id={p}",
+                        (f"legacy-original-{int(position)}", evidence_id),
+                    )
             result = self.get_report_draft(equipment_id, round_number, connection=conn)
         return result
 
@@ -2137,7 +2151,7 @@ class OperationsStore(SheetDeliveryMixin):
         with self.connection() as conn:
             self._lock_report(conn, report_id)
             report = conn.execute(
-                f"SELECT state FROM operations_reports WHERE id={p} AND source='app'", (report_id,)
+                f"SELECT state,payload_json FROM operations_reports WHERE id={p} AND source='app'", (report_id,)
             ).fetchone()
             if not report or report[0] != "draft":
                 raise ReportConflictError(
@@ -2150,7 +2164,11 @@ class OperationsStore(SheetDeliveryMixin):
             ).fetchone()
             if not row:
                 return None
-            if actor_id is not None and not allow_any and _text(row[1]) != _text(actor_id):
+            try:
+                edit_draft = bool(json.loads(report[1] or "{}").get("_edit_report_id"))
+            except (TypeError, json.JSONDecodeError):
+                edit_draft = False
+            if actor_id is not None and not allow_any and not edit_draft and _text(row[1]) != _text(actor_id):
                 raise ReportConflictError(
                     "Esta fotografía fue agregada por otro técnico. Pídele que la quite o usa la cuenta administradora.",
                     code="photo_owner_required",

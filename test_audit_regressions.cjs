@@ -124,6 +124,18 @@ test('replacing shared evidence waits for the edit draft to be created',async()=
   assert.equal(await ctx.removeSharedEvidence('M1',1),true);assert.equal(saves,1);
   assert.deepEqual(requests,['/api/operaciones/reports/D1/evidence/M1']);assert.equal(refreshed,1);
 });
+test('legacy evidence without an identifier becomes replaceable after creating the edit draft',async()=>{
+  const requests=[];let refreshed=0;
+  const context={key:'r',draftId:'',existingEvidence:[{mutation_id:'',position:1}]};
+  const ctx=vm.createContext({activeReportContext:context,shouldSyncNow:()=>true,confirm:()=>true,
+    saveActiveReportDraft:async()=>{context.draftId='D1'},operationsDelete:async url=>requests.push(url),
+    localReportStore:{photo(){}},deleteEvidencePhoto:async()=>{},refreshReportCollaboration:async()=>{
+      refreshed+=1;context.existingEvidence=[{mutation_id:'legacy-original-1',position:1}];
+    }});
+  vm.runInContext(section('  async function removeSharedEvidence(','  function renderExistingEvidence()'),ctx);
+  assert.equal(await ctx.removeSharedEvidence('',1),true);
+  assert.deepEqual(requests,['/api/operaciones/reports/D1/evidence/legacy-original-1']);assert.equal(refreshed,2);
+});
 test('permission failure preserves the image until explicit recovery succeeds',async()=>{
   const {ctx,photos,$}=photoEditor();ctx.openEvidenceDb=async()=>{throw new DOMException('denied','SecurityError')};
   await ctx.handleEvidenceSelection({target:{files:[fakePhoto(1)]}});assert.equal(photos[0].backedUp,false);assert.match($('#evidenceError').textContent,/SIN RESPALDO/i);

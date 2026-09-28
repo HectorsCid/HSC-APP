@@ -46,6 +46,21 @@ class ReportSafetyTests(unittest.TestCase):
         self.assertEqual(result['evidence'][0]['drive_ref'], 'drive-photo')
         self.assertEqual(len(self.store.snapshot()['reports']), 1)
 
+    def test_edit_can_replace_legacy_evidence_without_mutation_id(self):
+        original_draft = self.draft()
+        self.store.save_report_evidence(original_draft['id'], 1, 'drive-legacy')
+        original = self.store.finalize_report(original_draft['id'])
+        self.assertEqual('', original['evidence'][0]['mutation_id'])
+
+        edit = self.draft(edit_report_id=original['id'])
+        inherited = self.store.get_report_detail(edit['id'])['evidence'][0]
+        self.assertEqual('legacy-original-1', inherited['mutation_id'])
+        removed = self.store.delete_report_evidence(
+            edit['id'], inherited['mutation_id'], actor_id='another-technician'
+        )
+        self.assertEqual(1, removed['position'])
+        self.assertEqual([], self.store.get_report_detail(edit['id'])['evidence'])
+
     def test_outbox_failure_rolls_back_report_and_receipt(self):
         draft = self.draft()
         with patch.object(self.store, '_queue_sync_in_transaction', side_effect=RuntimeError('disk error')):
