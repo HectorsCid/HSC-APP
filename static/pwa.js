@@ -3,6 +3,7 @@
 
   let installPrompt = null;
   let registration = null;
+  let reloadingForWorker = false;
   const appName = document.querySelector('meta[name="application-name"]')?.content || 'HSC';
   // `display_override` lets desktop Chromium launch the installed app with
   // window controls overlaid. That is still an installed PWA even though the
@@ -219,6 +220,11 @@
     });
 
     try{
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if(reloadingForWorker) return;
+        reloadingForWorker = true;
+        location.reload();
+      });
       const workerScope = location.pathname.startsWith('/hsc-partner/')
         ? '/hsc-partner/'
         : location.pathname.startsWith('/hsc-tecnico/') ? '/hsc-tecnico/' : '/';

@@ -27,6 +27,9 @@ class PwaTests(unittest.TestCase):
         self.assertIn("no-store", response.headers.get("Cache-Control", ""))
         source = response.get_data(as_text=True)
         self.assertIn("SAFE_PATHS", source)
+        self.assertIn("hsc-shell-v44", source)
+        self.assertIn("const response = await fetch(request)", source)
+        self.assertNotIn("cached || fetch(request)", source)
         self.assertNotIn("/facturacion", source)
         self.assertNotIn("/api/", source)
 
@@ -80,6 +83,8 @@ class PwaTests(unittest.TestCase):
         self.assertIn("display-mode:window-controls-overlay", html)
         with open("static/pwa.js", encoding="utf-8") as source:
             pwa_source = source.read()
+        self.assertIn("controllerchange", pwa_source)
+        self.assertIn("location.reload()", pwa_source)
         self.assertIn("'window-controls-overlay'", pwa_source)
         self.assertIn("'standalone'", pwa_source)
 

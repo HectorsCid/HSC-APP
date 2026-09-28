@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hsc-shell-v43';
+const CACHE_NAME = 'hsc-shell-v44';
 const SAFE_ASSETS = [
   '/static/hsc_theme.css',
   '/static/hsc_theme.js',
@@ -59,13 +59,19 @@ self.addEventListener('fetch', event => {
   }
   if(!SAFE_PATHS.has(url.pathname)) return;
   event.respondWith(
-    caches.match(url.pathname).then(cached => cached || fetch(request).then(response => {
-      if(response.ok){
+    caches.match(url.pathname).then(async cached => {
+      try{
+        // Keep the offline copy as a fallback, but refresh application code and
+        // identity-free shells whenever the device has a connection.
+        const response = await fetch(request);
+        if(!response.ok) return cached || response;
         const copy = response.clone();
         event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(url.pathname, copy)));
+        return response;
+      }catch(_){
+        return cached || Response.error();
       }
-      return response;
-    }))
+    })
   );
 });
 
