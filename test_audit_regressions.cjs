@@ -5,7 +5,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
 function photoEditor(){
   const elements=new Map(),photos=[];
-  const $=key=>{if(!elements.has(key))elements.set(key,{value:key==='#reportEvidenceSlot'?'1':'',textContent:''});return elements.get(key)};
+  const $=key=>{if(!elements.has(key))elements.set(key,{value:key==='#reportEvidenceSlot'?'1':'',textContent:'',setAttribute(name,value){this[name]=value}});return elements.get(key)};
   const ctx=vm.createContext({$,draftKey:()=> 'T1:E1:R1',evidenceForReport:()=>photos,vacantEvidenceSlots:()=>[1,2,3,4,5,6],
     account:{id:'T1'},reportPhotoBackupFailed:false,
     sourceFingerprint:f=>f.name,newEvidenceMutationId:()=> 'M'+photos.length,compressEvidenceFile:async f=>f,

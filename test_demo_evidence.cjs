@@ -6,7 +6,7 @@ const start = html.indexOf('  const reportEvidenceByKey=');
 const block = html.slice(start, html.indexOf("  $('#inviteClientSelect')", start));
 const elements = new Map();
 const $ = selector => {
-  if (!elements.has(selector)) elements.set(selector, {value:'', textContent:'', innerHTML:'', disabled:false, onclick:()=>{},insertAdjacentHTML:()=>{}});
+  if (!elements.has(selector)) elements.set(selector, {value:'', textContent:'', innerHTML:'', disabled:false, onclick:()=>{},insertAdjacentHTML:()=>{},setAttribute(name,value){this[name]=value}});
   return elements.get(selector);
 };
 let mutationSequence=0;
@@ -22,8 +22,12 @@ vm.runInContext(block,context);context.deleteEvidencePhoto=async()=>{};
 context.persistEvidence=async(key,photos=context.evidenceForReport())=>{photos.forEach(photo=>photo.backedUp=true);return true};
 const file = (name,size=1024,type='image/jpeg')=>({name,size,type,lastModified:1});
 async function select(files){const input=$('#reportEvidence');input.files=files;await input.onchange({target:input});}
+async function selectOne(fileValue,slot){$('#reportEvidenceSlot').value=String(slot);const input=$('#reportEvidenceSingle');input.files=[fileValue];await input.onchange({target:input});}
 async function capture(fileValue){const input=$('#reportEvidenceCamera');input.files=[fileValue];await input.onchange({target:input});}
 (async()=>{
+  await selectOne(file('chosen-for-five.jpg'),5);
+  assert.deepEqual(Array.from(vm.runInContext('evidenceForReport().map(photo=>photo.slot)',context)),[5]);
+  await $('#evidenceList').onclick({target:{closest:()=>({dataset:{index:'0',evidenceAction:'remove'}})}});
   await select([file('first.jpg'),file('second.jpg'),file('third.jpg')]);
   const firstBatch=vm.runInContext('evidenceForReport()',context);
   context.activeReportContext.existingEvidence=firstBatch.map(photo=>({position:photo.slot,mutation_id:photo.mutationId}));

@@ -76,6 +76,19 @@ body[data-active-mode="tech"] #reportForm .form-actions{box-shadow:0 -8px 28px r
 body[data-active-mode="tech"] #reportForm .form-actions button{min-height:50px}
 body[data-active-mode="tech"] #reportForm .read-only{background:var(--surface-2);opacity:1;color:var(--muted)}
 body[data-active-mode="tech"] #reportEvidenceSlot{font-weight:700}
+body[data-active-mode="tech"] .report-evidence-instruction{display:grid;gap:3px;margin:0;color:var(--text);font-size:.95rem}
+body[data-active-mode="tech"] .report-evidence-instruction span{color:var(--muted);font-size:.82rem;line-height:1.4}
+body[data-active-mode="tech"] .report-evidence-slot-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+body[data-active-mode="tech"] .report-evidence-slot{min-width:0;padding:11px;border:1px solid var(--line);border-radius:12px;background:var(--deep)}
+body[data-active-mode="tech"] .report-evidence-slot header{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:9px}
+body[data-active-mode="tech"] .report-evidence-slot header b{font-size:.92rem}
+body[data-active-mode="tech"] .report-evidence-slot header span{overflow:hidden;color:var(--muted);font-size:.68rem;text-overflow:ellipsis;white-space:nowrap}
+body[data-active-mode="tech"] .report-evidence-slot.occupied{border-color:color-mix(in srgb,var(--ok) 48%,var(--line));background:color-mix(in srgb,var(--ok) 7%,var(--deep))}
+body[data-active-mode="tech"] .report-evidence-slot-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+body[data-active-mode="tech"] .report-evidence-slot-actions .mini-btn{display:flex;align-items:center;justify-content:center;min-width:0;min-height:38px;padding:5px 7px;font-size:.75rem;cursor:pointer;touch-action:manipulation}
+body[data-active-mode="tech"] .report-evidence-slot-state{display:grid;place-items:center;min-height:38px;border-radius:9px;background:color-mix(in srgb,var(--ok) 12%,var(--surface));color:var(--ok);font-weight:900}
+body[data-active-mode="tech"] .report-evidence-bulk{display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;cursor:pointer;touch-action:manipulation}
+body[data-active-mode="tech"] .report-evidence-bulk[aria-disabled="true"]{pointer-events:none;opacity:.45}
 
 /* Maintenance report: keep the everyday readings visible and the uncommon fields quiet. */
 body[data-active-mode="tech"] .report-heading{display:flex;align-items:center;justify-content:space-between;gap:14px}
