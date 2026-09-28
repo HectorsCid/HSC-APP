@@ -93,6 +93,27 @@ def test_matrix_snapshot_round_trip_uses_ids_and_evidence_rows(tmp_path):
     assert '"DatoNuevo": "conservado"' in report_raw
 
 
+def test_matrix_reimport_resolves_evidence_by_report_and_position(tmp_path):
+    store = OperationsStore(local_path=tmp_path / "legacy-evidence.sqlite3")
+    payload = _payload()
+    store.import_matrix_snapshot(payload)
+    with store.connection() as conn:
+        conn.execute("DELETE FROM operations_evidence WHERE report_id=? AND position=1", ("UVMQ1_R 2",))
+        conn.execute(
+            "INSERT INTO operations_evidence(id,report_id,position,storage_ref,sync_status,updated_at) VALUES (?,?,?,?,?,?)",
+            ("legacy-photo-id", "UVMQ1_R 2", 1, "old.jpg", "synced", "2026-09-01T00:00:00+00:00"),
+        )
+
+    store.import_matrix_snapshot(payload)
+
+    with store.connection() as conn:
+        evidence = conn.execute(
+            "SELECT id,storage_ref FROM operations_evidence WHERE report_id=? AND position=1",
+            ("UVMQ1_R 2",),
+        ).fetchone()
+    assert evidence == ("legacy-photo-id", "foto-1.jpg")
+
+
 def test_reimport_updates_without_duplicating(tmp_path):
     store = OperationsStore(local_path=tmp_path / "operations.sqlite3")
     payload = _payload()

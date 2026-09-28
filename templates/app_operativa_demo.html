@@ -553,11 +553,14 @@
   function offlineSyncMode(){const mode=localStorage.getItem(offlineSyncStorageKey)||'auto';return ['auto','wifi','offline'].includes(mode)?mode:'auto'}
   function wifiIsRecognized(){const connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;return connection?.type==='wifi'}
   function shouldSyncNow(manual=false){return navigator.onLine!==false&&HscOffline.canSend(offlineSyncMode(),(navigator.connection||navigator.mozConnection||navigator.webkitConnection)?.type,manual)}
-  function pendingReportDraftCount(){
-    try{const drafts=reportDrafts(),queued=pendingReportUploads();return Object.values(drafts).filter(row=>!queued[row.key]&&(row.conflicts?.length||row.pendingPhotoIds?.length||Object.keys(HscReportCollaboration.changes(row.data||{},row.baseValues||{})).length)).length}catch(_){return 0}
+  function pendingReportDraftRows(){
+    try{const drafts=reportDrafts(),queued=pendingReportUploads();return Object.values(drafts).filter(row=>!queued[row.key]&&(row.conflicts?.length||row.pendingPhotoIds?.length||Object.keys(HscReportCollaboration.changes(row.data||{},row.baseValues||{})).length))}catch(_){return[]}
   }
-  function pendingSyncSummary(){const reports=typeof pendingReportUploads==='function'?Object.keys(pendingReportUploads()).length:0,drafts=pendingReportDraftCount(),actions=pendingFieldCount,total=reports+drafts+actions,parts=[];if(reports)parts.push(`${reports} reporte${reports===1?'':'s'} por enviar`);if(drafts)parts.push(`${drafts} borrador${drafts===1?'':'es'} por confirmar`);if(actions)parts.push(`${actions} cambio${actions===1?'':'s'} de operación`);return {total,label:parts.join(' · ')}}
-  function updateOfflineSyncUi(){const mode=offlineSyncMode(),pendingInfo=pendingSyncSummary(),pending=pendingInfo.total,state=$('#offlineSyncState'),description=$('#offlineSyncDescription'),select=$('#offlineSyncMode'),reason=mode==='offline'?'Envíos pausados por tu elección':mode==='wifi'&&!wifiIsRecognized()?'Wi‑Fi no identificado: envíos en espera':serverConnection==='auth'?'Renueva tu sesión':serverConnection==='unreachable'?'HSC sin respuesta: reintentando':serverConnection==='server'?'Servidor no disponible: reintentando':serverConnection==='checking'?'Comprobando servidor':'';if(select)select.value=mode;if(state){state.textContent=reason||(pending?pendingInfo.label:'Servidor conectado');state.classList.toggle('pending',Boolean(reason)||pending>0)}if(description)description.textContent=mode==='offline'?'Tu trabajo se guarda en este dispositivo. Elige Automático para reanudar o Enviar ahora para un envío puntual.':mode==='wifi'?'Sólo se envía al reconocer Wi‑Fi. Si este teléfono no identifica el tipo de red, pulsa Sincronizar ahora para autorizar el envío con la conexión disponible.':pending?`${pendingInfo.label}. Pulsa Enviar ahora para confirmar lo pendiente.`:'Todo el trabajo de este dispositivo está confirmado.';const banner=$('#syncConnectionBanner');if(banner){banner.hidden=!reason&&!pending;banner.querySelector('span').textContent=reason?(pending?`${reason} · ${pendingInfo.label}`:reason):`Trabajo guardado en este dispositivo · ${pendingInfo.label}`;}}
+  function pendingReportDraftCount(){return pendingReportDraftRows().filter(row=>!row.completedRemotely&&!row.conflicts?.length).length}
+  function pendingReportReviewCount(){return pendingReportDraftRows().filter(row=>row.completedRemotely||row.conflicts?.length).length}
+  function pendingSyncSummary(){const reports=typeof pendingReportUploads==='function'?Object.keys(pendingReportUploads()).length:0,drafts=pendingReportDraftCount(),reviews=pendingReportReviewCount(),actions=pendingFieldCount,total=reports+drafts+reviews+actions,parts=[];if(reports)parts.push(`${reports} reporte${reports===1?'':'s'} por enviar`);if(drafts)parts.push(`${drafts} borrador${drafts===1?'':'es'} por confirmar`);if(reviews)parts.push(`${reviews} reporte${reviews===1?'':'s'} por revisar`);if(actions)parts.push(`${actions} cambio${actions===1?'':'s'} de operación`);return {total,label:parts.join(' · ')}}
+  function renderPendingReportReviewList(){const target=$('#reportPendingReviewList');if(!target)return;const rows=pendingReportDraftRows().filter(row=>row.completedRemotely||row.conflicts?.length);target.hidden=!rows.length;target.innerHTML=rows.map(row=>`<article class="user-card"><div class="reminder-icon">!</div><div><b>${escapeHtml(row.equipment||'Reporte')} · R${escapeHtml(row.round||'')}</b><small>${row.completedRemotely?'El reporte ya terminó; revisa o descarta esta copia local.':'Hay cambios que necesitan tu elección.'}</small><div class="inline-actions"><button class="mini-btn" type="button" data-review-local-report="${escapeHtml(row.key)}">Revisar</button>${row.completedRemotely?`<button class="mini-btn" type="button" data-discard-local-report="${escapeHtml(row.key)}">Descartar copia</button>`:''}</div></div></article>`).join('')}
+  function updateOfflineSyncUi(){const mode=offlineSyncMode(),pendingInfo=pendingSyncSummary(),pending=pendingInfo.total,state=$('#offlineSyncState'),description=$('#offlineSyncDescription'),select=$('#offlineSyncMode'),reason=mode==='offline'?'Envíos pausados por tu elección':mode==='wifi'&&!wifiIsRecognized()?'Wi‑Fi no identificado: envíos en espera':serverConnection==='auth'?'Renueva tu sesión':serverConnection==='unreachable'?'HSC sin respuesta: reintentando':serverConnection==='server'?'Servidor no disponible: reintentando':serverConnection==='checking'?'Comprobando servidor':'';if(select)select.value=mode;if(state){state.textContent=reason||(pending?pendingInfo.label:'Servidor conectado');state.classList.toggle('pending',Boolean(reason)||pending>0)}if(description)description.textContent=mode==='offline'?'Tu trabajo se guarda en este dispositivo. Elige Automático para reanudar o Enviar ahora para un envío puntual.':mode==='wifi'?'Sólo se envía al reconocer Wi‑Fi. Si este teléfono no identifica el tipo de red, pulsa Sincronizar ahora para autorizar el envío con la conexión disponible.':pending?`${pendingInfo.label}. Los envíos se confirman y las copias que requieren decisión aparecen abajo.`:'Todo el trabajo de este dispositivo está confirmado.';renderPendingReportReviewList();const banner=$('#syncConnectionBanner');if(banner){banner.hidden=!reason&&!pending;banner.querySelector('span').textContent=reason?(pending?`${reason} · ${pendingInfo.label}`:reason):`Trabajo guardado en este dispositivo · ${pendingInfo.label}`;}}
   function renderProfileIdentity(){const avatar=$('#profileAvatar'),fallback=account.name.split(/\s+/).map(part=>part[0]).join('').slice(0,2).toUpperCase();avatar.innerHTML=photoMarkup(profilePhotoUrl,fallback);hydratePhotos(avatar,1);$('#profileName').textContent=account.name;}
   function applyAccess(){
     document.body.dataset.activeMode=currentMode;
@@ -1260,8 +1263,22 @@
     persistReportContext(context,context===activeReportContext?collectReportData():merged.values);
   }
   function scheduleReportDraftSave(){clearTimeout(reportDraftSaveTimer);reportDraftSaveTimer=setTimeout(()=>saveActiveReportDraft(false),700)}
+  async function reconcileCompletedReportDrafts(manual=false){
+    if(!shouldSyncNow(manual))return;
+    for(const saved of Object.values(reportDrafts()).filter(row=>row.completedRemotely)){
+      const reportId=saved.editReportId||saved.remoteReportId||saved.draftId;if(!reportId)continue;
+      try{
+        const response=await hscFetch(`/api/operaciones/reports/${encodeURIComponent(reportId)}`,{headers:{Accept:'application/json'}},15000),payload=await response.json();
+        if(!response.ok||!payload.ok||payload.report?.state!=='completed')continue;
+        const remote=payload.report.payload||{},records=await evidenceRecordsForKey(saved.key),changes=HscReportCollaboration.changes(saved.data||{},remote);
+        if(!Object.keys(changes).length&&!records.length&&!saved.conflicts?.length&&!saved.pendingPhotoIds?.length){forgetAllReportDrafts(saved.key);continue}
+        const context={...saved,serverPayload:remote,localBaseline:remote,completedRemotely:true};persistReportContext(context,saved.data||{});
+      }catch(_){}
+    }
+  }
   async function resumeReportDrafts(manual=false){
     if(!shouldSyncNow(manual))return;
+    await reconcileCompletedReportDrafts(manual);
     for(const saved of Object.values(reportDrafts())){
       if(pendingReportUploads()[saved.key]||saved.completedRemotely||saved.conflicts?.length)continue;
       const context=activeReportContext?.key===saved.key?activeReportContext:{...saved,localData:saved.data,localBaseline:saved.baseValues};
@@ -1273,6 +1290,13 @@
     }
   }
   const defaultReportNotes='Se realizó mantenimiento preventivo y chequeo de parámetros. Se deja el equipo trabajando bien.';
+  $('#reportPendingReviewList').onclick=async event=>{
+    const review=event.target.closest('[data-review-local-report]'),discard=event.target.closest('[data-discard-local-report]'),key=review?.dataset.reviewLocalReport||discard?.dataset.discardLocalReport;if(!key)return;
+    const saved=reportDrafts()[key];if(!saved){updateOfflineSyncUi();return}
+    if(discard){if(!confirm(`¿Descartar la copia local de ${saved.equipment||'este reporte'} · R${saved.round||''}? El reporte terminado en HSC no se borrará.`))return;await clearEvidenceDraft(key).catch(()=>{});forgetAllReportDrafts(key);updateOfflineSyncUi();toast('Copia local descartada · el reporte terminado se conserva');return}
+    if(!equipmentMeta[saved.equipment]){toast('El equipo ya no está disponible en esta cuenta.');return}
+    selectedEquipment=saved.equipment;selectedClient=saved.client||equipmentMeta[selectedEquipment].client;selectedRound=String(saved.round||selectedRound);refreshRound();explicitReportEdit=true;try{await $('#newReport').onclick()}finally{explicitReportEdit=false}
+  };
   const reportKey=(equipmentId,round)=>`hsc-report-${encodeURIComponent(account.id)}-${equipmentId}-R${round}`;
   const reportBaselineKey=key=>`${key}:server-baseline`;
   function rememberReportBaseline(context,payload){context.localBaseline={...(payload||{})}}

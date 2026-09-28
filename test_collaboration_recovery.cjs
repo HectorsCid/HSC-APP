@@ -57,6 +57,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   let photoAttempts=0,manualSave=false;
   const offline=vm.createContext({shouldSyncNow:manual=>manual,activeReportContext:null,pendingReportUploads:()=>({}),
     reportDrafts:()=>({K:{key:'K',data:{p1:'81'},baseValues:{p1:''}}}),
+    reconcileCompletedReportDrafts:async()=>{},
     saveReportContext:async(ctx,message,manual)=>{manualSave=manual;ctx.draftId='R';return {id:'R'}},
     evidenceRecordsForKey:async()=>[{name:'one.jpg',type:'image/jpeg',blob:new Blob(['photo']),mutationId:'photo',position:1,uploaded:false}],File,
     uploadDraftEvidence:async(photos,ctx,manual)=>{assert.equal(manual,true);assert.equal(ctx.draftId,'R');assert.equal(photos[0].mutationId,'photo');photoAttempts++}

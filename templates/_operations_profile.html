@@ -59,6 +59,7 @@
           <p class="editor-note" id="offlineSyncDescription">Los reportes pendientes se enviarán al recuperar conexión.</p>
           <div class="field"><label for="offlineSyncMode">Cuándo enviar mi trabajo</label><select id="offlineSyncMode"><option value="auto">Automático con cualquier conexión</option><option value="wifi">Sólo al detectar Wi‑Fi</option><option value="offline">Trabajar sin conexión</option></select></div>
           <button class="secondary profile-sync-now" id="syncPendingNow" type="button">{{ profile_icon('sync') }}Sincronizar ahora</button>
+          <div class="user-list" id="reportPendingReviewList" hidden></div>
           <p class="editor-note">Si tu teléfono no identifica el Wi‑Fi, puedes usar “Sincronizar ahora”.</p>
           <div class="profile-admin-tools" data-admin-only>
             <button class="profile-row" id="syncGoogleProfile" type="button"><span class="profile-row-icon">{{ profile_icon('sync') }}</span><span class="profile-row-copy"><b>Actualizar desde Google</b><small>Traer cambios de la Hoja Matriz</small><span class="profile-status" id="profileSyncState">Al día</span></span><span class="profile-chevron">{{ profile_icon('chevron') }}</span></button>

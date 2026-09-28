@@ -52,18 +52,30 @@ test('changing session DOM never rebinds old pending requests to the new account
 });
 test('pending indicator counts the new per-window journal',()=>{
   const ctx=vm.createContext({account:{id:'A'},localStorage:{getItem:()=>null},pendingReportUploads:()=>({}),reportDrafts:()=>({r:{key:'r',data:{p1:'70'},baseValues:{p1:'10'},draftId:'draft'}}),HscReportCollaboration:require('./static/report_collaboration.js')});
-  vm.runInContext(section('  function pendingReportDraftCount()','  function updateOfflineSyncUi()'),ctx);
+  vm.runInContext(section('  function pendingReportDraftRows()','  function updateOfflineSyncUi()'),ctx);
   assert.equal(ctx.pendingReportDraftCount(),1);
 });
 test('a no-op journal without a server id does not leave a permanent pending banner',()=>{
   const ctx=vm.createContext({pendingReportUploads:()=>({}),reportDrafts:()=>({r:{key:'r',data:{p1:'10'},baseValues:{p1:'10'},draftId:''}}),HscReportCollaboration:require('./static/report_collaboration.js')});
-  vm.runInContext(section('  function pendingReportDraftCount()','  function updateOfflineSyncUi()'),ctx);
+  vm.runInContext(section('  function pendingReportDraftRows()','  function updateOfflineSyncUi()'),ctx);
   assert.equal(ctx.pendingReportDraftCount(),0);
 });
 test('a completed receipt without newer changes does not leave a permanent pending banner',()=>{
   const ctx=vm.createContext({pendingReportUploads:()=>({}),reportDrafts:()=>({r:{key:'r',data:{p1:'10'},baseValues:{p1:'10'},draftId:'D1',completedRemotely:true}}),HscReportCollaboration:require('./static/report_collaboration.js')});
-  vm.runInContext(section('  function pendingReportDraftCount()','  function pendingSyncSummary()'),ctx);
+  vm.runInContext(section('  function pendingReportDraftRows()','  function pendingSyncSummary()'),ctx);
   assert.equal(ctx.pendingReportDraftCount(),0);
+});
+test('a completed report with real local changes is reviewable instead of an impossible upload',()=>{
+  const ctx=vm.createContext({pendingReportUploads:()=>({}),reportDrafts:()=>({r:{key:'r',data:{p1:'20'},baseValues:{p1:'10'},draftId:'D1',completedRemotely:true}}),HscReportCollaboration:require('./static/report_collaboration.js')});
+  vm.runInContext(section('  function pendingReportDraftRows()','  function pendingSyncSummary()'),ctx);
+  assert.equal(ctx.pendingReportDraftCount(),0);assert.equal(ctx.pendingReportReviewCount(),1);
+});
+test('manual sync removes an identical local receipt after confirming the completed report',async()=>{
+  const forgotten=[],saved={key:'r',draftId:'D1',editReportId:'',completedRemotely:true,data:{p1:'10'},baseValues:{p1:'0'},conflicts:[],pendingPhotoIds:[]};
+  const ctx=vm.createContext({shouldSyncNow:()=>true,reportDrafts:()=>({r:saved}),hscFetch:async()=>({ok:true,json:async()=>({ok:true,report:{state:'completed',payload:{p1:'10'}}})}),
+    evidenceRecordsForKey:async()=>[],HscReportCollaboration:require('./static/report_collaboration.js'),forgetAllReportDrafts:key=>forgotten.push(key),persistReportContext(){}});
+  vm.runInContext(section('  async function reconcileCompletedReportDrafts(','  async function resumeReportDrafts('),ctx);
+  await ctx.reconcileCompletedReportDrafts(true);assert.deepEqual(forgotten,['r']);
 });
 test('discard deletes the shared draft and every local copy only after confirmation',async()=>{
   const elements=new Map(),$=key=>{if(!elements.has(key))elements.set(key,{});return elements.get(key)},requests=[],forgotten=[],cleared=[];

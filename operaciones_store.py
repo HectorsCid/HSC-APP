@@ -603,8 +603,8 @@ class OperationsStore(SheetDeliveryMixin):
                     evidence_id = f"{report_id}:foto:{position}"
                     conn.execute(
                         f"INSERT INTO operations_evidence(id,report_id,position,storage_ref,sync_status,updated_at) "
-                        f"VALUES ({p},{p},{p},{p},{p},{p}) ON CONFLICT(id) DO UPDATE SET "
-                        "position=excluded.position,storage_ref=excluded.storage_ref,"
+                        f"VALUES ({p},{p},{p},{p},{p},{p}) ON CONFLICT(report_id,position) DO UPDATE SET "
+                        "storage_ref=excluded.storage_ref,"
                         "sync_status=excluded.sync_status,updated_at=excluded.updated_at",
                         (evidence_id, report_id, position, _text(storage_ref), "synced", stamp),
                     )
