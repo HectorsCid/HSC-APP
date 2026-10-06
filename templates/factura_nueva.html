@@ -107,6 +107,9 @@
 .invoice-client-row{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;align-items:end}.invoice-client-row .btn{min-height:38px}.payment-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px}.payment-tools label{display:flex;align-items:center;gap:8px;font-weight:500}.payment-tools input{width:auto}.fiscal-status.complete{background:transparent;border:0;padding:4px 0;color:var(--muted)}#fiscalDetails:not([open]){display:none}.invoice-references{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}#retentionPanel .section-title{margin-bottom:4px}#retentionPanel .pill{margin-left:auto}input,select{min-width:0}@media(max-width:650px){.invoice-client-row{grid-template-columns:1fr 1fr}.invoice-client-row>div{grid-column:1/-1}.payment-tools label{font-size:12px}select,input{font-size:16px}}
 </style>
 <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
+<style>
+.invoice-data-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 16px;align-items:end}.invoice-data-grid .invoice-client-row{grid-template-columns:minmax(0,1fr) 38px 38px;gap:6px;align-items:end}.invoice-data-grid .icon-btn{width:38px;height:38px;min-height:38px}.invoice-data-grid #paymentFields,.invoice-data-grid #invoiceReferences{display:contents}.invoice-data-grid .payment-tools{grid-column:1/-1;order:3;margin:0}.invoice-data-grid #openMore{justify-self:start;align-self:end;min-height:38px}.invoice-data-grid label{margin-top:0}.invoice-data-grid input,.invoice-data-grid select{height:38px;padding:7px 9px;text-overflow:ellipsis}.invoice-data-grid .invoice-references{border:0;padding:0;margin:0}#fiscalDetails .details-body{grid-template-columns:repeat(3,minmax(0,1fr))}#additionalOptions .row{grid-template-columns:repeat(4,minmax(0,1fr))}.service-picker{grid-template-columns:minmax(240px,420px) auto;justify-content:start;padding:10px}.invoice-data-grid>div{min-width:0}@media(max-width:950px){.invoice-data-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.invoice-data-grid{grid-template-columns:1fr}.invoice-data-grid input,.invoice-data-grid select{height:44px}.invoice-data-grid .payment-tools{grid-column:auto}#fiscalDetails .details-body,#additionalOptions .row{grid-template-columns:1fr}.service-picker{grid-template-columns:minmax(0,1fr) auto}}
+</style>
   {% include "_pwa_head.html" %}
 </head>
 <body data-billing-environment="{{ facturama_environment|default('sandbox') }}">
@@ -140,7 +143,7 @@
       <div class="card invoice-step">
         <h3 class="section-title"><span class="step-number">1</span> Datos de la factura</h3>
 
-        <div class="invoice-client-row"><div>
+        <div id="invoiceDataGrid" class="invoice-data-grid"><div class="invoice-client-row"><div>
         <label for="cliente">Cliente</label>
         <select id="cliente">
           <option value="">— Selecciona un cliente —</option>
@@ -155,15 +158,18 @@
             {% endfor %}
           {% endif %}
         </select>
-        </div><button type="button" class="btn" id="openFiscal"><svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16v4ZM13.5 6.5l4 4"/></svg>Datos fiscales</button><button type="button" class="btn" id="openMore"><svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Más opciones</button></div>
-        <div class="row row-2">
+        </div><button type="button" class="btn icon-btn" id="addInvoiceClient" title="Agregar cliente" aria-label="Agregar cliente"><svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><button type="button" class="btn icon-btn" id="openFiscal" title="Editar cliente seleccionado" aria-label="Editar cliente seleccionado"><svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16v4ZM13.5 6.5l4 4"/></svg></button></div>
+        <div class="row row-2" id="paymentFields">
           <div><label>Forma de pago</label><select id="forma" required><option value="03">03 - Transferencia</option><option value="01">01 - Efectivo</option><option value="28">28 - Tarjeta de débito</option><option value="99">99 - Por definir</option></select></div>
           <div><label>Método de pago</label><select id="metodo" required><option value="PUE">PUE - Una exhibición</option><option value="PPD">PPD - Parcialidades</option></select></div>
         </div>
         <div class="payment-tools"><button type="button" class="btn" id="switchPue" hidden>Cambiar a una exhibición</button><label><input type="checkbox" id="rememberPayment"> Usar este pago como predeterminado del cliente al timbrar</label></div>
         <div class="row row-2 invoice-references" id="invoiceReferences"></div>
+        <button type="button" class="btn" id="openMore"><svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Más opciones</button>
+        </div>
         <details class="billing-more" id="fiscalDetails" style="margin-top:11px;box-shadow:none">
           <summary>Datos fiscales del cliente</summary>
+          <div id="newInvoiceClientName" hidden style="padding:12px 15px 0"><label for="invoiceClientName">Nombre del cliente</label><input id="invoiceClientName" maxlength="150" placeholder="Nombre comercial o empresa"></div>
           <div class="details-body row row-2">
           <div><label>RFC</label><input id="rfc" placeholder="Ej. ABCD010101XXX" required /></div>
           <div><label>Razón social</label><input id="razon" required /></div>
@@ -173,6 +179,7 @@
           <div><label>Uso de CFDI</label><select id="uso" required><option value="G03">G03 - Gastos en general</option><option value="G01">G01 - Adquisición de mercancías</option><option value="S01">S01 - Sin efectos fiscales</option></select></div>
           </div>
         </details>
+        <div class="actions" id="invoiceClientSaveActions" hidden><button type="button" class="btn" id="saveInvoiceClient">Guardar cliente</button><button type="button" class="btn" id="cancelInvoiceClient">Cerrar</button><span id="invoiceClientSaveStatus" role="status" class="pill"></span></div>
         <div id="fiscalStatus" class="fiscal-status" role="status" hidden></div>
       </div>
       <div class="card invoice-step">
@@ -434,6 +441,7 @@
       })();
 
       const sel = document.getElementById('cliente');
+      window.registerInvoiceClient=(name,record)=>{byName[name]={...(byName[name]||{}),...record};if(![...sel.options].some(o=>o.value===name))sel.add(new Option(name,name));sel.value=name;};
       if (sel && sel.options.length <= 1) {
         const nombres = Object.keys(byName).sort((a,b)=>a.localeCompare(b,'es'));
         for (const nombre of nombres) {
@@ -558,10 +566,35 @@
     metodo.addEventListener('change', syncForma);
     forma.addEventListener('change', ()=>{if(forma.value==='99') metodo.value='PPD';syncForma();});
     document.getElementById('switchPue').onclick=()=>{metodo.value='PUE';syncForma();forma.focus();};
-    document.getElementById('openFiscal').onclick=()=>{const panel=document.getElementById('fiscalDetails');panel.open=!panel.open;if(panel.open)document.getElementById('rfc').focus();};
+    let creatingInvoiceClient=false;
+    function showInvoiceClient(create){
+      if(!create && !document.getElementById('cliente').value){msg(false,'Primero selecciona el cliente que quieres editar.');return;}
+      creatingInvoiceClient=create;
+      document.getElementById('newInvoiceClientName').hidden=!create;
+      document.getElementById('invoiceClientSaveActions').hidden=false;
+      document.getElementById('invoiceClientSaveStatus').textContent='';
+      document.getElementById('fiscalDetails').open=true;
+      if(create){['invoiceClientName','rfc','razon','cp','email'].forEach(id=>document.getElementById(id).value='');}
+      document.getElementById(create?'invoiceClientName':'rfc').focus();
+    }
+    document.getElementById('openFiscal').onclick=()=>showInvoiceClient(false);
+    document.getElementById('addInvoiceClient').onclick=()=>showInvoiceClient(true);
+    document.getElementById('cancelInvoiceClient').onclick=()=>{document.getElementById('fiscalDetails').open=false;document.getElementById('invoiceClientSaveActions').hidden=true;document.getElementById('cliente').dispatchEvent(new Event('change'));};
+    document.getElementById('saveInvoiceClient').onclick=async()=>{
+      const button=document.getElementById('saveInvoiceClient'),status=document.getElementById('invoiceClientSaveStatus');
+      const name=creatingInvoiceClient?document.getElementById('invoiceClientName').value.trim():document.getElementById('cliente').value;
+      if(!name){status.textContent='Escribe el nombre del cliente.';return;}
+      const record=Object.fromEntries([['rfc','rfc'],['razon_social','razon'],['cp','cp'],['correo_facturacion','email'],['regimen_fiscal','regimen'],['uso_cfdi','uso']].map(([key,id])=>[key,document.getElementById(id).value]));
+      button.disabled=true;status.textContent='Guardando…';
+      try{const response=await fetch('/api/clientes/fiscales',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cliente:name,crear_cliente:creatingInvoiceClient,...record})});const result=await response.json();if(!response.ok||!result.ok)throw Error(result.error||'No se pudo guardar.');window.registerInvoiceClient(name,record);creatingInvoiceClient=false;document.getElementById('newInvoiceClientName').hidden=true;status.textContent='Cliente guardado.';updateFiscalStatus();}
+      catch(error){status.textContent=error.message;}finally{button.disabled=false;}
+    };
     document.getElementById('openMore').onclick=()=>{const panel=document.getElementById('additionalOptions');panel.open=true;panel.scrollIntoView({behavior:'smooth',block:'center'});};
     ['ordenCompra','folioCotizacion'].forEach(id=>document.getElementById('invoiceReferences').appendChild(document.getElementById(id).parentElement));
     ['retencionIsr','retencionIva'].forEach(id=>document.getElementById('retentionFields').appendChild(document.getElementById(id).parentElement));
+    const dataGrid=document.getElementById('invoiceDataGrid');
+    ['ordenCompra','folioCotizacion','retencionIsr','retencionIva'].forEach(id=>dataGrid.insertBefore(document.getElementById(id).parentElement,document.getElementById('openMore')));
+    document.getElementById('retentionPanel').hidden=true;
     syncForma();
     if(!document.getElementById('cliente').value) loadFiscalCatalogs();
 

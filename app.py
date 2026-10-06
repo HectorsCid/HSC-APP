@@ -6353,6 +6353,14 @@ def guardar_datos_fiscales_cliente():
 
     with _CLIENTES_DATA_LOCK:
         canonical_name, client = _resolver_cliente_catalogo(nombre, payload.get("rfc"))
+        if payload.get("crear_cliente") is True:
+            if nombre in clientes_predefinidos:
+                return jsonify({"ok": False, "error": "Ese nombre de cliente ya existe. Selecciónalo para editarlo."}), 409
+            if len(nombre) > 150:
+                return jsonify({"ok": False, "error": "El nombre del cliente es demasiado largo."}), 400
+            canonical_name = nombre
+            client = {"atencion": [], "contactos": [], "sucursales": [], "tiene_poliza": False}
+            clientes_predefinidos[nombre] = client
         if not canonical_name or client is None:
             return jsonify({"ok": False, "error": "El cliente ya no existe."}), 404
         correo_facturacion = str(payload.get("correo_facturacion") or "").strip()
@@ -6384,6 +6392,8 @@ def guardar_datos_fiscales_cliente():
                 method, form = "PPD", "99"
             values.update(forma_pago_default=form, metodo_pago_default=method)
         for key, value in values.items():
+            if key in {"retencion_isr_tasa", "retencion_iva_tasa"} and key not in payload:
+                continue
             if value or key in {"retencion_isr_tasa", "retencion_iva_tasa"}:
                 client[key] = value
         guardar_clientes(clientes_predefinidos)
