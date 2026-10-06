@@ -103,6 +103,9 @@
       .stamp-bar{margin-left:-11px;margin-right:-11px;margin-bottom:-11px;border-radius:16px 16px 0 0;padding:11px}.stamp-bar .actions{gap:7px}.stamp-bar .btn{min-height:44px}.stamp-bar #btnSaveTemplate{padding-inline:11px}.stamp-bar #btnSaveTemplate .button-label{display:none}
     }
 </style>
+<style>
+.invoice-client-row{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;align-items:end}.invoice-client-row .btn{min-height:38px}.payment-tools{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:8px}.payment-tools label{display:flex;align-items:center;gap:8px;font-weight:500}.payment-tools input{width:auto}.fiscal-status.complete{background:transparent;border:0;padding:4px 0;color:var(--muted)}#fiscalDetails:not([open]){display:none}.invoice-references{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}#retentionPanel .section-title{margin-bottom:4px}#retentionPanel .pill{margin-left:auto}input,select{min-width:0}@media(max-width:650px){.invoice-client-row{grid-template-columns:1fr 1fr}.invoice-client-row>div{grid-column:1/-1}.payment-tools label{font-size:12px}select,input{font-size:16px}}
+</style>
 <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
 </head>
@@ -137,7 +140,8 @@
       <div class="card invoice-step">
         <h3 class="section-title"><span class="step-number">1</span> Datos de la factura</h3>
 
-        <label>Cliente</label>
+        <div class="invoice-client-row"><div>
+        <label for="cliente">Cliente</label>
         <select id="cliente">
           <option value="">— Selecciona un cliente —</option>
           {% if clientes is mapping %}
@@ -151,12 +155,15 @@
             {% endfor %}
           {% endif %}
         </select>
+        </div><button type="button" class="btn" id="openFiscal"><svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16v4ZM13.5 6.5l4 4"/></svg>Datos fiscales</button><button type="button" class="btn" id="openMore"><svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Más opciones</button></div>
         <div class="row row-2">
           <div><label>Forma de pago</label><select id="forma" required><option value="03">03 - Transferencia</option><option value="01">01 - Efectivo</option><option value="28">28 - Tarjeta de débito</option><option value="99">99 - Por definir</option></select></div>
           <div><label>Método de pago</label><select id="metodo" required><option value="PUE">PUE - Una exhibición</option><option value="PPD">PPD - Parcialidades</option></select></div>
         </div>
+        <div class="payment-tools"><button type="button" class="btn" id="switchPue" hidden>Cambiar a una exhibición</button><label><input type="checkbox" id="rememberPayment"> Usar este pago como predeterminado del cliente al timbrar</label></div>
+        <div class="row row-2 invoice-references" id="invoiceReferences"></div>
         <details class="billing-more" id="fiscalDetails" style="margin-top:11px;box-shadow:none">
-          <summary><svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16v4ZM13.5 6.5l4 4"/></svg>Ver o corregir datos fiscales</summary>
+          <summary>Datos fiscales del cliente</summary>
           <div class="details-body row row-2">
           <div><label>RFC</label><input id="rfc" placeholder="Ej. ABCD010101XXX" required /></div>
           <div><label>Razón social</label><input id="razon" required /></div>
@@ -203,7 +210,8 @@
         <div id="conceptEmpty" class="concept-empty">Todavía no hay partidas. Agrega la primera arriba.</div>
       </div>
 
-      <details class="billing-more invoice-step">
+      <div class="card invoice-step" id="retentionPanel"><h3 class="section-title"><svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 4v16M17 4v16M4 17h16"/></svg>Retenciones <span class="pill">Opcional</span></h3><div class="row row-2" id="retentionFields"></div></div>
+      <details class="billing-more invoice-step" id="additionalOptions">
         <summary><span class="step-number">3</span><svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="var(--card)"/><circle cx="15" cy="12" r="2" fill="var(--card)"/><circle cx="11" cy="18" r="2" fill="var(--card)"/></svg>Opciones adicionales</summary>
         <div class="details-body">
           <div class="row row-2">
@@ -462,7 +470,8 @@
         setVal('email', invoiceContact?.correo || legacyEmail);
         setVal('retencionIsr', c.retencion_isr_tasa || '0');
         setVal('retencionIva', c.retencion_iva_tasa || '0');
-        await loadFiscalCatalogs(rfc, {regimen, uso});
+        document.getElementById('rememberPayment').checked = false;
+        await loadFiscalCatalogs(rfc, {regimen, uso, forma:c.forma_pago_default || '03', metodo:c.metodo_pago_default || 'PUE'});
         updateFiscalStatus();
       }
 
@@ -501,7 +510,7 @@
         ? `Falta para timbrar: ${missing.join(', ')}. Se guardará después de timbrar correctamente.`
         : (missingEmail
           ? 'Datos fiscales completos. El correo es opcional y solo se necesita para enviarla.'
-          : 'Datos fiscales completos. Cualquier ajuste se guardará después de timbrar correctamente.');
+          : `✓ Datos fiscales completos · ${document.getElementById('rfc').value}`);
     }
 
     async function persistClientFiscalData(){
@@ -512,6 +521,10 @@
           method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
           body:JSON.stringify({
             cliente,
+            ...(document.getElementById('rememberPayment').checked ? {
+              forma_pago_default:document.getElementById('forma').value,
+              metodo_pago_default:document.getElementById('metodo').value
+            } : {}),
             rfc:document.getElementById('rfc').value,
             razon_social:document.getElementById('razon').value,
             cp:document.getElementById('cp').value,
@@ -539,10 +552,18 @@
     function syncForma(){
       if (metodo.value === 'PPD') { forma.value='99'; forma.disabled=true; }
       else { if(forma.value==='99') forma.value='03'; forma.disabled=false; }
+      metodo.disabled = forma.value === '99';
+      document.getElementById('switchPue').hidden = metodo.value !== 'PPD';
     }
     metodo.addEventListener('change', syncForma);
+    forma.addEventListener('change', ()=>{if(forma.value==='99') metodo.value='PPD';syncForma();});
+    document.getElementById('switchPue').onclick=()=>{metodo.value='PUE';syncForma();forma.focus();};
+    document.getElementById('openFiscal').onclick=()=>{const panel=document.getElementById('fiscalDetails');panel.open=!panel.open;if(panel.open)document.getElementById('rfc').focus();};
+    document.getElementById('openMore').onclick=()=>{const panel=document.getElementById('additionalOptions');panel.open=true;panel.scrollIntoView({behavior:'smooth',block:'center'});};
+    ['ordenCompra','folioCotizacion'].forEach(id=>document.getElementById('invoiceReferences').appendChild(document.getElementById(id).parentElement));
+    ['retencionIsr','retencionIva'].forEach(id=>document.getElementById('retentionFields').appendChild(document.getElementById(id).parentElement));
     syncForma();
-    loadFiscalCatalogs();
+    if(!document.getElementById('cliente').value) loadFiscalCatalogs();
 
     // ------- Conceptos -------
     const tbody = document.getElementById('tbody');

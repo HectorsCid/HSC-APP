@@ -4,6 +4,12 @@
   let button=document.querySelector('[data-hsc-notices]');
   if(!button){const target=document.querySelector('.topbar,.st-actions');if(!target)return;button=document.createElement('button');button.type='button';button.className='icon-btn';button.dataset.hscNotices='';button.innerHTML='🔔 <span data-notice-count></span>';target.append(button);}
   const api='/api/operaciones/avisos';
+  const noticeAccount=document.querySelector('meta[name="hsc-account"]')?.content || document.body.dataset.userId || '';
+  const fetch=(url,options={})=>{
+    const headers=new Headers(options.headers || {});
+    if(options.method && !['GET','HEAD','OPTIONS'].includes(options.method.toUpperCase())) headers.set('X-HSC-Account',noticeAccount);
+    return window.fetch(url,{...options,headers});
+  };
   const style=document.createElement('style');
   style.textContent=`.hsc-notices{box-sizing:border-box;width:min(640px,calc(100vw - 24px));max-height:85dvh;overflow:auto;border:1px solid #475569;border-radius:18px;background:#111d30;color:#eef5ff;padding:22px;font:15px/1.5 system-ui}.hsc-notices::backdrop{background:#020617b8}.hsc-notices h2{font-size:23px;margin:0}.hsc-notices header{display:flex;justify-content:space-between;align-items:center;gap:12px}.hsc-notices button,.hsc-notices select,.hsc-notices a{background:#203452;color:#eef5ff;border:1px solid #526987;border-radius:9px;padding:8px 11px;cursor:pointer;font:inherit}.hsc-notices article{padding:14px 0;border-bottom:1px solid #334155}.hsc-notices p{margin:6px 0;overflow-wrap:anywhere}.hsc-notices small{color:#b6c6da}.hsc-notices .unread{border-left:3px solid #60a5fa;padding-left:12px}.hsc-notices nav{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.hsc-notices details{margin:12px 0;padding:12px;background:#182940;border-radius:10px}.hsc-notices .notice-actions{display:flex;gap:8px;margin-top:9px}`;
   document.head.append(style);

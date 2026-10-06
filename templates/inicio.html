@@ -498,12 +498,32 @@
         </div>
         <div class="summary-actions">
           <button class="btn" type="submit" form="form-datos" formaction="{{ url_for('vista_previa') }}" formmethod="post"><svg class="line-icon" aria-hidden="true"><use href="#c-eye"/></svg>Vista previa</button>
-          <button class="btn btn-primary" type="submit" form="form-datos" formaction="{{ url_for('generar_pdf') }}" formmethod="post"><svg class="line-icon" aria-hidden="true"><use href="#c-file"/></svg>Generar PDF</button>
+          <button id="generateQuotePdf" class="btn btn-primary" type="submit" form="form-datos" formaction="{{ url_for('generar_pdf') }}" formmethod="post"><svg class="line-icon" aria-hidden="true"><use href="#c-file"/></svg>Generar PDF</button>
         </div>
       </div>
     </div>
   </div>
 
+  <div id="quotePdfProgress" role="status" aria-live="polite" hidden style="position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:20px">
+    <div style="padding:22px;border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--ink);max-width:480px;box-shadow:0 18px 60px #0003"><strong style="display:flex;gap:12px;align-items:center"><span class="quote-pdf-spinner" aria-hidden="true"></span>Generando la cotización y respaldando el PDF…</strong><p style="margin-bottom:0">El proceso comenzó. Espera un momento; no necesitas pulsar otra vez.</p></div>
+  </div>
+  <style>.quote-pdf-spinner{width:22px;height:22px;flex:none;border:3px solid #aac8eb;border-top-color:#397bbb;border-radius:50%;animation:quotePdfSpin .8s linear infinite}@keyframes quotePdfSpin{to{transform:rotate(360deg)}}</style>
+  <script>
+  (()=>{
+    const form=document.getElementById('form-datos'),button=document.getElementById('generateQuotePdf'),progress=document.getElementById('quotePdfProgress');
+    let generating=false;
+    form.addEventListener('submit',event=>{
+      if(generating){event.preventDefault();return;}
+      if(event.submitter!==button)return;
+      generating=true;
+      // Keep the submitter enabled until the browser captures its formaction.
+      button.setAttribute('aria-disabled','true');
+      button.style.pointerEvents='none';
+      progress.hidden=false;progress.style.display='flex';
+    });
+    window.addEventListener('pageshow',()=>{generating=false;button.removeAttribute('aria-disabled');button.style.pointerEvents='';progress.hidden=true;progress.style.display='none';});
+  })();
+  </script>
   <!-- Datos clientes embebidos -->
 <script type="application/json" id="clientes-data">
   {{ clientes | tojson | safe }}

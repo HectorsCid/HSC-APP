@@ -807,6 +807,13 @@
     document.getElementById('tabFinalizadas').addEventListener('click', ()=>setMode('finalizadas'));
     document.getElementById('tabBorradores').addEventListener('click', ()=>setMode('borradores'));
     load();
+    const requestedMail = new URLSearchParams(window.location.search).get('enviar_mail');
+    if(requestedMail) {
+      openQuoteMail(requestedMail);
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('enviar_mail');
+      window.history.replaceState(window.history.state, '', cleanUrl);
+    }
   })();
   </script>
 </body>

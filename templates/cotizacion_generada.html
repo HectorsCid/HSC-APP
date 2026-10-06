@@ -79,7 +79,7 @@
 
         <div class="section-title">Documento</div>
         <div class="actions">
-          <a class="btn primary" href="{{ pdf_descarga_url }}" download="{{ nombre_archivo }}"><svg class="line-icon" aria-hidden="true"><use href="#c-download"/></svg>Descargar PDF</a>
+          <a class="btn primary" href="{{ url_for('ui_inicio_cotizacion', enviar_mail=folio) }}"><svg class="line-icon" aria-hidden="true"><use href="#c-mail"/></svg>Enviar por mail</a>
           <button class="btn whatsapp" id="sharePdf" type="button"><svg class="line-icon" aria-hidden="true"><use href="#c-external"/></svg>Compartir PDF por WhatsApp</button>
           <a class="btn" href="{{ archivo_url }}" target="_blank" rel="noopener"><svg class="line-icon" aria-hidden="true"><use href="#c-external"/></svg>Abrir PDF en Drive</a>
           <a class="btn" href="{{ carpeta_url }}" target="_blank" rel="noopener"><svg class="line-icon" aria-hidden="true"><use href="#c-folder"/></svg>Abrir carpeta en Drive</a>
@@ -140,7 +140,7 @@
         if (error && error.name === 'AbortError') {
           showNote('No se compartió el archivo. Puedes intentarlo nuevamente.');
         } else {
-          showNote('No se pudo preparar el archivo. Usa el botón Descargar PDF.');
+          showNote('No se pudo preparar el archivo. Puedes abrir el PDF en Drive e intentarlo nuevamente.');
         }
       } finally {
         shareButton.disabled = false;

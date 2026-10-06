@@ -6375,6 +6375,14 @@ def guardar_datos_fiscales_cliente():
             duplicate_id = _id_cliente_duplicado(values["id_cliente"], except_alias=canonical_name)
             if duplicate_id:
                 return jsonify({"ok": False, "error": f"Ese ID_Cliente ya está asignado a {duplicate_id}."}), 409
+        if "forma_pago_default" in payload or "metodo_pago_default" in payload:
+            method = str(payload.get("metodo_pago_default") or "PUE").strip()
+            form = str(payload.get("forma_pago_default") or "03").strip()
+            if method not in {"PUE", "PPD"} or not re.fullmatch(r"\d{2}", form):
+                return jsonify({"ok": False, "error": "Revisa la forma y el método de pago predeterminados."}), 400
+            if method == "PPD" or form == "99":
+                method, form = "PPD", "99"
+            values.update(forma_pago_default=form, metodo_pago_default=method)
         for key, value in values.items():
             if value or key in {"retencion_isr_tasa", "retencion_iva_tasa"}:
                 client[key] = value
