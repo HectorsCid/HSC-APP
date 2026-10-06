@@ -125,6 +125,7 @@ def _styles():
     return {
         "body": ParagraphStyle("Body", parent=base["BodyText"], fontName="Helvetica", fontSize=8.1, leading=10.2, textColor=INK),
         "small": ParagraphStyle("Small", parent=base["BodyText"], fontName="Helvetica", fontSize=6.7, leading=8.2, textColor=MUTED),
+        "signature_label": ParagraphStyle("SignatureLabel", parent=base["BodyText"], fontName="Helvetica-Bold", fontSize=7.5, leading=9, textColor=BLUE),
         "tiny": ParagraphStyle("Tiny", parent=base["BodyText"], fontName="Courier", fontSize=4.8, leading=5.8, textColor=MUTED, splitLongWords=True),
         "label": ParagraphStyle("Label", parent=base["BodyText"], fontName="Helvetica-Bold", fontSize=6.5, leading=8, textColor=BLUE, spaceAfter=2),
         "table_header": ParagraphStyle("TableHeader", parent=base["BodyText"], fontName="Helvetica-Bold", fontSize=6.5, leading=8, textColor=WHITE),
@@ -194,13 +195,10 @@ class HscInvoiceDoc(BaseDocTemplate):
         canvas.setFont("Helvetica-Bold", 11)
         canvas.drawCentredString(width - 36 * mm, height - 18.7 * mm, folio_label)
         if doc.page == 1:
-            order = self.data.get("order_number")
             quote_folio = self.data.get("quote_folio")
             references = []
             if quote_folio:
                 references.append(f"COTIZACIÓN HSC  {quote_folio}")
-            if order:
-                references.append(f"ORDEN DE COMPRA  {order}")
             if references:
                 canvas.setFillColor(NAVY)
                 canvas.setFont("Helvetica-Bold", 7.2)
@@ -272,7 +270,8 @@ def build_invoice_pdf(
         [_p("MÉTODO DE PAGO", styles["chip_label"]), _p(f"{data['payment_method']}  {PAYMENT_METHODS.get(data['payment_method'], '')}", styles["chip_value"])],
         [_p("FORMA DE PAGO", styles["chip_label"]), _p(f"{data['payment_form']}  {PAYMENT_FORMS.get(data['payment_form'], '')}", styles["chip_value"])],
         [_p("MONEDA", styles["chip_label"]), _p(data["currency"], styles["chip_value"])],
-    ]], colWidths=[55 * mm, 91 * mm, 34 * mm])
+        [_p("ORDEN DE COMPRA", styles["chip_label"]), _p(data["order_number"], styles["chip_value"]) if data["order_number"] else Paragraph("&#160;", styles["chip_value"])],
+    ]], colWidths=[55 * mm, 65 * mm, 20 * mm, 40 * mm])
     payment.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), .5, LINE), ("ROUNDEDCORNERS", [8]),
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#E7EAEE")),
@@ -326,13 +325,13 @@ def build_invoice_pdf(
     signature = Table([
         [_p("REVISIÓN DEL USUARIO", styles["section"]), "", ""],
         ["", "", ""],
-        [_p("Nombre", styles["small"]), _p("Firma", styles["small"]), _p("Fecha", styles["small"])],
-    ], colWidths=[45 * mm, 36 * mm, 18 * mm], rowHeights=[5 * mm, 12 * mm, 4 * mm])
+        [_p("Nombre", styles["signature_label"]), _p("Firma", styles["signature_label"]), _p("Fecha", styles["signature_label"])],
+    ], colWidths=[45 * mm, 36 * mm, 18 * mm], rowHeights=[5 * mm, 12 * mm, 5 * mm])
     signature.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), .6, LINE), ("ROUNDEDCORNERS", [7]),
+        ("BOX", (0, 0), (-1, -1), .8, BLUE), ("ROUNDEDCORNERS", [7]),
         ("SPAN", (0, 0), (-1, 0)),
-        ("LINEBELOW", (0, 1), (-1, 1), .5, LINE),
-        ("LINEBEFORE", (1, 1), (-1, -1), .5, LINE),
+        ("LINEBELOW", (0, 1), (-1, 1), .7, BLUE),
+        ("LINEBEFORE", (1, 1), (-1, -1), .7, BLUE),
         ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7),
         ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
     ]))
