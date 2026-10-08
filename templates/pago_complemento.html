@@ -159,6 +159,13 @@
     </div>
     <div id="balanceNote" class="balance-note" style="display:none"></div>
     <div class="row row-2">
+      <div><label for="payer_bank">Banco de origen del pago (opcional)</label>
+        <select id="payer_bank"><option value="">Sin indicar</option><option value="BBA830831LJ2">BBVA México</option><option value="other">Otro banco nacional · indicar RFC</option></select>
+        <small>Banco desde el que el cliente pagó; no es tu banco receptor. No se solicita número de cuenta.</small>
+      </div>
+      <div id="payerBankOther" hidden><label for="payer_bank_rfc">RFC de la institución bancaria</label><input id="payer_bank_rfc" maxlength="12" placeholder="RFC del banco, no del cliente" /></div>
+    </div>
+    <div class="row row-2">
       <div>
         <label>Fecha de pago (opcional)</label>
         <input id="pay_date" type="datetime-local" />
@@ -257,12 +264,19 @@ $('btnBuscar').onclick = async () => {
   }
 };
 
+$('payer_bank').onchange = () => { $('payerBankOther').hidden = $('payer_bank').value !== 'other'; };
+$('payment_form').addEventListener('change', () => {
+  const allowed = ['02','03','04','28','29'].includes($('payment_form').value);
+  $('payer_bank').disabled = !allowed;
+  if(!allowed){$('payer_bank').value='';$('payerBankOther').hidden=true;}
+});
 $('btnCrear').onclick = async () => {
   if(lock) return;
   if(!cachedInvoice){ msg(false,'Primero busca la factura'); return; }
   const body = {
     invoice_id: cachedInvoice.id,
     payment_form: $('payment_form').value,
+    payer_bank_rfc: $('payer_bank').value === 'other' ? $('payer_bank_rfc').value.trim().toUpperCase() : $('payer_bank').value,
     amount: parseFloat($('amount').value||0),
     tax_system: $('invRegimen').value.trim(),
     tax_zip: $('invCP').value.trim()

@@ -69,6 +69,23 @@ class FacturamaPaymentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no es PPD"):
             payments._build_facturama_payment(invoice, {"amount": 116})
 
+    def test_optional_payer_bank_without_account(self):
+        with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
+            for bank in ("", "BBA830831LJ2"):
+                cfdi, _, _ = payments._build_facturama_payment(self.invoice(), {
+                    "amount": 58, "payment_form": "03", "payer_bank_rfc": bank,
+                })
+                payment = cfdi["Complemento"]["Payments"][0]
+                self.assertEqual(payment.get("RfcIssuerPayerAccount", ""), bank)
+                self.assertNotIn("PayerAccount", payment)
+
+    def test_rejects_invalid_bank(self):
+        from payment_banks import payer_bank_rfc
+        with self.assertRaises(ValueError):
+            payer_bank_rfc("BBVA", "03")
+        with self.assertRaises(ValueError):
+            payer_bank_rfc("BBA830831LJ2", "01")
+
     def test_info_reads_facturama_detail(self):
         with patch.object(payments, "_facturama_detail", return_value=self.invoice()):
             response = self.client.get("/api/pagos/info/invoice-id")

@@ -1285,12 +1285,12 @@ def _hsc_invoice_pdf(xml_bytes, inv_id, *, internal_folio="", order_number="", q
 
 
 def _facturama_printable_pdf(xml_bytes, inv_id, *, internal_folio="", order_number="", quote_folio=""):
-    """Personaliza facturas de ingreso y conserva el formato oficial de otros CFDI."""
+    """Personaliza ingresos y pagos 2.0; conserva el formato oficial de otros CFDI."""
     try:
         cfdi_type = ET.fromstring(xml_bytes).attrib.get("TipoDeComprobante", "I")
     except (ET.ParseError, TypeError, ValueError):
         cfdi_type = "I"
-    if cfdi_type == "I":
+    if cfdi_type == "I" or (cfdi_type == "P" and ET.fromstring(xml_bytes).find('.//{http://www.sat.gob.mx/Pagos20}Pago') is not None):
         return _hsc_invoice_pdf(
             xml_bytes, inv_id,
             internal_folio=internal_folio,

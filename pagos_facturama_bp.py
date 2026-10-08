@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, request
 import requests
 
 import facturacion_bp as billing
+from payment_banks import payer_bank_rfc
 
 
 pagos_bp = Blueprint("pagos", __name__, url_prefix="/api/pagos")
@@ -228,6 +229,9 @@ def _build_facturama_payment(invoice, body):
     }
     if body.get("reference"):
         payment["OperationNumber"] = str(body["reference"]).strip()[:100]
+    bank_rfc = payer_bank_rfc(body.get('payer_bank_rfc'), payment['PaymentForm'])
+    if bank_rfc:
+        payment['RfcIssuerPayerAccount'] = bank_rfc
 
     return {
         "CfdiType": "P",

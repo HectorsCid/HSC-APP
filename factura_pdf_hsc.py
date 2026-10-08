@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree as ET
+from payment_banks import BANK_NAMES
 
 from reportlab.graphics.barcode.qr import QrCodeWidget
 from reportlab.graphics.shapes import Drawing
@@ -40,6 +41,7 @@ WHITE = colors.white
 
 CFDI_NS = "http://www.sat.gob.mx/cfd/4"
 TFD_NS = "http://www.sat.gob.mx/TimbreFiscalDigital"
+PAGOS_NS = 'http://www.sat.gob.mx/Pagos20'
 
 PAYMENT_FORMS = {
     "01": "Efectivo", "02": "Cheque nominativo", "03": "Transferencia electrónica",
@@ -117,6 +119,13 @@ def parse_cfdi(xml_path: str | Path) -> dict:
         "tax_total": taxes.attrib.get("TotalImpuestosTrasladados", "0") if taxes is not None else "0",
         "retained_total": taxes.attrib.get("TotalImpuestosRetenidos", "0") if taxes is not None else "0",
         "concepts": concepts,
+        "payments": [{"attributes": dict(p.attrib),
+                      "documents": [dict(d.attrib, _taxes=[dict(t.attrib) for t in d.findall(f'.//{{{PAGOS_NS}}}TrasladoDR')] + [dict(t.attrib) for t in d.findall(f'.//{{{PAGOS_NS}}}RetencionDR')]) for d in p.findall(f'{{{PAGOS_NS}}}DoctoRelacionado')],
+                      "taxes": [dict(t.attrib) for t in p.findall(f'.//{{{PAGOS_NS}}}TrasladoP')] +
+                               [dict(t.attrib) for t in p.findall(f'.//{{{PAGOS_NS}}}RetencionP')]}
+                     for p in root.findall(f'.//{{{PAGOS_NS}}}Pago')],
+        "payment_totals": dict(root.find(f'.//{{{PAGOS_NS}}}Totales').attrib)
+            if root.find(f'.//{{{PAGOS_NS}}}Totales') is not None else {},
     }
 
 
@@ -184,7 +193,7 @@ class HscInvoiceDoc(BaseDocTemplate):
         canvas.rect(59 * mm, height - 31 * mm, 1.4 * mm, 19 * mm, stroke=0, fill=1)
         canvas.setFillColor(NAVY)
         canvas.setFont("Helvetica-Bold", 15)
-        canvas.drawString(64 * mm, height - 22.5 * mm, "COMPROBANTE FISCAL")
+        canvas.drawString(64 * mm, height - 22.5 * mm, "COMPLEMENTO DE PAGO" if self.data['cfdi_type'] == 'P' else "COMPROBANTE FISCAL")
         canvas.setFillColor(BLUE)
         canvas.setFont("Helvetica-Bold", 7)
         canvas.drawString(64 * mm, height - 28 * mm, "CFDI 4.0")
@@ -233,7 +242,8 @@ def build_invoice_pdf(
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
     destination = output if hasattr(output, "write") else str(output)
-    doc = HscInvoiceDoc(destination, data, title=f"Factura {data['series']} {data['folio']}", author="HSC")
+    document_name = 'Complemento de pago' if data['cfdi_type'] == 'P' else 'Factura'
+    doc = HscInvoiceDoc(destination, data, title=f"{document_name} {data['series']} {data['folio']}", author="HSC")
     issuer = data["issuer"]
     receiver = data["receiver"]
     story = []
@@ -279,7 +289,42 @@ def build_invoice_pdf(
         ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8),
         ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]))
-    story += [recipient, Spacer(1, 3.2 * mm), payment, Spacer(1, 5 * mm), _p("CONCEPTOS FACTURADOS", styles["section"])]
+    is_payment = data['cfdi_type'] == 'P'
+    story += [recipient, Spacer(1, 3.2 * mm)]
+    if is_payment:
+        for index, entry in enumerate(data['payments'], 1):
+            attrs = entry['attributes']
+            rfc = attrs.get('RfcEmisorCtaOrd', '')
+            bank = BANK_NAMES.get(rfc, rfc or 'No indicado')
+            story.append(_p(f'PAGO {index} · DATOS DEL PAGO RECIBIDO', styles['section']))
+            fields = [('Fecha de pago', attrs.get('FechaPago')), ('Forma de pago', f"{attrs.get('FormaDePagoP', '')} {PAYMENT_FORMS.get(attrs.get('FormaDePagoP'), '')}"),
+                      ('Importe recibido', f"{_money(attrs.get('Monto'))} {attrs.get('MonedaP', '')}")]
+            if rfc:
+                fields += [('Institución bancaria de origen', bank), ('RFC del banco de origen', rfc)]
+            for key, title in [('NumOperacion','Referencia'),('TipoCambioP','Tipo de cambio'),('CtaOrdenante','Cuenta de origen'),('RfcEmisorCtaBen','RFC banco receptor'),('CtaBeneficiario','Cuenta receptora')]:
+                if attrs.get(key): fields.append((title,attrs[key]))
+            details = Table([[_p(k,styles['label']),_p(v,styles['value'])] for k,v in fields],colWidths=[65*mm,115*mm])
+            details.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),PALE_BLUE),('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+            story += [details,Spacer(1,4*mm)]
+            for related in entry['documents']:
+                story.append(_p('DOCUMENTO RELACIONADO',styles['section']))
+                for title,key in [('UUID de la factura','IdDocumento'),('Serie','Serie'),('Folio','Folio'),('Moneda','MonedaDR'),('Parcialidad','NumParcialidad'),('Saldo anterior','ImpSaldoAnt'),('Importe pagado','ImpPagado'),('Saldo pendiente','ImpSaldoInsoluto')]:
+                    if related.get(key): story.append(_p(f"{title}: {_money(related[key]) if key.startswith('Imp') else related[key]}",styles['body']))
+                story.append(Spacer(1,3*mm))
+                for key, title in [('EquivalenciaDR', 'Equivalencia de moneda'), ('ObjetoImpDR', 'Objeto de impuesto')]:
+                    if related.get(key): story.append(_p(f'{title}: {related[key]}', styles['small']))
+                for tax in related.get('_taxes', []):
+                    story.append(_p('Impuesto del documento · ' + ' · '.join(f'{k}: {v}' for k,v in tax.items()), styles['small']))
+            if entry['taxes']:
+                story.append(_p('IMPUESTOS DEL PAGO',styles['section']))
+                for tax in entry['taxes']: story.append(_p(' · '.join(f'{k}: {v}' for k,v in tax.items()),styles['small']))
+            story.append(Spacer(1,3*mm))
+        if data['payment_totals']:
+            story.append(_p('TOTALES DEL COMPLEMENTO (MXN)',styles['section']))
+            for key,value in data['payment_totals'].items(): story.append(_p(f'{key}: {_money(value)}',styles['body']))
+        story.append(Spacer(1,4*mm))
+    else:
+        story += [payment, Spacer(1, 5 * mm), _p("CONCEPTOS FACTURADOS", styles["section"])]
 
     rows = [[_p("#", styles["table_header"]), _p("DESCRIPCIÓN", styles["table_header"]),
              _p("CANT.", styles["table_header"]), _p("PRECIO", styles["table_header"]), _p("IMPORTE", styles["table_header"])]]
@@ -304,7 +349,8 @@ def build_invoice_pdf(
         ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, colors.HexColor('#FBFCFE')]),
     ]))
-    story += [concepts, Spacer(1, 5 * mm)]
+    if not is_payment:
+        story += [concepts, Spacer(1, 5 * mm)]
 
     totals_rows = [
         [_p("Subtotal", styles["body"]), _p(_money(data["subtotal"]), styles["right"])],
@@ -342,7 +388,8 @@ def build_invoice_pdf(
         ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
     ]))
-    story += [commercial, Spacer(1, 4 * mm)]
+    if not is_payment:
+        story += [commercial, Spacer(1, 4 * mm)]
 
     uuid = data["stamp"].get("UUID", "")
     fiscal_meta = [
