@@ -1,0 +1,58 @@
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const fs = require('node:fs');
+const events = {}, windowEvents = {};
+const elements = [];
+const element = () => {const el={hidden:false, listeners:{}, setAttribute(){}, addEventListener(name,fn){this.listeners[name]=fn;}, append(){}, appendChild(){}};elements.push(el);return el;};
+const document = {createElement:element, body:element(), head:element(), addEventListener(name, fn){events[name]=fn;}};
+let resolveFetch, rejectFetch;
+const window = {fetch:() => new Promise((resolve,reject) => {resolveFetch=resolve;rejectFetch=reject;}), addEventListener(name, fn){windowEvents[name]=fn;}};
+vm.runInNewContext(fs.readFileSync('static/waiting.js','utf8'), {document, window, URL, location:{href:'https://hsc.test/facturas/nueva', origin:'https://hsc.test'}});
+const messages = window.HSCWaiting.messageFor;
+assert.equal(messages('/api/operaciones/reports/1','GET'), null);
+assert.equal(messages('/healthz','GET'), null);
+assert.match(messages('/api/pagos/crear','POST'), /complemento/);
+assert.match(messages('/api/invoices/1/email','POST'), /correo/);
+assert.match(messages('/reportes/pdf_json/1','POST'), /PDF/);
+const form = {action:'https://hsc.test/generar_pdf'};
+function submit(prevented=false){let blocked=false;events.submit({target:form,defaultPrevented:prevented,preventDefault(){blocked=true;}});return blocked;}
+assert.equal(submit(true),false); // A rejected validation cannot lock the form.
+assert.equal(submit(),false);
+assert.equal(submit(),true);
+windowEvents.pageshow({persisted:true});
+assert.equal(submit(),false); // Returning from preview allows another submission.
+(async()=>{
+  const promise = window.fetch('/api/pagos/crear',{method:'POST'});
+  const response = {ok:true};resolveFetch(response);
+  assert.equal(await promise,response);
+  const failed = window.fetch('/api/pagos/crear',{method:'POST'});
+  rejectFetch(new Error('Sin conexión'));
+  await assert.rejects(failed,/Sin conexión/);
+  const notice=elements.find(el=>el.id==='hscWaitingNotice');
+  assert.equal(notice.hidden,false);
+  const labels=()=>elements.map(el=>el.textContent||'').join(' ');
+  assert.match(labels(),/Se perdió la conexión/);
+  const rejected=window.fetch('/api/pagos/crear',{method:'POST'});
+  resolveFetch({ok:false,status:409,json:async()=>({ok:false,error:'El reporte ya fue finalizado.'})});
+  const result=await rejected;
+  assert.equal((await result.json()).ok,false);
+  assert.match(labels(),/El reporte ya fue finalizado/);
+  const businessError=window.fetch('/api/pagos/crear',{method:'POST'});
+  resolveFetch({ok:true,status:200,json:async()=>({ok:false,error:'Saldo insuficiente.'})});
+  await (await businessError).json();
+  assert.match(labels(),/Saldo insuficiente/);
+  const close=elements.find(el=>el.textContent==='Cerrar');
+  close.listeners.click();assert.equal(notice.hidden,true);
+  const finish=window.HSCWaiting.begin('Guardando…');
+  assert.equal(notice.hidden,false);
+  close.listeners.click();assert.equal(notice.hidden,true);
+  finish();assert.equal(notice.hidden,true);
+  window.HSCWaiting.fail('Error SAT');assert.equal(notice.hidden,false);
+  close.listeners.click();assert.equal(notice.hidden,true);
+  const invoice=fs.readFileSync('templates/factura_nueva.html','utf8');
+  const errorFunction=invoice.match(/function showStampError\(text\)\{([\s\S]*?)\n    \}/)[1];
+  const cancel={hidden:true,disabled:true};
+  vm.runInNewContext(errorFunction,{text:'Nombre no coincide con SAT',document:{getElementById:()=>({})},stampConfirmSummary:{},setStampState(){},stampConfirmCancel:cancel,stampConfirmGo:{},stampConfirmModal:{classList:{add(){}}}});
+  assert.equal(cancel.hidden,false);assert.equal(cancel.disabled,false);
+  console.log('OK: mensajes, silencio de consultas automáticas, envío único y regreso de vista previa.');
+})();

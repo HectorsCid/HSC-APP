@@ -80,6 +80,8 @@
   }
 
   function mountDesktopHistory(){
+    // A visible, responsive back button is now supplied by navigation.js.
+    return;
     if(!isStandalone()) return;
     document.documentElement.classList.add('hsc-standalone');
     if(document.getElementById('hscDesktopHistory')) return;

@@ -60,7 +60,7 @@ _LAST10_CACHE = {"ts": 0, "items": []}
 REPORTES_ROOT_ID = os.environ.get("REPORTES_ROOT_ID", "13x9OPrPJNcT3E17lcyISbpL5uE6az5ty")
 REPORTES_APPSHEET_PATH_PREFIX = os.environ.get(
     "REPORTES_APPSHEET_PATH_PREFIX",
-    "/HSC/1. Refrigeración y Manto. industrial/01. Clientes/04. Reportes",
+    "/HSC/02. Reportes",
 ).rstrip("/")
 DIAG_RECORDS_FILENAME = os.environ.get("REPORTES_MANUALES_FILENAME", "reportes_manuales.json")
 _DIAG_RECORDS_LOCK = threading.RLock()
@@ -627,10 +627,13 @@ def _resolve_shortcut(file_id: str):
 
 def _normalize_relpath(p: str) -> str:
     p = (p or "").replace("\\", "/").strip().strip("/")
-    key = "/04. Reportes/".lower()
-    idx = p.lower().find(key)
-    if idx != -1:
-        p = p[idx + len(key):].strip("/")
+    # Both historic AppSheet paths and the shorter Drive layout remain readable.
+    normalized = '/' + p
+    for folder in ('04. Reportes', '02. Reportes'):
+        key = f'/{folder}/'.lower()
+        idx = normalized.lower().find(key)
+        if idx != -1:
+            return normalized[idx + len(key):].strip('/')
     return p
 
 def _resolve_path_to_id(path_str: str):

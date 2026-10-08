@@ -718,6 +718,7 @@
       formDatos.action = "{{ url_for('editar_sucursales_desde_cotizacion') }}";
       // Guardar los datos actuales antes de salir, sin exigir campos que aún
       // pueden estar vacíos en una cotización en proceso.
+      window.HSCWaiting?.begin('Guardando la cotización antes de abrir sucursales…');
       formDatos.submit();
     });
     if (btnEditar) {

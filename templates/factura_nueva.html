@@ -1049,6 +1049,8 @@
       stampConfirmSummary.hidden = true;
       setStampState('error', text);
       stampConfirmCancel.textContent = 'Corregir datos';
+      stampConfirmCancel.hidden = false;
+      stampConfirmCancel.disabled = false;
       stampConfirmGo.hidden = true;
       stampConfirmModal.classList.add('show');
     }
@@ -1095,7 +1097,8 @@
       stampButton.disabled = true;
       stampButton.innerHTML = '<span class="stamp-spinner" aria-hidden="true"></span>Validando…';
       stampConfirmGo.disabled = true;
-      stampConfirmCancel.hidden = true;
+      stampConfirmCancel.hidden = false;
+      stampConfirmCancel.textContent = 'Ocultar aviso (continúa el envío)';
       setStampState('pending', 'Validando los datos fiscales del receptor…');
       msg(true, 'Validando los datos fiscales del receptor antes de timbrar…');
       document.getElementById('accionesPost').style.display = 'none';

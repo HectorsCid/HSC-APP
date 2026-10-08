@@ -5,6 +5,14 @@ import reportes_bp as reports
 
 
 class ReportDriveReferenceTests(unittest.TestCase):
+    def test_old_and_short_paths_resolve_to_same_relative_photo(self):
+        relative = 'UVM/R1/Foto 3.jpg'
+        for path in ('/HSC/02. Reportes/', '/HSC/old/04. Reportes/',
+                     '04. Reportes/', '02. Reportes/',
+                     'G:\\Mi unidad\\HSC\\02. Reportes\\'):
+            self.assertEqual(reports._normalize_relpath(path + relative), relative)
+        self.assertEqual(reports._normalize_relpath(relative), relative)
+
     def test_drive_image_parser_accepts_direct_file_ids(self):
         file_id = "1AbCdEfGhIjKlMnOpQrStUvWxYz"
         self.assertEqual(reports._extract_drive_id(file_id), file_id)

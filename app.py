@@ -121,6 +121,13 @@ SCOPES = [
 ]
 
 ID_COT = '1oCf8Mt2nLynS6d2ryCngNyQ7rtf5jfiz'   # Carpeta "01. Cotizaciones" en Drive
+def _local_quotes_root():
+    configured = os.environ.get('COTIZACIONES_LOCAL_PATH')
+    if configured:
+        return configured
+    short = r"G:\Mi unidad\HSC\01. Cotizaciones"
+    legacy = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
+    return short if os.path.isdir(short) or not os.path.isdir(legacy) else legacy
 CLIENTES_FILENAME = 'clientes.json'           # Archivo para persistir clientes en Drive
 COTIZACIONES_FILENAME = 'cotizaciones.json'    # Archivo para persistir historial en Drive
 BORRADORES_FILENAME = 'borradores_cotizaciones.json'
@@ -1857,7 +1864,7 @@ def calcular_totales(partidas):
     return subtotal, iva, total
 
 def abrir_drive_local(cliente_nombre):
-    base = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
+    base = _local_quotes_root()
     cliente_seguro = (cliente_nombre or "SIN_CLIENTE").replace("/", "-").replace("\\", "-").strip()
     destino_dir = os.path.join(base, cliente_seguro)
     try:
@@ -2313,7 +2320,7 @@ def generar_pdf():
         return carpeta['id']
 
     def abrir_drive_local_win(cliente_nombre, sucursal_nombre, nombre_archivo):
-        base = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
+        base = _local_quotes_root()
         cliente_seguro = (cliente_nombre or "SIN_CLIENTE").replace("/", "-").replace("\\", "-").strip()
         dir_local = os.path.join(base, cliente_seguro)
         if sucursal_nombre:
@@ -2670,7 +2677,7 @@ def vista_previa():
 
 @app.route('/repositorio')
 def repositorio():
-    BASE_LOCAL_DRIVE = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
+    BASE_LOCAL_DRIVE = _local_quotes_root()
     use_drive = IS_RENDER or (not os.path.isdir(BASE_LOCAL_DRIVE))
 
     if use_drive:
@@ -2775,7 +2782,7 @@ def repositorio():
 
 @app.route('/repo/local/<cliente>/<path:filename>')
 def repo_local_file(cliente, filename):
-    BASE_LOCAL_DRIVE = r"G:\Mi unidad\appsheet\HSC\1. Refrigeración y Manto. industrial\01. Clientes\01. Cotizaciones"
+    BASE_LOCAL_DRIVE = _local_quotes_root()
     cliente_seguro = (cliente or "").replace("/", "-").replace("\\", "-").strip()
     base_cliente = os.path.join(BASE_LOCAL_DRIVE, cliente_seguro)
 
