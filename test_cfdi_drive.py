@@ -55,6 +55,16 @@ class _Drive:
 
 
 class CfdiDriveTests(unittest.TestCase):
+    def test_app_data_move_keeps_legacy_file_until_moved(self):
+        service = _Drive()
+        service.api.rows.append({'id':'old','name':'HSC-pagos-index.json',
+                                 'parent':cfdi_drive.FACTURAS_ROOT_FOLDER_ID,'mimeType':'application/json'})
+        self.assertEqual(cfdi_drive._json_parent(service,'HSC-pagos-index.json',None),cfdi_drive.FACTURAS_ROOT_FOLDER_ID)
+        service.api.rows[0]['parent'] = cfdi_drive.APP_DATA_FOLDER_ID
+        self.assertEqual(cfdi_drive._json_parent(service,'HSC-pagos-index.json',None),cfdi_drive.APP_DATA_FOLDER_ID)
+        self.assertEqual(cfdi_drive._json_parent(service,'HSC-centro-avisos.json',None),cfdi_drive.APP_DATA_FOLDER_ID)
+        self.assertEqual(cfdi_drive._json_parent(service,'reportes_manuales.json','reports'), 'reports')
+
     def test_uses_requested_facturas_root(self):
         self.assertEqual(
             cfdi_drive.FACTURAS_ROOT_FOLDER_ID,
@@ -95,13 +105,13 @@ class CfdiDriveTests(unittest.TestCase):
         self.assertEqual(saved["folder_id"], folder["id"])
         self.assertTrue(any(row["name"] == "Factura-1592.pdf" for row in drive.api.rows))
 
-    def test_payment_index_is_upserted_in_facturas_root(self):
+    def test_payment_index_is_upserted_in_app_data_folder(self):
         drive = _Drive()
         with patch.object(cfdi_drive, "get_drive_service_user", return_value=drive):
             first = cfdi_drive.backup_payments_index({"invoice": {"remaining_balance": 50}})
             second = cfdi_drive.backup_payments_index({"invoice": {"remaining_balance": 10}})
         row = next(item for item in drive.api.rows if item["name"] == cfdi_drive.PAYMENTS_INDEX_FILE)
-        self.assertEqual(row["parent"], cfdi_drive.FACTURAS_ROOT_FOLDER_ID)
+        self.assertEqual(row["parent"], cfdi_drive.APP_DATA_FOLDER_ID)
         self.assertTrue(first["ok"])
         self.assertTrue(second["ok"])
         self.assertEqual(drive.api.created, 1)

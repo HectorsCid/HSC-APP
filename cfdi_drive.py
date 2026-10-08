@@ -10,6 +10,12 @@ from auth_google import get_drive_service_user
 
 
 FACTURAS_ROOT_FOLDER_ID = "1uIl0PsJMWXapKKwEXJyW0ZpNlwt9ZPPh"
+APP_DATA_FOLDER_ID = "1XfpBHN37FCrVzIaLXczBx6YVsFsPUmyX"
+APP_DATA_FILES = frozenset({
+    "HSC-pagos-index.json", "HSC-envios-correo.json", "HSC-plantillas-factura.json",
+    "HSC-facturas-programadas.json", "HSC-notificaciones-dispositivos.json",
+    "HSC-solicitudes-timbrado.json", "HSC-cancelaciones-cfdi.json", "HSC-centro-avisos.json",
+})
 FOLDER_MIME = "application/vnd.google-apps.folder"
 PAYMENTS_INDEX_FILE = "HSC-pagos-index.json"
 
@@ -178,9 +184,21 @@ def download_invoice_support_documents(cliente, folio_interno, selected_ids):
     return result
 
 
-def load_json_file(filename, parent_id=FACTURAS_ROOT_FOLDER_ID, default=None):
+def _json_parent(service, filename, parent_id):
+    if parent_id is not None or filename not in APP_DATA_FILES:
+        return parent_id if parent_id is not None else FACTURAS_ROOT_FOLDER_ID
+    # During the move, update the existing file wherever it lives. Never create
+    # an empty replacement while the original is still in the legacy folder.
+    for folder in (APP_DATA_FOLDER_ID, FACTURAS_ROOT_FOLDER_ID):
+        if any(row.get('name') == filename for row in _list_children(service, folder)):
+            return folder
+    return APP_DATA_FOLDER_ID
+
+
+def load_json_file(filename, parent_id=None, default=None):
     """Lee un archivo JSON pequeño respaldado en Drive."""
     service = get_drive_service_user(timeout=35)
+    parent_id = _json_parent(service, filename, parent_id)
     item = next((row for row in _list_children(service, parent_id)
                  if row.get("name") == filename), None)
     if not item:
@@ -193,9 +211,10 @@ def load_json_file(filename, parent_id=FACTURAS_ROOT_FOLDER_ID, default=None):
     return json.loads(buffer.getvalue().decode("utf-8"))
 
 
-def backup_json_file(filename, value, parent_id=FACTURAS_ROOT_FOLDER_ID):
+def backup_json_file(filename, value, parent_id=None):
     """Crea o actualiza un archivo JSON pequeño en Drive."""
     service = get_drive_service_user(timeout=35)
+    parent_id = _json_parent(service, filename, parent_id)
     payload = json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8")
     result = _upsert_file(service, parent_id, filename, payload, "application/json")
     return {"ok": True, "file_id": result.get("id"), "file_url": result.get("webViewLink")}
