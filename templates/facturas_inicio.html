@@ -378,7 +378,7 @@
 <div id="em" class="cm-backdrop" aria-modal="true" role="dialog">
   <div class="cm-card" role="document">
     <div class="cm-head">
-      <div class="cm-title">Enviar factura por correo</div>
+      <div class="cm-title" id="emTitle">Enviar factura por correo</div>
       <button class="cm-close" id="emClose" aria-label="Cerrar">×</button>
     </div>
     <div class="cm-body">
@@ -912,8 +912,10 @@ async function openEmailModal(ctx){
   emailCtx = ctx;
   emEmail.value = ctx.email || '';
   emCc.value = '';
-  emSubject.value = `Factura HSC ${ctx.folio || ''}`;
-  emMessage.value = `Buen día, estimado cliente. Envío la factura solicitada.\n\nDe antemano muchas gracias.\n\nQuedo a sus órdenes.\n\nIng. Héctor Silva Cid\n\nCel: 5527605496`;
+  const documentLabel = ctx.type === 'P' ? 'Complemento de pago' : 'Factura';
+  document.getElementById('emTitle').textContent = `Enviar ${documentLabel.toLowerCase()} por correo`;
+  emSubject.value = `${documentLabel} HSC ${ctx.folio || ''}`;
+  emMessage.value = `Buen día, estimado cliente. Envío ${ctx.type === 'P' ? 'el complemento de pago solicitado' : 'la factura solicitada'}.\n\nDe antemano muchas gracias.\n\nQuedo a sus órdenes.\n\nIng. Héctor Silva Cid\n\nCel: 5527605496`;
   emKey.value = '';
   emFiles.value = '';
   emKeyWrap.classList.add('hidden');
@@ -1117,6 +1119,11 @@ cmConfirm.addEventListener('click', async ()=>{
     clickLocks.delete(k);
   }
 });
+if(arrivalParams.get('complemento') === '1' && arrivalParams.get('enviar_complemento')){
+  openEmailModal({id:arrivalParams.get('enviar_complemento'), type:'P',
+    folio:`P${arrivalParams.get('parcialidad') || ''}`, cliente:arrivalParams.get('cliente') || '',
+    rfc:arrivalParams.get('rfc') || '', email:''});
+}
 </script>
 </body>
 </html>

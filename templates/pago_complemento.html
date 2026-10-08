@@ -297,7 +297,10 @@ $('btnCrear').onclick = async () => {
     const data = await r.json();
     if(r.ok && data.ok){
       const drive = data.warning ? 'fail' : 'ok';
-      location.href = `/facturacion?complemento=1&drive=${drive}&parcialidad=${encodeURIComponent(data.partiality_number||'')}`;
+      const arrival = new URLSearchParams({complemento:'1', drive,
+        parcialidad:String(data.partiality_number || ''), enviar_complemento:data.id,
+        cliente:cachedInvoice?.customer?.legal_name || '', rfc:cachedInvoice?.customer?.tax_id || ''});
+      location.href = `/facturacion?${arrival}`;
     }else{
       msg(false, errorText(data.error));
       if(data.field && $(data.field)){$(data.field).classList.add('invalid');$(data.field).focus();}
