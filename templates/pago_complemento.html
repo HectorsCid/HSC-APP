@@ -59,6 +59,9 @@
   .section-title{margin:0 0 8px}
   .balance-note{margin-top:8px;padding:9px 11px;border:1px solid color-mix(in srgb,var(--brand) 30%,var(--line));border-radius:11px;background:var(--soft);color:var(--muted);font-size:.82rem}
   .balance-note strong{color:var(--ink)}
+  .selected-payment{display:grid;grid-template-columns:minmax(0,1fr) 190px auto;gap:12px;align-items:center}
+  .selected-payment label{margin:0}.selected-payment strong{overflow-wrap:anywhere}
+  @media(max-width:720px){.selected-payment{grid-template-columns:1fr auto}.selected-payment label{grid-column:1/-1;grid-row:2}}
   @media(max-width:720px){.top{align-items:flex-start;flex-direction:column}.top .actions{width:100%}.top .actions .btn{flex:1}.wrap{padding:12px}.card{padding:13px}}
 </style>
   {% include "_pwa_head.html" %}
@@ -84,7 +87,23 @@
 
   <div id="msg" class="flash"></div>
 
+  <section class="card" aria-label="Seleccionar facturas">
+    <h3 class="section-title">1 · Relacionar facturas</h3>
+    <p class="pill">Elige el mes y cliente. Marca las facturas pagadas; puedes combinar distintos meses sin perder tu selección.</p>
+    <div class="row row-2">
+      <div><label for="invoiceMonth">Mes de las facturas</label><input id="invoiceMonth" type="month"></div>
+      <div><label for="invoiceClient">Cliente</label><select id="invoiceClient"><option value="">Selecciona un cliente</option></select></div>
+    </div>
+    <div class="actions" style="margin-top:10px"><button type="button" class="btn" id="loadPending">↻ Consultar facturas</button></div>
+    <p id="candidateStatus" class="pill" role="status"></p>
+    <div id="candidateList"></div>
+    <h4>Facturas seleccionadas</h4>
+    <div id="selectedInvoices"><p class="pill">Todavía no seleccionas facturas.</p></div>
+    <div class="balance-note" id="selectionTotal" aria-live="polite">Total del pago: $0.00 MXN</div>
+  </section>
+
   <div class="card">
+    <details><summary style="cursor:pointer;font-weight:700">🔎 Buscar otra factura por UUID</summary>
     <div class="row row-2">
       <div>
         <label>Folio fiscal (UUID)</label>
@@ -95,16 +114,17 @@
         <button id="btnBuscar" class="btn">🔎 Buscar factura</button>
       </div>
     </div>
+    </details>
     <div id="invBox" style="display:none;margin-top:12px">
       <div class="row row-2">
         <div><label>Receptor</label><input id="invReceptor" disabled /></div>
         <div><label>RFC</label><input id="invRFC" disabled /></div>
       </div>
-      <div class="row row-2">
+      <div class="row row-2" style="display:none">
         <div><label>Método</label><input id="invMetodo" disabled /></div>
         <div><label>Total</label><input id="invTotal" disabled /></div>
       </div>
-      <div class="row">
+      <div class="row" style="display:none">
         <div><label>Folio fiscal (UUID)</label><input id="invUUID" disabled /></div>
       </div>
       <div class="row row-2">
@@ -200,6 +220,72 @@ const errorText = value => {
 };
 const $ = id => document.getElementById(id);
 let cachedInvoice = null;
+const replacementId = new URLSearchParams(location.search).get('replacement_id') || '';
+const selectedInvoices = new Map();
+let submissionUncertain = false;
+let candidateInvoices = [];
+const money = value => Number(value || 0).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
+$('invoiceMonth').value = new Date().toLocaleDateString('sv-SE').slice(0,7);
+function renderSelected(){
+  const host = $('selectedInvoices'); host.replaceChildren();
+  let total = 0, valid = selectedInvoices.size > 0;
+  selectedInvoices.forEach(entry=>{
+    total += Number(entry.amount || 0);
+    valid = valid && Number(entry.amount)>0 && Number(entry.amount)<=Number(entry.invoice.remaining_balance);
+    const row=document.createElement('div');row.className='balance-note selected-payment';
+    const title=document.createElement('strong');title.textContent=`Factura ${entry.invoice.serie || ''} ${entry.invoice.folio || entry.invoice.uuid}`;
+    const meta=document.createElement('div');meta.className='pill';meta.textContent=`Saldo: ${money(entry.invoice.remaining_balance)} · Parcialidad ${entry.invoice.next_partiality_number || 1}`;
+    const label=document.createElement('label');label.textContent='Importe aplicado a esta factura';
+    const input=document.createElement('input');input.type='number';input.min='0.01';input.step='0.01';input.max=entry.invoice.remaining_balance;input.value=entry.amount;
+    input.oninput=()=>{entry.amount=input.value;refreshTotal();};label.append(input);
+    const remainder=document.createElement('div');remainder.className='pill';remainder.dataset.remaining=entry.invoice.id;remainder.textContent=`Saldo después del pago: ${money(entry.invoice.remaining_balance-Number(entry.amount))}`;
+    const remove=document.createElement('button');remove.type='button';remove.className='btn';remove.textContent='Quitar';remove.disabled=Boolean(replacementId);remove.onclick=()=>{if(lock || replacementId)return;selectedInvoices.delete(entry.invoice.id);renderSelected();renderCandidates();};
+    const info=document.createElement('div');info.append(title,meta,remainder);row.append(info,label,remove);host.append(row);
+  });
+  $('amount').closest('.row').querySelector('div').style.display=selectedInvoices.size ? 'none' : '';
+  $('previous_balance').closest('.row').style.display=selectedInvoices.size ? 'none' : '';
+  $('selectionTotal').textContent=`${selectedInvoices.size} factura(s) · Total del pago: ${money(total)} MXN`;
+  $('btnCrear').disabled=lock || submissionUncertain || !valid;
+}
+function refreshTotal(){
+  let total=0,valid=selectedInvoices.size>0;
+  selectedInvoices.forEach(entry=>{const amount=Number(entry.amount);total+=amount || 0;valid=valid && Number.isFinite(amount) && amount>0 && amount<=Number(entry.invoice.remaining_balance);
+    const el=Array.from($('selectedInvoices').querySelectorAll('[data-remaining]')).find(el=>el.dataset.remaining===entry.invoice.id);
+    if(el)el.textContent=`Saldo después del pago: ${money(entry.invoice.remaining_balance-amount)}`;
+  });
+  $('selectionTotal').textContent=`${selectedInvoices.size} factura(s) · Total del pago: ${money(total)} MXN`;
+  $('btnCrear').disabled=lock || submissionUncertain || !valid;
+}
+async function selectInvoice(id){
+  if(lock || replacementId)return;
+  lock=true;$('btnCrear').disabled=true;
+  try{
+    const response=await fetch(`/api/pagos/info/${encodeURIComponent(id)}`);const inv=await response.json();
+    if(!response.ok)throw new Error(errorText(inv.error));
+    const other=selectedInvoices.values().next().value?.invoice;
+    if(other && other.customer.tax_id.trim().toUpperCase()!==inv.customer.tax_id.trim().toUpperCase())throw new Error('Selecciona facturas del mismo RFC. Quita primero las del otro cliente.');
+    if(inv.payment_method!=='PPD' || inv.paid)throw new Error('Esta factura no tiene saldo PPD disponible.');
+    if(!selectedInvoices.size){cachedInvoice=inv;$('invReceptor').value=inv.customer.legal_name;$('invRFC').value=inv.customer.tax_id;$('invRegimen').value=inv.customer.tax_system || '';$('invCP').value=inv.customer.zip || '';$('invBox').style.display='block';}
+    selectedInvoices.set(inv.id,{invoice:inv,amount:inv.remaining_balance});
+  }catch(error){msg(false,error.message);}finally{lock=false;renderSelected();renderCandidates();}
+}
+function renderCandidates(){
+  const host=$('candidateList');host.replaceChildren();const rfc=$('invoiceClient').value;
+  const rows=candidateInvoices.filter(inv=>inv.customer_tax_id===rfc);
+  if(!rfc)return;
+  rows.forEach(inv=>{const button=document.createElement('button');button.type='button';button.className='btn';button.style.margin='5px';button.disabled=selectedInvoices.has(inv.id);button.textContent=`${selectedInvoices.has(inv.id)?'✓':'＋'} Factura ${inv.folio || inv.uuid} · ${money(inv.remaining_balance)}`;button.onclick=()=>selectInvoice(inv.id);host.append(button);});
+  $('candidateStatus').textContent=rows.length?`${rows.length} factura(s) pendiente(s) en este mes.`:'No hay facturas PPD pendientes para este cliente en el mes seleccionado.';
+}
+$('invoiceClient').onchange=renderCandidates;
+$('loadPending').onclick=async()=>{
+  if(lock)return;lock=true;$('loadPending').disabled=true;$('btnCrear').disabled=true;$('candidateStatus').textContent='Consultando facturas…';
+  try{const response=await fetch(`/api/facturas/list?month=${encodeURIComponent($('invoiceMonth').value)}`);const result=await response.json();if(!response.ok || !result.ok)throw new Error(errorText(result.error));
+    candidateInvoices=(result.data || []).filter(inv=>inv.type==='I' && inv.customer_tax_id && inv.payment_method==='PPD' && inv.remaining_balance>0 && !['canceled','pending'].includes(inv.cancellation_status));
+    const previous=$('invoiceClient').value || cachedInvoice?.customer?.tax_id || '';const clients=new Map(candidateInvoices.map(inv=>[inv.customer_tax_id,inv.customer_name]));
+    $('invoiceClient').replaceChildren(new Option('Selecciona un cliente',''));clients.forEach((name,rfc)=>$('invoiceClient').add(new Option(`${name} · ${rfc}`,rfc)));$('invoiceClient').value=previous;
+    $('candidateStatus').textContent=candidateInvoices.length?'Selecciona el cliente para ver sus facturas.':'No hay facturas pendientes en este mes.';renderCandidates();
+  }catch(error){$('candidateStatus').textContent=error.message;}finally{lock=false;$('loadPending').disabled=false;refreshTotal();}
+};
 let lock = false; // antirrebote
 const themeToggle = $('theme-toggle');
 const themeLabel = $('theme-label');
@@ -217,7 +303,7 @@ themeToggle.onclick = ()=>{
 syncThemeToggle();
 
 $('btnBuscar').onclick = async () => {
-  if(lock) return;
+  if(lock || replacementId) return;
   msg(true,'Buscando…'); $('invBox').style.display='none'; $('btnCrear').disabled = true;
   $('out').textContent = ''; $('lnkVerPDF').style.display='none'; $('lnkVerXML').style.display='none';
   const ref = $('ref').value.trim();
@@ -236,6 +322,8 @@ $('btnBuscar').onclick = async () => {
     const inv = await ri.json();
     if(!ri.ok) throw new Error(errorText(inv.error || 'Factura no encontrada'));
 
+    const selectedCustomer=selectedInvoices.values().next().value?.invoice.customer.tax_id;
+    if(selectedCustomer && selectedCustomer.trim().toUpperCase()!==inv.customer.tax_id.trim().toUpperCase())throw new Error('Quita primero las facturas del otro cliente.');
     cachedInvoice = inv;
     $('invReceptor').value = inv.customer?.legal_name || '';
     $('invRFC').value = inv.customer?.tax_id || '';
@@ -257,10 +345,12 @@ $('btnBuscar').onclick = async () => {
     $('btnCrear').disabled = (inv.payment_method !== 'PPD' || inv.paid);
     if(inv.payment_method !== 'PPD') msg(false,'Esta factura es PUE y no requiere complemento de pago.');
     else if(inv.paid) msg(false,'Esta factura ya está totalmente pagada.');
+    else {selectedInvoices.set(inv.id,{invoice:inv,amount:inv.remaining_balance});renderSelected();}
   }catch(e){
     msg(false,e.message);
   }finally{
     lock = false;
+    refreshTotal();
   }
 };
 
@@ -271,7 +361,7 @@ $('payment_form').addEventListener('change', () => {
   if(!allowed){$('payer_bank').value='';$('payerBankOther').hidden=true;}
 });
 $('btnCrear').onclick = async () => {
-  if(lock) return;
+  if(lock || submissionUncertain) return;
   if(!cachedInvoice){ msg(false,'Primero busca la factura'); return; }
   const body = {
     invoice_id: cachedInvoice.id,
@@ -282,7 +372,13 @@ $('btnCrear').onclick = async () => {
     tax_zip: $('invCP').value.trim()
   };
   const dt = $('pay_date').value.trim(); if(dt) body.date = dt;
+  if(replacementId)body.replacement_id=replacementId;
   const rf = $('reference').value.trim(); if(rf) body.reference = rf;
+  if(selectedInvoices.size){
+    body.documents=Array.from(selectedInvoices.values(),entry=>({invoice_id:entry.invoice.id,amount:Number(entry.amount)}));
+    if(body.documents.some(doc=>!Number.isFinite(doc.amount) || doc.amount<=0)){msg(false,'Revisa el importe aplicado a cada factura.');return;}
+    if(!confirm(`Se timbrará ${replacementId?'UN sustituto relacionado con el REP anterior':'UN complemento'} para ${body.documents.length} factura(s), por ${money(body.documents.reduce((sum,doc)=>sum+doc.amount,0))}. ¿Continuar?`))return;
+  }
 
   // antirrebote UI
   const btn = $('btnCrear');
@@ -296,7 +392,16 @@ $('btnCrear').onclick = async () => {
     const r = await fetch('/api/pagos/crear', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
     const data = await r.json();
     if(r.ok && data.ok){
+      submissionUncertain=true;
+      if(data.replaces_id && confirm(`Sustituto timbrado: ${data.uuid}.\n¿Solicitar la cancelación del REP anterior con motivo 01? Puede requerir aceptación del cliente.`)){
+        try{
+          const cancellation=await fetch(`/api/invoices/${encodeURIComponent(data.replaces_id)}/cancel`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({motive:'01',uuid:data.replaces_uuid,substitution_folio:data.uuid})});
+          const status=await cancellation.json();if(!cancellation.ok || !status.ok)throw new Error(errorText(status.error));
+          alert(`${status.status_label}.\nConsulta su avance desde la lista. El pago no se contará dos veces en HSC.`);
+        }catch(error){alert(`El sustituto YA está emitido (${data.uuid}). No lo vuelvas a generar.\nNo se confirmó la solicitud de cancelación: ${error.message}\nUsa Consultar cancelación en el REP anterior para continuar.`);}
+      }
       const drive = data.warning ? 'fail' : 'ok';
+      if(data.warning){alert(`${data.warning}\nUUID del complemento: ${data.uuid || ''}`);}
       const arrival = new URLSearchParams({complemento:'1', drive,
         parcialidad:String(data.partiality_number || ''), enviar_complemento:data.id,
         cliente:cachedInvoice?.customer?.legal_name || '', rfc:cachedInvoice?.customer?.tax_id || ''});
@@ -304,11 +409,13 @@ $('btnCrear').onclick = async () => {
     }else{
       msg(false, errorText(data.error));
       if(data.field && $(data.field)){$(data.field).classList.add('invalid');$(data.field).focus();}
-      btn.disabled = false; // solo reactivar si falló
+      submissionUncertain = r.status>=500;
+      btn.disabled = submissionUncertain;
     }
   }catch(e){
-    msg(false,e.message);
-    btn.disabled = false;
+    submissionUncertain=true;
+    msg(false,`No se confirmó la respuesta: ${e.message}. Consulta la lista o Facturama antes de volver a emitir; el complemento podría haberse timbrado.`);
+    btn.disabled = true;
   }finally{
     btn.innerHTML = oldHtml;
     lock = false;
@@ -316,10 +423,27 @@ $('btnCrear').onclick = async () => {
 };
 
 // precarga por querystring
-(function preload(){
+(async function preload(){
   const qs = new URLSearchParams(location.search);
+  if(replacementId){
+    lock=true;$('btnBuscar').disabled=true;$('loadPending').disabled=true;$('invoiceMonth').disabled=true;$('invoiceClient').disabled=true;
+    msg(true,'Recuperando complemento anterior…');
+    try{
+      const response=await fetch(`/api/pagos/replacement/${encodeURIComponent(replacementId)}`);const data=await response.json();
+      if(!response.ok || !data.ok)throw new Error(errorText(data.error));
+      data.documents.forEach(entry=>selectedInvoices.set(entry.invoice.id,entry));cachedInvoice=data.documents[0].invoice;
+      $('invReceptor').value=cachedInvoice.customer.legal_name;$('invRFC').value=cachedInvoice.customer.tax_id;$('invRegimen').value=cachedInvoice.customer.tax_system;$('invCP').value=cachedInvoice.customer.zip;$('invBox').style.display='block';
+      $('pay_date').value=(data.date || '').slice(0,16);$('payment_form').value=data.payment_form;$('reference').value=data.reference || '';
+      const bank=data.payer_bank_rfc || '';const known=Array.from($('payer_bank').options).some(option=>option.value===bank);$('payer_bank').value=known?bank:'other';$('payer_bank_rfc').value=bank;$('payer_bank').onchange();
+      msg(true,`Corrigiendo REP ${data.uuid}. Se conservarán las mismas facturas. El nuevo se relacionará como sustituto; después solicita cancelar el anterior.`);
+      $('candidateStatus').textContent='Modo corrección: revisa importes, fecha, forma de pago y banco.';$('btnCrear').textContent='Crear sustituto';
+    }catch(error){msg(false,error.message);}
+    finally{lock=false;renderSelected();}
+    return;
+  }
   const id = qs.get('invoice_id'); const u = qs.get('uuid');
   if(id || u){ $('ref').value = u || id; $('btnBuscar').click(); }
+  else $('loadPending').click();
 })();
 </script>
 </body>

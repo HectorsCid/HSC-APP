@@ -381,6 +381,35 @@ def _payment_entries(record):
         return [record]
     return []
 
+
+def _stored_payment_entries(record):
+    if isinstance(record, dict) and isinstance(record.get('payments'), list):
+        return [p for p in record['payments'] if isinstance(p, dict)]
+    return _payment_entries(record)
+
+
+def _drop_confirmed_rep(index, rep_id):
+    """Retira sólo una cancelación confirmada y activa su sustituto, si existe."""
+    changed = False
+    for key, record in list(index.items()):
+        entries = _stored_payment_entries(record)
+        kept = [p for p in entries if str(p.get('rep_id')) != str(rep_id)]
+        has_replacement = any(p.get('status') == 'replacement_pending' and str(p.get('replaces_id')) == str(rep_id) for p in kept)
+        if len(kept) == len(entries) and not has_replacement:
+            continue
+        changed = True
+        for p in kept:
+            if p.get('status') == 'replacement_pending' and str(p.get('replaces_id')) == str(rep_id):
+                p['status'] = 'active'
+        if kept:
+            active = _payment_entries({'payments':kept})
+            index[key] = dict(status='active', payments=kept,
+                paid_amount=round(sum(float(p.get('amount') or 0) for p in active), 2),
+                remaining_balance=active[-1].get('remaining_balance') if active else None)
+        else:
+            index.pop(key)
+    return changed
+
 def _payment_summary(record, invoice_total=0):
     payments = _payment_entries(record)
     paid = sum((float(p.get("amount") or 0) for p in payments), 0.0)
@@ -427,6 +456,11 @@ def _parse_payment_complement_xml(xml_bytes, *, rep_id="", status="active", fall
     rep_uuid = str((stamp.attrib if stamp is not None else {}).get("UUID") or "").strip()
     cfdi_date = str(root.attrib.get("Fecha") or fallback_date or "").strip()
     entries = []
+    replacement_uuids = [str(child.get('UUID') or '').strip() for node in root.iter()
+                         if _xml_local_name(node.tag) == 'CfdiRelacionados' and node.get('TipoRelacion') == '04'
+                         for child in node if _xml_local_name(child.tag) == 'CfdiRelacionado']
+    if len(replacement_uuids) > 1:
+        raise ValueError('La sustitución de varios REP requiere revisión manual de saldos.')
     for payment in (node for node in root.iter() if _xml_local_name(node.tag) == "Pago"):
         payment_date = str(payment.attrib.get("FechaPago") or cfdi_date).strip()
         payment_form = str(payment.attrib.get("FormaDePagoP") or "").strip()
@@ -453,6 +487,7 @@ def _parse_payment_complement_xml(xml_bytes, *, rep_id="", status="active", fall
                 "date": payment_date,
                 "payment_form": payment_form,
                 "imported": True,
+                **({'replaces_uuid':replacement_uuids[0]} if replacement_uuids else {}),
             })
     return entries
 
@@ -477,30 +512,15 @@ def _sync_facturama_payment_rows(rows):
             canceled = row.get("cancellation_status") == "canceled"
 
             if canceled:
-                for invoice_uuid, record in list(index.items()):
-                    prior = _payment_entries(record)
-                    kept = [entry for entry in prior if not (
-                        str(entry.get("rep_id") or "") == rep_id
-                        or (rep_uuid and str(entry.get("rep_uuid") or "").casefold() == rep_uuid.casefold())
-                    )]
-                    if len(kept) == len(prior):
-                        continue
-                    removed += len(prior) - len(kept)
+                if _drop_confirmed_rep(index, rep_id):
+                    removed += 1
                     changed = True
-                    if kept:
-                        index[invoice_uuid] = {
-                            "status": "active", "payments": kept,
-                            "paid_amount": round(sum(float(entry.get("amount") or 0) for entry in kept), 2),
-                            "remaining_balance": kept[-1].get("remaining_balance"),
-                        }
-                    else:
-                        index.pop(invoice_uuid, None)
                 continue
 
             already_known = any(
                 str(entry.get("rep_id") or "") == rep_id
                 or (rep_uuid and str(entry.get("rep_uuid") or "").casefold() == rep_uuid.casefold())
-                for record in index.values() for entry in _payment_entries(record)
+                for record in index.values() for entry in _stored_payment_entries(record)
             )
             if already_known:
                 continue
@@ -516,7 +536,35 @@ def _sync_facturama_payment_rows(rows):
             for relation in relations:
                 invoice_uuid = relation.pop("invoice_uuid")
                 matching_key = _payment_index_key(index, invoice_uuid)
-                prior = list(_payment_entries(index.get(matching_key)))
+                prior = list(_stored_payment_entries(index.get(matching_key)))
+                if relation.get('replaces_uuid'):
+                    old_uuid = relation['replaces_uuid'].casefold()
+                    old = next((entry for entry in prior if str(entry.get('rep_uuid') or '').casefold() == old_uuid), None)
+                    if not old:
+                        # Recupera también la relación al reconstruir el índice desde XML.
+                        # Nunca importa un sustituto como un segundo pago por falta de respaldo.
+                        try:
+                            old_rows = _fm_request('GET','/api/cfdi',params={'type':'issued','status':'all','page':0,'uuid':relation['replaces_uuid']},timeout=35)
+                            old_rows = old_rows if isinstance(old_rows,list) else (_pick(old_rows,'Data','Items') or [])
+                            old_row = next((_facturama_invoice_row(item) for item in old_rows if _facturama_invoice_row(item)['uuid'].casefold() == old_uuid), None)
+                            if not old_row:
+                                raise ValueError('No se encontró el REP sustituido para confirmar sus saldos.')
+                            relation['replaces_id'] = old_row['id']
+                            if old_row['cancellation_status'] != 'canceled':
+                                old_xml = _decode_facturama_file(_fm_request('GET',f"/Cfdi/xml/issued/{old_row['id']}"))
+                                old = next((p for p in _parse_payment_complement_xml(old_xml,rep_id=old_row['id']) if p['invoice_uuid'].casefold()==invoice_uuid.casefold()), None)
+                                if not old:
+                                    raise ValueError('El REP sustituido no corresponde a la factura.')
+                                old.pop('invoice_uuid',None)
+                                if old.get('replaces_uuid'):
+                                    raise ValueError('Esta cadena de sustituciones requiere revisar el estado anterior primero.')
+                                prior.append(old)
+                        except Exception as exc:
+                            errors += 1
+                            current_app.logger.warning('No se pudo conciliar el sustituto %s: %s',rep_id,exc)
+                            continue
+                    if old:
+                        relation.update(status='replacement_pending',replaces_id=old['rep_id'])
                 duplicate = any(
                     str(entry.get("rep_id") or "") == rep_id
                     and int(entry.get("partiality_number") or 1) == relation["partiality_number"]
@@ -528,8 +576,8 @@ def _sync_facturama_payment_rows(rows):
                 prior.sort(key=lambda entry: (int(entry.get("partiality_number") or 1), str(entry.get("date") or "")))
                 index[matching_key] = {
                     "status": "active", "payments": prior,
-                    "paid_amount": round(sum(float(entry.get("amount") or 0) for entry in prior), 2),
-                    "remaining_balance": prior[-1].get("remaining_balance"),
+                    "paid_amount": round(sum(float(entry.get("amount") or 0) for entry in _payment_entries({'payments':prior})), 2),
+                    "remaining_balance": next((entry.get('remaining_balance') for entry in reversed(prior) if entry.get('status','active') == 'active'), None),
                 }
                 imported += 1
                 changed = True
@@ -540,38 +588,28 @@ def _sync_facturama_payment_rows(rows):
 def _rep_cancellation_state(rep_id):
     """Ubica un REP y confirma que sea la última parcialidad de su factura."""
     wanted = str(rep_id or "")
+    matches = []
     for invoice_uuid, record in _read_index().items():
         entries = _payment_entries(record)
+        if any(str(p.get('rep_id')) == wanted and p.get('status') == 'replacement_pending' for p in _stored_payment_entries(record)):
+            return dict(tracked=True, is_latest=False, partiality_number='sustituto', later_count=1)
         for position, payment in enumerate(entries):
             if str(payment.get("rep_id") or "") == wanted:
-                return {
+                matches.append({
                     "tracked": True,
                     "invoice_uuid": invoice_uuid,
                     "is_latest": position == len(entries) - 1,
                     "partiality_number": payment.get("partiality_number") or position + 1,
                     "later_count": len(entries) - position - 1,
-                }
+                })
+    if matches:
+        return next((m for m in matches if not m['is_latest']), matches[0])
     return {"tracked": False, "is_latest": True, "later_count": 0}
 
 def _remove_rep_by_id(rep_id: str):
     """Elimina del índice el REP cuyo id coincide, para re-habilitar complemento."""
     idx = _read_index()
-    changed = False
-    for k, v in list(idx.items()):
-        if not isinstance(v, dict):
-            continue
-        if isinstance(v.get("payments"), list):
-            kept = [p for p in v["payments"] if str(p.get("rep_id")) != str(rep_id)]
-            if len(kept) != len(v["payments"]):
-                changed = True
-                if kept:
-                    v["payments"] = kept
-                    v["remaining_balance"] = kept[-1].get("remaining_balance", v.get("remaining_balance"))
-                else:
-                    idx.pop(k)
-        elif str(v.get("rep_id")) == str(rep_id):
-            idx.pop(k)
-            changed = True
+    changed = _drop_confirmed_rep(idx, rep_id)
     if changed:
         _write_index(idx)
 
@@ -2869,9 +2907,15 @@ def api_invoice_cancel(inv_id):
     motive = (b.get("motive") or b.get("reason") or "02").strip()
     params = {"motive": motive}
     sub = (b.get("substitution_folio") or "").strip()
+    if motive not in {'01','02','03','04'} or (motive == '01' and not _valid_cfdi_uuid(sub)):
+        return jsonify(ok=False, error='Selecciona un motivo válido y el UUID del sustituto para el motivo 01.'), 400
     if motive == "01" and sub:
         params["substitution_folio"] = sub
     if _provider() == "facturama":
+        pending = next((p for record in _read_index().values() for p in _stored_payment_entries(record)
+                        if p.get('status') == 'replacement_pending' and str(p.get('replaces_id')) == inv_id), None)
+        if pending and (motive != '01' or sub.lower() != str(pending.get('rep_uuid')).lower()):
+            return jsonify(ok=False, error='Este complemento tiene un sustituto: cancela con motivo 01 y su UUID.'), 409
         rep_state = _rep_cancellation_state(inv_id)
         if rep_state["tracked"] and not rep_state["is_latest"]:
             return jsonify({
@@ -2889,10 +2933,10 @@ def api_invoice_cancel(inv_id):
             result = _fm_request("DELETE", f"/api/cfdi/{inv_id}", params=fm_params)
             with _BILLING_CLIENT_GROUPS_LOCK:
                 _BILLING_CLIENT_GROUPS_CACHE.update(ts=0.0, result=None, payment_sync=None)
-            if rep_state["tracked"]:
-                _remove_rep_by_id(inv_id)
             result_status = (_pick(result, "Status") if isinstance(result, dict) else "") or "requested"
             cancellation_status, status_label = _resolved_invoice_cancellation(inv_id, "", result_status)
+            if rep_state['tracked'] and cancellation_status == 'canceled':
+                _remove_rep_by_id(inv_id)
             _persist_cancellation_state(
                 inv_id,
                 b.get("uuid"),
@@ -2931,4 +2975,21 @@ def api_invoice_cancel(inv_id):
             "status": getattr(e.response, "status_code", None),
             "body": getattr(e.response, "text", "")
         }), 400
+
+
+@facturacion_bp.get('/invoices/<inv_id>/cancellation-status')
+def api_invoice_cancellation_status(inv_id):
+    """Consulta, sin reenviar la cancelación, y concilia sólo al confirmarla."""
+    try:
+        invoice = _fm_request('GET', f'/api/cfdi/{inv_id}', params={'type':'issued'}, timeout=35)
+        row = _facturama_invoice_row(invoice)
+        if row['cancellation_status'] == 'canceled':
+            _remove_rep_by_id(inv_id)
+        replacement = next((p for record in _read_index().values() for p in _stored_payment_entries(record)
+                            if p.get('status') == 'replacement_pending' and str(p.get('replaces_id')) == inv_id), {})
+        return jsonify(ok=True, cancellation_status=row['cancellation_status'], status_label=row['status_label'],
+            uuid=row['uuid'], needs_acceptance=row['cancellation_status']=='pending',
+            replacement_uuid=replacement.get('rep_uuid'), replacement_id=replacement.get('rep_id')), 200
+    except requests.HTTPError as exc:
+        return jsonify(ok=False, error=_http_error_detail(exc)), 400
 

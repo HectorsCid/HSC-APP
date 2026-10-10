@@ -576,6 +576,8 @@ async function load(){
               ? `<button class="btn" title="Generar complemento de pago" aria-label="Generar complemento de pago" data-goto="/pagos/nuevo?invoice_id=${encodeURIComponent(x.id)}&uuid=${encodeURIComponent(x.uuid||'')}" data-key="rep-${x.id}">${lineIcon('card')}Comp.</button>`
               : '<span class="action-slot" aria-hidden="true"></span>'
           }
+          ${x.type==='P' && !lifecycle.blocksPayment ? `<button class="btn" data-goto="/pagos/nuevo?replacement_id=${encodeURIComponent(x.id)}" data-key="replace-${escAttr(x.id)}">${lineIcon('edit')}Corregir REP</button>`:''}
+          ${x.type==='P' ? `<button class="btn" data-cancel-status="${escAttr(x.id)}">Consultar cancelación</button>`:''}
           ${lifecycle.blocksPayment?`<span class="badge ${lifecycle.className}">${lifecycle.label}</span>`:`<button class="btn btn-danger"
                   data-cancel="${x.id}"
                   data-total="${x.total||0}"
@@ -597,6 +599,21 @@ async function load(){
       };
     });
 
+    tbody.querySelectorAll('button[data-cancel-status]').forEach(button=>{
+      button.onclick=async()=>{
+        if(button.disabled)return;button.disabled=true;const label=button.textContent;button.textContent='Consultando…';
+        try{
+          const response=await fetch(`/api/invoices/${encodeURIComponent(button.dataset.cancelStatus)}/cancellation-status`);
+          const data=await response.json();if(!response.ok || !data.ok)throw new Error(errorText(data.error));
+          alert(`${data.status_label}${data.needs_acceptance?'\nLa solicitud sigue pendiente. El pago se conserva hasta confirmar la cancelación.':''}`);
+          if(data.replacement_uuid && !['canceled','pending'].includes(data.cancellation_status) && confirm(`Ya existe el sustituto ${data.replacement_uuid}. ¿Solicitar la cancelación del anterior con motivo 01? No se emitirá otro complemento.`)){
+            const request=await fetch(`/api/invoices/${encodeURIComponent(button.dataset.cancelStatus)}/cancel`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({motive:'01',uuid:data.uuid,substitution_folio:data.replacement_uuid})});
+            const result=await request.json();if(!request.ok || !result.ok)throw new Error(errorText(result.error));alert(result.status_label);
+          }
+          await load();
+        }catch(error){alert(error.message);}finally{button.disabled=false;button.textContent=label;}
+      };
+    });
     // Abrir modal de cancelación
     tbody.querySelectorAll('button[data-cancel]').forEach(btn=>{
       btn.onclick = (e)=>{
