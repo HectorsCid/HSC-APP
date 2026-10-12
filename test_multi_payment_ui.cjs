@@ -16,7 +16,7 @@ class Element {
 const elements=new Map();
 const get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
 let invoices={a:{id:'a',folio:'10',payment_method:'PPD',remaining_balance:116,next_partiality_number:1,customer:{tax_id:'AAA010101AAA',legal_name:'Cliente',tax_system:'601',zip:'76116'}},b:{id:'b',folio:'11',payment_method:'PPD',remaining_balance:232,next_partiality_number:2,customer:{tax_id:'AAA010101AAA',legal_name:'Cliente',tax_system:'601',zip:'76116'}},c:{id:'c',remaining_balance:116,payment_method:'PPD',customer:{tax_id:'BBB010101BBB'}}};
-const ctx=vm.createContext({console,URLSearchParams,Map,Date,Number,Array,Option:class extends Element {constructor(text,value){super();this.textContent=text;this.value=value;}},document:{getElementById:get,createElement:()=>new Element(),documentElement:{dataset:{theme:'light'}}},location:{search:''},localStorage:{setItem(){}},confirm:()=>false,fetch:async url=>({ok:true,json:async()=>url.includes('/info/')?invoices[url.split('/').pop()]:{ok:true,data:[]}})});
+const ctx=vm.createContext({console,URLSearchParams,Map,Date,Number,Array,Option:class extends Element {constructor(text,value){super();this.textContent=text;this.value=value;}},document:{getElementById:get,createElement:()=>new Element(),createTextNode:text=>({textContent:text}),documentElement:{dataset:{theme:'light'}}},location:{search:''},localStorage:{setItem(){}},confirm:()=>false,fetch:async url=>({ok:true,json:async()=>url.includes('/info/')?invoices[url.split('/').pop()]:{ok:true,data:[]}})});
 const source=fs.readFileSync('templates/pago_complemento.html','utf8').match(/<script>\s*const msg[\s\S]*?<\/script>/)[0].replace(/^<script>|<\/script>$/g,'');
 vm.runInContext(source,ctx);
 (async()=>{
@@ -54,4 +54,22 @@ vm.runInContext(source,ctx);
   assert.match(replacement.location.href,/enviar_complemento=new/);
   assert.match(alerts[0],/Cancelación en proceso/);
   console.log('OK: corrección precargada, facturas fijas, sustituto y cancelación 01, envío por correo');
+  elements.clear();
+  const groupCalls=[];
+  const group=vm.createContext({...ctx,location:{search:''},confirm:()=>true,alert:()=>{},fetch:async(url,options)=>{
+    groupCalls.push({url,body:options?.body && JSON.parse(options.body)});
+    return {ok:true,status:200,json:async()=>url.includes('replacement-context')?{ok:true,documents:[{invoice:invoices.a,amount:58},{invoice:invoices.b,amount:116}],date:'2026-09-17T12:00:00',payment_form:'03'}:
+      url.includes('/crear')?{ok:true,id:'new-group',uuid:'new-group-uuid',replaces:[{id:'old1',uuid:'uuid1'},{id:'old2',uuid:'uuid2'},{id:'old3',uuid:'uuid3'}]}:
+      url.endsWith('/cancel')?{ok:true,status_label:'Cancelación en proceso'}:{ok:true,data:[]}};
+  }});
+  vm.runInContext(source,group);await new Promise(resolve=>setImmediate(resolve));
+  await vm.runInContext("loadReplacementContext(['old1','old2','old3'])",group);
+  assert.equal(get('samePaymentBox').hidden,false);assert.equal(get('btnCrear').disabled,true);
+  get('samePayment').checked=true;get('samePayment').onchange();assert.equal(get('btnCrear').disabled,false);
+  await get('btnCrear').click();
+  const groupBody=groupCalls.find(call=>call.url.endsWith('/crear')).body;
+  assert.deepEqual(groupBody.replacement_ids,['old1','old2','old3']);assert.equal(groupBody.confirmed_same_payment,true);
+  assert.equal(groupCalls.filter(call=>call.url.endsWith('/cancel')).length,3);
+  assert.ok(groupCalls.filter(call=>call.url.endsWith('/cancel')).every(call=>call.body.substitution_folio==='new-group-uuid'));
+  console.log('OK: sustitución conjunta, confirmación de un solo pago y tres solicitudes relacionadas');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -459,8 +459,6 @@ def _parse_payment_complement_xml(xml_bytes, *, rep_id="", status="active", fall
     replacement_uuids = [str(child.get('UUID') or '').strip() for node in root.iter()
                          if _xml_local_name(node.tag) == 'CfdiRelacionados' and node.get('TipoRelacion') == '04'
                          for child in node if _xml_local_name(child.tag) == 'CfdiRelacionado']
-    if len(replacement_uuids) > 1:
-        raise ValueError('La sustitución de varios REP requiere revisión manual de saldos.')
     for payment in (node for node in root.iter() if _xml_local_name(node.tag) == "Pago"):
         payment_date = str(payment.attrib.get("FechaPago") or cfdi_date).strip()
         payment_form = str(payment.attrib.get("FormaDePagoP") or "").strip()
@@ -487,9 +485,40 @@ def _parse_payment_complement_xml(xml_bytes, *, rep_id="", status="active", fall
                 "date": payment_date,
                 "payment_form": payment_form,
                 "imported": True,
-                **({'replaces_uuid':replacement_uuids[0]} if replacement_uuids else {}),
+                **({'replaces_uuid':replacement_uuids[0], 'replaces_uuids':replacement_uuids} if replacement_uuids else {}),
             })
     return entries
+
+
+def _recover_replacement_relation(relation, invoice_uuid, prior):
+    """Cada factura conserva sólo el REP anterior que realmente la pagaba."""
+    matches = []
+    for old_uuid in relation.get('replaces_uuids') or [relation['replaces_uuid']]:
+        old = next((entry for entry in prior if str(entry.get('rep_uuid') or '').casefold()==old_uuid.casefold()),None)
+        if old:
+            matches.append((old,old['rep_id'],old_uuid))
+            continue
+        rows = _fm_request('GET','/api/cfdi',params={'type':'issued','status':'all','page':0,'uuid':old_uuid},timeout=35)
+        rows = rows if isinstance(rows,list) else (_pick(rows,'Data','Items') or [])
+        row = next((_facturama_invoice_row(item) for item in rows if _facturama_invoice_row(item)['uuid'].casefold()==old_uuid.casefold()),None)
+        if not row:
+            raise ValueError('No se encontró un REP sustituido para confirmar los saldos.')
+        xml = _decode_facturama_file(_fm_request('GET',f"/Cfdi/xml/issued/{row['id']}"))
+        old = next((p for p in _parse_payment_complement_xml(xml,rep_id=row['id']) if p['invoice_uuid'].casefold()==invoice_uuid.casefold()),None)
+        if old:
+            old.pop('invoice_uuid',None)
+            if old.get('replaces_uuid'):
+                raise ValueError('Primero recupera y resuelve la cadena de sustituciones anterior.')
+            matches.append((None if row['cancellation_status']=='canceled' else old,row['id'],old_uuid))
+    if len(matches)!=1:
+        raise ValueError('La relación de sustitución no identifica un único pago anterior para esta factura.')
+    old,old_id,old_uuid = matches[0]
+    relation.update(replaces_id=old_id,replaces_uuid=old_uuid)
+    if old:
+        relation['status']='replacement_pending'
+        if not any(str(entry.get('rep_id'))==old_id for entry in prior):
+            prior.append(old)
+    return prior
 
 
 def _sync_facturama_payment_rows(rows):
@@ -522,6 +551,11 @@ def _sync_facturama_payment_rows(rows):
                 or (rep_uuid and str(entry.get("rep_uuid") or "").casefold() == rep_uuid.casefold())
                 for record in index.values() for entry in _stored_payment_entries(record)
             )
+            known_keys = {key.casefold() for key,record in index.items() for entry in _stored_payment_entries(record) if str(entry.get('rep_id') or '')==rep_id}
+            expected_keys = {str(key).casefold() for record in index.values() for entry in _stored_payment_entries(record)
+                             if str(entry.get('rep_id') or '')==rep_id for key in entry.get('expected_invoice_uuids',[])}
+            if expected_keys and not expected_keys.issubset(known_keys):
+                already_known = False
             if already_known:
                 continue
             try:
@@ -533,38 +567,19 @@ def _sync_facturama_payment_rows(rows):
                 errors += 1
                 current_app.logger.warning("No se pudo sincronizar el REP %s: %s", rep_id, exc)
                 continue
+            expected_invoices = [relation['invoice_uuid'] for relation in relations]
             for relation in relations:
                 invoice_uuid = relation.pop("invoice_uuid")
+                relation['expected_invoice_uuids'] = expected_invoices
                 matching_key = _payment_index_key(index, invoice_uuid)
                 prior = list(_stored_payment_entries(index.get(matching_key)))
                 if relation.get('replaces_uuid'):
-                    old_uuid = relation['replaces_uuid'].casefold()
-                    old = next((entry for entry in prior if str(entry.get('rep_uuid') or '').casefold() == old_uuid), None)
-                    if not old:
-                        # Recupera también la relación al reconstruir el índice desde XML.
-                        # Nunca importa un sustituto como un segundo pago por falta de respaldo.
-                        try:
-                            old_rows = _fm_request('GET','/api/cfdi',params={'type':'issued','status':'all','page':0,'uuid':relation['replaces_uuid']},timeout=35)
-                            old_rows = old_rows if isinstance(old_rows,list) else (_pick(old_rows,'Data','Items') or [])
-                            old_row = next((_facturama_invoice_row(item) for item in old_rows if _facturama_invoice_row(item)['uuid'].casefold() == old_uuid), None)
-                            if not old_row:
-                                raise ValueError('No se encontró el REP sustituido para confirmar sus saldos.')
-                            relation['replaces_id'] = old_row['id']
-                            if old_row['cancellation_status'] != 'canceled':
-                                old_xml = _decode_facturama_file(_fm_request('GET',f"/Cfdi/xml/issued/{old_row['id']}"))
-                                old = next((p for p in _parse_payment_complement_xml(old_xml,rep_id=old_row['id']) if p['invoice_uuid'].casefold()==invoice_uuid.casefold()), None)
-                                if not old:
-                                    raise ValueError('El REP sustituido no corresponde a la factura.')
-                                old.pop('invoice_uuid',None)
-                                if old.get('replaces_uuid'):
-                                    raise ValueError('Esta cadena de sustituciones requiere revisar el estado anterior primero.')
-                                prior.append(old)
-                        except Exception as exc:
-                            errors += 1
-                            current_app.logger.warning('No se pudo conciliar el sustituto %s: %s',rep_id,exc)
-                            continue
-                    if old:
-                        relation.update(status='replacement_pending',replaces_id=old['rep_id'])
+                    try:
+                        prior = _recover_replacement_relation(relation,invoice_uuid,prior)
+                    except Exception as exc:
+                        errors += 1
+                        current_app.logger.warning('No se pudo conciliar el sustituto %s: %s',rep_id,exc)
+                        continue
                 duplicate = any(
                     str(entry.get("rep_id") or "") == rep_id
                     and int(entry.get("partiality_number") or 1) == relation["partiality_number"]

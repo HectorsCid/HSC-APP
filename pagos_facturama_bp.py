@@ -140,39 +140,81 @@ def _replacement_payment(rep_id):
 
 @pagos_bp.get('/replacement/<rep_id>')
 def replacement_info(rep_id):
-    try:
+    return replacement_context([rep_id])
+
+
+def _replacement_ids(body):
+    ids = body.get('replacement_ids') or ([body['replacement_id']] if body.get('replacement_id') else [])
+    if not isinstance(ids, list) or len(ids) > 20 or any(not isinstance(value,str) or not value.strip() for value in ids):
+        raise ValueError('Selecciona entre 1 y 20 complementos válidos.')
+    ids = [value.strip() for value in ids]
+    if len(set(ids)) != len(ids):
+        raise ValueError('No repitas complementos en la sustitución.')
+    return ids
+
+
+def _replacement_sources(ids, index):
+    sources, seen_invoices, rfcs = [], set(), set()
+    for rep_id in ids:
         original = _facturama_detail(rep_id)
-        if str(_pick(original, 'CfdiType', 'Type') or '').lower() not in {'p','pago'}:
-            raise ValueError('Selecciona un complemento de pago.')
+        uuid = _facturama_uuid(original)
+        if str(_pick(original,'CfdiType','Type') or '').lower() not in {'p','pago'} or not billing._valid_cfdi_uuid(uuid):
+            raise ValueError('Selecciona únicamente complementos de pago válidos.')
         if billing._facturama_invoice_row(original)['cancellation_status'] in {'canceled','pending'}:
-            raise ValueError('Primero consulta y resuelve la cancelación del complemento anterior.')
-        billing._sync_facturama_payment_rows([original])
-        index = billing._read_index()
-        records = _replacement_records(index, rep_id)
-        if not records:
-            raise ValueError('No se encontraron los pagos activos de este complemento. Consulta su estado primero.')
-        if not billing._rep_cancellation_state(rep_id)['is_latest']:
-            raise ValueError('Hay parcialidades posteriores: primero resuelve el complemento más reciente.')
-        pending = next((p for record in index.values() for p in billing._stored_payment_entries(record)
-                        if str(p.get('replaces_id')) == rep_id and p.get('status') == 'replacement_pending'), None)
-        if pending:
-            return jsonify(ok=False, error='Ya existe un sustituto. No lo emitas otra vez; consulta la cancelación del anterior.', replacement_id=pending['rep_id'], replacement_uuid=pending['rep_uuid']), 409
+            raise ValueError('Primero resuelve las cancelaciones pendientes de los complementos seleccionados.')
+        if any(p.get('status')=='replacement_pending' and str(p.get('replaces_id'))==rep_id
+               for record in index.values() for p in billing._stored_payment_entries(record)):
+            raise ValueError('Ya existe un sustituto. Consulta la cancelación del anterior; no vuelvas a emitirlo.')
+        records = _replacement_records(index,rep_id)
+        if not records or not billing._rep_cancellation_state(rep_id)['is_latest']:
+            raise ValueError('Faltan pagos registrados o hay parcialidades posteriores. Actualiza el historial antes de continuar.')
+        for key,_ in records:
+            if key.casefold() in seen_invoices:
+                raise ValueError('Dos REP seleccionados corresponden a la misma factura. Ese caso requiere conservar pagos y parcialidades separados.')
+            seen_invoices.add(key.casefold())
+        rfcs.add(str((_pick(original,'Receiver','Customer') or {}).get('Rfc') or _pick(original,'Rfc') or '').strip().upper())
+        sources.append(dict(id=rep_id, uuid=uuid, records=records, payment=_replacement_payment(rep_id)))
+    if len(ids)>1:
+        if len(rfcs)!=1 or not next(iter(rfcs)):
+            raise ValueError('Los complementos deben pertenecer al mismo RFC receptor.')
+        signatures = {tuple(source['payment'].get(key,'') for key in ('FechaPago','FormaDePagoP','MonedaP','NumOperacion','RfcEmisorCtaOrd','CtaOrdenante','RfcEmisorCtaBen','CtaBeneficiario')) for source in sources}
+        if len(signatures)!=1:
+            raise ValueError('Los REP tienen fechas, formas de pago o datos bancarios distintos. No se pueden convertir en un solo pago con este asistente.')
+    return sources
+
+
+@pagos_bp.get('/replacement-context')
+def replacement_context_route():
+    return replacement_context(request.args.getlist('id'))
+
+
+def replacement_context(ids):
+    try:
+        ids = _replacement_ids({'replacement_ids':ids})
+        if not ids:
+            raise ValueError('Selecciona los complementos que quieres sustituir.')
+        loaded = [_facturama_detail(rep_id) for rep_id in ids]
+        billing._sync_facturama_payment_rows(loaded)
+        sources = _replacement_sources(ids,billing._read_index())
         documents = []
-        for uuid, payment in records:
-            raw = billing._fm_request('GET', '/api/cfdi', params={'type':'issued','status':'all','page':0,'uuid':uuid}, timeout=35)
-            match = next((row for row in _facturama_rows(raw) if _facturama_uuid(row).lower()==uuid.lower()), None)
-            if not match:
-                raise ValueError(f'No se encontró la factura {uuid}.')
-            normalized = _complete_customer(_facturama_detail(str(_pick(match,'Id'))))
-            normalized.update(remaining_balance=round(float(payment['amount'])+float(payment['remaining_balance']),2), next_partiality_number=payment['partiality_number'])
-            documents.append(dict(invoice=normalized, amount=payment['amount']))
-        pago = _replacement_payment(rep_id)
-        return jsonify(ok=True, id=rep_id, uuid=_facturama_uuid(original), documents=documents,
-            date=pago.get('FechaPago'), payment_form=pago.get('FormaDePagoP'), reference=pago.get('NumOperacion',''), payer_bank_rfc=pago.get('RfcEmisorCtaOrd','')), 200
+        for source in sources:
+            for uuid,payment in source['records']:
+                raw = billing._fm_request('GET','/api/cfdi',params={'type':'issued','status':'all','page':0,'uuid':uuid},timeout=35)
+                match = next((row for row in _facturama_rows(raw) if _facturama_uuid(row).casefold()==uuid.casefold()),None)
+                if not match:
+                    raise ValueError(f'No se encontró la factura {uuid}.')
+                normalized = _complete_customer(_facturama_detail(str(_pick(match,'Id'))))
+                normalized.update(remaining_balance=float(_money(payment['amount'])+_money(payment['remaining_balance'])),next_partiality_number=payment['partiality_number'])
+                documents.append(dict(invoice=normalized,amount=payment['amount'],original_rep_uuid=source['uuid']))
+        pago = sources[0]['payment']
+        return jsonify(ok=True,id=ids[0],uuid=sources[0]['uuid'],originals=[dict(id=s['id'],uuid=s['uuid']) for s in sources],documents=documents,
+                       date=pago.get('FechaPago'),payment_form=pago.get('FormaDePagoP'),reference=pago.get('NumOperacion',''),payer_bank_rfc=pago.get('RfcEmisorCtaOrd','')),200
     except ValueError as exc:
         return jsonify(ok=False,error=str(exc)),400
     except requests.HTTPError as exc:
         return jsonify(ok=False,error=billing._http_error_detail(exc)),400
+
+
 
 
 def _scaled_taxes(invoice, amount, previous_balance):
@@ -356,7 +398,7 @@ def info(invoice_id):
 @pagos_bp.post("/crear")
 def crear_pago():
     body = request.get_json(silent=True) or {}
-    if body.get('replacement_id') and 'documents' not in body:
+    if (body.get('replacement_id') or body.get('replacement_ids')) and 'documents' not in body:
         return jsonify(ok=False,error='La sustitución requiere seleccionar las facturas relacionadas.'),400
     if 'documents' in body:
         return _create_multiple_payment(body)
@@ -447,25 +489,17 @@ def _create_multiple_payment(body):
         if not isinstance(documents, list) or not 1 <= len(documents) <= 50:
             raise ValueError('Selecciona entre 1 y 50 facturas.')
         index = copy.deepcopy(billing._read_index())
-        replacement_id = str(body.get('replacement_id') or '').strip()
+        replacement_ids = _replacement_ids(body)
+        replacement_id = replacement_ids[0] if replacement_ids else ''
         originals = []
-        original_uuid = ''
+        sources = []
         if replacement_id:
-            if any(p.get('status') == 'replacement_pending' and str(p.get('replaces_id')) == replacement_id
-                   for record in index.values() for p in billing._stored_payment_entries(record)):
-                raise ValueError('Ya existe un sustituto. Consulta la cancelación del anterior; no vuelvas a emitirlo.')
-            original = _facturama_detail(replacement_id)
-            original_uuid = _facturama_uuid(original)
-            if str(_pick(original, 'CfdiType','Type') or '').lower() not in {'p','pago'} or not billing._valid_cfdi_uuid(original_uuid):
-                raise ValueError('El documento a sustituir no es un complemento válido.')
-            if billing._facturama_invoice_row(original)['cancellation_status'] in {'canceled','pending'}:
-                raise ValueError('El complemento anterior está cancelado o tiene una cancelación pendiente. Consulta su estado antes de continuar.')
-            _replacement_payment(replacement_id)
-            originals = _replacement_records(index, replacement_id)
-            if not originals or not billing._rep_cancellation_state(replacement_id)['is_latest']:
-                raise ValueError('No se puede sustituir: faltan pagos registrados o existen parcialidades posteriores.')
+            if len(replacement_ids)>1 and body.get('confirmed_same_payment') is not True:
+                raise ValueError('Confirma que los REP seleccionados corresponden al mismo pago recibido.')
+            sources = _replacement_sources(replacement_ids,index)
+            originals = [(key,old) for source in sources for key,old in source['records']]
             for key, old in originals:
-                index[key]['payments'] = [p for p in billing._stored_payment_entries(index[key]) if str(p.get('rep_id')) != replacement_id]
+                index[key]['payments'] = [p for p in billing._stored_payment_entries(index[key]) if str(p.get('rep_id')) not in replacement_ids]
                 remaining = billing._payment_entries(index[key])
                 if not remaining:
                     index.pop(key)
@@ -510,7 +544,7 @@ def _create_multiple_payment(body):
         if replacement_id:
             if seen_uuids != {str(uuid).lower() for uuid,_ in originals}:
                 raise ValueError('La sustitución debe conservar las mismas facturas. Para cambiar la relación de facturas, revisa el caso antes de timbrar.')
-            cfdi['Relations'] = {'Type':'04', 'Cfdis':[{'Uuid':original_uuid}]}
+            cfdi['Relations'] = {'Type':'04', 'Cfdis':[{'Uuid':source['uuid']} for source in sources]}
         result = billing._fm_request('POST', '/3/cfdis', json_body=cfdi, timeout=75)
         rep_id, rep_uuid = str(_pick(result, 'Id') or ''), _facturama_uuid(result)
         if not rep_id or not billing._valid_cfdi_uuid(rep_uuid):
@@ -518,10 +552,12 @@ def _create_multiple_payment(body):
         applied = []
         for normalized, summary, part_body, unpaid in prepared:
             entry = dict(rep_id=rep_id, rep_uuid=rep_uuid, status='active', amount=float(_money(part_body['amount'])), remaining_balance=float(unpaid), partiality_number=part_body['partiality_number'], date=payment['Date'])
+            entry['expected_invoice_uuids'] = [invoice['uuid'] for invoice,_,_,_ in prepared]
             key = billing._payment_index_key(index, normalized['uuid'])
             if replacement_id:
-                entry.update(status='replacement_pending', replaces_id=replacement_id, replaces_uuid=original_uuid)
                 old = next(old for uuid,old in originals if uuid.lower()==normalized['uuid'].lower())
+                entry.update(status='replacement_pending', replaces_id=old['rep_id'], replaces_uuid=old['rep_uuid'],
+                             replaces_ids=replacement_ids, replaces_uuids=[source['uuid'] for source in sources])
                 index[key] = dict(status='active',payments=[*billing._stored_payment_entries(index.get(key)),old,entry])
                 applied.append(dict(invoice_id=normalized['id'], uuid=normalized['uuid'], folio=normalized['folio'], **entry))
                 continue
@@ -548,8 +584,9 @@ def _create_multiple_payment(body):
         if warnings:
             response['warning'] = ' '.join(warnings)
         if replacement_id:
-            response.update(replaces_id=replacement_id, replaces_uuid=original_uuid,
-                next_action='Solicita la cancelación del anterior con motivo 01 y el UUID del nuevo. El pago no se contará dos veces.')
+            response.update(replaces_id=replacement_id, replaces_uuid=sources[0]['uuid'],
+                replaces=[dict(id=source['id'],uuid=source['uuid']) for source in sources],
+                next_action='Solicita cancelar cada REP anterior con motivo 01 y el UUID del nuevo. El pago no se contará dos veces.')
         return jsonify(response), 200
     except ValueError as exc:
         return jsonify(ok=False, stage='validation', error=str(exc)), 400
