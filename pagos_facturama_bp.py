@@ -290,7 +290,9 @@ def _scaled_taxes(invoice, amount, previous_balance):
 
 def _build_facturama_payment(invoice, body):
     normalized = _complete_customer(invoice)
-    if str(_pick(invoice, 'Currency') or 'MXN').upper() != 'MXN':
+    # El detalle del proveedor puede devolver el código con su descripción de catálogo.
+    currency = str(_pick(invoice, 'Currency') or 'MXN').strip().upper().split(' - ', 1)[0].strip()
+    if currency != 'MXN':
         raise ValueError('Por ahora sólo se admiten facturas y pagos en MXN.')
     if billing._invoice_cancellation_state(normalized['status']) != 'active':
         raise ValueError('No se puede pagar una factura cancelada o en proceso de cancelación.')

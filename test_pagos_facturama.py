@@ -69,6 +69,21 @@ class FacturamaPaymentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no es PPD"):
             payments._build_facturama_payment(invoice, {"amount": 116})
 
+    def test_catalog_currency_description_is_normalized(self):
+        invoice = self.invoice()
+        invoice['Currency'] = 'MXN - Peso Mexicano'
+        with patch.object(billing, '_facturama_issuer_locations', return_value=('42501', '42501')):
+            cfdi, _, _ = payments._build_facturama_payment(invoice, {'amount':116})
+        self.assertEqual(cfdi['Complemento']['Payments'][0]['Currency'], 'MXN')
+
+    def test_foreign_currency_still_rejected(self):
+        for currency in ('USD', 'USD - Dólar estadounidense', 'MXNUSD'):
+            with self.subTest(currency=currency):
+                invoice = self.invoice()
+                invoice['Currency'] = currency
+                with self.assertRaisesRegex(ValueError, 'en MXN'):
+                    payments._build_facturama_payment(invoice, {'amount':116})
+
     def test_optional_payer_bank_without_account(self):
         with patch.object(billing, "_facturama_issuer_locations", return_value=("42501", "42501")):
             for bank in ("", "BBA830831LJ2"):
