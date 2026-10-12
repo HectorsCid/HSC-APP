@@ -51,6 +51,25 @@ class ConsolidationTests(unittest.TestCase):
             self.assertEqual(billing._payment_summary(record,116)['paid_amount'],116)
             self.assertEqual(len(record['payments']),2)
 
+    def test_provider_descriptive_type_uses_stamped_xml(self):
+        rep = self.old_reps['old-1']
+        rep['CfdiType'] = 'Complemento de pago'
+        rep.pop('Uuid')
+        uuid = self.index[next(iter(self.index))]['payments'][0]['rep_uuid']
+        xml = f'''<c:Comprobante xmlns:c="http://www.sat.gob.mx/cfd/4" xmlns:p="http://www.sat.gob.mx/Pagos20" xmlns:t="http://www.sat.gob.mx/TimbreFiscalDigital" TipoDeComprobante="P"><c:Receptor Rfc="BME8604039G0"/><c:Complemento><t:TimbreFiscalDigital UUID="{uuid}"/><p:Pagos><p:Pago MonedaP="MXN"/></p:Pagos></c:Complemento></c:Comprobante>'''.encode()
+        with (patch.object(payments,'_facturama_detail',return_value=rep),
+              patch.object(billing,'_fm_request',return_value=xml),
+              patch.object(billing,'_decode_facturama_file',side_effect=lambda data:data)):
+            sources = payments._replacement_sources(['old-1'],self.index)
+        self.assertEqual(sources[0]['uuid'],uuid)
+
+    def test_non_payment_xml_is_rejected_even_with_payment_node(self):
+        xml = b'<c:Comprobante xmlns:c="http://www.sat.gob.mx/cfd/4" xmlns:p="http://www.sat.gob.mx/Pagos20" TipoDeComprobante="I"><c:Complemento><p:Pago MonedaP="MXN"/></c:Complemento></c:Comprobante>'
+        with (patch.object(billing,'_fm_request',return_value=xml),
+              patch.object(billing,'_decode_facturama_file',side_effect=lambda data:data)):
+            with self.assertRaisesRegex(ValueError,'timbrado'):
+                payments._replacement_payment('old-1')
+
     def test_individual_cancellations_never_double_count(self):
         self.run_group()
         for id in self.old_reps:

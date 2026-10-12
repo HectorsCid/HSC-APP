@@ -132,9 +132,16 @@ def _replacement_payment(rep_id):
         root = ET.fromstring(xml)
     except ET.ParseError as exc:
         raise ValueError('No se pudo leer el XML del complemento anterior.') from exc
+    stamp = root.find('.//{http://www.sat.gob.mx/TimbreFiscalDigital}TimbreFiscalDigital')
+    if root.get('TipoDeComprobante') != 'P' or stamp is None or not billing._valid_cfdi_uuid(stamp.get('UUID')):
+        raise ValueError('El XML seleccionado no es un complemento de pago timbrado válido.')
     payments = root.findall('.//{http://www.sat.gob.mx/Pagos20}Pago')
     if len(payments) != 1 or payments[0].get('MonedaP') != 'MXN':
         raise ValueError('Este asistente admite un solo pago en MXN por complemento. Revisa este caso con tu contador.')
+    payments[0].set('_hsc_rep_uuid', stamp.get('UUID'))
+    receiver = root.find('{http://www.sat.gob.mx/cfd/4}Receptor')
+    if receiver is not None:
+        payments[0].set('_hsc_receiver_rfc', receiver.get('Rfc',''))
     return payments[0]
 
 
@@ -157,9 +164,14 @@ def _replacement_sources(ids, index):
     sources, seen_invoices, rfcs = [], set(), set()
     for rep_id in ids:
         original = _facturama_detail(rep_id)
-        uuid = _facturama_uuid(original)
-        if str(_pick(original,'CfdiType','Type') or '').lower() not in {'p','pago'} or not billing._valid_cfdi_uuid(uuid):
-            raise ValueError('Selecciona únicamente complementos de pago válidos.')
+        payment = _replacement_payment(rep_id)
+        xml_uuid = payment.get('_hsc_rep_uuid')
+        uuid = xml_uuid if isinstance(xml_uuid,str) and xml_uuid else _facturama_uuid(original)
+        if not billing._valid_cfdi_uuid(uuid):
+            raise ValueError('No se pudo confirmar el folio fiscal del complemento anterior.')
+        detail_uuid = _facturama_uuid(original)
+        if detail_uuid and detail_uuid.casefold() != uuid.casefold():
+            raise ValueError('El folio fiscal del detalle no coincide con su XML. No se realizará la sustitución.')
         if billing._facturama_invoice_row(original)['cancellation_status'] in {'canceled','pending'}:
             raise ValueError('Primero resuelve las cancelaciones pendientes de los complementos seleccionados.')
         if any(p.get('status')=='replacement_pending' and str(p.get('replaces_id'))==rep_id
@@ -172,8 +184,9 @@ def _replacement_sources(ids, index):
             if key.casefold() in seen_invoices:
                 raise ValueError('Dos REP seleccionados corresponden a la misma factura. Ese caso requiere conservar pagos y parcialidades separados.')
             seen_invoices.add(key.casefold())
-        rfcs.add(str((_pick(original,'Receiver','Customer') or {}).get('Rfc') or _pick(original,'Rfc') or '').strip().upper())
-        sources.append(dict(id=rep_id, uuid=uuid, records=records, payment=_replacement_payment(rep_id)))
+        xml_rfc = payment.get('_hsc_receiver_rfc')
+        rfcs.add(str((xml_rfc if isinstance(xml_rfc,str) else '') or (_pick(original,'Receiver','Customer') or {}).get('Rfc') or _pick(original,'Rfc') or '').strip().upper())
+        sources.append(dict(id=rep_id, uuid=uuid, records=records, payment=payment))
     if len(ids)>1:
         if len(rfcs)!=1 or not next(iter(rfcs)):
             raise ValueError('Los complementos deben pertenecer al mismo RFC receptor.')
