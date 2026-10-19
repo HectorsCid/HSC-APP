@@ -3204,7 +3204,7 @@ def _scope_operaciones_payload(payload):
                            or user_id in task.get("assigned_user_ids", [task.get("assigned_user_id")])]
         scoped["expenses"] = [expense for expense in payload.get("expenses", [])
                               if expense.get("user_id") == user_id]
-        scoped["worklists"] = [row for row in payload.get("worklists", []) if row.get("assigned_user_id") == user_id]
+        scoped["worklists"] = [row for row in payload.get("worklists", []) if row.get("assigned_user_id") == user_id or row.get('origin') == 'client']
         return scoped
     if role != "client":
         return payload
@@ -3220,7 +3220,8 @@ def _scope_operaciones_payload(payload):
     tasks = [{key: item.get(key) for key in ('id','title','scheduled_date','scheduled_time','client_id','equipment_id','status')}
              for item in payload.get('tasks', []) if client_id and
              (item.get('client_id') == client_id or (not item.get('client_id') and item.get('equipment_id') in equipment_ids))]
-    scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults, tasks=tasks, expenses=[], worklists=[])
+    partner_lists = [row for row in payload.get('worklists', []) if client_id and row.get('client_id') == client_id and row.get('origin') == 'client']
+    scoped.update(clients=clients, equipment=equipment, reports=reports, faults=faults, tasks=tasks, expenses=[], worklists=partner_lists)
     scoped["assigned_client_id"] = client_id
     scoped["scope_valid"] = bool(client_id and clients)
     scoped["stats"] = {
@@ -3446,7 +3447,7 @@ def api_operaciones_delete_user(user_id):
 
 @app.post('/api/operaciones/worklists')
 def api_operaciones_save_worklist():
-    denied = _operations_forbidden('admin', 'technician')
+    denied = _operations_forbidden('admin', 'technician', 'client')
     if denied:
         return denied
     if not OPERACIONES_STORE.enabled:
@@ -3456,7 +3457,8 @@ def api_operaciones_save_worklist():
         return jsonify(ok=False, error='Lista no válida.'), 400
     try:
         result = OPERACIONES_STORE.save_worklist(body, actor_id=str(session.get('hsc_user_id') or 'owner'),
-                                                is_admin=_operations_role() == 'admin')
+                                                is_admin=_operations_role() == 'admin',
+                                                actor_client_id=str(session.get('hsc_client_id') or '') if _operations_role() == 'client' else None)
         _invalidate_operations_cache()
         return jsonify(ok=True, worklist=result)
     except PermissionError as exc:
@@ -3802,6 +3804,11 @@ def _partner_document_reference(item):
     return f"…{value[-8:]}" if len(value) > 8 else value
 
 
+def _read_partner_invoice_display(client_id):
+    from partner_invoice_display import read_display
+    return read_display(OPERACIONES_STORE, client_id)
+
+
 def _partner_documents_payload(client, refresh=False):
     identity = _partner_documents_identity(client)
     groups, _ = billing_client_groups(refresh=refresh)
@@ -3872,6 +3879,8 @@ def _partner_documents_payload(client, refresh=False):
                 "xml_url": url_for("api_operaciones_partner_invoice_file", invoice_id=document_id,
                                    file_type="xml", client_id=client.get("id")),
             })
+    from partner_invoice_display import apply_display
+    invoices = apply_display(invoices, _read_partner_invoice_display(client.get('id')), is_admin=_operations_role() == 'admin')
     return {
         "client": {"id": client.get("id"), "name": client.get("name"), "rfc": identity["rfc"],
                    "needs_rfc": not bool(identity["rfc"])},
@@ -3895,6 +3904,33 @@ def api_operaciones_partner_documents():
     except Exception as exc:
         current_app.logger.exception("No se pudieron consultar documentos Partner: %s", exc)
         return jsonify({"ok": False, "error": "No se pudieron consultar los documentos del cliente."}), 502
+
+
+@app.post('/api/operaciones/partner-documents/invoices/<invoice_id>/display')
+def api_operaciones_partner_invoice_display(invoice_id):
+    denied = _operations_forbidden('admin')
+    if denied:
+        return denied
+    client, error = _partner_documents_client()
+    if error:
+        return error
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(ok=False, error='Cambio no válido.'), 400
+    try:
+        # La pertenencia se comprueba con el catálogo fiscal, no con el ID enviado.
+        documents = _partner_documents_payload(client)
+        if not any(item['id'] == invoice_id for item in documents['invoices']):
+            return jsonify(ok=False, error='La factura no pertenece a esta empresa.'), 404
+        from partner_invoice_display import save_display
+        display = save_display(OPERACIONES_STORE, str(client['id']), invoice_id, body,
+                               str(session.get('hsc_user_id') or 'owner'))
+        return jsonify(ok=True, display=display)
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 409
+    except Exception:
+        current_app.logger.exception('No se confirmó el estado visual de la factura Partner')
+        return jsonify(ok=False, error='No se confirmó el cambio en Partner. Actualiza antes de reintentar.'), 503
 
 
 @app.get('/api/operaciones/fiscal-clients')

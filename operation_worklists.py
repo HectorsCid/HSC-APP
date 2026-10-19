@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 
-def save_worklist(store, body, *, actor_id, is_admin=False):
+def save_worklist(store, body, *, actor_id, is_admin=False, actor_client_id=None):
     store.initialize()
     p = store.placeholder
     ident = str(body.get('id') or '')
@@ -15,7 +15,14 @@ def save_worklist(store, body, *, actor_id, is_admin=False):
     with store.connection() as conn:
         row = conn.execute(f'SELECT payload_json FROM operations_worklists WHERE id={p}', (ident,)).fetchone()
         old = json.loads(row[0]) if row else None
-        if old and not is_admin and old['assigned_user_id'] != actor_id:
+        partner = actor_client_id is not None
+        if partner and (not actor_client_id or body.get('client_id') != actor_client_id or
+                        (old and (old.get('client_id') != actor_client_id or old.get('origin') != 'client'))):
+            raise PermissionError('Sólo puedes crear listas para tu propia empresa.')
+        shared = bool(old and old.get('origin') == 'client')
+        if shared and body.get('client_id') != old['client_id']:
+            raise PermissionError('La lista del cliente no puede cambiar de empresa.')
+        if old and not partner and not shared and not is_admin and old['assigned_user_id'] != actor_id:
             raise PermissionError('Esta lista pertenece a otro técnico.')
         previous = conn.execute(f'SELECT list_id,actor_id FROM operations_worklist_changes WHERE id={p}', (mutation,)).fetchone()
         if previous:
@@ -25,10 +32,10 @@ def save_worklist(store, body, *, actor_id, is_admin=False):
         expected = body.get('expected_revision', 0)
         if not isinstance(expected, int) or expected != (old['revision'] if old else 0):
             raise ValueError('La lista cambió en otro dispositivo. Conservamos tu propuesta; revisa la versión actual antes de reenviar.')
-        assignee = str(body.get('assigned_user_id') or actor_id)
-        if not is_admin and assignee != actor_id:
+        assignee = '' if partner or shared else str(body.get('assigned_user_id') or actor_id)
+        if not partner and not shared and not is_admin and assignee != actor_id:
             raise PermissionError('Sólo el administrador puede asignar listas a otros técnicos.')
-        if assignee != actor_id and (not old or old['assigned_user_id'] != assignee):
+        if assignee and assignee != actor_id and (not old or old['assigned_user_id'] != assignee):
             person = conn.execute(f'SELECT role,status FROM operations_users WHERE id={p}', (assignee,)).fetchone()
             if not person or person[0] != 'technician' or person[1] != 'active':
                 raise ValueError('Elige un técnico activo.')
@@ -77,6 +84,8 @@ def save_worklist(store, body, *, actor_id, is_admin=False):
                       target_date=target_date, status=status, items=normalized,
                       revision=expected + 1, created_by=old['created_by'] if old else actor_id,
                       created_at=old['created_at'] if old else stamp, updated_by=actor_id, updated_at=stamp)
+        if partner or shared:
+            result['origin'] = 'client'
         if old:
             updated = conn.execute(f'UPDATE operations_worklists SET payload_json={p},revision={p} WHERE id={p} AND revision={p}',
                                    (json.dumps(result, ensure_ascii=False), result['revision'], ident, expected))

@@ -71,4 +71,48 @@ class WorklistTests(unittest.TestCase):
             scoped=ns['_scope_operaciones_payload']({'worklists':[{'id':'ONE','assigned_user_id':'T1'},{'id':'TWO','assigned_user_id':'T2'}]})
             self.assertEqual([item['id'] for item in scoped['worklists']],wanted)
 
+    def test_partner_list_is_shared_and_technician_can_work_it(self):
+        first=self.store.save_worklist(self.body,actor_id='CLIENT_A',actor_client_id='A')
+        self.assertEqual(first['origin'],'client')
+        self.assertEqual(first['assigned_user_id'],'')
+        edited=self.save({**first,'expected_revision':1,'mutation_id':'TECH_EDIT','title':'Plan de mantenimiento'},actor='T2')
+        self.assertEqual(edited['origin'],'client')
+        self.assertEqual(edited['created_by'],'CLIENT_A')
+        self.assertEqual(edited['updated_by'],'T2')
+        self.assertEqual(self.store.snapshot()['reports'],[])
+
+    def test_partner_cannot_choose_other_company_or_its_equipment(self):
+        for changes in ({'client_id':'B','items':[{'equipment_id':'B1','round':'1'}]},
+                        {'items':[{'equipment_id':'B1','round':'1'}]}):
+            with self.subTest(changes=changes),self.assertRaises((PermissionError,ValueError)):
+                self.store.save_worklist({**self.body,**changes},actor_id='CLIENT_A',actor_client_id='A')
+        with self.assertRaises(PermissionError):
+            self.store.save_worklist(self.body,actor_id='CLIENT_A',actor_client_id='')
+
+    def test_partner_cannot_modify_technical_lists(self):
+        original=self.save()
+        with self.assertRaises(PermissionError):
+            self.store.save_worklist({**original,'expected_revision':1,'mutation_id':'CLIENT_EDIT'},actor_id='CLIENT_A',actor_client_id='A')
+
+    def test_partner_list_cannot_move_to_other_company(self):
+        first=self.store.save_worklist(self.body,actor_id='CLIENT_A',actor_client_id='A')
+        with self.assertRaises(PermissionError):
+            self.save({**first,'expected_revision':1,'mutation_id':'MOVE','client_id':'B'},actor='T2',admin=True)
+
+    def test_technician_cannot_forge_partner_origin(self):
+        self.assertNotIn('origin',self.save({**self.body,'origin':'client'}))
+
+    def test_partner_scoping_returns_only_own_company_lists(self):
+        tree=ast.parse(Path('app.py').read_text(encoding='utf-8-sig'))
+        fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_scope_operaciones_payload')
+        data={'clients':[{'id':'A'},{'id':'B'}],'worklists':[
+            {'id':'CLIENT_A','client_id':'A','origin':'client','assigned_user_id':''},
+            {'id':'CLIENT_B','client_id':'B','origin':'client','assigned_user_id':''},
+            {'id':'TECH','client_id':'A','assigned_user_id':'T1'}]}
+        for role,wanted in [('client',['CLIENT_A']),('technician',['CLIENT_A','CLIENT_B','TECH'])]:
+            ns={'_operations_role':lambda:role,'session':{'hsc_user_id':'T1','hsc_client_id':'A'}}
+            exec(compile(ast.Module(body=[fn],type_ignores=[]),'app.py','exec'),ns)
+            scoped=ns['_scope_operaciones_payload'](data)
+            self.assertEqual([row['id'] for row in scoped['worklists']],wanted)
+
 if __name__=='__main__':unittest.main()

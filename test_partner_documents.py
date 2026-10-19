@@ -29,6 +29,7 @@ class PartnerDocumentsTest(unittest.TestCase):
             {"id": "COT-TT", "cliente": "Travers Tool", "receptor": {"rfc": "TTO010101AA1"}, "total": 200},
         ]), encoding="utf-8")
         self.patches = [
+            patch.object(module, "_read_partner_invoice_display", return_value={}),
             patch.object(module, "OPERACIONES_STORE", FakeOperationsStore()),
             patch.object(module, "_ruta_cotizaciones", return_value=self.quotes),
             patch.object(module, "_resolver_cliente_catalogo", side_effect=self.resolve_client),
@@ -69,6 +70,18 @@ class PartnerDocumentsTest(unittest.TestCase):
         self.assertEqual(data["quotes"][0]["description"], "Cambio de compresor")
         self.assertEqual([item["id"] for item in data["invoices"]], ["INV-HDI"])
         self.assertEqual([item["id"] for item in data["complements"]], ["REP-HDI"])
+
+    def test_portal_hidden_invoice_filtered_without_changing_billing(self):
+        with patch.object(module,'_read_partner_invoice_display',return_value={'INV-HDI':{'status':'paid','hidden':True,'revision':1}}):
+            self.login('client','HDI')
+            data=self.client.get('/api/operaciones/partner-documents?client_id=HDI').get_json()
+            self.assertEqual(data['invoices'],[])
+            self.login('admin')
+            data=self.client.get('/api/operaciones/partner-documents?client_id=HDI').get_json()
+            self.assertTrue(data['invoices'][0]['portal_hidden'])
+            self.assertEqual(data['invoices'][0]['portal_payment_status'],'paid')
+            self.assertFalse(data['invoices'][0]['paid'])
+            self.assertEqual(data['invoices'][0]['remaining_balance'],25)
 
     def test_partner_cannot_request_another_client(self):
         self.login("client", "HDI")
