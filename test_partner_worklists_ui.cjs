@@ -9,6 +9,11 @@ for(const filter of ['all','done','pending']){
 assert.ok(!html.includes('data-filter="done">Realizados'));
 assert.ok(html.includes("$$('[data-partner-filter]').forEach"));
 assert.ok(html.includes("$$('.nav-btn').forEach"));
+const wiring=html.split('\n').find(line=>line.includes("$$('#equipmentFilters [data-filter]').forEach(b=>b.onclick"));
+const wired={};
+vm.runInNewContext(wiring,{$$:selector=>{wired[selector]={};return [wired[selector]];}});
+assert.equal(typeof wired['[data-partner-filter]'].onclick,'function');
+assert.equal(typeof wired['.nav-btn'].onclick,'function');
 assert.ok(html.includes("$('#roundPendingCount').textContent=active.length-completed"));
 const elements=new Map();
 function get(id){if(!elements.has(id))elements.set(id,{value:'',innerHTML:'',textContent:'',disabled:false,hidden:false,classList:{add(){},remove(){}},focus(){},querySelectorAll(){return this.checked||[];}});return elements.get(id);}
