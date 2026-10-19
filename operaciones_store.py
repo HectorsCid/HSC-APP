@@ -313,6 +313,8 @@ class OperationsStore(SheetDeliveryMixin):
             "CREATE INDEX IF NOT EXISTS idx_operations_equipment_client ON operations_equipment(client_id)",
             "CREATE TABLE IF NOT EXISTS operations_worklists (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, payload_json TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS operations_partner_invoice_display (client_id TEXT NOT NULL, invoice_id TEXT NOT NULL, payload_json TEXT NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY(client_id,invoice_id))",
+            "CREATE TABLE IF NOT EXISTS operations_fault_attentions (id TEXT PRIMARY KEY, fault_id TEXT NOT NULL, payload_json TEXT NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS idx_fault_attentions_fault ON operations_fault_attentions(fault_id)",
             "CREATE TABLE IF NOT EXISTS operations_worklist_changes (id TEXT PRIMARY KEY, list_id TEXT NOT NULL, actor_id TEXT NOT NULL, saved_at TEXT NOT NULL, payload_json TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_worklist_changes_list ON operations_worklist_changes(list_id,saved_at)",
             "CREATE TABLE IF NOT EXISTS operations_repairs (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, owner_id TEXT NOT NULL, client_key TEXT NOT NULL, equipment_key TEXT NOT NULL, service_date TEXT NOT NULL, state TEXT NOT NULL, payload_json TEXT NOT NULL)",

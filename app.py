@@ -6470,6 +6470,21 @@ def _start_initial_drive_sync():
 
 
 from repair_bp import create_repair_blueprint
+from fault_attention_bp import create_fault_attention_blueprint
+def _notify_fault_attention(fault, attention):
+    from notification_delivery import enqueue
+    from urllib.parse import urlencode
+    query=urlencode({'client':fault.get('client_id') or '', 'fault':fault['id']})
+    title='Falla revisada' if attention['status']=='Revisada' else 'Falla reparada'
+    message=f"{fault.get('equipment_id') or 'Equipo'} · {attention['notes']}"
+    for audience,path in [('admin','/hsc-tecnico/'),('technician','/hsc-tecnico/'),('client','/hsc-partner/')]:
+        options=dict(category='fallas',exclude_user_id=attention['actor_id'])
+        if audience!='admin':options['audience']=audience
+        if audience=='client':options['client_id']=fault['client_id']
+        enqueue(title,message,path+'?'+query,'fault-attention:'+attention['id']+':'+audience,**options)
+app.register_blueprint(create_fault_attention_blueprint(OPERACIONES_STORE, _operations_role, _operations_forbidden,
+    _operations_permission_forbidden, store_operations_evidence, _serve_operations_thumbnail,
+    _invalidate_operations_cache, _schedule_operations_sync, _notify_fault_attention))
 from payment_bp import create_payment_blueprint
 app.register_blueprint(create_payment_blueprint(OPERACIONES_STORE, _operations_forbidden))
 from reportes_bp import store_repair_photo

@@ -350,6 +350,8 @@
 {% include '_operations_worklist_editor.html' %}
 <script src="/static/operations_worklists.js?v=4"></script>
 <script src="/static/operations_partner_lists.js?v=1"></script>
+<style>.fault-attention-slot{display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:12px;min-width:0}.fault-attention-slot img{width:100%;height:140px;object-fit:cover;border-radius:8px}.fault-attention-slot label{font-size:.8rem;text-align:center}#faultAttentionHistory article{display:block;margin:12px 0}#faultAttentionHistory small{display:block;margin:6px 0;color:var(--muted)}#faultAttentionHistory p{margin:8px 0}#faultAttentionMessage{margin-top:10px;white-space:pre-wrap}</style>
+<script src="/static/operations_fault_attention.js?v=1"></script>
 <script src="/static/operations_repairs.js?v=8"></script>
 <script src="/static/operations_payments.js?v=2"></script>
 <script src="/static/operations_offline.js?v=20260920-worklists"></script>
@@ -475,7 +477,7 @@
   }
   let lastServerPayload=null,bootstrapRequest=null,fieldRevision=0,serverConnection='checking',pendingFieldCount=0;
   const localPhotoUrls=new Map();
-  let matrixWorklists=[],journeyUi=null,partnerListsUi=null,partnerEquipmentFilter='all';
+  let matrixWorklists=[],journeyUi=null,partnerListsUi=null,faultAttentionUi=null,partnerEquipmentFilter='all';
   let repairsUi=null;
   let paymentsUi=null;
   views.payments=['Administración','Pagos a técnicos'];views.payAccount=['Pagos','Cuenta del técnico'];
@@ -798,6 +800,7 @@
   function bindPartnerFaults(){
     $$('[data-fault-id]').forEach(button=>button.onclick=()=>{
       const fault=matrixFaults.find(item=>item.id===button.dataset.faultId);if(!fault)return;
+      if(faultAttentionUi&&!faultAttentionUi.canOpen(fault.id))return;
       selectedFault=fault.id;
       const equipmentRow=equipment.find(item=>item[0]===fault.equipment_id),status=String(fault.status||'Reportada');
       const resolved=/resuelt|cerrad|atendid|terminad|reparad/i.test(status);
@@ -810,6 +813,7 @@
       $('#faultResolutionSummary').hidden=!(resolved||status==='Revisada');
       $('#faultResolutionText').textContent=`${status}${fault.resolved_at?` · ${fault.resolved_at}`:''}${fault.resolved_by?` · ${fault.resolved_by}`:''}${fault.resolution_notes?` · ${fault.resolution_notes}`:''}`;
       $('#faultDetailModal').classList.add('open');
+      faultAttentionUi?.open(fault);
     });
     if(!account.isOwner)return;
     const closeMenus=()=>$$('.fault-menu').forEach(menu=>{menu.hidden=true;const trigger=menu.parentElement.querySelector('.fault-more');if(trigger)trigger.setAttribute('aria-expanded','false')});
@@ -1879,6 +1883,7 @@
   const networkConnection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;if(networkConnection?.addEventListener)networkConnection.addEventListener('change',()=>{updateOfflineSyncUi();if(shouldSyncNow())resumePendingReportUploads()});
   if(typeof ResizeObserver!=='undefined'){const previewObserver=new ResizeObserver(sizePartnerPreviews);for(const id of ['partnerFaultPreview','partnerEquipmentPreview'])previewObserver.observe($('#'+id));}
   window.addEventListener('resize',sizePartnerPreviews);
+  if(typeof HscFaultAttention!=='undefined')faultAttentionUi=HscFaultAttention.mount({escape:escapeHtml,toast,fetch:hscFetch,compress:compressEvidenceFile,canWrite:account.isOwner||(serverRole==='technician'&&can('createReports')),refresh:()=>loadMatrixData()});
   if(typeof HscPartnerLists!=='undefined')partnerListsUi=HscPartnerLists.mount({escape:escapeHtml,toast,canCreate:serverRole==='client',
     state:()=>({clientId:selectedClient,round:selectedRound,worklists:matrixWorklists,equipment:equipment.map(e=>({id:e[0],name:e[1],client_id:equipmentMeta[e[0]]?.client,active:equipmentMeta[e[0]]?.active}))}),
     save:body=>operationsPost('/api/operaciones/worklists',body),accept:list=>{matrixWorklists=matrixWorklists.filter(row=>row.id!==list.id).concat(list);}
