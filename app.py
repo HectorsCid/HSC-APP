@@ -6494,6 +6494,20 @@ app.register_blueprint(create_repair_blueprint(
     lambda ref: make_response(serve_drive_image_ref_fast(ref)),
 ))
 
+from equipment_cleanup import create_cleanup_blueprint
+
+def _read_matrix_for_equipment_cleanup():
+    try:
+        return read_operaciones_matrix(get_sheets_service(timeout=25), SHEET_ID,
+                                       include_media_refs=True, include_raw=True)
+    finally:
+        reset_thread_google_services()
+
+app.register_blueprint(create_cleanup_blueprint(
+    OPERACIONES_STORE, _operations_forbidden, _read_matrix_for_equipment_cleanup,
+    _invalidate_operations_cache,
+))
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)

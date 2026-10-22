@@ -1,0 +1,15 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Limpieza puntual de equipos · HSC</title>
+<style>body{font:17px system-ui;background:#edf2f8;color:#162640;margin:0;padding:24px}main{max-width:760px;margin:auto;background:white;padding:28px;border-radius:18px}button,a{display:inline-block;padding:12px;margin:8px 8px 8px 0}button{background:#1565c0;color:white;border:0;border-radius:9px;font:inherit;cursor:pointer}.error{color:#a11}.success{color:#075e35}li{padding:5px}small{color:#52627a}</style>
+<main><a href="/hsc-partner/">← Volver a clientes</a><a href="/">Inicio</a>
+<h1>Limpieza puntual de equipos</h1><h2>Visscher Caravelle</h2>
+<p>Solo se retiran del conteo los espacios ausentes en la matriz, sin reportes, fotos, fallas ni trabajo vinculado. Se conservan sus registros como inactivos con respaldo. No cambia la sincronización habitual.</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p><a href="">Volver a consultar</a>{% endif %}
+{% if result %}
+{% if result.done %}<p class="success">Esta limpieza ya se realizó. No se repitió ningún cambio.</p><p>{{ result.result.equipment|length }} espacios quedaron inactivos.</p>
+{% elif result.applied %}<h2 class="success">Listo: {{ result.applied }} espacios retirados del conteo.</h2><p>Los equipos reales y su historial no se modificaron. Actualiza la vista del cliente para comprobar el total.</p>
+{% else %}<h2>{{ result.matrix_count }} equipos en la matriz</h2><p><strong>{{ result.candidates|length }} espacios se pueden retirar.</strong></p>
+<ul>{% for row in result.candidates %}<li>{{ row.id }} · {{ row.name }}</li>{% endfor %}</ul>
+{% if result.protected %}<p>Se conservarán {{ result.protected|length }} registros ausentes porque tienen información vinculada o cambios propios de HSC:</p><ul>{% for row in result.protected %}<li>{{ row.id }} · {{ row.name }}</li>{% endfor %}</ul>{% endif %}
+{% if result.candidates %}<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="fingerprint" value="{{ result.fingerprint }}"><button onclick="this.textContent='Aplicando limpieza…'">Confirmar limpieza puntual</button></form>{% endif %}
+{% endif %}{% endif %}</main></html>
