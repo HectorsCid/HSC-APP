@@ -6,7 +6,11 @@
 <p>Solo se retiran del conteo los espacios ausentes en la matriz, sin reportes, fotos, fallas ni trabajo vinculado. Se conservan sus registros como inactivos con respaldo. No cambia la sincronización habitual.</p>
 {% if error %}<p class="error" role="alert">{{ error }}</p><a href="">Volver a consultar</a>{% endif %}
 {% if result %}
-{% if result.done %}<p class="success">Esta limpieza ya se realizó. No se repitió ningún cambio.</p><p>{{ result.result.equipment|length }} espacios quedaron inactivos.</p>
+{% if result.done %}
+{% if result.final_applied %}<h2 class="success">Listo: VC31, VC32 y VC33 quedaron inactivos.</h2><p>Se conservaron las listas de trabajo sin cambios. Actualiza la vista del cliente para comprobar los 30 equipos reales.</p>
+{% else %}<p class="success">La limpieza inicial ya se realizó. No se repitió ningún cambio.</p>{% endif %}
+<p>{{ result.result.equipment|length }} espacios quedaron inactivos en la limpieza inicial.{% if result.final_count %} También quedaron inactivos los 3 espacios finales.{% endif %}</p>
+{% if result.final_candidates %}<h2>Completar limpieza de los tres espacios</h2><p>VC31, VC32 y VC33 solo están vinculados a listas de trabajo. Puedes dejarlos inactivos conservando esas listas y su historial. No se borrarán listas, fotos ni reportes.</p><form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="phase" value="finish_lists"><input type="hidden" name="fingerprint" value="{{ result.final_fingerprint }}"><button onclick="this.textContent='Retirando los tres espacios…'">Retirar VC31, VC32 y VC33 del catálogo activo</button></form>{% endif %}
 {% elif result.applied %}<h2 class="success">Listo: {{ result.applied }} espacios retirados del conteo.</h2><p>Los equipos reales y su historial no se modificaron. Actualiza la vista del cliente para comprobar el total.</p>
 {% else %}<h2>{{ result.matrix_count }} equipos en la matriz</h2><p><strong>{{ result.candidates|length }} espacios se pueden retirar.</strong></p>
 <ul>{% for row in result.candidates %}<li>{{ row.id }} · {{ row.name }}</li>{% endfor %}</ul>

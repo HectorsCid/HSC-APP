@@ -2,6 +2,7 @@ from copy import deepcopy
 from tempfile import TemporaryDirectory
 from pathlib import Path
 import unittest
+import json
 from equipment_cleanup import reconcile, create_cleanup_blueprint
 from operaciones_store import OperationsStore
 
@@ -55,6 +56,57 @@ class CleanupTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             reconcile(self.store, self.matrix, expected=plan['fingerprint'])
         self.assertEqual(sum(e['status'] == 'Activo' for e in self.store.snapshot()['equipment']), 70)
+
+    def _list_only_setup(self):
+        saved = json.dumps({'id': 'L1', 'items': [{'equipment_id': eid} for eid in ('VC31', 'VC32', 'VC33')]})
+        with self.store.connection() as conn:
+            conn.execute('INSERT INTO operations_worklists(id,revision,payload_json) VALUES (?,?,?)', ('L1', 1, saved))
+        plan = reconcile(self.store, self.matrix)
+        reconcile(self.store, self.matrix, expected=plan['fingerprint'])
+        return saved
+
+    def test_finish_three_preserves_lists_and_is_idempotent(self):
+        saved = self._list_only_setup()
+        plan = reconcile(self.store, self.matrix)
+        self.assertEqual({r['id'] for r in plan['final_candidates']}, {'VC31', 'VC32', 'VC33'})
+        result = reconcile(self.store, self.matrix, expected=plan['final_fingerprint'], finish_lists=True)
+        self.assertTrue(result['final_applied'])
+        self.assertEqual(sum(e['status'] == 'Activo' for e in self.store.snapshot()['equipment']), 30)
+        with self.store.connection() as conn:
+            self.assertEqual(conn.execute("SELECT payload_json FROM operations_worklists WHERE id='L1'").fetchone()[0], saved)
+        self.assertNotIn('applied', reconcile(self.store, self.matrix, expected=plan['final_fingerprint'], finish_lists=True))
+
+    def test_new_report_blocks_all_three(self):
+        self._list_only_setup()
+        plan = reconcile(self.store, self.matrix)
+        payload = deepcopy(self.matrix)
+        payload['reports'] = [{'id': 'NEW', 'equipment_id': 'VC31', 'client_id': 'VC'}]
+        self.store.import_matrix_snapshot(payload)
+        with self.assertRaises(ValueError):
+            reconcile(self.store, self.matrix, expected=plan['final_fingerprint'], finish_lists=True)
+        self.assertEqual(sum(e['status'] == 'Activo' for e in self.store.snapshot()['equipment']), 33)
+
+    def test_finish_form_and_refresh(self):
+        from flask import Flask
+        self._list_only_setup()
+        app = Flask(__name__)
+        app.secret_key = 'test-only'
+        invalidated = []
+        app.register_blueprint(create_cleanup_blueprint(self.store, lambda *_: None, lambda: self.matrix,
+                                                       lambda: invalidated.append(True)))
+        client = app.test_client()
+        page = client.get('/admin/limpieza-equipos-visscher')
+        self.assertIn(b'Retirar VC31, VC32 y VC33', page.data)
+        with client.session_transaction() as sess:
+            csrf = sess['equipment_cleanup_csrf']
+        plan = reconcile(self.store, self.matrix)
+        page = client.post('/admin/limpieza-equipos-visscher', data={
+            'csrf': csrf, 'phase': 'finish_lists', 'fingerprint': plan['final_fingerprint']})
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b'VC31, VC32 y VC33 quedaron inactivos', page.data)
+        self.assertEqual(invalidated, [True])
+        page = client.get('/admin/limpieza-equipos-visscher')
+        self.assertNotIn(b'Retirar VC31, VC32 y VC33', page.data)
 
     def test_admin_only_csrf_and_render(self):
         from flask import Flask

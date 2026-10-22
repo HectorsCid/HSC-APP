@@ -5,9 +5,12 @@ from datetime import datetime, timezone
 
 CLIENT_NAME = 'Visscher Caravelle'
 MARKER = 'one_time_visscher_empty_equipment_20261022'
+FINAL_MARKER = MARKER + '_vc31_vc32_vc33'
+FINAL_IDS = {'VC31', 'VC32', 'VC33'}
+LIST_REASON = 'Está incluido en una lista de trabajo'
 
 
-def reconcile(store, matrix, *, expected=None):
+def reconcile(store, matrix, *, expected=None, finish_lists=False):
     store.initialize()
     clients = [c for c in matrix.get('clients', [])
                if c.get('name', '').strip().casefold() == CLIENT_NAME.casefold()]
@@ -70,7 +73,35 @@ def reconcile(store, matrix, *, expected=None):
             else:
                 candidates.append(row)
         if done:
-            return {'done': True, 'result': json.loads(done[0]), 'protected': skipped}
+            result = {'done': True, 'result': json.loads(done[0]), 'protected': skipped}
+            final = conn.execute(f'SELECT value FROM operations_meta WHERE key={p}', (FINAL_MARKER,)).fetchone()
+            if final:
+                result['final_count'] = len(json.loads(final[0])['equipment'])
+                return result
+            # Excepción acotada a los tres espacios confirmados por el propietario.
+            # No se modifican ni borran listas. Cualquier otro vínculo bloquea el paso.
+            eligible = [row for row in rows if row['id'] in FINAL_IDS
+                        and row['id'] not in present and row['status'].strip().casefold() != 'inactivo'
+                        and reasons.get(row['id']) == {LIST_REASON}]
+            if {row['id'] for row in eligible} == FINAL_IDS:
+                token = hashlib.sha256(('finish_lists:' + json.dumps(eligible, sort_keys=True, ensure_ascii=False)).encode()).hexdigest()
+                result.update(final_candidates=eligible, final_fingerprint=token)
+                if finish_lists and expected is not None:
+                    if expected != token:
+                        raise ValueError('Los datos cambiaron. Vuelve a consultar antes de continuar.')
+                    stamp = datetime.now(timezone.utc).isoformat()
+                    store._upsert_meta(conn, FINAL_MARKER, json.dumps({'at': stamp, 'equipment': eligible}, ensure_ascii=False))
+                    for row in eligible:
+                        conn.execute(f'UPDATE operations_equipment SET status={p},updated_at={p} WHERE id={p}',
+                                     ('Inactivo', stamp, row['id']))
+                    result.update(applied=3, final_applied=True, final_count=3,
+                                  protected=[row for row in skipped if row['id'] not in FINAL_IDS],
+                                  final_candidates=[])
+            elif finish_lists and expected is not None:
+                raise ValueError('Los tres espacios ya no cumplen las condiciones: alguno está en la matriz o tiene otros datos vinculados. No se cambió nada.')
+            return result
+        if finish_lists:
+            raise ValueError('Primero debe completarse la limpieza inicial.')
         token = hashlib.sha256(json.dumps(candidates, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         result = {'done': False, 'matrix_count': len(present), 'candidates': candidates,
                   'protected': skipped, 'fingerprint': token}
@@ -108,7 +139,8 @@ def create_cleanup_blueprint(store, forbidden, read_matrix, invalidate):
                 if not secrets.compare_digest(request.form.get('csrf', ''), session['equipment_cleanup_csrf']):
                     return 'Solicitud no válida. Recarga la página.', 403
                 expected = request.form.get('fingerprint', '')
-            result = reconcile(store, read_matrix(), expected=expected)
+            result = reconcile(store, read_matrix(), expected=expected,
+                               finish_lists=request.method == 'POST' and request.form.get('phase') == 'finish_lists')
             if result.get('applied'):
                 invalidate()
         except Exception as exc:
