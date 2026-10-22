@@ -10,6 +10,7 @@
 {% elif result.applied %}<h2 class="success">Listo: {{ result.applied }} espacios retirados del conteo.</h2><p>Los equipos reales y su historial no se modificaron. Actualiza la vista del cliente para comprobar el total.</p>
 {% else %}<h2>{{ result.matrix_count }} equipos en la matriz</h2><p><strong>{{ result.candidates|length }} espacios se pueden retirar.</strong></p>
 <ul>{% for row in result.candidates %}<li>{{ row.id }} · {{ row.name }}</li>{% endfor %}</ul>
-{% if result.protected %}<p>Se conservarán {{ result.protected|length }} registros ausentes porque tienen información vinculada o cambios propios de HSC:</p><ul>{% for row in result.protected %}<li>{{ row.id }} · {{ row.name }}</li>{% endfor %}</ul>{% endif %}
 {% if result.candidates %}<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="fingerprint" value="{{ result.fingerprint }}"><button onclick="this.textContent='Aplicando limpieza…'">Confirmar limpieza puntual</button></form>{% endif %}
-{% endif %}{% endif %}</main></html>
+{% endif %}
+{% if result.protected %}<h2>Registros protegidos: {{ result.protected|length }}</h2><p>No se han retirado por los siguientes motivos:</p><ul>{% for row in result.protected %}<li><strong>{{ row.id }} · {{ row.name }}</strong><ul>{% for reason in row.reasons %}<li>{{ reason }}</li>{% endfor %}</ul></li>{% endfor %}</ul>{% endif %}
+{% endif %}</main></html>

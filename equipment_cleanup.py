@@ -28,8 +28,6 @@ def reconcile(store, matrix, *, expected=None):
         else:
             conn.execute('BEGIN IMMEDIATE')
         done = conn.execute(f'SELECT value FROM operations_meta WHERE key={p}', (MARKER,)).fetchone()
-        if done:
-            return {'done': True, 'result': json.loads(done[0])}
         local = conn.execute(f'SELECT id FROM operations_clients WHERE id={p} OR matrix_id={p}',
                              (matrix_id, matrix_id)).fetchall()
         if len(local) != 1:
@@ -39,21 +37,40 @@ def reconcile(store, matrix, *, expected=None):
         rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
         if not present.issubset({row['id'] for row in rows}):
             raise ValueError('Faltan equipos de la matriz en HSC. Primero realiza la importación habitual.')
-        protected = {r[0] for table in ('operations_reports', 'operations_faults', 'operations_tasks', 'operations_expenses')
-                     for r in conn.execute(f'SELECT equipment_id FROM {table}').fetchall()}
-        protected.update(r[0] for r in conn.execute("SELECT entity_id FROM operations_sync_outbox WHERE status!='synced'").fetchall())
-        protected.update(r[0] for r in conn.execute('SELECT record_id FROM operations_media_cache').fetchall())
+        reasons = {}
+        def protect(equipment_id, reason):
+            if equipment_id:
+                reasons.setdefault(equipment_id, set()).add(reason)
+        for table, label in (('operations_reports', 'Tiene reportes vinculados'),
+                             ('operations_faults', 'Tiene fallas vinculadas'),
+                             ('operations_tasks', 'Tiene tareas vinculadas'),
+                             ('operations_expenses', 'Tiene gastos vinculados')):
+            for item in conn.execute(f'SELECT equipment_id FROM {table}').fetchall():
+                protect(item[0], label)
+        for item in conn.execute("SELECT entity_id FROM operations_sync_outbox WHERE status!='synced'").fetchall():
+            protect(item[0], 'Tiene cambios pendientes de sincronizar')
+        for item in conn.execute('SELECT record_id FROM operations_media_cache').fetchall():
+            protect(item[0], 'Tiene imágenes guardadas en HSC')
         for saved in conn.execute('SELECT payload_json FROM operations_worklists').fetchall():
-            protected.update(item.get('equipment_id') for item in json.loads(saved[0]).get('items', []))
-        protected.update(r.get('equipment_id') for key in ('reports', 'faults') for r in matrix.get(key, []))
+            for item in json.loads(saved[0]).get('items', []):
+                protect(item.get('equipment_id'), 'Está incluido en una lista de trabajo')
+        for key in ('reports', 'faults'):
+            for item in matrix.get(key, []):
+                protect(item.get('equipment_id'), 'Tiene reportes o fallas en la matriz')
         candidates, skipped = [], []
         for row in rows:
             if row['id'] in present or row['status'].strip().casefold() == 'inactivo':
                 continue
-            if row['id'] in protected or row['source'] != 'sheets' or row['has_photo'] or row['photo_ref']:
-                skipped.append({'id': row['id'], 'name': row['name']})
+            if row['source'] != 'sheets':
+                protect(row['id'], 'Fue creado o modificado en HSC; no es un registro importado sin cambios')
+            if row['has_photo'] or row['photo_ref']:
+                protect(row['id'], 'Su ficha tiene una fotografía registrada')
+            if row['id'] in reasons:
+                skipped.append({'id': row['id'], 'name': row['name'], 'reasons': sorted(reasons[row['id']])})
             else:
                 candidates.append(row)
+        if done:
+            return {'done': True, 'result': json.loads(done[0]), 'protected': skipped}
         token = hashlib.sha256(json.dumps(candidates, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
         result = {'done': False, 'matrix_count': len(present), 'candidates': candidates,
                   'protected': skipped, 'fingerprint': token}

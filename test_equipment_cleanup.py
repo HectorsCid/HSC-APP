@@ -37,6 +37,14 @@ class CleanupTests(unittest.TestCase):
             conn.execute("UPDATE operations_equipment SET source='app' WHERE id='VC33'")
         result = reconcile(self.store, self.matrix)
         self.assertTrue({'VC31', 'VC32', 'VC33'}.issubset({e['id'] for e in result['protected']}))
+        by_id = {e['id']: e for e in result['protected']}
+        self.assertIn('Tiene reportes vinculados', by_id['VC31']['reasons'])
+        self.assertIn('Su ficha tiene una fotografía registrada', by_id['VC32']['reasons'])
+        self.assertTrue(any('creado o modificado' in r for r in by_id['VC33']['reasons']))
+        reconcile(self.store, self.matrix, expected=result['fingerprint'])
+        after = reconcile(self.store, self.matrix)
+        self.assertTrue(after['done'])
+        self.assertEqual(after['protected'], result['protected'])
 
     def test_bad_count_and_stale_preview_change_nothing(self):
         with self.assertRaises(ValueError):
