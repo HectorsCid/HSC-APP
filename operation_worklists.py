@@ -13,6 +13,8 @@ def save_worklist(store, body, *, actor_id, is_admin=False, actor_client_id=None
     if not actor_id or not re.fullmatch(r'[\w-]{1,100}', ident) or not re.fullmatch(r'[\w-]{1,100}', mutation):
         raise ValueError('La lista y el cambio requieren identificadores válidos.')
     with store.connection() as conn:
+        from equipment_retirement import lock_equipment
+        lock_equipment(store, conn)
         row = conn.execute(f'SELECT payload_json FROM operations_worklists WHERE id={p}', (ident,)).fetchone()
         old = json.loads(row[0]) if row else None
         partner = actor_client_id is not None

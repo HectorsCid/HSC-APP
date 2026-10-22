@@ -167,6 +167,7 @@
       <div class="actions"><button class="primary" id="newReport" data-permission="createReports" data-tech-only>＋ Nuevo reporte</button><button class="danger" id="criticalFault" data-permission="reportFaults"><span class="fault-button-icon">!</span><span>Reportar falla</span></button></div>
       <button class="secondary" type="button" data-open-repairs="equipment" data-tech-only>🔧 Historial de reparaciones</button>
       <div class="management-bar" data-tech-only><button class="secondary" id="editOperationalEquipment" data-permission="editEquipment">Editar equipo</button><button class="secondary" id="toggleOperationalEquipment" data-permission="editEquipment">Desactivar equipo</button></div>
+      <div class="management-bar" data-admin-only><button class="secondary" id="removeOperationalEquipment" data-admin-only>🗑 Eliminar / dar de baja</button></div>
       <div class="section-head"><h2>Reportes de esta ronda</h2><span class="count" id="equipmentReportCount"></span></div>
       <div class="report-list bounded-list" id="equipmentReportList"></div>
     </section>
@@ -354,6 +355,7 @@
 <script src="/static/operations_fault_attention.js?v=1"></script>
 <script src="/static/operations_repairs.js?v=8"></script>
 <script src="/static/operations_payments.js?v=2"></script>
+<script src="/static/equipment_retirement.js?v=1"></script>
 <script src="/static/operations_offline.js?v=20260920-worklists"></script>
 <script src="/static/report_collaboration.js?v=1"></script>
 <dialog class="sync-recovery" id="syncRecoveryModal" aria-labelledby="syncRecoveryTitle" aria-describedby="syncRecoveryHelp"><h3 id="syncRecoveryTitle">Revisar y reanudar</h3><p id="syncRecoveryHelp">Usa esta opción únicamente cuando ya no haya una solicitud anterior ejecutándose. Si Google todavía está procesando el envío anterior, espera antes de confirmar. Reanudar conservará todos los cambios pendientes y enviará las revisiones actuales.</p><dl></dl><label class="sync-recovery-check"><input type="checkbox" data-recovery-check><span>Confirmo que ya no hay una solicitud anterior ejecutándose.</span></label><p data-recovery-result role="status" aria-live="polite"></p><p data-recovery-audit class="editor-note"></p><div class="sync-recovery-actions"><button class="secondary" type="button" data-recovery-close>Cerrar</button><button class="primary" type="button" data-recovery-confirm disabled>Confirmar y reanudar</button></div></dialog>
@@ -448,6 +450,7 @@
     equipment.splice(0,equipment.length,...payload.equipment.map(item=>[item.id,item.name,item.brand||'',false]));
     for(const key of Object.keys(equipmentMeta))delete equipmentMeta[key];
     for(const item of payload.equipment)equipmentMeta[item.id]={client:item.client_id,pendingUpload:Boolean(item.pending_upload),active:String(item.status||'').toLowerCase()!=='inactivo',type:item.equipment_type||'Refrigeración',location:item.location||'',department:item.department||'',model:item.model||'',serial:item.serial||'',notes:item.notes||'',photo:item.photo_url||'',photoAvailable:Boolean(item.has_photo)};
+    for(const item of payload.equipment)equipmentMeta[item.id].retired=Boolean(item.retired);
     matrixReports=Array.isArray(payload.reports)?payload.reports:[];
     for(const saved of Object.values(pendingReportUploads()))if(saved?.equipment&&saved?.round&&!matrixReports.some(item=>item.id===`offline:${saved.key}`))matrixReports.push(localPendingReport(saved));
     matrixFaults=Array.isArray(payload.faults)?payload.faults:[];
@@ -751,6 +754,9 @@
     $('#equipmentStatus').style.color=done?'#61e5a7':'#ff9da2';
     if(!meta.active){$('#equipmentStatus').textContent='Equipo inactivo · historial conservado';$('#equipmentStatus').style.color='#9fb0c7';}
     $('#toggleOperationalEquipment').textContent=meta.active?'Desactivar equipo':'Reactivar equipo';
+    $('#toggleOperationalEquipment').hidden=Boolean(meta.retired);
+    $('#editOperationalEquipment').hidden=Boolean(meta.retired);
+    $('#removeOperationalEquipment').hidden=!account.isOwner||Boolean(meta.retired);
     const policyReport=Boolean(clientMeta[meta.client].policy);$('#newReport').disabled=!meta.active;$('#newReport').textContent=policyReport?`＋ Nuevo reporte R${selectedRound}`:'📝 Generar reporte único';
     $('#equipmentReportCount').textContent=done?'1 reporte':'0 reportes';
     $('#equipmentReportList').innerHTML=reportCards(done?[e]:[]);
@@ -1906,6 +1912,9 @@
     const payOriginalExpenses=renderExpenses;renderExpenses=function(){payOriginalExpenses();paymentsUi.changed();};
     const payOriginalAccess=applyAccess;applyAccess=function(){payOriginalAccess();$('#profileExpenseTitle').textContent='Pagos a técnicos';$('#profileExpenseDescription').textContent='Saldos, gastos e historial de pagos';};
   }
+  if(account.isOwner&&typeof HscEquipmentRetirement!=='undefined')HscEquipmentRetirement.mount({isOwner:true,escape:escapeHtml,toast,post:operationsPost,
+    selected:()=>{const row=equipment.find(item=>item[0]===selectedEquipment);return row?{id:row[0],name:row[1],pendingUpload:Boolean(equipmentMeta[selectedEquipment]?.pendingUpload)}:null;},
+    refresh:()=>loadMatrixData(),showClient:()=>{refreshRound();showView(currentMode==='partner'?'partner':'client');}});
   applyAccess();updateOfflineSyncUi();if(typeof fetch==='function')loadMatrixData().finally(()=>{initializeBrowserNavigation();resumePendingReportUploads()});else initializeBrowserNavigation();
 </script>
 </body>

@@ -21,7 +21,7 @@ from operation_locks import resource_lock
 from sheet_delivery import SheetDeliveryMixin
 
 
-SCHEMA_VERSION = "22"
+SCHEMA_VERSION = "23"
 
 
 class ReportConflictError(ValueError):
@@ -318,6 +318,7 @@ class OperationsStore(SheetDeliveryMixin):
             "CREATE TABLE IF NOT EXISTS operations_worklist_changes (id TEXT PRIMARY KEY, list_id TEXT NOT NULL, actor_id TEXT NOT NULL, saved_at TEXT NOT NULL, payload_json TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_worklist_changes_list ON operations_worklist_changes(list_id,saved_at)",
             "CREATE TABLE IF NOT EXISTS operations_repairs (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, owner_id TEXT NOT NULL, client_key TEXT NOT NULL, equipment_key TEXT NOT NULL, service_date TEXT NOT NULL, state TEXT NOT NULL, payload_json TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS operations_equipment_retirements (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT NOT NULL, created_at TEXT NOT NULL, backup_json TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_repairs_equipment ON operations_repairs(equipment_key,service_date)",
             "CREATE INDEX IF NOT EXISTS idx_repairs_date ON operations_repairs(service_date,id)",
             "CREATE TABLE IF NOT EXISTS operations_repair_sequence (id INTEGER PRIMARY KEY, next_value INTEGER NOT NULL)",
@@ -567,6 +568,10 @@ class OperationsStore(SheetDeliveryMixin):
             json.dumps(item.get("_raw") or {}, ensure_ascii=False), "synced", stamp,
         ) for item in payload.get("faults", []) if _text(item.get("id"))]
         with self.connection() as conn:
+            from equipment_retirement import lock_equipment
+            lock_equipment(self, conn)
+            retired = {row[0] for row in conn.execute('SELECT id FROM operations_equipment_retirements').fetchall()}
+            equipment = [row for row in equipment if row[0] not in retired]
             self._upsert_many(conn, "operations_clients",
                 ["id","name","address","matrix_id","selected_round","policy_active","has_photo","photo_ref","source","raw_json","updated_at"], clients,
                 ["name","address","matrix_id","selected_round","has_photo","photo_ref","source","raw_json","updated_at"],
@@ -730,6 +735,7 @@ class OperationsStore(SheetDeliveryMixin):
                 "SELECT category,value,use_count,last_used_at FROM operations_observation_options "
                 "ORDER BY category,use_count DESC,last_used_at DESC,value"
             ).fetchall()
+            retired = {row[0] for row in conn.execute('SELECT id FROM operations_equipment_retirements').fetchall()}
         result_clients = [{
             "id": row[0], "name": row[1], "address": row[2], "matrix_id": row[3],
             "billing_rfc": row[4], "selected_round": row[5], "sort_order": int(row[6] or 0),
@@ -739,7 +745,7 @@ class OperationsStore(SheetDeliveryMixin):
             "id": row[0], "client_id": row[1], "name": row[2], "brand": row[3],
             "model": row[4], "serial": row[5], "status": row[6], "location": row[7],
             "department": row[8], "equipment_type": row[9], "notes": row[10],
-            "has_photo": bool(row[11]), "_photo_ref": row[12],
+            "has_photo": bool(row[11]), "_photo_ref": row[12], "retired": row[0] in retired,
         } for row in equipment]
         result_reports = [{
             "id": row[0], "equipment_id": row[1], "client_id": row[2], "round": row[3],
@@ -992,6 +998,9 @@ class OperationsStore(SheetDeliveryMixin):
                 0, "", "app", "{}", stamp,
             ))
         with self.connection() as conn:
+            from equipment_retirement import lock_equipment, assert_editable
+            lock_equipment(self, conn)
+            assert_editable(self, conn, request_ids)
             self._upsert_many(conn, "operations_equipment",
                 ["id","client_id","name","brand","model","serial","status","location","department","equipment_type","notes","has_photo","photo_ref","source","raw_json","updated_at"],
                 prepared,
@@ -1011,6 +1020,10 @@ class OperationsStore(SheetDeliveryMixin):
             raise ValueError("Tipo de fotografía inválido.")
         p = self.placeholder
         with self.connection() as conn:
+            if kind == 'equipment':
+                from equipment_retirement import lock_equipment, assert_editable
+                lock_equipment(self, conn)
+                assert_editable(self, conn, [_text(equipment_id)])
             result = conn.execute(
                 f"UPDATE {table} SET photo_ref={p},has_photo={p},source='app',updated_at={p} WHERE id={p}",
                 (_text(photo_ref), int(bool(photo_ref)), _now(), _text(equipment_id)),
@@ -1252,6 +1265,8 @@ class OperationsStore(SheetDeliveryMixin):
             source = "app"
         p = self.placeholder
         with self.connection() as conn:
+            from equipment_retirement import require_reference
+            require_reference(self, conn, equipment_id)
             conn.execute(
                 f"INSERT INTO operations_faults(id,client_id,equipment_id,report_id,description,priority,status,reported_at,source,raw_json,sync_status,updated_at) "
                 f"VALUES ({','.join([p] * 12)}) ON CONFLICT(id) DO NOTHING",
@@ -1332,6 +1347,8 @@ class OperationsStore(SheetDeliveryMixin):
             raise ValueError("El estado de la tarea no es válido.")
         stamp, p = _now(), self.placeholder
         with self.connection() as conn:
+            from equipment_retirement import require_reference
+            require_reference(self, conn, _text(item.get('equipment_id')))
             existing = conn.execute(f"SELECT created_at,notify_client,notice_state FROM operations_tasks WHERE id={p}", (task_id,)).fetchone()
             created_at = existing[0] if existing else stamp
             notify_client = bool(item.get('notify_client', bool(existing[1]) if existing else False))
@@ -1420,6 +1437,8 @@ class OperationsStore(SheetDeliveryMixin):
             client_id = equipment["client_id"]
         p, stamp = self.placeholder, _now()
         with self.connection() as conn:
+            from equipment_retirement import require_reference
+            require_reference(self, conn, equipment_id)
             existing = conn.execute(f"SELECT created_at,receipt_ref,user_id FROM operations_expenses WHERE id={p}", (expense_id,)).fetchone()
             if existing and existing[2] != user_id:
                 raise ValueError('Ese gasto pertenece a otra cuenta.')
@@ -2334,6 +2353,12 @@ class OperationsStore(SheetDeliveryMixin):
         """Encola una operación idempotente hacia Drive o Sheets."""
         self.initialize()
         with self.connection() as conn:
+            if entity_type == 'equipment':
+                from equipment_retirement import lock_equipment
+                lock_equipment(self, conn)
+                retired = conn.execute(f'SELECT action FROM operations_equipment_retirements WHERE id={self.placeholder}', (entity_id,)).fetchone()
+                if retired and retired[0] == 'delete':
+                    return None
             return self._queue_sync_in_transaction(conn, entity_type, entity_id, destination, action, payload)
 
     def resource_lock(self, key, timeout=35):

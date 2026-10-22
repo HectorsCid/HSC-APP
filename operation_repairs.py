@@ -70,6 +70,8 @@ def save(store, body, actor, admin=False, author=''):
     p = store.placeholder
     with store.connection() as conn:
         locked(store, conn)
+        from equipment_retirement import require_reference
+        require_reference(store, conn, clean(body.get('equipment_id'), 100))
         try:
             old = read(store, ident, actor, admin, edit=True, conn=conn, lock=True)
         except LookupError:

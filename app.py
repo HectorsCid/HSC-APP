@@ -6495,6 +6495,11 @@ app.register_blueprint(create_repair_blueprint(
 ))
 
 from equipment_cleanup import create_cleanup_blueprint
+from equipment_retirement import create_retirement_blueprint
+
+app.register_blueprint(create_retirement_blueprint(
+    OPERACIONES_STORE, _operations_forbidden, _invalidate_operations_cache,
+))
 
 def _read_matrix_for_equipment_cleanup():
     try:
