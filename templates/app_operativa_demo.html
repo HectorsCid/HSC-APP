@@ -307,7 +307,7 @@
     </section>
 
     <section class="view" data-view="partnerEquipment">
-      <div class="search"><span>⌕</span><input type="search" placeholder="Buscar equipo o ubicación"></div><div class="section-head"><h2 id="partnerEquipmentHeading">Mis equipos</h2><span class="count" id="partnerEquipmentTotal"></span></div><div class="filters"><button type="button" class="chip" data-partner-filter="all">Todos</button><button type="button" class="chip" data-partner-filter="done">Atendidos</button><button type="button" class="chip" data-partner-filter="pending">Pendientes</button></div><div class="equipment-list bounded-list" id="partnerEquipmentFull" style="margin-top:10px"></div>
+      <div class="search"><span>⌕</span><input id="partnerEquipmentSearch" type="search" placeholder="Buscar equipo, clave o ubicación" aria-label="Buscar equipo, clave o ubicación"></div><div class="section-head"><h2 id="partnerEquipmentHeading">Mis equipos</h2><span class="count" id="partnerEquipmentTotal" aria-live="polite"></span></div><div class="filters"><button type="button" class="chip" data-partner-filter="all">Todos</button><button type="button" class="chip" data-partner-filter="done">Atendidos</button><button type="button" class="chip" data-partner-filter="pending">Pendientes</button></div><div class="equipment-list bounded-list" id="partnerEquipmentFull" style="margin-top:10px"></div><div id="partnerEquipmentNoMatches" class="empty" role="status" hidden>No hay equipos que coincidan con la búsqueda y el estado seleccionados.</div>
     </section>
 
     <section class="view" data-view="partnerReports">
@@ -972,6 +972,22 @@
     $('#faultModal p').textContent=`${clientName(selectedClient)} · Selecciona el equipo y describe la falla.`;
     $('#faultModal').classList.add('open');
   }
+  function filterPartnerEquipment(){
+    const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+    const query=normalize($('#partnerEquipmentSearch').value),terms=query.split(/\s+/).filter(Boolean);
+    const names=new Map(equipment.map(item=>[item[0],item[1]]));
+    let visible=0,scope=0;
+    $$('#partnerEquipmentFull [data-partner-equipment]').forEach(button=>{
+      const id=button.dataset.partnerEquipment,meta=equipmentMeta[id],done=Boolean(reportForEquipment(id)?.completed);
+      const inScope=Boolean(meta?.active&&meta.client===selectedClient)&&(partnerEquipmentFilter==='all'||(partnerEquipmentFilter==='done'?done:!done));
+      const text=normalize([id,names.get(id),meta?.location].join(' '));
+      const matches=inScope&&terms.every(term=>text.includes(term));
+      button.hidden=!matches;if(inScope)scope++;if(matches)visible++;
+    });
+    $('#partnerEquipmentNoMatches').hidden=visible>0;
+    $('#partnerEquipmentTotal').textContent=`${query?`${visible} de ${scope}`:scope} equipos · R${selectedRound}`;
+  }
+  $('#partnerEquipmentSearch').oninput=$('#partnerEquipmentSearch').onsearch=()=>{filterPartnerEquipment();$('#partnerEquipmentFull').scrollTop=0;};
   function renderPartnerDashboard(){
     if(!clients.length||!clientMeta[selectedClient])return;
     const meta=clientMeta[selectedClient];
@@ -992,9 +1008,8 @@
     const equipmentMarkup=rows.map(item=>{const itemMeta=equipmentMeta[item[0]],done=Boolean(reportForEquipment(item[0])?.completed);return `<button type="button" class="equipment-card" data-partner-equipment="${escapeHtml(item[0])}"><span class="equipment-photo">${photoMarkup(itemMeta.photo,'❄')}</span><span class="card-copy"><span class="card-title">${escapeHtml(item[1])}</span><span class="card-sub">${escapeHtml(item[0])}${itemMeta.location?` · ${escapeHtml(itemMeta.location)}`:''}</span></span><span class="status-dot ${done?'done':''}" title="${done?'Realizado':'Pendiente'}"></span><span class="chevron" aria-hidden="true">›</span></button>`}).join('')||'<div class="empty">Este cliente no tiene equipos activos.</div>';
     $('#partnerEquipmentPreview').innerHTML=equipmentMarkup;
     $('#partnerEquipmentFull').innerHTML=equipmentMarkup;
-    $$('#partnerEquipmentFull [data-partner-equipment]').forEach(button=>{const done=Boolean(reportForEquipment(button.dataset.partnerEquipment)?.completed);button.hidden=partnerEquipmentFilter==='done'?!done:partnerEquipmentFilter==='pending'?done:false;});
     $('#partnerEquipmentHeading').textContent=partnerEquipmentFilter==='done'?'Equipos atendidos':partnerEquipmentFilter==='pending'?'Equipos pendientes':'Todos los equipos';
-    $('#partnerEquipmentTotal').textContent=`${partnerEquipmentFilter==='done'?completed:partnerEquipmentFilter==='pending'?pending:total} equipos · R${selectedRound}`;
+    filterPartnerEquipment();
     $$('[data-partner-filter]').forEach(b=>{b.classList.toggle('active',b.dataset.partnerFilter===partnerEquipmentFilter);b.setAttribute('aria-pressed',String(b.dataset.partnerFilter===partnerEquipmentFilter));});
     hydratePhotos($('#partnerEquipmentPreview'),5);hydratePhotos($('#partnerEquipmentFull'),5);
     partnerListsUi?.render();
