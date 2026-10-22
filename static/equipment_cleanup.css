@@ -1,0 +1,6 @@
+/* HSC equipment cleanup release 2026-10-22 */
+body{font:17px system-ui;background:#edf2f8;color:#162640;margin:0;padding:24px}
+main{max-width:760px;margin:auto;background:white;padding:28px;border-radius:18px}
+button,a{display:inline-block;padding:12px;margin:8px 8px 8px 0}
+button{background:#1565c0;color:white;border:0;border-radius:9px;font:inherit;cursor:pointer}
+.error{color:#a11}.success{color:#075e35}li{padding:5px}small{color:#52627a}
