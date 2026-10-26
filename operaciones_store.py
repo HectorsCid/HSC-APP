@@ -21,7 +21,7 @@ from operation_locks import resource_lock
 from sheet_delivery import SheetDeliveryMixin
 
 
-SCHEMA_VERSION = "23"
+SCHEMA_VERSION = "24"
 
 
 class ReportConflictError(ValueError):
@@ -319,6 +319,7 @@ class OperationsStore(SheetDeliveryMixin):
             "CREATE INDEX IF NOT EXISTS idx_worklist_changes_list ON operations_worklist_changes(list_id,saved_at)",
             "CREATE TABLE IF NOT EXISTS operations_repairs (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, owner_id TEXT NOT NULL, client_key TEXT NOT NULL, equipment_key TEXT NOT NULL, service_date TEXT NOT NULL, state TEXT NOT NULL, payload_json TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS operations_equipment_retirements (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT NOT NULL, created_at TEXT NOT NULL, backup_json TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS operations_diagnostic_events (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload_json TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_repairs_equipment ON operations_repairs(equipment_key,service_date)",
             "CREATE INDEX IF NOT EXISTS idx_repairs_date ON operations_repairs(service_date,id)",
             "CREATE TABLE IF NOT EXISTS operations_repair_sequence (id INTEGER PRIMARY KEY, next_value INTEGER NOT NULL)",

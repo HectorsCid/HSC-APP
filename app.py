@@ -66,6 +66,7 @@ from reportes_bp import (
 )
 from operaciones_matrix import read_operaciones_matrix
 from operaciones_store import OperationsStore
+from memory_diagnostics import trace_memory
 from operaciones_sync import sync_operations_outbox
 
 from facturacion_bp import facturacion_bp, billing_client_groups, api_invoice_pdf, api_invoice_xml
@@ -1037,6 +1038,7 @@ def _id_cliente_duplicado(client_id, *, except_alias=""):
                  if alias != except_alias and isinstance(data, dict)
                  and str(data.get("id_cliente") or "").strip().upper() == client_id), None)
 
+@trace_memory('drive_clients')
 def _sync_clientes_from_drive_into_memory():
     global clientes_predefinidos
     with _CLIENTES_DATA_LOCK:
@@ -1061,15 +1063,18 @@ __bootstrap_sync_lock = threading.Lock()
 __bootstrap_sync_last_attempt = 0.0
 BOOTSTRAP_SYNC_RETRY_SECONDS = 60
 
+@trace_memory('drive_quotes')
 def _sync_cotizaciones_from_drive_into_local():
     """Descarga/crea cotizaciones.json en Drive y lo deja en data/cotizaciones.json."""
     with _COTIZACIONES_DATA_LOCK:
         return descargar_cotizaciones_de_drive()
 
+@trace_memory('drive_drafts')
 def _sync_borradores_from_drive_into_local():
     with _BORRADORES_DATA_LOCK:
         return descargar_borradores_de_drive()
 
+@trace_memory('drive_startup')
 def _bootstrap_sync_worker(app_obj):
     global __did_sync_once, __did_sync_cotizaciones_once, __did_sync_borradores_once
     try:
@@ -3809,6 +3814,7 @@ def _read_partner_invoice_display(client_id):
     return read_display(OPERACIONES_STORE, client_id)
 
 
+@trace_memory('partner_documents')
 def _partner_documents_payload(client, refresh=False):
     identity = _partner_documents_identity(client)
     groups, _ = billing_client_groups(refresh=refresh)
@@ -4356,6 +4362,7 @@ def _invalidate_operations_cache():
         _OPERACIONES_MATRIX_CACHE.update(ts=0.0, payload=None, source=None)
 
 
+@trace_memory('matrix_sync')
 def _operations_sync_worker(app_obj):
     result = {}
     try:
@@ -6512,6 +6519,11 @@ app.register_blueprint(create_cleanup_blueprint(
     OPERACIONES_STORE, _operations_forbidden, _read_matrix_for_equipment_cleanup,
     _invalidate_operations_cache,
 ))
+
+from diagnostics_bp import create_diagnostics_blueprint
+from memory_diagnostics import install_memory_diagnostics
+app.register_blueprint(create_diagnostics_blueprint(OPERACIONES_STORE, _operations_forbidden))
+install_memory_diagnostics(app, OPERACIONES_STORE)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

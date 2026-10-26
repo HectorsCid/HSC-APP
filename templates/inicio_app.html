@@ -133,6 +133,7 @@
       </div>
     </aside>
 
+    {% if session.get('hsc_authenticated') and session.get('hsc_role', 'admin') == 'admin' %}<p><a class="btn sm" href="/diagnostico">⚙ Diagnóstico de HSC y correo</a></p>{% endif %}
     <header data-title-centered>
       <img src="{{ url_for('static', filename='img/logo2.png') }}" alt="HSC" onerror="this.style.display='none'">
       <div class="eyebrow">Centro de operaciones</div>

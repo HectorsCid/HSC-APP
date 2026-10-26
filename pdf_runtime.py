@@ -17,6 +17,7 @@ import sys
 import tempfile
 import threading
 import time
+from memory_diagnostics import trace_memory
 
 
 class PdfRendererBusy(RuntimeError):
@@ -117,6 +118,7 @@ def _pdf_timeout():
         return 105.0
 
 
+@trace_memory('pdf_worker')
 def _run_pdf_worker(command, *, operation):
     try:
         result = subprocess.run(
@@ -174,6 +176,7 @@ def _render_html_to_temp(html, output_path, *, base_url):
     _validate_pdf(output_path)
 
 
+@trace_memory('pdf_render')
 def render_pdf_bytes(html, *, base_url=None, wait_timeout=5):
     started = time.monotonic()
     before = rss_megabytes()
@@ -189,6 +192,7 @@ def render_pdf_bytes(html, *, base_url=None, wait_timeout=5):
             _finish_log(started, before)
 
 
+@trace_memory('pdf_render')
 def render_pdf_file(html, destination, *, base_url=None, wait_timeout=5):
     started = time.monotonic()
     before = rss_megabytes()
@@ -208,6 +212,7 @@ def render_pdf_file(html, destination, *, base_url=None, wait_timeout=5):
             _finish_log(started, before)
 
 
+@trace_memory('invoice_pdf')
 def render_invoice_pdf_bytes(
     xml_bytes, *, internal_folio="", order_number="", quote_folio="", wait_timeout=10,
 ):

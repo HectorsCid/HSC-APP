@@ -238,6 +238,7 @@
       <a class="btn" href="/clientes"><svg class="line-icon" aria-hidden="true"><use href="#i-user"/></svg>Clientes</a>
       <a class="btn" href="/cotizaciones"><svg class="line-icon" aria-hidden="true"><use href="#i-file"/></svg>Cotizaciones</a>
       <a class="btn" href="/cerrar-sesion"><svg class="line-icon" aria-hidden="true"><use href="#i-exit"/></svg>Cerrar sesión</a>
+      {% if session.get('hsc_authenticated') and session.get('hsc_role', 'admin') == 'admin' %}<a class="btn" href="/diagnostico">⚙ Diagnóstico y correo</a>{% endif %}
       <!-- eliminado: visor fiscal -->
     </div>
   </aside>

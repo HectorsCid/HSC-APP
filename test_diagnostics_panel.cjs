@@ -1,0 +1,26 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const nodes={},calls=[];
+const get=id=>nodes[id]??=( {textContent:'',innerHTML:'',hidden:false,disabled:false,value:0} );
+let failMail=false;
+const state={ok:true,at:'2026-10-26T19:00:00Z',memory:{container_mb:449.3,limit_mb:512,rss_mb:331.1},active:[{operation:'photo_prepare',seconds:2}],database:{ok:true,message:'Responde'},diagnostics_enabled:true,persisted:true,persistence_ok:true,events:[{at:'2026-10-26T19:00:00Z',instance:'test',operation:'<img onerror=bad>',phase:'high_memory',container_mb:449.3,rss_mb:331,peak_container_mb:450,overlap:['photo_prepare']}],dropped:0};
+const context={AbortController,setTimeout,clearTimeout,Date,Number,String,document:{getElementById:get,querySelector:()=>({content:'CSRF'})},fetch:async(url,options)=>{calls.push({url,options});if(url.endsWith('/correo')&&failMail)throw Error('Error de conexión');const data=url.endsWith('/estado')?state:{ok:true,message:'Autenticación aceptada; sin envío',at:state.at};return {ok:true,status:200,redirected:false,json:async()=>data};}};
+vm.runInNewContext(fs.readFileSync('static/diagnostics.js','utf8'),context);
+(async()=>{
+  await new Promise(setImmediate);
+  assert.equal(calls.length,1);assert(calls[0].url.endsWith('/estado'));
+  assert(get('diagMemory').textContent.includes('449.3 MB de 512.0 MB'));
+  assert(get('diagMemoryNote').textContent.includes('Margen reducido'));
+  assert(get('diagEvents').innerHTML.includes('&lt;img'));
+  assert(!get('diagEvents').innerHTML.includes('<img'));
+  await get('diagMailTest').onclick();
+  assert.equal(JSON.parse(calls.at(-1).options.body).csrf,'CSRF');
+  assert.equal(get('diagMailTest').disabled,false);
+  assert.equal(get('diagMail').textContent,'Conexión verificada');
+  failMail=true;await get('diagMailTest').onclick();
+  assert.equal(get('diagMailTest').disabled,false);assert.equal(get('diagError').hidden,false);
+  assert(get('diagError').textContent.includes('Error de conexión'));
+  state.memory={rss_mb:123,container_mb:null,limit_mb:null};await get('diagRefresh').onclick();
+  assert.equal(get('diagBar').hidden,true);assert(get('diagMemory').textContent.includes('no disponible'));
+  assert(!calls.some(c=>/email$|facturar|cancel|smtp.*send/.test(c.url)));
+  console.log('OK: diagnóstico solo lectura al abrir, memoria/desconocido, errores sin bloquear, datos escapados y prueba manual autenticada sin envío.');
+})().catch(error=>{console.error(error);process.exitCode=1});

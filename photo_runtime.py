@@ -6,6 +6,7 @@ import io
 from PIL import Image, ImageOps
 
 from pdf_runtime import log_memory_event, pdf_render_slot, release_pdf_memory
+from memory_diagnostics import trace_memory
 
 
 MAX_SOURCE_PIXELS = 80_000_000
@@ -13,6 +14,7 @@ MAX_DECODE_PIXELS = 12_000_000
 MAX_PHOTO_BYTES = 20 * 1024 * 1024
 
 
+@trace_memory('photo_prepare')
 def prepare_photo(content, *, target_size=(1400, 1400), thumbnail=False, wait_timeout=5):
     """Reduce antes de copiar/rotar; libera todos los buffers aun si falla."""
     if not content or len(content) > MAX_PHOTO_BYTES:

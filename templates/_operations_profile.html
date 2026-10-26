@@ -62,6 +62,7 @@
           <div class="user-list" id="reportPendingReviewList" hidden></div>
           <p class="editor-note">Si tu teléfono no identifica el Wi‑Fi, puedes usar “Sincronizar ahora”.</p>
           <div class="profile-admin-tools" data-admin-only>
+            <a class="profile-row" href="/diagnostico"><span class="profile-row-icon">{{ profile_icon('diagnostics') }}</span><span class="profile-row-copy"><b>Estado de HSC y correo</b><small>Memoria, errores, base de datos y Facturama</small></span><span class="profile-chevron">{{ profile_icon('chevron') }}</span></a>
             <button class="profile-row" id="syncGoogleProfile" type="button"><span class="profile-row-icon">{{ profile_icon('sync') }}</span><span class="profile-row-copy"><b>Actualizar desde Google</b><small>Traer cambios de la Hoja Matriz</small><span class="profile-status" id="profileSyncState">Al día</span></span><span class="profile-chevron">{{ profile_icon('chevron') }}</span></button>
             <button class="profile-row" id="openSyncDiagnostics" type="button"><span class="profile-row-icon">{{ profile_icon('diagnostics') }}</span><span class="profile-row-copy"><b>Diagnóstico</b><small>Revisar conflictos y envíos pendientes</small></span><span class="profile-chevron">{{ profile_icon('chevron') }}</span></button>
           </div>
