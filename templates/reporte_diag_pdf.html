@@ -83,7 +83,9 @@
   <div class="actions-bar">
     <div class="left"><strong>Reporte de trabajo</strong></div>
     <div class="right">
-      <a class="btn" href="{{ back_url|default(url_for('reportes.reportes_inicio'), true) }}">← Regresar</a>
+      {% if back_url and back_url != url_for('reportes.reportes_inicio') %}<a class="btn" href="{{ back_url }}">← Regresar</a>{% endif %}
+      <a class="btn" href="{{ url_for('reportes.reportes_inicio') }}">← Volver a reportes</a>
+      <a class="btn" href="{{ url_for('inicio_app') }}">⌂ Inicio</a>
       <a class="btn" href="{{ url_for('reportes.diag_nuevo', token=token) }}">Editar</a>
       <a class="btn" href="{{ url_for('reportes.diag_pdf', token=token) }}?dl=1">Descargar PDF</a>
       <a class="btn primary" href="{{ url_for('reportes.diag_pdf', token=token) }}">Finalizar y guardar</a>

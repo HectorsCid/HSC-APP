@@ -112,7 +112,9 @@
       <strong>Reporte:</strong> {{ _id }} · {{ datos.get('NombreEquipo','') }}
     </div>
     <div class="right">
-      <a class="btn" href="{{ back_url|default(url_for('reportes.reportes_inicio'), true) }}">← Regresar</a>
+      {% if back_url and back_url != url_for('reportes.reportes_inicio') %}<a class="btn" href="{{ back_url }}">← Regresar</a>{% endif %}
+      <a class="btn" href="{{ url_for('reportes.reportes_inicio') }}">← Volver a reportes</a>
+      <a class="btn" href="{{ url_for('inicio_app') }}">⌂ Inicio</a>
       {% if manual_token %}
         <a class="btn" href="{{ url_for('reportes.diag_nuevo', token=manual_token) }}">Editar</a>
         <a class="btn" href="{{ url_for('reportes.diag_pdf', token=manual_token) }}?dl=1">Descargar PDF</a>

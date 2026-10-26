@@ -2161,8 +2161,9 @@ def diag_prev():
     payload = _diag_store_payload(payload, status="draft")
     (tmp_dir / f"{token}.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
-    # Render de vista previa
-    return _diag_render(payload, show_toolbar=True, embed_for_pdf=False)
+    # El historial debe conservar una consulta GET, nunca el POST con fotos.
+    # Así Atrás y recargar no solicitan reenviar ni repetir el formulario.
+    return redirect(url_for('reportes.diag_prev_guardado', token=payload['token']), code=303)
 
 @reportes_bp.route("/reportes/editar/<id_reporte>", methods=["GET", "POST"], endpoint="reportes_editar")
 def reportes_editar(id_reporte):

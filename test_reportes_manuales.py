@@ -1,5 +1,8 @@
 import os
 import time
+import io
+import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -129,6 +132,58 @@ class ManualReportsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.headers["Location"].endswith("/reportes"))
         self.assertEqual(store.call_args.kwargs["status"], "completed")
+
+    def test_preview_redirects_to_get_and_back_keeps_data_and_six_photos(self):
+        records={}
+        def save(payload,**kwargs):
+            records[payload['token']]={**payload,'folio':'RT-2026-0001','status':'draft'}
+            return records[payload['token']]
+        with tempfile.TemporaryDirectory() as folder:
+            paths=[Path(folder)/name for name in ('uploads','pdfs','tmp')]
+            for path in paths:path.mkdir()
+            with (
+                patch.object(reports,'_diag_paths',return_value=paths),
+                patch.object(reports,'_diag_payload_temporal',side_effect=lambda token:records.get(token)),
+                patch.object(reports,'_diag_store_payload',side_effect=save) as persist,
+                patch.object(reports,'_optimize_photo_bytes',return_value=(b'photo','image/jpeg')) as compress,
+                patch.object(reports,'_diag_render',return_value='<html>Vista previa</html>') as render,
+                patch.object(reports,'_diag_clientes_catalogo',return_value=[]),
+                patch.object(reports,'render_pdf_bytes') as pdf,
+            ):
+                response=self.client.post('/reportes/diag/prev',data={
+                    'report_type':'trabajo','cliente':'Cliente conservado','fecha':'2026-10-20',
+                    'part_desc[]':'Cambio de pieza','part_cant[]':'2','part_precio[]':'0',
+                    'fotos':[(io.BytesIO(b'image'),f'foto{i}.jpg') for i in range(6)],
+                },content_type='multipart/form-data')
+                self.assertEqual(response.status_code,303)
+                location=response.headers['Location']
+                self.assertIn('/reportes/diag/prev/',location)
+                render.assert_not_called()
+                self.assertEqual(persist.call_count,1)
+                self.assertEqual(compress.call_count,6)
+                token=next(iter(records))
+                self.assertEqual(len(records[token]['fotos']),6)
+                # Back/refresh can retrieve the GET preview repeatedly without submitting again.
+                for _ in range(2):self.assertEqual(self.client.get(location).status_code,200)
+                self.assertEqual(persist.call_count,1)
+                self.assertEqual(compress.call_count,6)
+                form=self.client.get('/reportes/diag/nuevo?token='+token).get_data(as_text=True)
+                self.assertIn('Cliente conservado',form)
+                self.assertIn('Cambio de pieza',form)
+                self.assertIn('6 foto(s) conservada(s)',form)
+                pdf.assert_not_called()
+
+    def test_preview_navigation_buttons_are_not_part_of_pdf(self):
+        for kind in ('trabajo','refrigeracion'):
+            with self.subTest(kind=kind),hsc.app.test_request_context('/'):
+                payload={'token':'a'*32,'report_type':kind,'datos':{'cliente':'Cliente'},'partes':[],'fotos':[], 'return_to':'/hsc-tecnico/'}
+                preview=reports._diag_render(payload,show_toolbar=True,embed_for_pdf=False)
+                self.assertIn('← Volver a reportes',preview)
+                self.assertIn('href="/inicio-app"',preview)
+                self.assertIn('href="/hsc-tecnico/"',preview)
+                printable=reports._diag_render(payload,show_toolbar=False,embed_for_pdf=True)
+                self.assertNotIn('← Volver a reportes',printable)
+                self.assertNotIn('href="/inicio-app"',printable)
 
 
 if __name__ == "__main__":
