@@ -5336,9 +5336,16 @@ def api_operaciones_photo(kind, record_id):
     """Sirve una miniatura persistente sin exponer la referencia de Drive."""
     if kind not in {"client", "equipment"}:
         abort(404)
+    client_id = None
     if _operations_role() == "client":
         client_id = str(session.get("hsc_client_id") or "").strip()
-        if kind == "client":
+        if not client_id:
+            abort(404)
+        if OPERACIONES_STORE.enabled:
+            # Check company ownership in the same query as the reference.
+            # Database bootstrap reads intentionally do not populate the cache.
+            allowed = True
+        elif kind == "client":
             allowed = record_id == client_id
         else:
             cached = _OPERACIONES_MATRIX_CACHE.get("payload") or {}
@@ -5348,7 +5355,7 @@ def api_operaciones_photo(kind, record_id):
             )
         if not allowed:
             abort(404)
-    photo_ref = (OPERACIONES_STORE.get_media_ref(kind, record_id) if OPERACIONES_STORE.enabled
+    photo_ref = (OPERACIONES_STORE.get_media_ref(kind, record_id, client_id=client_id) if OPERACIONES_STORE.enabled
                  else _OPERACIONES_MEDIA_REFS.get((kind, record_id)))
     if not photo_ref:
         abort(404)

@@ -846,16 +846,23 @@ class OperationsStore(SheetDeliveryMixin):
         # globalmente por una fila duplicada.
         return True
 
-    def get_media_ref(self, kind, record_id):
+    def get_media_ref(self, kind, record_id, *, client_id=None):
         """Obtiene la referencia original sin depender del caché en memoria del proceso."""
         self.initialize()
         table = {"client": "operations_clients", "equipment": "operations_equipment", "user": "operations_users"}.get(kind)
         if not table:
             return ""
         p = self.placeholder
+        conditions = f"id={p}"
+        params = [_text(record_id)]
+        if client_id is not None:
+            if not _text(client_id) or kind not in {"client", "equipment"}:
+                return ""
+            conditions += f" AND {'client_id' if kind == 'equipment' else 'id'}={p}"
+            params.append(_text(client_id))
         with self.connection() as conn:
             row = conn.execute(
-                f"SELECT photo_ref FROM {table} WHERE id={p}", (_text(record_id),)
+                f"SELECT photo_ref FROM {table} WHERE {conditions}", tuple(params)
             ).fetchone()
         return _text(row[0]) if row else ""
 
