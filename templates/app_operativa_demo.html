@@ -358,6 +358,7 @@
 <script src="/static/operations_payments.js?v=2"></script>
 <script src="/static/equipment_retirement.js?v=1"></script>
 <script src="/static/operations_offline.js?v=20260920-worklists"></script>
+<script src="/static/operations_refresh.js?v=1"></script>
 <script src="/static/report_collaboration.js?v=1"></script>
 <dialog class="sync-recovery" id="syncRecoveryModal" aria-labelledby="syncRecoveryTitle" aria-describedby="syncRecoveryHelp"><h3 id="syncRecoveryTitle">Revisar y reanudar</h3><p id="syncRecoveryHelp">Usa esta opción únicamente cuando ya no haya una solicitud anterior ejecutándose. Si Google todavía está procesando el envío anterior, espera antes de confirmar. Reanudar conservará todos los cambios pendientes y enviará las revisiones actuales.</p><dl></dl><label class="sync-recovery-check"><input type="checkbox" data-recovery-check><span>Confirmo que ya no hay una solicitud anterior ejecutándose.</span></label><p data-recovery-result role="status" aria-live="polite"></p><p data-recovery-audit class="editor-note"></p><div class="sync-recovery-actions"><button class="secondary" type="button" data-recovery-close>Cerrar</button><button class="primary" type="button" data-recovery-confirm disabled>Confirmar y reanudar</button></div></dialog>
 <script src="/static/sync_recovery.js?v=1"></script>
@@ -387,9 +388,10 @@
   const clientName=id=>clients.find(c=>c[1]===id)?.[0]||id;
   const idCollator=new Intl.Collator('es',{numeric:true,sensitivity:'base'});
   const byEquipmentId=(a,b)=>idCollator.compare(a[0],b[0]);
-  const photoMarkup=(url,fallback)=>url?`<span data-photo-fallback>${escapeHtml(fallback)}</span><img data-photo-src="${escapeHtml(url)}" alt="">`:escapeHtml(fallback);
+  const photoHistory=HscRefresh.createPhotoHistory();
+  const photoMarkup=(url,fallback)=>url?`<span data-photo-fallback ${photoHistory.has(url)?'hidden':''}>${escapeHtml(fallback)}</span><img ${photoHistory.has(url)?`class="loaded" src="${escapeHtml(url)}"`:''} data-photo-src="${escapeHtml(url)}" alt="">`:escapeHtml(fallback);
   const pendingPhotos=[];
-  const PHOTO_CONCURRENCY=4;
+  const PHOTO_CONCURRENCY=1;
   let activePhotoLoads=0;
   function pumpPhotoQueue(){
     while(activePhotoLoads<PHOTO_CONCURRENCY&&pendingPhotos.length){
@@ -400,8 +402,8 @@
       let timer;
       const finish=usable=>{
         if(completed)return;completed=true;clearTimeout(timer);
-        if(usable){img.classList.add('loaded');img.previousElementSibling?.setAttribute('hidden','')}
-        else if(Number(img.dataset.photoAttempts||0)<2){img.dataset.photoAttempts=String(Number(img.dataset.photoAttempts||0)+1);delete img.dataset.queued;setTimeout(()=>{if(img.isConnected)queuePhoto(img)},2000)}else img.remove();
+        if(usable){photoHistory.add(img.dataset.photoSrc);img.classList.add('loaded');img.previousElementSibling?.setAttribute('hidden','')}
+        else {img.classList.remove('loaded');img.previousElementSibling?.removeAttribute('hidden');if(Number(img.dataset.photoAttempts||0)<4){img.dataset.photoAttempts=String(Number(img.dataset.photoAttempts||0)+1);delete img.dataset.queued;setTimeout(()=>{if(img.isConnected)queuePhoto(img)},Math.min(10000,2000*2**(Number(img.dataset.photoAttempts)-1)))}else img.remove();}
         activePhotoLoads--;pumpPhotoQueue();
       };
       img.onload=()=>finish(img.naturalWidth>1&&img.naturalHeight>1);
@@ -452,7 +454,7 @@
     for(const key of Object.keys(equipmentMeta))delete equipmentMeta[key];
     for(const item of payload.equipment)equipmentMeta[item.id]={client:item.client_id,pendingUpload:Boolean(item.pending_upload),active:String(item.status||'').toLowerCase()!=='inactivo',type:item.equipment_type||'Refrigeración',location:item.location||'',department:item.department||'',model:item.model||'',serial:item.serial||'',notes:item.notes||'',photo:item.photo_url||'',photoAvailable:Boolean(item.has_photo)};
     for(const item of payload.equipment)equipmentMeta[item.id].retired=Boolean(item.retired);
-    matrixReports=Array.isArray(payload.reports)?payload.reports:[];
+    matrixReports=Array.isArray(payload.reports)?payload.reports.slice():[];
     for(const saved of Object.values(pendingReportUploads()))if(saved?.equipment&&saved?.round&&!matrixReports.some(item=>item.id===`offline:${saved.key}`))matrixReports.push(localPendingReport(saved));
     matrixFaults=Array.isArray(payload.faults)?payload.faults:[];
     matrixTasks=Array.isArray(payload.tasks)?payload.tasks:[];
@@ -481,6 +483,7 @@
   }
   let lastServerPayload=null,bootstrapRequest=null,fieldRevision=0,serverConnection='checking',pendingFieldCount=0;
   const localPhotoUrls=new Map();
+  const repaintGate=HscRefresh.createGate();
   let matrixWorklists=[],journeyUi=null,partnerListsUi=null,faultAttentionUi=null,partnerEquipmentFilter='all';
   let repairsUi=null;
   let paymentsUi=null;
@@ -502,9 +505,12 @@
   async function repaintPendingState(){
     if(!lastServerPayload)return;
     const actions=await fieldActionStorage('list');pendingFieldCount=actions.length;
+    const nextSignature=HscRefresh.signature(lastServerPayload,[actions,pendingReportUploads(),savedClientRounds()]);
+    if(!repaintGate.changed(nextSignature)){updateOfflineSyncUi();return;}
     for(const action of actions)if(action.entityPhoto&&action.files?.[0]){if(!localPhotoUrls.has(action.id))localPhotoUrls.set(action.id,URL.createObjectURL(action.files[0]));action.photoPreview=localPhotoUrls.get(action.id);}
     const active=new Set(actions.map(action=>action.id));for(const [key,url] of localPhotoUrls)if(!active.has(key)){URL.revokeObjectURL(url);localPhotoUrls.delete(key);}
-    applyMatrixBootstrap(HscOffline.overlay(lastServerPayload,actions),true);updateOfflineSyncUi();
+    if(applyMatrixBootstrap(HscOffline.overlay(lastServerPayload,actions),true))repaintGate.commit(nextSignature);
+    updateOfflineSyncUi();
   }
   async function loadMatrixData(refresh=false){
     if(bootstrapRequest)return bootstrapRequest;
@@ -533,6 +539,16 @@
     })();try{return await bootstrapRequest}finally{bootstrapRequest=null}
   }
   const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+  function setupReportComponents(){
+    const options=['Compresor','Motor','Ventilador','Resistencia','Bomba','Otro'];
+    for(const position of [1,2]){
+      const input=$('#reportForm').elements.namedItem('a'+position),label=document.createElement('label'),select=document.createElement('select');
+      select.name=`a${position}_component`;select.id=`reportAmpComponent${position}`;label.htmlFor=select.id;label.textContent='Componente medido';
+      select.innerHTML='<option value="">Sin especificar</option>'+options.map(option=>`<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('');
+      input.parentElement.append(label,select);
+    }
+  }
+  setupReportComponents();
   function openPhotoPicker(button){
     const input=document.getElementById(button.dataset.photoInput);
     if(!input||input.disabled||button.disabled)return;
@@ -1798,7 +1814,18 @@
     if(typeof HscPhotoPreflight==='undefined')throw Error('No se pudo cargar el preparador de fotos. Vuelve a abrir la aplicación.');
     await HscPhotoPreflight.check(file);
     const sourceUrl=URL.createObjectURL(file),image=new Image();let canvas;image.src=sourceUrl;
-    try{await image.decode();if(image.naturalWidth*image.naturalHeight>24000000)throw Error('La imagen supera 24 megapíxeles.');if(typeof document==='undefined'||typeof document.createElement!=='function')return file;const scale=Math.min(1,1600/Math.max(image.naturalWidth,image.naturalHeight)),width=Math.max(1,Math.round(image.naturalWidth*scale)),height=Math.max(1,Math.round(image.naturalHeight*scale));canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const context=canvas.getContext('2d');if(!context)throw Error('No se pudo preparar la imagen.');context.fillStyle='#fff';context.fillRect(0,0,width,height);context.drawImage(image,0,0,width,height);const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(Error('No se pudo comprimir la imagen.')),'image/jpeg',.8));const base=(file.name||'foto').replace(/\.[^.]+$/,'').slice(0,80)||'foto';return new File([blob],`${base}-HSC.jpg`,{type:'image/jpeg',lastModified:file.lastModified||Date.now()});}finally{image.src='';if(canvas){canvas.width=0;canvas.height=0}URL.revokeObjectURL(sourceUrl)}
+    try{
+      await image.decode();
+      if(image.naturalWidth*image.naturalHeight>24000000)throw Error('La imagen supera 24 megapíxeles.');
+      if(typeof document==='undefined'||typeof document.createElement!=='function')return file;
+      const scale=Math.min(1,1920/Math.max(image.naturalWidth,image.naturalHeight)),width=Math.max(1,Math.round(image.naturalWidth*scale)),height=Math.max(1,Math.round(image.naturalHeight*scale));
+      canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+      const context=canvas.getContext('2d');if(!context)throw Error('No se pudo preparar la imagen.');
+      context.fillStyle='#fff';context.fillRect(0,0,width,height);context.drawImage(image,0,0,width,height);
+      const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(Error('No se pudo comprimir la imagen.')),'image/jpeg',.9));
+      const base=(file.name||'foto').replace(/\.[^.]+$/,'').slice(0,80)||'foto';
+      return new File([blob],`${base}-HSC.jpg`,{type:'image/jpeg',lastModified:file.lastModified||Date.now()});
+    }finally{image.src='';if(canvas){canvas.width=0;canvas.height=0}URL.revokeObjectURL(sourceUrl)}
   }
   async function uploadDraftEvidence(photos=evidenceForReport(),context=activeReportContext,manual=false){
     if(!context?.draftId||context.discarding||context.completedRemotely||context.conflicts?.length||!shouldSyncNow(manual))return;

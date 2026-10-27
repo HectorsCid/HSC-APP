@@ -5,6 +5,7 @@ const html = fs.readFileSync('templates/app_operativa_demo.html', 'utf8');
 const source = html.slice(html.indexOf('  function applyMatrixBootstrap('), html.indexOf('  async function loadMatrixData('));
 const element = {classList:{toggle(){},add(){}},textContent:'',innerHTML:''};
 const context = vm.createContext({
+  HscRefresh:require('./static/operations_refresh.js'),
   views:{},serverRole:'technician',account:{id:'T1',isOwner:false},appKind:'technician',
   clients:[],equipment:[],clientMeta:{B:{}},equipmentMeta:{B1:{client:'B'}},
   matrixLoaded:true,selectedClient:'B',selectedEquipment:'B1',selectedRound:'3',

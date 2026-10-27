@@ -2,6 +2,8 @@
 from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file, send_from_directory, abort, jsonify, current_app, session
 
 app = Flask(__name__)
+from report_measurements import COMPONENT_OPTIONS
+app.jinja_env.globals['report_component_options'] = COMPONENT_OPTIONS
 @app.get("/ping_root")
 def ping_root():
     return "pong", 200
@@ -42,7 +44,7 @@ from auth_google import (
     get_drive_service_user,
     reset_thread_google_services,
 )
-from pdf_runtime import PdfRenderError, PdfRendererBusy, render_pdf_file
+from pdf_runtime import PdfRenderError, PdfRendererBusy, render_pdf_file, pdf_render_slot
 from photo_runtime import prepare_photo
 from quotation_branches import catalog_branches, select_branch, validate_branches
 
@@ -5297,24 +5299,27 @@ def _serve_operations_thumbnail(kind, record_id, photo_ref):
         response = send_file(io.BytesIO(cached["content"]), mimetype=cached["mime_type"])
         response.headers["X-HSC-Thumbnail"] = "cache"
     else:
-        original_response = make_response(serve_drive_image_ref_fast(photo_ref))
-        original_response.direct_passthrough = False
-        original_bytes = original_response.get_data()
+        original_response = None
         try:
-            thumbnail, _, width, height = prepare_photo(
-                original_bytes, target_size=(360, 360), thumbnail=True, wait_timeout=0.25
-            )
-            # No guardar la imagen transparente de respaldo cuando Drive falló.
-            if width > 1 and height > 1 and OPERACIONES_STORE.enabled:
-                try:
-                    OPERACIONES_STORE.save_cached_thumbnail(
-                        kind, record_id, photo_ref, thumbnail, "image/webp", width, height
-                    )
-                except Exception as exc:
-                    current_app.logger.warning("No se pudo guardar miniatura %s/%s: %s", kind, record_id, exc)
-            usable_thumbnail = width > 1 and height > 1
-            response = send_file(io.BytesIO(thumbnail), mimetype="image/webp")
-            response.headers["X-HSC-Thumbnail"] = "generated"
+            # Reserve memory BEFORE downloading an original, not just decoding it.
+            with pdf_render_slot(wait_timeout=0.25):
+                original_response = make_response(serve_drive_image_ref_fast(photo_ref))
+                original_response.direct_passthrough = False
+                original_bytes = original_response.get_data()
+                thumbnail, _, width, height = prepare_photo(
+                    original_bytes, target_size=(360, 360), thumbnail=True, wait_timeout=0
+                )
+                # No guardar la imagen transparente de respaldo cuando Drive falló.
+                if width > 1 and height > 1 and OPERACIONES_STORE.enabled:
+                    try:
+                        OPERACIONES_STORE.save_cached_thumbnail(
+                            kind, record_id, photo_ref, thumbnail, "image/webp", width, height
+                        )
+                    except Exception as exc:
+                        current_app.logger.warning("No se pudo guardar miniatura %s/%s: %s", kind, record_id, exc)
+                usable_thumbnail = width > 1 and height > 1
+                response = send_file(io.BytesIO(thumbnail), mimetype="image/webp")
+                response.headers["X-HSC-Thumbnail"] = "generated"
         except Exception as exc:
             current_app.logger.warning("No se pudo optimizar foto %s/%s: %s", kind, record_id, exc)
             # A busy renderer must not send an unbounded full-resolution image
@@ -5324,7 +5329,8 @@ def _serve_operations_thumbnail(kind, record_id, photo_ref):
             response.headers["Retry-After"] = "2"
             usable_thumbnail = False
         finally:
-            original_response.close()
+            if original_response is not None:
+                original_response.close()
     response.headers["Cache-Control"] = (
         "private, max-age=2592000, immutable" if usable_thumbnail else "no-store, max-age=0"
     )

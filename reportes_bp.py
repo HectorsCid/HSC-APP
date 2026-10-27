@@ -72,7 +72,7 @@ AUTO_PDF_INTERVAL = max(60, int(os.environ.get("REPORTES_AUTO_PDF_INTERVAL", "28
 AUTO_PDF_LOOKBACK = max(1, int(os.environ.get("REPORTES_AUTO_PDF_LOOKBACK", "25")))
 AUTO_PDF_STABILITY_SECONDS = max(0, int(os.environ.get("REPORTES_AUTO_PDF_STABILITY_SECONDS", "15")))
 AUTO_PDF_QUEUE_DELAY = max(30, int(os.environ.get("REPORTES_AUTO_PDF_QUEUE_DELAY", "30")))
-PHOTO_TARGET_SIZE = (1400, 1400)
+PHOTO_TARGET_SIZE = (1920, 1920)
 _AUTO_PDF_LOCK = threading.Lock()
 _AUTO_PDF_WAKE_EVENT = threading.Event()
 _AUTO_PDF_CANCEL_EVENT = threading.Event()
@@ -453,7 +453,11 @@ def get_reporte_con_overrides(id_reporte: str):
     base = get_reporte_by_id(id_reporte)
     if not base:
         return None
-    return _apply_cliente_y_overrides(base, id_reporte)
+    data = _apply_cliente_y_overrides(base, id_reporte)
+    store = current_app.extensions.get('operations_store')
+    if store and store.enabled:
+        data.update(store.get_report_components(id_reporte))
+    return data
 
 # ----------------------------------------------------------------------
 # Autocomplete (datalist)
@@ -1706,6 +1710,7 @@ _DIAG_DATA_FIELDS = (
     "temperatura_cto2", "amperaje1", "amperaje2", "obs_amperaje",
     "tol_presion", "tol_temperatura", "tol_amperaje", "obs_electrico",
     "obs_electronico", "obs_mecanico",
+    "a1_component", "a2_component",
 )
 
 
@@ -1868,6 +1873,7 @@ def _diag_refrigeration_data(payload):
         "PresionCto1": data.get("presion_cto1", ""), "PresionCto2": data.get("presion_cto2", ""),
         "TempCto1": data.get("temperatura_cto1", ""), "TempCto2": data.get("temperatura_cto2", ""),
         "Amperaje1": data.get("amperaje1", ""), "Amperaje2": data.get("amperaje2", ""),
+        "a1_component": data.get("a1_component", ""), "a2_component": data.get("a2_component", ""),
         "ObsAmperaje": data.get("obs_amperaje", ""), "ObsElectrico": data.get("obs_electrico", ""),
         "OBsElectrónico": data.get("obs_electronico", ""), "ObsMecanico": data.get("obs_mecanico", ""),
         "Notas": data.get("notas") or data.get("observaciones", ""),

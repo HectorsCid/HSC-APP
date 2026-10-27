@@ -68,6 +68,21 @@ class MediaMemoryTests(unittest.TestCase):
         with Image.open(io.BytesIO(content)) as result:
             self.assertEqual(result.size, (width, height))
 
+    def test_report_quality_uses_aspect_correct_jpeg_draft(self):
+        raw = photo_bytes((4000, 3000))
+        thumbnail = Image.Image.thumbnail
+        decoded_sizes = []
+
+        def observe(image, *args, **kwargs):
+            decoded_sizes.append(image.size)
+            return thumbnail(image, *args, **kwargs)
+
+        with patch.object(Image.Image, 'thumbnail', observe):
+            content, mime, width, height = photo_runtime.prepare_photo(raw, target_size=(1920, 1920))
+        self.assertEqual((width, height), (1920, 1440))
+        self.assertEqual(mime, 'image/jpeg')
+        self.assertTrue(all(w*h <= 3_000_000 for w,h in decoded_sizes))
+
     def test_cached_original_is_still_compressed_before_pdf(self):
         ident = "1AbCdEfGhIjKlMnOpQrStUvWxYz"
         original = photo_bytes()
@@ -78,7 +93,7 @@ class MediaMemoryTests(unittest.TestCase):
             with patch.object(reports, "_optimize_photo_bytes", side_effect=AssertionError("Ya optimizada")):
                 self.assertEqual(reports._photo_data_uri(ident), uri)
         with Image.open(io.BytesIO(base64.b64decode(uri.split(",", 1)[1]))) as result:
-            self.assertLessEqual(max(result.size), 1400)
+            self.assertLessEqual(max(result.size), 1920)
         self.assertEqual(reports._cache_get_bytes(ident)[0], original)
 
     def test_photo_waits_for_pdf_and_nested_report_can_prepare_photos(self):

@@ -2,6 +2,7 @@
 
 from contextlib import ExitStack
 import io
+from math import ceil
 
 from PIL import Image, ImageOps
 
@@ -27,7 +28,12 @@ def prepare_photo(content, *, target_size=(1400, 1400), thumbnail=False, wait_ti
                 if source.width <= 0 or source.height <= 0 or source.width * source.height > MAX_SOURCE_PIXELS:
                     raise ValueError("La foto supera el límite de 80 megapíxeles.")
                 if (source.format or "").upper() in {"JPEG", "JPG", "MPO"}:
-                    source.draft("RGB", target_size)
+                    # JPEG draft uses BOTH requested dimensions to choose its
+                    # decoder scale. A square request can decode a landscape
+                    # photo at full size even though a half-size decode suffices.
+                    scale = min(1, target_size[0] / source.width, target_size[1] / source.height)
+                    draft_size = (max(1, ceil(source.width * scale)), max(1, ceil(source.height * scale)))
+                    source.draft("RGB", draft_size)
                 if source.width * source.height > MAX_DECODE_PIXELS:
                     raise ValueError("La foto requiere demasiada memoria; reduce su resolución antes de subirla.")
                 # exif_transpose carga y copia la imagen. Reducir primero evita
@@ -54,7 +60,7 @@ def prepare_photo(content, *, target_size=(1400, 1400), thumbnail=False, wait_ti
                         else:
                             image = image.convert("RGB")
                             stack.callback(image.close)
-                    fmt, mime, options = "JPEG", "image/jpeg", {"quality": 85, "optimize": True}
+                    fmt, mime, options = "JPEG", "image/jpeg", {"quality": 90, "optimize": True}
                 with io.BytesIO() as output:
                     image.save(output, format=fmt, **options)
                     return output.getvalue(), mime, image.width, image.height

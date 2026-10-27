@@ -21,7 +21,7 @@ from operation_locks import resource_lock
 from sheet_delivery import SheetDeliveryMixin
 
 
-SCHEMA_VERSION = "24"
+SCHEMA_VERSION = "25"
 
 
 class ReportConflictError(ValueError):
@@ -320,6 +320,7 @@ class OperationsStore(SheetDeliveryMixin):
             "CREATE TABLE IF NOT EXISTS operations_repairs (id TEXT PRIMARY KEY, revision INTEGER NOT NULL, owner_id TEXT NOT NULL, client_key TEXT NOT NULL, equipment_key TEXT NOT NULL, service_date TEXT NOT NULL, state TEXT NOT NULL, payload_json TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS operations_equipment_retirements (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT NOT NULL, created_at TEXT NOT NULL, backup_json TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS operations_diagnostic_events (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload_json TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS operations_report_components (matrix_id TEXT PRIMARY KEY, component1 TEXT NOT NULL, component2 TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_repairs_equipment ON operations_repairs(equipment_key,service_date)",
             "CREATE INDEX IF NOT EXISTS idx_repairs_date ON operations_repairs(service_date,id)",
             "CREATE TABLE IF NOT EXISTS operations_repair_sequence (id INTEGER PRIMARY KEY, next_value INTEGER NOT NULL)",
@@ -1049,6 +1050,10 @@ class OperationsStore(SheetDeliveryMixin):
         payload = dict(item.get("payload")) if isinstance(item.get("payload"), dict) else {}
         changed_fields = item.get("changed_fields")
         changed_fields = dict(changed_fields) if isinstance(changed_fields, dict) else None
+        from report_measurements import validate_components
+        validate_components(payload)
+        if changed_fields is not None:
+            validate_components(changed_fields)
         if not equipment_id or not client_id or round_number not in {"1", "2", "3", "4"}:
             raise ValueError("Cliente, equipo y ronda son obligatorios.")
         p = self.placeholder
@@ -1978,6 +1983,15 @@ class OperationsStore(SheetDeliveryMixin):
                 "completed": True, "payload": payload,
                 "evidence": [{"position": item[0], "drive_ref": item[1]} for item in evidence],
             })
+            if any(key in payload for key in ('a1_component', 'a2_component')):
+                from report_measurements import component_labels
+                labels = component_labels(payload)
+                matrix_key = conn.execute(f'SELECT matrix_id FROM operations_reports WHERE id={p}', (final_report_id,)).fetchone()[0] or final_report_id
+                conn.execute(
+                    f'INSERT INTO operations_report_components(matrix_id,component1,component2) VALUES ({p},{p},{p}) '
+                    'ON CONFLICT(matrix_id) DO UPDATE SET component1=excluded.component1,component2=excluded.component2',
+                    (matrix_key, labels['a1_component'], labels['a2_component']),
+                )
             result = self.get_report_detail(final_report_id, connection=conn)
             if submission is not None:
                 result["submission_id"] = _text(submission["submission_id"])
@@ -2331,6 +2345,8 @@ class OperationsStore(SheetDeliveryMixin):
         for name, column in aliases.items():
             if name not in payload and column in payload:
                 payload[name] = payload[column]
+        for key, value in self.get_report_components(row[7] or report_id, connection=connection).items():
+            payload.setdefault(key, value)
         payload.setdefault("inicio", row[4] or "")
         payload.setdefault("fin", row[5] or "")
         return {
@@ -2343,6 +2359,15 @@ class OperationsStore(SheetDeliveryMixin):
                           "actor_name": _text(item[4]), "created_at": _text(item[5]),
                           "mutation_id": _text(item[6])} for item in evidence_rows],
         }
+
+    def get_report_components(self, matrix_id, *, connection=None):
+        self.initialize()
+        with (nullcontext(connection) if connection is not None else self.connection()) as conn:
+            row = conn.execute(
+                f'SELECT component1,component2 FROM operations_report_components WHERE matrix_id={self.placeholder}',
+                (_text(matrix_id),),
+            ).fetchone()
+        return {'a1_component': row[0], 'a2_component': row[1]} if row else {}
 
     def get_report_evidence_ref(self, report_id, position):
         self.initialize()

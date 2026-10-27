@@ -238,12 +238,12 @@
         </div>
 
         <div class="box avoid-break" style="margin-top:8px">
-          <h3>Amperaje de compresor y/o motores <span class="muted">(Tol: {{ datos.get('TolAmperaje','± 1 A') }})</span></h3>
+          <h3>Amperaje de componentes <span class="muted">(Tol: {{ datos.get('TolAmperaje','± 1 A') }})</span></h3>
           <table class="tbl">
             <tr><th>Circuito 1</th><th>Circuito 2</th><th>Observaciones</th></tr>
             <tr>
-              <td>{{ datos.get('Amperaje1','—') }} A</td>
-              <td>{{ datos.get('Amperaje2','—') }} A</td>
+              <td>{% if datos.get('a1_component') %}<strong>{{ datos['a1_component'] }}</strong><br>{% endif %}{{ datos.get('Amperaje1','—') }} A</td>
+              <td>{% if datos.get('a2_component') %}<strong>{{ datos['a2_component'] }}</strong><br>{% endif %}{{ datos.get('Amperaje2','—') }} A</td>
               <td>{{ datos.get('ObsAmperaje','—') }}</td>
             </tr>
           </table>

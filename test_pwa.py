@@ -27,7 +27,7 @@ class PwaTests(unittest.TestCase):
         self.assertIn("no-store", response.headers.get("Cache-Control", ""))
         source = response.get_data(as_text=True)
         self.assertIn("SAFE_PATHS", source)
-        self.assertIn("hsc-shell-v44", source)
+        self.assertIn("hsc-shell-v45", source)
         self.assertIn("const response = await fetch(request)", source)
         self.assertNotIn("cached || fetch(request)", source)
         self.assertNotIn("/facturacion", source)

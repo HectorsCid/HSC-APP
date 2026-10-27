@@ -59,7 +59,7 @@ class MatrixIdentityTests(unittest.TestCase):
         logger = SimpleNamespace(exception=lambda *a: None, warning=lambda *a: None, info=lambda *a: None)
         app = SimpleNamespace(app_context=Context, logger=logger)
         def fail(*a, **kw): raise RuntimeError('Google write unavailable')
-        ns = {'datetime': datetime, '_OPERACIONES_IMPORT_STATUS': {}, 'OPERACIONES_MATRIX_AUTO_SYNC': True, 'OPERACIONES_STORE': SimpleNamespace(import_matrix_snapshot=lambda p: calls.append('import')),
+        ns = {'trace_memory': lambda operation: lambda fn: fn, 'datetime': datetime, '_OPERACIONES_IMPORT_STATUS': {}, 'OPERACIONES_MATRIX_AUTO_SYNC': True, 'OPERACIONES_STORE': SimpleNamespace(import_matrix_snapshot=lambda p: calls.append('import')),
               'get_sheets_write_service': fail, 'sync_operations_outbox': fail, 'SHEET_ID': 'test',
               'get_sheets_service': lambda **kw: None, 'read_operaciones_matrix': lambda *a, **kw: {'stats': {}},
               '_queue_matrix_duplicate_repairs': lambda stats: 0, '_operations_migration_checks': lambda p: {'ready': True}, '_complete_legacy_operations_relations': lambda p: p,

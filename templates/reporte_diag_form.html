@@ -241,6 +241,7 @@
               </div>
               <div class="measure-card">
                 <h3>Amperaje</h3>
+                <div class="row">{% for position in (1,2) %}<div class="col"><label for="amp-component-{{ position }}">Componente · circuito {{ position }}</label><select id="amp-component-{{ position }}" name="a{{ position }}_component"><option value="">Sin especificar</option>{% for option in report_component_options %}<option value="{{ option }}" {% if form_data.get('a' ~ position ~ '_component') == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>{% endfor %}</div>
                 <label>Tolerancia</label><input type="text" name="tol_amperaje" value="{{ form_data.get('tol_amperaje','± 1 A') }}">
                 <div class="row"><div class="col"><label>Circuito 1</label><input type="text" name="amperaje1" value="{{ form_data.get('amperaje1','') }}"></div><div class="col"><label>Circuito 2</label><input type="text" name="amperaje2" value="{{ form_data.get('amperaje2','') }}"></div></div>
                 <label>Observaciones</label><input type="text" name="obs_amperaje" value="{{ form_data.get('obs_amperaje','') }}">
