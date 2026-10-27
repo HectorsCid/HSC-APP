@@ -323,7 +323,7 @@ def scan_partner_documents(app):
     client_ids={u['client_id'] for u in OPERACIONES_STORE.list_users() if u['role']=='client' and u['status']=='active' and u.get('client_id')}
     if not client_ids:
         return
-    for client in OPERACIONES_STORE.snapshot().get('clients',[]):
+    for client in OPERACIONES_STORE.list_clients():
         if client['id'] not in client_ids:
             continue
         try:

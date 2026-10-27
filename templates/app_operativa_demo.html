@@ -157,7 +157,9 @@
       <article class="hero"><div class="hero-top"><div class="hero-logo">—</div><div><h2>Cargando cliente…</h2><p>Validando empresa asignada</p></div></div><div class="address"><span>⌖</span><span>La información aparecerá después de validar tu cuenta.</span></div><div class="field" style="margin-top:15px"><label for="clientRound">Consultar ronda</label><select id="clientRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div><div class="stats" id="equipmentFilters"><button type="button" class="stat active" data-filter="all" aria-pressed="true"><b id="roundEquipment">0</b><span>Equipos · Todos</span></button><button type="button" class="stat" data-filter="done" aria-pressed="false"><b id="roundReports">0</b><span>Atendidos</span></button><button type="button" class="stat" data-filter="pending" aria-pressed="false"><b id="roundPendingCount">0</b><span>Pendientes</span></button><span id="roundLabel" hidden>R2</span></div><div class="progress"><i id="roundProgress"></i></div><div class="progress-label"><span>Avance del periodo</span><b id="roundProgressText"></b></div></article>
       <div class="client-tools"><button class="secondary" id="editOperationalClient" data-permission="editClientData" title="Modificar datos del cliente">✎ Editar cliente</button><button class="secondary" id="addOperationalEquipment" data-permission="addEquipment" title="Registrar otro equipo">＋ Equipo</button><button class="secondary" id="singleWorkReport" data-permission="createReports" data-tech-only title="Crear un reporte sin elegir equipo de la póliza">📝 Reporte único</button></div>
       <section class="client-worklists" data-tech-only><div class="section-head"><h2>Trabajo para hoy</h2><button class="primary" id="newClientWorklist" type="button">＋ Crear lista</button></div><div id="clientWorklistCards"></div></section>
-      <div class="section-head"><h2>Equipos</h2><span class="count" id="roundPending"></span></div><div class="equipment-list bounded-list" id="equipmentList" style="margin-top:10px"></div>
+      <div class="section-head"><h2>Equipos</h2><span class="count" id="roundPending"></span></div>
+      <div class="search"><span>⌕</span><input id="technicianEquipmentSearch" type="search" placeholder="Buscar nombre, ID, marca, modelo o ubicación" aria-label="Buscar equipos por nombre, ID, marca, modelo o ubicación"></div>
+      <p class="count" id="technicianEquipmentSearchCount" aria-live="polite"></p><div class="equipment-list bounded-list" id="equipmentList" style="margin-top:10px"></div><div class="empty" id="technicianEquipmentNoMatches" role="status" hidden>No hay equipos que coincidan con tu búsqueda y el estado seleccionado.</div>
       <div class="section-head"><h2>Reportes de la ronda</h2><span class="count" id="roundReportCount"></span></div><div class="report-list bounded-list" id="roundReportList"></div>
       <div class="section-head"><h2>Fallas del cliente</h2><span class="count" id="clientFaultCount"></span></div><div class="user-list bounded-list" id="clientFaultList"></div>
     </section>
@@ -325,7 +327,7 @@
       <div class="partner-doc-tabs" role="tablist"><button class="chip active" type="button" data-partner-doc-tab="quotes">Cotizaciones</button><button class="chip" type="button" data-partner-doc-tab="invoices">Facturas</button><button class="chip" type="button" data-partner-doc-tab="complements">Complementos</button></div>
       <div class="section-head"><h2 id="partnerDocumentsTitle">Cotizaciones</h2><button class="mini-btn" type="button" id="reloadPartnerDocuments">↻ Actualizar</button></div>
       <div id="partnerHiddenInvoiceTools" hidden><label><input type="checkbox" id="showHiddenPartnerInvoices"> Mostrar facturas ocultas</label><p class="editor-note">Estos controles sólo cambian lo que ve el cliente en Partner. No modifican Facturación ni el SAT.</p></div>
-      <div class="partner-doc-list" id="partnerDocumentsList"><div class="empty">Abre Documentos para consultar la información.</div></div>
+      <p id="partnerDocumentsFreshness" class="count" role="status"></p><div class="partner-doc-list" id="partnerDocumentsList"><div class="empty">Abre Documentos para consultar la información.</div></div>
     </section>
 
     <section class="view" data-view="inviteAccept"><div class="accept-wrap"><div class="accept-logo">HSC</div><article class="accept-card"><div class="eyebrow" style="text-align:center">Invitación segura</div><h2>Bienvenido a HSC Partner</h2><p>Héctor Silva Cid te invitó a consultar la información de Visscher Caravelle.</p><div class="scope"><b>Tu acceso incluye</b><span>Equipos, reportes de servicio, documentos y fallas reportadas.</span></div><div class="field"><label>Nombre</label><input value="María Nieves"></div><div class="field" style="margin-top:12px"><label>Crear contraseña</label><input type="password" placeholder="Mínimo 8 caracteres"></div><div class="field" style="margin-top:12px"><label>Confirmar contraseña</label><input type="password"></div><button class="primary wide" style="margin-top:16px" id="acceptInvite">Aceptar e instalar HSC Partner</button><button class="secondary wide" style="margin-top:9px" id="cancelAccept">Ahora no</button></article></div></section>
@@ -741,6 +743,7 @@
     const active=all.filter(e=>equipmentMeta[e[0]].active),completed=active.filter(e=>e[3]).length;
     const rows=all.filter(e=>equipmentFilter==='all'||(equipmentMeta[e[0]].active&&(equipmentFilter==='done'?e[3]:!e[3])));
     $('#equipmentList').innerHTML=rows.map(equipmentCard).join('')||'<div class="empty">No hay equipos con este estado en la ronda seleccionada.</div>';
+    filterTechnicianEquipment();
     // Adelanta la siguiente pantalla del teléfono sin solicitar los 388 equipos.
     hydratePhotos($('#equipmentList'),12);
     $('#roundLabel').textContent=`R${selectedRound}`;$('#roundReports').textContent=completed;
@@ -758,6 +761,19 @@
     });
     bindRoundReports();
   }
+  function filterTechnicianEquipment(){
+    const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es-MX').trim();
+    const query=normalize($('#technicianEquipmentSearch').value),terms=query.split(/\s+/).filter(Boolean);
+    const rows=new Map(equipment.map(row=>[row[0],row]));let visible=0,total=0;
+    $$('#equipmentList [data-equipment]').forEach(button=>{
+      const id=button.dataset.equipment,row=rows.get(id)||[],meta=equipmentMeta[id]||{};
+      const text=normalize([id,row[1],row[2],meta.model,meta.serial,meta.location,meta.department,meta.type].join(' '));
+      const matches=terms.every(term=>text.includes(term));button.hidden=!matches;total++;if(matches)visible++;
+    });
+    $('#technicianEquipmentSearchCount').textContent=query?`${visible} de ${total} equipos`:'';
+    $('#technicianEquipmentNoMatches').hidden=!query||visible>0;
+  }
+  $('#technicianEquipmentSearch').oninput=$('#technicianEquipmentSearch').onsearch=()=>{filterTechnicianEquipment();$('#equipmentList').scrollTop=0;};
   function renderEquipmentDetail(){
     const e=equipment.find(row=>row[0]===selectedEquipment);if(!e)return;
     const done=demoRounds[selectedRound].done.includes(e[0]);
@@ -932,6 +948,8 @@
   }
   function renderPartnerDocuments(){
     const payload=partnerDocuments||{quotes:[],invoices:[],complements:[],summary:{}};
+    const catalog=payload.catalog||{},stamp=catalog.updated_at?new Date(catalog.updated_at*1000).toLocaleString('es-MX'):'';
+    $('#partnerDocumentsFreshness').textContent=catalog.error||`${stamp?'Última actualización: '+stamp+'. ':''}${catalog.refreshing?'Actualizando Facturama en segundo plano…':catalog.stale?'Mostrando la última información disponible.':''}`;
     $('#partnerQuoteCount').textContent=payload.summary?.quotes||0;$('#partnerInvoiceCount').textContent=payload.summary?.invoices||0;$('#partnerComplementCount').textContent=payload.summary?.complements||0;
     $('#partnerDocumentsIdentity').textContent=payload.client?.rfc?`${payload.client.name} · RFC ${payload.client.rfc}`:`${payload.client?.name||clientName(selectedClient)} · Falta vincular el RFC fiscal en Clientes`;
     const labels={quotes:'Cotizaciones',invoices:'Facturas',complements:'Complementos de pago'},rows=(payload[partnerDocumentTab]||[]).filter(item=>!item.portal_hidden||(account.isOwner&&$('#showHiddenPartnerInvoices').checked));
@@ -962,18 +980,26 @@
     }catch(error){toast(error.message);if(partnerDocumentsClient===clientId)renderPartnerDocuments();}
     finally{partnerDisplaySaving=false;control.disabled=false;}
   }
+  let partnerCatalogTimer=null,partnerCatalogRetries=0;
+  function retryPartnerCatalog(clientId){
+    clearTimeout(partnerCatalogTimer);
+    if(partnerCatalogRetries>=12)return;
+    partnerCatalogTimer=setTimeout(()=>{if(current==='partnerDocuments'&&selectedClient===clientId){partnerCatalogRetries++;loadPartnerDocuments();}},5000);
+  }
   async function loadPartnerDocuments(force=false){
+    if(force)partnerCatalogRetries=0;
     const requestedClient=selectedClient,memory=!force&&partnerDocumentsClient===requestedClient?partnerDocuments:null,cached=memory||readPartnerDocumentCache(requestedClient);
     if(cached){partnerDocuments=cached;partnerDocumentsClient=requestedClient;renderPartnerDocuments()}
     else $('#partnerDocumentsList').innerHTML='<div class="empty">Consultando documentos…</div>';
     try{
       const response=await fetch(`/api/operaciones/partner-documents?client_id=${encodeURIComponent(requestedClient)}${force?'&refresh=1':''}`,{headers:{Accept:'application/json'}}),payload=await response.json();
+      if(payload.code==='catalog_preparing')retryPartnerCatalog(requestedClient);
       if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudieron consultar los documentos.');
       const previous=readPartnerDocumentCache(requestedClient)||cached;
       for(const item of payload.invoices||[])if(!item.description)item.description=(previous?.invoices||[]).find(row=>row.id===item.id)?.description||'';
       writePartnerDocumentCache(requestedClient,payload);
       if(selectedClient===requestedClient){partnerDocuments=payload;partnerDocumentsClient=requestedClient;renderPartnerDocuments()}
-      if(account.isOwner)warmPartnerDocumentCache(requestedClient);
+      if(payload.catalog?.refreshing)retryPartnerCatalog(requestedClient);else partnerCatalogRetries=0;
     }catch(error){if(!cached)$('#partnerDocumentsList').innerHTML=`<div class="empty">${escapeHtml(error.message)}</div>`;else toast('Mostrando documentos guardados · no se pudo actualizar')}
   }
   async function warmPartnerDocumentCache(exceptClient){

@@ -101,7 +101,7 @@ class ReportSafetyTests(unittest.TestCase):
         app = Flask(__name__)
         app.config.update(TESTING=True, SECRET_KEY='test')
         names = {'api_operaciones_finalize_report', 'api_operaciones_reset_report_evidence',
-                 'api_operaciones_upload_report_evidence', 'api_operaciones_report_detail', 'api_operaciones_bootstrap'}
+                 'api_operaciones_upload_report_evidence', 'api_operaciones_report_detail', 'api_operaciones_bootstrap', '_operations_view_snapshot'}
         tree = ast.parse(Path('app.py').read_text(encoding='utf-8-sig'))
         functions = [fn for fn in tree.body if isinstance(fn, ast.FunctionDef) and fn.name in names]
         ns = dict(app=app, OPERACIONES_STORE=self.store, request=request, session=session,

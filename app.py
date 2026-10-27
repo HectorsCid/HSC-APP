@@ -3,6 +3,7 @@ from flask import Flask, render_template, request, redirect, url_for, make_respo
 
 app = Flask(__name__)
 from report_measurements import COMPONENT_OPTIONS
+from billing_catalog import CatalogPreparing
 app.jinja_env.globals['report_component_options'] = COMPONENT_OPTIONS
 @app.get("/ping_root")
 def ping_root():
@@ -3697,7 +3698,7 @@ def api_operaciones_client_reports_folder(client_id):
         assigned_id = str(session.get("hsc_client_id") or "").strip()
         if not assigned_id or requested_id != assigned_id:
             return jsonify({"ok": False, "error": "Este cliente no pertenece a tu cuenta."}), 403
-    clients = OPERACIONES_STORE.snapshot().get("clients", []) if OPERACIONES_STORE.enabled else []
+    clients = OPERACIONES_STORE.list_clients(client_id=requested_id) if OPERACIONES_STORE.enabled else []
     if not clients:
         clients = (_OPERACIONES_MATRIX_CACHE.get("payload") or {}).get("clients", [])
     client = next((item for item in clients if str(item.get("id") or "").strip() == requested_id), None)
@@ -3724,7 +3725,7 @@ def _partner_documents_client(requested_id=""):
         if client_id and client_id != assigned_id:
             return None, (jsonify({"ok": False, "error": "Este cliente no pertenece a tu cuenta."}), 403)
         client_id = assigned_id
-    clients = OPERACIONES_STORE.snapshot().get("clients", []) if OPERACIONES_STORE.enabled else []
+    clients = OPERACIONES_STORE.list_clients(client_id=client_id) if OPERACIONES_STORE.enabled else []
     client = next((item for item in clients if str(item.get("id") or "").strip() == client_id), None)
     if not client:
         return None, (jsonify({"ok": False, "error": "No se encontró el cliente asignado."}), 404)
@@ -3819,8 +3820,12 @@ def _read_partner_invoice_display(client_id):
 @trace_memory('partner_documents')
 def _partner_documents_payload(client, refresh=False):
     identity = _partner_documents_identity(client)
-    groups, _ = billing_client_groups(refresh=refresh)
+    groups, payment_sync = billing_client_groups(refresh=refresh, customer_tax_id=identity['rfc'] or None)
     billing = next((group for group in groups if identity["rfc"] and group.get("rfc") == identity["rfc"]), None)
+    if not billing and identity['rfc'] and not groups:
+        # Preserve the existing name fallback only when the direct RFC lookup
+        # misses; normal requests materialize just the requested fiscal group.
+        groups, payment_sync = billing_client_groups(refresh=False)
     if not billing:
         billing = next((group for group in groups
                         if _normalizar_nombre_importacion(group.get("name")) in identity["names"]), None)
@@ -3892,6 +3897,7 @@ def _partner_documents_payload(client, refresh=False):
     return {
         "client": {"id": client.get("id"), "name": client.get("name"), "rfc": identity["rfc"],
                    "needs_rfc": not bool(identity["rfc"])},
+        "catalog": payment_sync.get('catalog') or {},
         "quotes": quotes, "invoices": invoices, "complements": complements,
         "summary": {
             "quotes": len(quotes), "invoices": len(invoices), "complements": len(complements),
@@ -3909,6 +3915,8 @@ def api_operaciones_partner_documents():
         return jsonify({"ok": True, **_partner_documents_payload(
             client, refresh=request.args.get("refresh") == "1"
         )})
+    except CatalogPreparing as exc:
+        return jsonify(ok=False,code='catalog_preparing',error=str(exc)),503
     except Exception as exc:
         current_app.logger.exception("No se pudieron consultar documentos Partner: %s", exc)
         return jsonify({"ok": False, "error": "No se pudieron consultar los documentos del cliente."}), 502
@@ -4020,6 +4028,12 @@ def api_operaciones_partner_invoice_file(invoice_id, file_type):
     return api_invoice_pdf(invoice_id) if file_type == "pdf" else api_invoice_xml(invoice_id)
 
 
+def _operations_view_snapshot():
+    if _operations_role() == 'client':
+        return OPERACIONES_STORE.snapshot(client_id=str(session.get('hsc_client_id') or '').strip())
+    return OPERACIONES_STORE.snapshot()
+
+
 @app.get('/api/operaciones/bootstrap')
 def api_operaciones_bootstrap():
     """Lee primero la base operativa; Sheets sólo alimenta la carga inicial/refresco."""
@@ -4044,7 +4058,7 @@ def api_operaciones_bootstrap():
             _invalidate_operations_cache()
             if duplicate_repairs:
                 _schedule_operations_sync(force=True)
-            payload = _prepare_operaciones_payload(OPERACIONES_STORE.snapshot())
+            payload = _prepare_operaciones_payload(_operations_view_snapshot())
             return jsonify({
                 "ok": True, "read_only": False, "cached": False,
                 "source": "database", "refreshing": False,
@@ -4062,7 +4076,7 @@ def api_operaciones_bootstrap():
             _OPERACIONES_IMPORT_STATUS["error"] = failure_warning
             current_app.logger.exception("No se pudo confirmar el refresco manual de la matriz: %s", exc)
             try:
-                payload = _prepare_operaciones_payload(OPERACIONES_STORE.snapshot())
+                payload = _prepare_operaciones_payload(_operations_view_snapshot())
                 return jsonify({
                     "ok": True, "read_only": False, "cached": True, "stale": True,
                     "source": "database", "refreshing": False,
@@ -4079,7 +4093,7 @@ def api_operaciones_bootstrap():
     if OPERACIONES_STORE.enabled:
         try:
             if OPERACIONES_STORE.has_data():
-                payload = _prepare_operaciones_payload(OPERACIONES_STORE.snapshot())
+                payload = _prepare_operaciones_payload(_operations_view_snapshot())
                 if refresh:
                     _schedule_operations_sync(force=True)
                 return jsonify({

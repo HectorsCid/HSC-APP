@@ -10,6 +10,10 @@ import app as module
 class FakeOperationsStore:
     enabled = True
 
+    def list_clients(self, *, client_id=None):
+        rows=self.snapshot()['clients']
+        return [row for row in rows if client_id is None or row['id']==client_id]
+
     def snapshot(self):
         return {"clients": [
             {"id": "HDI", "name": "Holiday Inn Diamante"},

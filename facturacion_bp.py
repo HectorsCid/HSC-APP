@@ -17,6 +17,7 @@ import re
 import smtplib
 import mimetypes
 import requests
+from billing_catalog import CatalogPreparing
 import time
 from zoneinfo import ZoneInfo
 from werkzeug.utils import secure_filename
@@ -947,6 +948,9 @@ def _received_summary(rows):
 
 
 def _fm_request(method, path, *, json_body=None, params=None, timeout=60):
+    if method.upper() == 'GET':
+        from billing_catalog import bounded_timeout
+        timeout = bounded_timeout(timeout)
     cfg = _facturama_config()
     if not cfg["configured"]:
         raise RuntimeError("Faltan FACTURAMA_USER y FACTURAMA_PASSWORD")
@@ -1975,7 +1979,32 @@ def api_list_facturas():
     return jsonify({"ok": True, "data": out}), 200
 
 
-def billing_client_groups(refresh=False):
+def billing_client_groups(refresh=False, customer_tax_id=None):
+    """Serve the durable catalog; provider work runs in one background task."""
+    store = current_app.extensions.get('operations_store')
+    if store is not None and store.enabled:
+        from billing_catalog import controller
+        cfg = _facturama_config()
+        if not cfg['configured']:
+            raise RuntimeError('Faltan FACTURAMA_USER y FACTURAMA_PASSWORD')
+        scope = hashlib.sha256((cfg['base'] + '|' + cfg['user']).encode()).hexdigest()
+        catalog = controller(current_app._get_current_object(), store, scope, _fm_request, _build_billing_groups, _confirm_catalog_cancellation)
+        return catalog.read(refresh=refresh, customer_tax_id=customer_tax_id)
+    return _billing_client_groups_legacy(refresh=refresh)
+
+
+def _confirm_catalog_cancellation(raw):
+    """A direct provider detail, not absence from a list, confirms resolution."""
+    status = _pick(raw, 'Status')
+    if status:
+        state = _invoice_cancellation_state(status)
+        if state == 'active' and str(status).strip().casefold() not in {'active','vigente','issued','timbrada','timbrado'}:
+            raise ValueError('El proveedor no confirmó el estado de la cancelación.')
+        _persist_cancellation_state(_pick(raw,'Id'), _pick(raw,'Uuid','FolioFiscal'), state,
+                                    _invoice_status_label(status), source='facturama_detail')
+
+
+def _billing_client_groups_legacy(refresh=False):
     """Construye la relación por receptor para Panel y las cuentas Partner."""
     if _provider() != "facturama":
         raise RuntimeError("El panel por cliente requiere Facturama.")
@@ -2047,6 +2076,17 @@ def billing_client_groups(refresh=False):
                 break
             previous_page = page_identity
             append_unique(batch)
+    result, payment_sync = _build_billing_groups(source)
+    with _BILLING_CLIENT_GROUPS_LOCK:
+        _BILLING_CLIENT_GROUPS_CACHE.update(ts=now, result=result, payment_sync=payment_sync)
+    return result, payment_sync
+
+
+def _build_billing_groups(source):
+    pending_keys = {str(value).strip().casefold() for item in source
+                    if _invoice_cancellation_state(_pick(item,'Status')) == 'pending'
+                    for value in (_pick(item,'Id'),_pick(item,'Uuid','FolioFiscal')) if value}
+    _reconcile_pending_cancellation_cache(pending_keys)
     payment_sync = _sync_facturama_payment_rows(source)
     payments = _read_index()
     deliveries = read_email_deliveries()
@@ -2096,8 +2136,6 @@ def billing_client_groups(refresh=False):
         group["invoices"].sort(key=lambda row: str(row.get("date") or ""), reverse=True)
         group["complements"].sort(key=lambda row: str(row.get("date") or ""), reverse=True)
     result.sort(key=lambda row: (row["pending_complements"] == 0, -row["pending_total"], row["name"].casefold()))
-    with _BILLING_CLIENT_GROUPS_LOCK:
-        _BILLING_CLIENT_GROUPS_CACHE.update(ts=now, result=result, payment_sync=payment_sync)
     return result, payment_sync
 
 
@@ -2106,6 +2144,8 @@ def api_billing_clients():
     """Relación por receptor de facturas, cobros y complementos registrados."""
     try:
         result, payment_sync = billing_client_groups(refresh=request.args.get("refresh") == "1")
+    except CatalogPreparing as exc:
+        return jsonify(ok=False,code='catalog_preparing',error=str(exc)),503
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 503
     except requests.HTTPError as exc:

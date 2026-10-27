@@ -323,7 +323,7 @@
     </div>
     <div class="card" id="panelClientes" style="display:none">
       <div class="panel-head"><div><h2>Relación por cliente</h2><div class="pill">Facturas, cobros y complementos en un solo lugar</div></div><button class="btn" id="reloadClients"><svg class="line-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Actualizar</button></div>
-      <div class="client-layout"><div class="client-list" id="billingClientList"><div class="empty-state">Abre esta pestaña para consultar.</div></div><div class="client-detail" id="billingClientDetail"><div class="empty-state">Selecciona un cliente.</div></div></div>
+      <p id="billingCatalogFreshness" class="pill" role="status"></p><div class="client-layout"><div class="client-list" id="billingClientList"><div class="empty-state">Abre esta pestaña para consultar.</div></div><div class="client-detail" id="billingClientDetail"><div class="empty-state">Selecciona un cliente.</div></div></div>
     </div>
   </main>
 </div>
@@ -862,12 +862,22 @@ function renderBillingClient(client){
   detail.innerHTML=`<div class="client-detail-head"><div><h3>${escAttr(client.name)}</h3><div class="mini-sub">${escAttr(client.rfc)}</div></div>${client.pending_complements?`<span class="badge red">${client.pending_complements} pendiente(s)</span>`:'<span class="badge green">Al corriente</span>'}</div><div class="client-kpis"><div class="summary-box"><span>Facturado</span><strong>${moneyMx(client.invoiced_total)}</strong></div><div class="summary-box"><span>Cobrado</span><strong>${moneyMx(client.collected_total)}</strong></div><div class="summary-box"><span>Por cobrar</span><strong>${moneyMx(client.pending_total)}</strong></div></div><div class="section-label">Facturas</div>${invoices||'<div class="empty-state">Sin facturas.</div>'}<div class="section-label">Complementos</div>${complements||'<div class="mini-sub">Sin complementos registrados.</div>'}`;
   detail.querySelectorAll('[data-client-email]').forEach(button=>button.onclick=()=>openEmailModal({id:button.dataset.clientEmail,email:button.dataset.email||'',folio:button.dataset.folio||'',rfc:button.dataset.rfc||'',cliente:button.dataset.cliente||''}));
 }
-async function loadBillingClients(){
+let billingCatalogTimer=null,billingCatalogRetries=0;
+function retryBillingCatalog(){
+  clearTimeout(billingCatalogTimer);if(billingCatalogRetries>=12)return;
+  billingCatalogTimer=setTimeout(()=>{if($('#panelClientes').style.display!=='none'){billingCatalogRetries++;loadBillingClients();}},5000);
+}
+async function loadBillingClients(force=false){
+  if(force===true)billingCatalogRetries=0;
   const list=document.getElementById('billingClientList');const detail=document.getElementById('billingClientDetail');
   list.innerHTML='<div class="empty-state">Consultando facturas y complementos…</div>';detail.innerHTML='<div class="empty-state">Preparando relación…</div>';
   try{
-    const response=await fetch('/api/facturacion/clientes');const result=await response.json();
+    const response=await fetch('/api/facturacion/clientes'+(force===true?'?refresh=1':''));const result=await response.json();
+    if(result.code==='catalog_preparing')retryBillingCatalog();
     if(!response.ok||!result.ok)throw new Error(errorText(result.error));
+    const catalog=result.payment_sync?.catalog||{},stamp=catalog.updated_at?new Date(catalog.updated_at*1000).toLocaleString('es-MX'):'';
+    $('#billingCatalogFreshness').textContent=catalog.error||`${stamp?'Última actualización: '+stamp+'. ':''}${catalog.refreshing?'Actualizando Facturama en segundo plano…':catalog.stale?'Mostrando la última información disponible.':''}`;
+    if(catalog.refreshing)retryBillingCatalog();else billingCatalogRetries=0;
     const query=($('#q').value||'').trim().toLowerCase();billingClients=(result.data||[]).filter(row=>!query||[row.name,row.rfc].some(value=>String(value||'').toLowerCase().includes(query)));
     if(!billingClients.length){list.innerHTML='<div class="empty-state">No hay clientes para esta búsqueda.</div>';detail.innerHTML='<div class="empty-state">Sin información.</div>';return;}
     list.innerHTML=billingClients.map((client,index)=>`<button class="client-item ${index===0?'active':''}" data-client-index="${index}"><strong>${escAttr(client.name)}</strong><strong class="${client.pending_complements?'pending':''}">${client.pending_complements?`${client.pending_complements} pendiente(s)`:'Al corriente'}</strong><small>${escAttr(client.rfc)} · ${client.invoice_count} factura(s)</small><small>${moneyMx(client.pending_total)}</small></button>`).join('');
@@ -880,7 +890,7 @@ document.getElementById('reloadReceived').onclick=loadReceived;
 document.getElementById('reloadBalance').onclick=loadBalance;
 document.getElementById('balanceScope').onchange=loadBalance;
 document.getElementById('balanceClient').onchange=loadBalance;
-document.getElementById('reloadClients').onclick=loadBillingClients;
+document.getElementById('reloadClients').onclick=()=>loadBillingClients(true);
 
 /* ===== Envío de PDF y XML por CarrierZone ===== */
 const em = $('#em');

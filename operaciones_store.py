@@ -21,7 +21,7 @@ from operation_locks import resource_lock
 from sheet_delivery import SheetDeliveryMixin
 
 
-SCHEMA_VERSION = "25"
+SCHEMA_VERSION = "26"
 
 
 class ReportConflictError(ValueError):
@@ -321,6 +321,9 @@ class OperationsStore(SheetDeliveryMixin):
             "CREATE TABLE IF NOT EXISTS operations_equipment_retirements (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, action TEXT NOT NULL, actor_id TEXT NOT NULL, created_at TEXT NOT NULL, backup_json TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS operations_diagnostic_events (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, payload_json TEXT NOT NULL)",
             "CREATE TABLE IF NOT EXISTS operations_report_components (matrix_id TEXT PRIMARY KEY, component1 TEXT NOT NULL, component2 TEXT NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS operations_billing_rows (scope TEXT NOT NULL, id TEXT NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY(scope,id))",
+            "CREATE TABLE IF NOT EXISTS operations_billing_groups (scope TEXT NOT NULL, id TEXT NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY(scope,id))",
+            "CREATE TABLE IF NOT EXISTS operations_billing_state (scope TEXT PRIMARY KEY, payload_json TEXT NOT NULL)",
             "CREATE INDEX IF NOT EXISTS idx_repairs_equipment ON operations_repairs(equipment_key,service_date)",
             "CREATE INDEX IF NOT EXISTS idx_repairs_date ON operations_repairs(service_date,id)",
             "CREATE TABLE IF NOT EXISTS operations_repair_sequence (id INTEGER PRIMARY KEY, next_value INTEGER NOT NULL)",
@@ -694,50 +697,79 @@ class OperationsStore(SheetDeliveryMixin):
             "reports": len(report_ids), "faults": len(fault_ids),
         }
 
-    def snapshot(self):
+    def list_clients(self, *, client_id=None):
+        """Lightweight client lookup, without reports, evidence or expenses."""
         self.initialize()
+        where = f' WHERE id={self.placeholder}' if client_id is not None else ''
+        params = (_text(client_id),) if client_id is not None else ()
+        with self.connection() as conn:
+            rows = conn.execute(
+                'SELECT id,name,address,matrix_id,billing_rfc,selected_round,sort_order,policy_active,has_photo,photo_ref '
+                'FROM operations_clients' + where + ' ORDER BY name,id', params,
+            ).fetchall()
+        return [dict(id=row[0],name=row[1],address=row[2],matrix_id=row[3],billing_rfc=row[4],
+                     selected_round=row[5],sort_order=int(row[6] or 0),policy_active=bool(row[7]),
+                     has_photo=bool(row[8]),_photo_ref=row[9]) for row in rows]
+
+    def snapshot(self, *, client_id=None):
+        self.initialize()
+        scoped = client_id is not None
+        p = self.placeholder
+        one = (_text(client_id),) if scoped else ()
+        two = one * 2
+        client_where = f' WHERE id={p}' if scoped else ''
+        company_where = f' WHERE client_id={p}' if scoped else ''
+        equipment_scope = f'SELECT id FROM operations_equipment WHERE client_id={p}'
+        report_where = f' WHERE (r.client_id={p} OR r.equipment_id IN ({equipment_scope}))' if scoped else ''
+        fault_where = f' AND (f.client_id={p} OR f.equipment_id IN ({equipment_scope}))' if scoped else ''
+        task_where = f" WHERE (client_id={p} OR (client_id='' AND equipment_id IN ({equipment_scope})))" if scoped else ''
         with self.connection() as conn:
             clients = conn.execute(
                 "SELECT id,name,address,matrix_id,billing_rfc,selected_round,sort_order,policy_active,has_photo,photo_ref "
-                "FROM operations_clients ORDER BY CASE WHEN sort_order>0 THEN 0 ELSE 1 END,sort_order,name,id"
+                "FROM operations_clients" + client_where + " ORDER BY CASE WHEN sort_order>0 THEN 0 ELSE 1 END,sort_order,name,id", one
             ).fetchall()
             equipment = conn.execute(
-                "SELECT id,client_id,name,brand,model,serial,status,location,department,equipment_type,notes,has_photo,photo_ref FROM operations_equipment ORDER BY client_id,name,id"
+                "SELECT id,client_id,name,brand,model,serial,status,location,department,equipment_type,notes,has_photo,photo_ref FROM operations_equipment" + company_where + " ORDER BY client_id,name,id", one
             ).fetchall()
             reports = conn.execute(
                 "SELECT r.id,r.equipment_id,r.client_id,r.round_number,r.start_at,r.end_at,r.completed,"
                 "r.matrix_id,r.report_type,r.state,r.sync_status,"
                 "(SELECT COUNT(*) FROM operations_evidence e WHERE e.report_id=r.id "
                 "AND (e.drive_ref<>'' OR e.storage_ref<>'')) "
-                "FROM operations_reports r ORDER BY r.start_at,r.id"
+                "FROM operations_reports r" + report_where + " ORDER BY r.start_at,r.id", two
             ).fetchall()
             faults = conn.execute(
                 "SELECT f.id,f.client_id,f.equipment_id,f.report_id,f.description,f.priority,f.status,f.reported_at,f.resolved_at,f.resolved_by,f.resolution_notes,f.source,f.sync_status,"
                 "(SELECT COUNT(*) FROM operations_fault_evidence e WHERE e.fault_id=f.id) "
-                "FROM operations_faults f WHERE f.deleted_at='' ORDER BY f.reported_at DESC,f.id DESC"
+                "FROM operations_faults f WHERE f.deleted_at=''" + fault_where + " ORDER BY f.reported_at DESC,f.id DESC", two
             ).fetchall()
             tasks = conn.execute(
                 "SELECT id,title,details,scheduled_date,scheduled_time,client_id,equipment_id,"
                 "assigned_user_id,priority,status,completed_at,created_by,created_at,updated_at,notify_client "
-                "FROM operations_tasks ORDER BY scheduled_date,scheduled_time,id"
+                "FROM operations_tasks" + task_where + " ORDER BY scheduled_date,scheduled_time,id", two
             ).fetchall()
             task_assignees = {}
-            for task_id, user_id in conn.execute("SELECT task_id,user_id FROM operations_task_assignees ORDER BY user_id").fetchall():
+            assignee_where = (' WHERE task_id IN (SELECT id FROM operations_tasks' + task_where + ')') if scoped else ''
+            for task_id, user_id in conn.execute("SELECT task_id,user_id FROM operations_task_assignees" + assignee_where + " ORDER BY user_id", two).fetchall():
                 task_assignees.setdefault(task_id, []).append(user_id)
-            expenses = conn.execute(
+            expenses = [] if scoped else conn.execute(
                 "SELECT id,user_id,technician_name,client_id,equipment_id,repair_id,expense_date,amount,"
                 "category,concept,payment_method,reimbursable,status,admin_notes,receipt_ref,created_by,created_at,updated_at "
                 "FROM operations_expenses ORDER BY expense_date DESC,created_at DESC,id DESC"
             ).fetchall()
-            meta_rows = conn.execute("SELECT key,value FROM operations_meta").fetchall()
-            worklists = [json.loads(row[0]) for row in conn.execute("SELECT payload_json FROM operations_worklists").fetchall()]
-            pending = conn.execute("SELECT COUNT(*) FROM operations_sync_outbox WHERE status!='synced'").fetchone()[0]
-            cached_thumbnails = conn.execute("SELECT COUNT(*) FROM operations_media_cache").fetchone()[0]
-            observation_rows = conn.execute(
+            meta_rows = [] if scoped else conn.execute("SELECT key,value FROM operations_meta").fetchall()
+            client_expr = "payload_json::jsonb->>'client_id'" if self.dialect == 'postgres' else "json_extract(payload_json,'$.client_id')"
+            origin_expr = "payload_json::jsonb->>'origin'" if self.dialect == 'postgres' else "json_extract(payload_json,'$.origin')"
+            list_where = f" WHERE {client_expr}={p} AND {origin_expr}='client'" if scoped else ''
+            worklists = [json.loads(row[0]) for row in conn.execute("SELECT payload_json FROM operations_worklists" + list_where, one).fetchall()]
+            pending = 0 if scoped else conn.execute("SELECT COUNT(*) FROM operations_sync_outbox WHERE status!='synced'").fetchone()[0]
+            cached_thumbnails = 0 if scoped else conn.execute("SELECT COUNT(*) FROM operations_media_cache").fetchone()[0]
+            observation_rows = [] if scoped else conn.execute(
                 "SELECT category,value,use_count,last_used_at FROM operations_observation_options "
                 "ORDER BY category,use_count DESC,last_used_at DESC,value"
             ).fetchall()
-            retired = {row[0] for row in conn.execute('SELECT id FROM operations_equipment_retirements').fetchall()}
+            retired_where = f' WHERE id IN ({equipment_scope})' if scoped else ''
+            retired = {row[0] for row in conn.execute('SELECT id FROM operations_equipment_retirements' + retired_where, one).fetchall()}
         result_clients = [{
             "id": row[0], "name": row[1], "address": row[2], "matrix_id": row[3],
             "billing_rfc": row[4], "selected_round": row[5], "sort_order": int(row[6] or 0),

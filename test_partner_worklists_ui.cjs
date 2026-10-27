@@ -22,7 +22,7 @@ const noop=()=>{};
 const filterElements=new Map();
 const filterGet=id=>{if(!filterElements.has(id))filterElements.set(id,{innerHTML:'',textContent:'',style:{}});return filterElements.get(id);};
 const filterContext=vm.createContext({
-  $:filterGet,$$:()=>[],renderClientDetail:noop,hydratePhotos:noop,renderClientFaults:noop,renderEquipmentDetail:noop,bindRoundReports:noop,
+  $:filterGet,$$:()=>[],renderClientDetail:noop,hydratePhotos:noop,renderClientFaults:noop,renderEquipmentDetail:noop,bindRoundReports:noop,filterTechnicianEquipment:noop,
   equipment:[['A1','Uno',''],['A2','Dos',''],['B1','Otro','']],equipmentMeta:{A1:{client:'A',active:true},A2:{client:'A',active:true},B1:{client:'B',active:true}},
   demoRounds:{'1':{done:['A1']},'2':{done:['A2']}},selectedRound:'1',selectedClient:'A',equipmentFilter:'done',
   byEquipmentId:(a,b)=>a[0].localeCompare(b[0]),equipmentCard:e=>`[${e[0]}]`,reportCards:()=>'',

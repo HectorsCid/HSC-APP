@@ -1,4 +1,5 @@
-/* Keep only one comparison string; never persist images or request credentials. */
+/* HSC release 20261027-scoped-billing-search.
+ * Keep only one comparison string; never persist images or request credentials. */
 (function(root){
   'use strict';
   const keys=['clients','equipment','reports','faults','tasks','expenses','worklists','observation_options','stats','scope_valid','assigned_client_id'];
