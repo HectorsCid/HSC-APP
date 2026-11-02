@@ -208,11 +208,12 @@
     .summary-grid{grid-template-columns:1fr}.mini-list{max-height:none}.mini-row{grid-template-columns:1fr auto}.mini-row>*{grid-column:1}.mini-row .mini-amount{grid-column:2;grid-row:1}.mini-row .mini-actions{grid-column:1/-1;justify-content:start}.schedule-row{grid-template-columns:1fr auto}.schedule-row>*{grid-column:1}.schedule-row .schedule-actions{grid-column:2;grid-row:1/5;flex-direction:column}.schedule-form-grid{grid-template-columns:1fr}.schedule-form-grid .wide{grid-column:1}.client-layout{grid-template-columns:1fr}.client-list,.client-detail{max-height:none}.client-kpis{grid-template-columns:1fr}.client-doc{grid-template-columns:1fr auto}.client-doc>*{grid-column:1}.client-doc .client-doc-actions{grid-column:2;grid-row:1/4;flex-direction:column}.balance-kpis{grid-template-columns:repeat(2,1fr)}.balance-grid{grid-template-columns:1fr}.balance-month{grid-template-columns:52px minmax(0,1fr) 82px}.balance-pending-row{grid-template-columns:1fr auto}.balance-pending-row .btn{grid-column:1/-1;justify-self:start}
   }
 </style>
+<link rel="stylesheet" href="{{ url_for('static', filename='billing_balance_layout.css') }}">
 <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
 <script defer src="{{ url_for('static', filename='notifications.js', v='3') }}"></script>
 </head>
-<body>
+<body class="billing-page">
 <svg class="icon-sprite" aria-hidden="true">
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.8 12 3l9 7.8"/><path d="M5.5 9.5V21h13V9.5M9 21v-7h6v7"/></symbol>
   <symbol id="i-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="M4 7v10l8 4 8-4V7M12 11v10"/></symbol>
@@ -434,6 +435,9 @@
 
 <script>
 const $ = s=>document.querySelector(s);
+for(const [id,label] of [['balanceTop','Clientes principales'],['balancePendingList','Facturas pendientes de complemento']]){
+  const list=document.getElementById(id);list.tabIndex=0;list.setAttribute('role','region');list.setAttribute('aria-label',label+' · lista desplazable');
+}
 const lineIcon = name => `<svg class="line-icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const tbody = $('#tbl tbody');
 const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Balance:'#panelBalance', Plantillas:'#panelPlantillas', Clientes:'#panelClientes'};

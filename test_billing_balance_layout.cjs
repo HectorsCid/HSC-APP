@@ -1,0 +1,11 @@
+const fs=require('node:fs'),assert=require('node:assert/strict');
+const html=fs.readFileSync('templates/facturas_inicio.html','utf8');
+const css=fs.readFileSync('static/billing_balance_layout.css','utf8');
+assert.ok(html.includes('<body class="billing-page">'));
+assert.ok(html.includes("filename='billing_balance_layout.css'"));
+assert.match(css,/billing-page>\.layout\{flex:1;min-height:0;height:auto/);
+assert.match(css,/#balanceTop,#balancePendingList\{overflow-y:auto/);
+assert.match(css,/#balancePendingList\{max-height:clamp/);
+assert.match(css,/@media\(max-width:850px\)/);
+assert.ok(html.includes("list.tabIndex=0;list.setAttribute('role','region')"));
+console.log('OK: altura disponible, listas acotadas, teclado y diseño móvil');

@@ -1,0 +1,18 @@
+/* Balance acotado y espacio real para la barra Atrás. */
+body.billing-page{display:flex;flex-direction:column;height:100vh;height:100dvh;min-height:0;overflow:hidden}
+.billing-page>.hsc-page-navigation{flex:none}
+.billing-page>.layout{flex:1;min-height:0;height:auto;overflow:hidden}
+.billing-page .side,.billing-page .wrap{height:100%;min-height:0}
+.billing-page .wrap{padding-bottom:max(24px,env(safe-area-inset-bottom))}
+.balance-grid{align-items:start}
+.balance-section{min-width:0}
+#balanceTop,#balancePendingList{overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scrollbar-gutter:stable;scrollbar-width:auto;scrollbar-color:var(--muted) var(--surface);padding-right:8px;padding-bottom:8px}
+#balanceTop{max-height:clamp(180px,35vh,340px);max-height:clamp(180px,35dvh,340px)}
+#balancePendingList{max-height:clamp(220px,42vh,420px);max-height:clamp(220px,42dvh,420px)}
+#balanceTop:focus-visible,#balancePendingList:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+.balance-rank-row strong,.balance-pending-row strong{overflow-wrap:anywhere;min-width:0}
+@media(max-width:850px){
+  body.billing-page{display:block;height:auto;min-height:100vh;min-height:100dvh;overflow:auto}
+  .billing-page>.layout{height:auto;overflow:visible}
+  .billing-page .side,.billing-page .wrap{height:auto}
+}
