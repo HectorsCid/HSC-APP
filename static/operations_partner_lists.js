@@ -13,6 +13,7 @@
     let draft=null,busy=false;
     $('partnerGenerateList').hidden=!api.canCreate;
     function render(){
+      $('partnerGenerateList').hidden=!api.canCreate;
       const state=api.state();
       const lists=state.worklists.filter(l=>l.client_id===state.clientId&&l.origin==='client'&&l.status!=='deleted');
       $('partnerWorklistCards').innerHTML=lists.map(list=>`<details class="client-worklist-card"><summary><b>${esc(list.title)}</b> · ${list.items.length} equipos${list.status==='completed'?' · Cerrada':''}</summary><ul>${list.items.map(item=>`<li>${esc(item.equipment_id)} · ${esc(state.equipment.find(e=>e.id===item.equipment_id)?.name||'Equipo')} · R${esc(item.round)}</li>`).join('')}</ul></details>`).join('')||'<p class="muted">Todavía no hay listas para esta empresa.</p>';

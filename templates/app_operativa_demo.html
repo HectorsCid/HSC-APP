@@ -298,6 +298,7 @@
 
     <section class="view" data-view="partner">
       <div class="field" id="partnerClientChooser" hidden><label for="partnerClientSelect">Vista del cliente</label><select id="partnerClientSelect"></select></div>
+      <div id="clientPreviewTools" hidden class="appearance-panel"><button type="button" class="secondary" id="toggleClientPreview" aria-pressed="false">Ver como cliente</button><p id="clientPreviewExplanation">Consulta la empresa con las opciones del cliente, sin cambiar tu cuenta.</p></div>
       <div class="section-head"><h2>Pendientes</h2><button type="button" class="mini-btn" id="openPartnerMonthCalendar" title="Calendario del mes" aria-label="Abrir calendario del mes">▦</button></div>
       <div class="partner-dashboard">
         <aside class="workspace-panel partner-identity"><div class="partner-mark" id="partnerClientLogo">VC</div><div class="eyebrow">Cuenta de servicio</div><div class="partner-client-data"><span>Nombre</span><h2 id="partnerClientName">Visscher Caravelle</h2><span>Dirección</span><p><i>⌖</i><b id="partnerClientAddress">Dirección por completar</b></p></div><div class="partner-actions"><a class="quick-card" id="partnerPdfButton" data-action-kind="pdf" href="#" target="_blank" rel="noopener"><span class="partner-action-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 12h6M9 16h4"/></svg></span><span class="partner-action-copy"><b>Reportes PDF</b><small>Carpeta en Drive</small></span></a><button class="quick-card" data-partner-action="documents" data-action-kind="documents" type="button"><span class="partner-action-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h7l2 2h9v10H3z"/><path d="M3 7V5h6l2 2"/></svg></span><span class="partner-action-copy"><b>Documentos</b><small>Cotizaciones y facturas</small></span></button><button class="quick-card" id="partnerRoundAction" data-action-kind="round" type="button"><span class="partner-action-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v18M17 3v18M3 7h18M3 17h18"/><path d="m10 12 2 2 4-4"/></svg></span><span class="partner-action-copy"><b>Seleccionar ronda</b><small id="partnerRoundActionStatus">Consultando R2</small></span></button><button class="quick-card" id="partnerFaultAction" data-action-kind="fault" type="button"><span class="partner-action-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19z"/><path d="M12 9v5M12 17h.01"/></svg></span><span class="partner-action-copy"><b>Reportar falla</b><small>Equipo y evidencia</small></span></button><button class="quick-card" id="partnerStyleAction" data-action-kind="style" type="button"><span class="partner-action-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2 0-.8-.7-1.4-.7-2.2 0-1.1.9-1.8 2-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8Z"/><path d="M7.5 10h.01M10 6.5h.01M15 7h.01M17.5 11h.01"/></svg></span><span class="partner-action-copy"><b>Apariencia</b><small>Tema y colores</small></span></button></div><div class="field partner-round-picker" id="partnerRoundPicker" hidden><label for="partnerRoundSelect">Ronda que deseas consultar</label><select id="partnerRoundSelect"><option value="1">Ronda 1</option><option value="2">Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div></aside>
@@ -379,6 +380,9 @@
   let historyStack=[startsInPartner?'partner':'clients'], current=historyStack[0], currentMode=startsInPartner?'partner':'tech', equipmentFilter='all';
   let sessionPermissions={};try{sessionPermissions=JSON.parse(document.body.dataset.permissions||'{}')}catch(_){}
   const account={id:document.body.dataset.userId||'owner',name:document.body.dataset.userName||'Usuario HSC',isOwner:document.body.dataset.operationsOwner==='true'};
+  let clientPreview=false;
+  function isClientPresentation(){return serverRole==='client'||(account.isOwner&&clientPreview&&currentMode==='partner');}
+  function assertPreviewReadOnly(){if(clientPreview)throw Error('Vista de prueba: no se envían ni guardan cambios. Pulsa Salir de vista cliente para trabajar.');}
   const defaultPermissions={createReports:true,reportFaults:true,addClients:false,addEquipment:true,editEquipment:true,editClientData:false,editIds:false,switchViews:false};
   let activePermissions=account.isOwner?{...defaultPermissions,...sessionPermissions}:{...sessionPermissions};
   let selectedRound='2', selectedEquipment='';
@@ -596,6 +600,9 @@
     $$('[data-permission]').forEach(el=>el.dataset.roleHidden=can(el.dataset.permission)?'false':'true');
     $$('[data-tech-only]').forEach(el=>el.dataset.roleHidden=currentMode==='partner'?'true':'false');
     $('#partnerClientChooser').hidden=!account.isOwner||currentMode!=='partner';
+    $('#clientPreviewTools').hidden=!account.isOwner||currentMode!=='partner';
+    $('#partnerClientSelect').disabled=clientPreview;
+    document.body.dataset.clientPreview=String(clientPreview&&currentMode==='partner');
     $('#searchToggle').dataset.roleHidden='false';
     $$('#appMenu .app-option.admin').forEach(el=>el.dataset.roleHidden=account.isOwner?'false':'true');
     renderProfileIdentity();$('#profileRole').textContent=account.isOwner?'Propietario · Cuenta activa':`${serverRole==='client'?'Cliente':'Técnico'} · Cuenta activa`;
@@ -751,7 +758,7 @@
     $$('#equipmentFilters [data-filter]').forEach(b=>{b.classList.toggle('active',b.dataset.filter===equipmentFilter);b.setAttribute('aria-pressed',String(b.dataset.filter===equipmentFilter));});
     $('#roundEquipment').textContent=active.length;$('#roundPending').textContent=`${active.length-completed} pendientes · ${all.length-active.length} inactivos`;
     $('#roundProgress').style.width=`${active.length?completed/active.length*100:0}%`;
-    $('#roundProgressText').textContent=`${completed} de ${active.length} activos`;
+    $('#roundProgressText').textContent=`${active.length?Math.round(completed/active.length*100):0}% · ${completed} de ${active.length} activos`;
     $('#roundReportCount').textContent=`R${selectedRound} · ${all.filter(e=>e[3]).length} reportes`;
     $('#roundReportList').innerHTML=reportCards(all.filter(e=>e[3]));
     renderClientFaults();
@@ -922,7 +929,7 @@
     const stateClass=/cancel/i.test(state)?'cancelled':/pend|parcial/i.test(state)?'pending':'';
     const files=`<a class="mini-btn" target="_blank" rel="noopener" href="${escapeHtml(item.pdf_url)}">PDF</a>${item.xml_url?`<a class="mini-btn" target="_blank" rel="noopener" href="${escapeHtml(item.xml_url)}">XML</a>`:''}`;
     const description=(isQuote||isInvoice)?`<small class="partner-doc-description" ${isInvoice?`data-invoice-description="${escapeHtml(item.id)}"`:''}>${escapeHtml(item.description||(isInvoice?'Descripción pendiente de consultar':''))}</small>`:'';
-    const portalTools=isInvoice&&account.isOwner?`<span class="partner-invoice-tools"><label>Estado sólo en Partner<select data-partner-invoice-status="${escapeHtml(item.id)}">${[['automatic','Automático'],['pending','Pendiente'],['partial','Pago parcial'],['paid','Pagada']].map(([value,label])=>`<option value="${value}" ${value===(item.portal_payment_status||'automatic')?'selected':''}>${label}</option>`).join('')}</select></label><button type="button" class="mini-btn" data-partner-invoice-hide="${escapeHtml(item.id)}">${item.portal_hidden?'Restaurar en Partner':'Ocultar de Partner'}</button>${item.portal_hidden?'<small>Oculta para el cliente</small>':''}</span>`:'';
+    const portalTools=isInvoice&&account.isOwner&&!clientPreview?`<span class="partner-invoice-tools"><label>Estado sólo en Partner<select data-partner-invoice-status="${escapeHtml(item.id)}">${[['automatic','Automático'],['pending','Pendiente'],['partial','Pago parcial'],['paid','Pagada']].map(([value,label])=>`<option value="${value}" ${value===(item.portal_payment_status||'automatic')?'selected':''}>${label}</option>`).join('')}</select></label><button type="button" class="mini-btn" data-partner-invoice-hide="${escapeHtml(item.id)}">${item.portal_hidden?'Restaurar en Partner':'Ocultar de Partner'}</button>${item.portal_hidden?'<small>Oculta para el cliente</small>':''}</span>`:'';
     return `<article class="partner-doc-card"><span class="partner-doc-icon">${partnerDocumentIcon(type)}</span><span class="partner-doc-copy"><b>${escapeHtml(title)}</b>${description}<small>${escapeHtml(detail)}</small><span class="partner-doc-state ${stateClass}">${escapeHtml(state)}</span></span><span class="partner-doc-files">${files}${portalTools}</span></article>`;
   }
   const invoiceDescriptionJobs=new Set();
@@ -952,10 +959,10 @@
     $('#partnerDocumentsFreshness').textContent=catalog.error||`${stamp?'Última actualización: '+stamp+'. ':''}${catalog.refreshing?'Actualizando Facturama en segundo plano…':catalog.stale?'Mostrando la última información disponible.':''}`;
     $('#partnerQuoteCount').textContent=payload.summary?.quotes||0;$('#partnerInvoiceCount').textContent=payload.summary?.invoices||0;$('#partnerComplementCount').textContent=payload.summary?.complements||0;
     $('#partnerDocumentsIdentity').textContent=payload.client?.rfc?`${payload.client.name} · RFC ${payload.client.rfc}`:`${payload.client?.name||clientName(selectedClient)} · Falta vincular el RFC fiscal en Clientes`;
-    const labels={quotes:'Cotizaciones',invoices:'Facturas',complements:'Complementos de pago'},rows=(payload[partnerDocumentTab]||[]).filter(item=>!item.portal_hidden||(account.isOwner&&$('#showHiddenPartnerInvoices').checked));
+    const labels={quotes:'Cotizaciones',invoices:'Facturas',complements:'Complementos de pago'},rows=(payload[partnerDocumentTab]||[]).filter(item=>!item.portal_hidden||(account.isOwner&&!clientPreview&&$('#showHiddenPartnerInvoices').checked));
     $('#partnerDocumentsTitle').textContent=labels[partnerDocumentTab];
     $('#partnerDocumentsList').innerHTML=rows.length?rows.map(item=>partnerDocumentCard(item,partnerDocumentTab)).join(''):`<div class="empty">Todavía no hay ${labels[partnerDocumentTab].toLowerCase()} disponibles para este cliente.</div>`;
-    $('#partnerHiddenInvoiceTools').hidden=!account.isOwner||partnerDocumentTab!=='invoices';
+    $('#partnerHiddenInvoiceTools').hidden=!account.isOwner||clientPreview||partnerDocumentTab!=='invoices';
     $$('[data-partner-invoice-status]').forEach(select=>select.onchange=()=>savePartnerInvoiceDisplay(select.dataset.partnerInvoiceStatus,{status:select.value},select));
     $$('[data-partner-invoice-hide]').forEach(button=>button.onclick=()=>savePartnerInvoiceDisplay(button.dataset.partnerInvoiceHide,{toggleHidden:true},button));
     $$('[data-partner-doc-tab]').forEach(button=>button.classList.toggle('active',button.dataset.partnerDocTab===partnerDocumentTab));
@@ -1967,7 +1974,7 @@
   if(typeof ResizeObserver!=='undefined'){const previewObserver=new ResizeObserver(sizePartnerPreviews);for(const id of ['partnerFaultPreview','partnerEquipmentPreview'])previewObserver.observe($('#'+id));}
   window.addEventListener('resize',sizePartnerPreviews);
   if(typeof HscFaultAttention!=='undefined')faultAttentionUi=HscFaultAttention.mount({escape:escapeHtml,toast,fetch:hscFetch,compress:compressEvidenceFile,canWrite:account.isOwner||(serverRole==='technician'&&can('createReports')),refresh:()=>loadMatrixData()});
-  if(typeof HscPartnerLists!=='undefined')partnerListsUi=HscPartnerLists.mount({escape:escapeHtml,toast,canCreate:serverRole==='client',
+  if(typeof HscPartnerLists!=='undefined')partnerListsUi=HscPartnerLists.mount({escape:escapeHtml,toast,get canCreate(){return isClientPresentation();},
     state:()=>({clientId:selectedClient,round:selectedRound,worklists:matrixWorklists,equipment:equipment.map(e=>({id:e[0],name:e[1],client_id:equipmentMeta[e[0]]?.client,active:equipmentMeta[e[0]]?.active}))}),
     save:body=>operationsPost('/api/operaciones/worklists',body),accept:list=>{matrixWorklists=matrixWorklists.filter(row=>row.id!==list.id).concat(list);}
   });
@@ -1992,6 +1999,24 @@
   if(account.isOwner&&typeof HscEquipmentRetirement!=='undefined')HscEquipmentRetirement.mount({isOwner:true,escape:escapeHtml,toast,post:operationsPost,
     selected:()=>{const row=equipment.find(item=>item[0]===selectedEquipment);return row?{id:row[0],name:row[1],pendingUpload:Boolean(equipmentMeta[selectedEquipment]?.pendingUpload)}:null;},
     refresh:()=>loadMatrixData(),showClient:()=>{refreshRound();showView(currentMode==='partner'?'partner':'client');}});
+  // Presentation preview only: retain the administrator session and never impersonate a user.
+  $('.topbar').after($('#clientPreviewTools'));
+  const previewStyle=document.createElement('style');previewStyle.textContent='body[data-client-preview="true"] [data-admin-only],body[data-client-preview="true"] .fault-more,body[data-client-preview="true"] .fault-menu,body[data-client-preview="true"] #partnerHiddenInvoiceTools,body[data-client-preview="true"] .partner-invoice-tools,body[data-client-preview="true"] #faultAttentionPhotos{display:none!important}';document.head.append(previewStyle);
+  const previewOriginalPost=operationsPost;operationsPost=async function(...args){assertPreviewReadOnly();return previewOriginalPost(...args);};
+  const previewOriginalQueue=queueFieldAction;queueFieldAction=async function(...args){assertPreviewReadOnly();return previewOriginalQueue(...args);};
+  const previewOriginalCalendar=renderMonthCalendar;renderMonthCalendar=function(...args){const result=previewOriginalCalendar(...args);if(isClientPresentation())$('#monthAddTask').textContent='＋ Solicitar visita';return result;};
+  const previewOriginalAddTask=$('#monthAddTask').onclick;$('#monthAddTask').onclick=function(...args){if(clientPreview){$('#visitTitle').value='';$('#visitDetails').value='';$('#visitDate').value=agendaDate;$('#visitTime').value='09:00';$('#monthCalendarModal').classList.remove('open');$('#visitRequestModal').classList.add('open');return;}return previewOriginalAddTask.apply(this,args);};
+  $('#toggleClientPreview').onclick=()=>{
+    clientPreview=!clientPreview;
+    $$('.modal.open').forEach(modal=>modal.classList.remove('open'));
+    $('#toggleClientPreview').textContent=clientPreview?'Salir de vista cliente':'Ver como cliente';
+    $('#toggleClientPreview').setAttribute('aria-pressed',String(clientPreview));
+    $('#clientPreviewExplanation').textContent=clientPreview?'Vista de prueba · '+clientName(selectedClient)+'. Puedes explorar formularios, pero no guardar ni enviar. Los avisos siguen siendo los de tu cuenta de administrador.':'Consulta la empresa con las opciones del cliente, sin cambiar tu cuenta.';
+    $('#showHiddenPartnerInvoices').checked=false;
+    applyAccess();renderPartnerDashboard();if(partnerDocuments)renderPartnerDocuments();
+    const listButton=$('#partnerGenerateList');if(listButton)listButton.hidden=!isClientPresentation();
+  };
+  document.addEventListener('click',event=>{if(!clientPreview)return;const button=event.target.closest('#sendVisitRequest,#partnerListSave,#sendFault,#resolveFault,[data-delete-fault],[data-partner-invoice-hide]');if(button){event.preventDefault();event.stopImmediatePropagation();toast('Vista de prueba: no se guardan ni envían cambios. Sal de vista cliente para trabajar.');}},true);
   applyAccess();updateOfflineSyncUi();if(typeof fetch==='function')loadMatrixData().finally(()=>{initializeBrowserNavigation();resumePendingReportUploads()});else initializeBrowserNavigation();
 </script>
 </body>

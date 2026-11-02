@@ -1,7 +1,7 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const text=fs.readFileSync('templates/app_operativa_demo.html','utf8');
 const body=text.slice(text.indexOf('  function partnerDocumentCard('),text.indexOf('  const invoiceDescriptionJobs='));
-const ns={account:{isOwner:false},partnerDocumentDate:v=>v,partnerDocumentIcon:()=>'',escapeHtml:v=>String(v||'').replaceAll('<','&lt;'),money:v=>v};
+const ns={account:{isOwner:false},clientPreview:false,partnerDocumentDate:v=>v,partnerDocumentIcon:()=>'',escapeHtml:v=>String(v||'').replaceAll('<','&lt;'),money:v=>v};
 vm.runInNewContext(body,ns);
 const html=ns.partnerDocumentCard({id:'i1',date:'2026-08-11',description:'Cambio de compresor <script>',active:true,total:123},'invoices');
 assert(html.includes('Cambio de compresor &lt;script>'));
@@ -19,6 +19,9 @@ const adminCard=ns.partnerDocumentCard({...invoice,portal_hidden:true},'invoices
 assert(adminCard.includes('data-partner-invoice-status="i1"'));
 assert(adminCard.includes('Restaurar en Partner'));
 assert(adminCard.includes('value="paid" selected'));
+ns.clientPreview=true;
+assert(!ns.partnerDocumentCard(invoice,'invoices').includes('data-partner-invoice-status'));
+assert(!ns.partnerDocumentCard(invoice,'invoices').includes('data-partner-invoice-hide'));
 assert(ns.partnerDocumentCard({...invoice,portal_payment_status:'partial'},'invoices').includes('>Pago parcial</span>'));
 console.log('OK: factura muestra descripción escapada sin perder fecha ni identificación.');
 console.log('OK: estado independiente de Partner, controles sólo del propietario y restauración de ocultas.');

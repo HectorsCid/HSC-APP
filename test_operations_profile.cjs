@@ -34,7 +34,7 @@ const elements=new Map(),el=id=>{
 };
 const admin=el('admin'),permissions=el('permissions');permissions.dataset.permission='editIds';
 const ctx=vm.createContext({document:{body:{dataset:{}}},$:el,$$:s=>s==='[data-admin-only]'?[admin]:s==='[data-permission]'?[permissions]:[],
-  account:{isOwner:true},currentMode:'tech',serverRole:'admin',can:()=>false,renderProfileIdentity(){},
+  account:{isOwner:true},clientPreview:false,currentMode:'tech',serverRole:'admin',can:()=>false,renderProfileIdentity(){},
   visibleExpenses:()=>ctx.expenses,expenses:[],updateOfflineSyncUi(){},});
 vm.runInContext(page.slice(page.indexOf('  function applyAccess(){'),page.indexOf('  async function syncGoogleNow(')),ctx);
 ctx.applyAccess();
