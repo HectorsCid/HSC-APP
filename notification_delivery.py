@@ -46,6 +46,7 @@ NOTICE_OPTIONS = {
     'technician': {'agenda':'Recordatorios de mis pendientes','fallas':'Fallas por atender','pagos':'Estado de mis gastos y reembolsos'},
     'client': {'fallas':'Fallas resueltas','agenda':'Actividades y visitas programadas','cotizaciones':'Cotizaciones disponibles','facturas':'Facturas y cambios de estado','complementos':'Complementos de pago','reportes':'Reportes terminados'},
 }
+NOTICE_OPTIONS['admin']['equipos'] = 'Equipos nuevos registrados por técnicos'
 
 
 def notification_preferences(user_id):

@@ -49,6 +49,15 @@
     .type-card:hover{transform:translateY(-2px);border-color:#3b82f6}.type-card strong{display:block;font-size:17px}.type-card span{display:block;margin-top:4px;color:var(--muted);font-size:12px}.type-icon{font-size:28px}
     .manual-card{grid-column:1/-1}.record-status{display:inline-flex;width:max-content;margin-top:3px;padding:3px 7px;border:1px solid var(--border);border-radius:999px;font-size:11px;color:var(--muted)}.record-status.done{color:#bbf7d0;border-color:#22c55e}
     .danger-form{margin:0}.btn-danger{border-color:rgba(248,113,113,.4);background:rgba(127,29,29,.16);color:var(--danger-text)}
+    .manual-card>summary{display:flex;align-items:center;gap:12px;cursor:pointer;list-style:none;font-weight:700}
+    .manual-card>summary::-webkit-details-marker{display:none}
+    .manual-card>summary::after{content:'＋';margin-left:auto;font-size:22px;color:var(--blue)}
+    .manual-card[open]>summary::after{content:'−'}
+    .manual-card>summary:focus-visible{outline:2px solid var(--blue);outline-offset:6px;border-radius:6px}
+    .manual-card .manual-tools{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:16px}
+    .manual-records{max-height:clamp(200px,48vh,430px);max-height:clamp(200px,48dvh,430px);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-color:var(--muted) transparent;padding:4px 8px 8px 0}
+    .manual-records:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+    @media(max-width:650px){.manual-records .item{align-items:stretch;flex-direction:column}.manual-records .actions{flex-wrap:wrap}.manual-card .manual-tools{align-items:flex-start}.manual-card>summary{font-size:15px}.manual-records .eq,.manual-records .cliente{max-width:100%;white-space:normal;overflow-wrap:anywhere}}
 
     .page-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px}
     .page-head p{margin-bottom:0}
@@ -159,9 +168,10 @@
       </a>
     </div>
 
-    <div class="card manual-card" style="margin-bottom:20px">
-      <div class="header-row"><div><h3 style="margin:0">Borradores y reportes manuales</h3><div class="muted">Se respaldan en Drive y puedes continuarlos después.</div></div><a class="btn btn-nav" href="{{ url_for('reportes.reportes_inicio', refresh_manual=1) }}">Actualizar</a></div>
-      <div class="list">
+    <details class="card manual-card" id="manualReportsPanel" style="margin-bottom:20px">
+      <summary>Borradores y reportes manuales <span class="chip">{{ manual_records|length }}</span></summary>
+      <div class="manual-tools"><div class="muted">Se respaldan en Drive y puedes continuarlos después.</div><a class="btn btn-nav" href="{{ url_for('reportes.reportes_inicio', refresh_manual=1) }}">Actualizar</a></div>
+      <div class="list manual-records" tabindex="0" role="region" aria-label="Borradores y reportes manuales · lista desplazable">
         {% for report in manual_records %}
           <div class="item">
             <div class="left"><div class="icon">{{ '❄️' if report.report_type == 'refrigeracion' else '📝' }}</div><div class="meta"><div class="id">{{ report.folio }}</div><div class="cliente">{{ report.datos.cliente or 'Sin cliente' }} · {{ report.datos.fecha or '' }}</div><div class="eq">{{ report.datos.equipo if report.report_type == 'refrigeracion' else report.datos.trabajo_solicitado }}</div><span class="record-status {{ 'done' if report.status == 'completed' else '' }}">{{ 'Terminado' if report.status == 'completed' else 'Borrador guardado' }}</span></div></div>
@@ -176,7 +186,7 @@
           <div class="empty">Todavía no hay reportes manuales guardados.</div>
         {% endfor %}
       </div>
-    </div>
+    </details>
 
     <div class="grid">
       <!-- Izquierda: Ingreso manual (con autocomplete) -->

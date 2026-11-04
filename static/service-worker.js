@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hsc-shell-v45';
+const CACHE_NAME = 'hsc-shell-v46';
 const SAFE_ASSETS = [
   '/static/hsc_theme.css',
   '/static/hsc_theme.js',
@@ -23,6 +23,7 @@ const SAFE_ASSETS = [
   '/static/operations_profile.css',
   '/static/img/hsc-app-192.png',
   '/static/img/hsc-app-512.png',
+  '/static/img/hsc-notification-badge.png',
   '/manifest.webmanifest',
   '/manifest-hsc-tecnico.webmanifest',
   '/manifest-hsc-partner.webmanifest'
@@ -98,7 +99,7 @@ self.addEventListener('push', event => {
   event.waitUntil(self.registration.showNotification(payload.title || 'HSC', {
     body: payload.body || 'Tienes un aviso pendiente.',
     icon: '/static/img/hsc-app-192.png',
-    badge: '/static/img/hsc-app-192.png',
+    badge: '/static/img/hsc-notification-badge.png',
     tag: payload.tag || 'hsc-aviso',
     renotify: true,
     data: {url: payload.url || '/inicio-app'},

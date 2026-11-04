@@ -1005,7 +1005,7 @@ class OperationsStore(SheetDeliveryMixin):
                 raise ValueError("El cliente ya no existe.")
         return next(client for client in self.snapshot()["clients"] if client["id"] == client_id)
 
-    def save_equipment(self, items):
+    def save_equipment(self, items, *, actor_id='', actor_role=''):
         """Guarda uno o varios equipos como una sola operación."""
         self.initialize()
         rows = list(items or [])
@@ -1042,10 +1042,19 @@ class OperationsStore(SheetDeliveryMixin):
             from equipment_retirement import lock_equipment, assert_editable
             lock_equipment(self, conn)
             assert_editable(self, conn, request_ids)
+            new_ids = {ident for ident in request_ids if not conn.execute(
+                f'SELECT id FROM operations_equipment WHERE id={self.placeholder}', (ident,)
+            ).fetchone()}
             self._upsert_many(conn, "operations_equipment",
                 ["id","client_id","name","brand","model","serial","status","location","department","equipment_type","notes","has_photo","photo_ref","source","raw_json","updated_at"],
                 prepared,
                 ["client_id","name","brand","model","serial","status","location","department","equipment_type","notes","source","updated_at"])
+            if actor_role == 'technician':
+                for row in prepared:
+                    if row[0] in new_ids:
+                        self._queue_notice_event(conn, {'kind':'equipment_created','actor_id':actor_id,
+                            'after':{'id':row[0],'client_id':row[1],'name':row[2],
+                                     'client_name':next((c.get('name') or c['id'] for c in snapshot['clients'] if c['id']==row[1]),row[1])}}, stamp)
         for equipment_id in request_ids:
             self.queue_sync("equipment", equipment_id, "sheets", "upsert")
         current = self.snapshot()["equipment"]

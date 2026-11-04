@@ -4693,7 +4693,8 @@ def api_operaciones_save_equipment():
         }), 503
     payload = request.get_json(silent=True) or {}
     try:
-        equipment = OPERACIONES_STORE.save_equipment(payload.get("items"))
+        equipment = OPERACIONES_STORE.save_equipment(payload.get("items"),
+            actor_id=str(session.get('hsc_user_id') or 'owner'), actor_role=_operations_role())
         _invalidate_operations_cache()
         _schedule_operations_sync(force=True)
         return jsonify({"ok": True, "equipment": equipment, "sync_status": "pending"})

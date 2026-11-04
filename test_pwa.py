@@ -5,6 +5,21 @@ import app as hsc_app
 
 
 class PwaTests(unittest.TestCase):
+    def test_notification_badge_is_white_with_transparent_background(self):
+        import io
+        from PIL import Image
+        response=self.client.get('/static/img/hsc-notification-badge.png')
+        self.assertEqual(response.status_code,200)
+        with Image.open(io.BytesIO(response.data)) as image:
+            self.assertEqual(image.size,(96,96))
+            pixels=list(image.convert('RGBA').getdata())
+        self.assertTrue(any(pixel[3]==0 for pixel in pixels))
+        self.assertTrue(any(pixel[3]==255 for pixel in pixels))
+        self.assertTrue(all(pixel[:3]==(255,255,255) for pixel in pixels if pixel[3]))
+        source=self.client.get('/service-worker.js').get_data(as_text=True)
+        self.assertIn("badge: '/static/img/hsc-notification-badge.png'",source)
+        self.assertIn("icon: '/static/img/hsc-app-192.png'",source)
+
     def setUp(self):
         hsc_app.app.config.update(TESTING=True)
         self.client = hsc_app.app.test_client()
@@ -27,7 +42,7 @@ class PwaTests(unittest.TestCase):
         self.assertIn("no-store", response.headers.get("Cache-Control", ""))
         source = response.get_data(as_text=True)
         self.assertIn("SAFE_PATHS", source)
-        self.assertIn("hsc-shell-v45", source)
+        self.assertIn("hsc-shell-v46", source)
         self.assertIn("const response = await fetch(request)", source)
         self.assertNotIn("cached || fetch(request)", source)
         self.assertNotIn("/facturacion", source)

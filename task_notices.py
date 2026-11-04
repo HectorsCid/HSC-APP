@@ -3,6 +3,12 @@ from urllib.parse import urlencode
 
 
 def plan_task_notices(event_id, event):
+    if event.get('kind') == 'equipment_created':
+        equipment = event['after']
+        return [dict(title='Equipo nuevo registrado',
+            body=f"{event.get('actor_name') or 'Técnico'} · {equipment.get('client_name') or equipment['client_id']} · {equipment['id']} - {equipment['name']}",
+            url='/hsc-tecnico/?'+urlencode({'client':equipment['client_id']}),
+            tag=f'equipment-event:{event_id}',category='equipos',audience='admin',exclude_user_id=event.get('actor_id',''))]
     if event.get('kind', '').startswith('expense_'):
         expense = event['after']
         actor = event.get('actor_id', '')
