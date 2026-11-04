@@ -1,0 +1,11 @@
+const fs=require('node:fs'),assert=require('node:assert/strict');
+const html=fs.readFileSync('templates/app_operativa_demo.html','utf8');
+const panel=html.match(/<section class="view" data-view="equipment">([\s\S]*?)<\/section>/)[1];
+for(const id of ['equipmentRound','newReport','criticalFault','editOperationalEquipment','toggleOperationalEquipment','removeOperationalEquipment','equipmentReportList'])assert.equal((panel.match(new RegExp('id="'+id+'"','g'))||[]).length,1,id);
+assert.match(panel,/<details id="equipmentOptions" data-tech-only>/);
+assert.ok(panel.indexOf('id="equipmentRound"')<panel.indexOf('</article>'));
+assert.ok(panel.includes('data-open-repairs="equipment" data-tech-only'));
+assert.ok(panel.includes('id="removeOperationalEquipment" data-admin-only'));
+assert.ok(!panel.includes('🔧')&&!panel.includes('🗑'));
+assert.ok(panel.includes('equipment-line-icon'));
+console.log('OK: ficha compacta, iconos de línea, ronda integrada, opciones y permisos conservados');

@@ -1,0 +1,17 @@
+const assert=require('node:assert/strict');
+const {fullyVisible,attach}=require('./static/nested_list_scroll.js');
+assert.equal(fullyVisible({top:120,bottom:600},100,700),true);
+assert.equal(fullyVisible({top:300,bottom:800},100,700),false);
+const events={},moves=[];let rect={top:300,bottom:800};
+const list={addEventListener:(name,fn)=>events[name]=fn,getBoundingClientRect:()=>rect};
+const doc={querySelector:selector=>({getBoundingClientRect:()=>selector==='.topbar'?{bottom:90}:{top:710}})};
+attach(list,doc,{innerHeight:800,scrollBy:(x,y)=>moves.push(y)});
+let prevented=0;const event=y=>({touches:[{clientY:y}],cancelable:true,preventDefault:()=>prevented++});
+events.touchstart(event(500));events.touchmove(event(450));
+assert.deepEqual(moves,[50]);assert.equal(prevented,1);
+rect={top:100,bottom:650};events.touchmove(event(420));
+assert.deepEqual(moves,[50,30],'El mismo gesto sigue moviendo la pantalla');
+events.touchend();events.touchstart(event(500));events.touchmove(event(450));
+assert.equal(prevented,2,'Ya visible: no intercepta el nuevo gesto interno');
+events.touchstart({touches:[{},{}]});events.touchmove(event(400));assert.equal(prevented,2);
+console.log('OK: pantalla hasta ver cuadro completo, gesto estable, lista interna y multitáctil intacto');

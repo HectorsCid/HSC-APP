@@ -62,6 +62,49 @@ class WorklistTests(unittest.TestCase):
             with self.subTest(changes=changes),self.assertRaises(ValueError):self.save({**self.body,**changes})
         self.assertEqual(self.store.snapshot()['worklists'],[])
 
+    def test_shared_technician_list_permissions_and_revisions(self):
+        self.store.create_invite({'token_hash':'sharing','name':'Colaborador','email':'sharing@example.com','role':'technician','expires_at':'2099-01-01T00:00:00+00:00'})
+        user=self.store.accept_invite('sharing','hash')
+        first=self.save({**self.body,'shared_user_ids':[user['id']]})
+        edited=self.save({**first,'mutation_id':'SHARED_EDIT','expected_revision':1,'items':list(reversed(first['items']))},actor=user['id'])
+        self.assertEqual(edited['assigned_user_id'],'T1')
+        self.assertEqual(edited['shared_user_ids'],[user['id']])
+        self.assertEqual(edited['items'][0]['id'],'ITEM2')
+        for change in [{'shared_user_ids':[]},{'assigned_user_id':user['id']},{'client_id':'B'},{'status':'deleted'}]:
+            with self.subTest(change=change),self.assertRaises(PermissionError):
+                self.save({**edited,**change,'expected_revision':2,'mutation_id':'BAD'},actor=user['id'])
+        unshared=self.save({**edited,'shared_user_ids':[],'expected_revision':2,'mutation_id':'UNSHARE'})
+        self.assertNotIn('shared_user_ids',unshared)
+        with self.assertRaises(PermissionError):
+            self.save({**unshared,'expected_revision':3,'mutation_id':'REMOVED'},actor=user['id'])
+        with self.assertRaises(ValueError):
+            self.save({**unshared,'shared_user_ids':['missing'],'expected_revision':3,'mutation_id':'UNKNOWN'})
+
+    def test_shared_lists_are_scoped_to_collaborators_not_partner(self):
+        tree=ast.parse(Path('app.py').read_text(encoding='utf-8-sig'))
+        fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_scope_operaciones_payload')
+        for role,user,wanted in [('technician','T2',['L']),('technician','T3',[]),('client','C',[])]:
+            ns={'_operations_role':lambda:role,'session':{'hsc_user_id':user,'hsc_client_id':'A'}}
+            exec(compile(ast.Module(body=[fn],type_ignores=[]),'app.py','exec'),ns)
+            result=ns['_scope_operaciones_payload']({'worklists':[{'id':'L','client_id':'A','assigned_user_id':'T1','shared_user_ids':['T2']}]})
+            self.assertEqual([l['id'] for l in result['worklists']],wanted)
+
+    def test_collaborator_directory_has_no_private_account_fields(self):
+        from flask import Flask, jsonify
+        from types import SimpleNamespace
+        tree=ast.parse(Path('app.py').read_text(encoding='utf-8-sig'))
+        fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='api_operaciones_worklist_collaborators')
+        fn.decorator_list=[]
+        users=[{'id':'T','name':'Técnico','role':'technician','status':'active','email':'private@example.com','permissions':{'edit':True}},
+               {'id':'C','name':'Cliente','role':'client','status':'active'},
+               {'id':'S','name':'Suspendido','role':'technician','status':'suspended'}]
+        ns={'jsonify':jsonify,'_operations_forbidden':lambda *roles:None,'OPERACIONES_STORE':SimpleNamespace(list_users=lambda:users)}
+        exec(compile(ast.Module(body=[fn],type_ignores=[]),'app.py','exec'),ns)
+        with Flask(__name__).app_context():
+            self.assertEqual(ns['api_operaciones_worklist_collaborators']().get_json()['users'],[{'id':'T','name':'Técnico'}])
+            ns['_operations_forbidden']=lambda *roles:('Sin permiso',403)
+            self.assertEqual(ns['api_operaciones_worklist_collaborators'](),('Sin permiso',403))
+
     def test_client_and_technician_scoping(self):
         tree=ast.parse(Path('app.py').read_text(encoding='utf-8-sig'))
         fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='_scope_operaciones_payload')

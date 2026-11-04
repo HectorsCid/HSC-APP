@@ -127,6 +127,8 @@
 </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='operations_profile.css', v='20260923-1') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='operations_technician_refresh.css', v='20260926-4') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='equipment_detail.css') }}">
+  <script defer src="{{ url_for('static', filename='nested_list_scroll.js') }}"></script>
 </head>
 <body data-offline-shell="{{ 'true' if operations_offline_shell|default(false) else 'false' }}" data-operations-shell="true" data-operations-role="{{ operations_role|default('technician') }}" data-operations-owner="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-pwa-install-disabled="{{ 'true' if operations_is_owner|default(false) else 'false' }}" data-app-kind="{{ operations_app_kind|default('technician') }}" data-user-id="{{ operations_user_id|default('owner') }}" data-user-name="{{ operations_user_name|default('Héctor Silva Cid') }}" data-client-id="{{ operations_client_id|default('') }}" data-permissions="{{ operations_permissions|default({})|tojson|forceescape }}">
 <div class="app">
@@ -165,12 +167,9 @@
     </section>
 
     <section class="view" data-view="equipment">
-      <div class="field" style="margin-bottom:12px"><label for="equipmentRound">Consultar ronda</label><select id="equipmentRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div>
-      <article class="equipment-hero"><div class="equipment-photo">❄</div><div><div class="eyebrow">—</div><h2>Selecciona un equipo</h2><p class="card-sub">Esperando datos de la empresa</p><span class="tag" id="equipmentStatus">Pendiente</span></div></article>
-      <div class="actions"><button class="primary" id="newReport" data-permission="createReports" data-tech-only>＋ Nuevo reporte</button><button class="danger" id="criticalFault" data-permission="reportFaults"><span class="fault-button-icon">!</span><span>Reportar falla</span></button></div>
-      <button class="secondary" type="button" data-open-repairs="equipment" data-tech-only>🔧 Historial de reparaciones</button>
-      <div class="management-bar" data-tech-only><button class="secondary" id="editOperationalEquipment" data-permission="editEquipment">Editar equipo</button><button class="secondary" id="toggleOperationalEquipment" data-permission="editEquipment">Desactivar equipo</button></div>
-      <div class="management-bar" data-admin-only><button class="secondary" id="removeOperationalEquipment" data-admin-only>🗑 Eliminar / dar de baja</button></div>
+      <article class="equipment-hero"><div class="equipment-photo">❄</div><div class="equipment-identity"><div class="eyebrow">—</div><h2>Selecciona un equipo</h2><p class="card-sub">Esperando datos de la empresa</p><span class="tag" id="equipmentStatus">Pendiente</span></div><div class="equipment-context"><div class="field"><label for="equipmentRound">Ronda de servicio</label><select id="equipmentRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div><details id="equipmentOptions" data-tech-only><summary aria-label="Opciones del equipo"><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>Opciones del equipo</span></summary><div class="equipment-options-list"><button class="secondary" id="editOperationalEquipment" data-permission="editEquipment"><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 4 5 5M4 20l5-1L20 8a2 2 0 0 0-5-5L4 14z"/></svg>Editar equipo</button><button class="secondary" id="toggleOperationalEquipment" data-permission="editEquipment">Desactivar equipo</button><button class="danger" id="removeOperationalEquipment" data-admin-only><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg>Eliminar / dar de baja</button></div></details></div></article>
+      <div class="actions equipment-main-actions"><button class="primary" id="newReport" data-permission="createReports" data-tech-only>Nuevo reporte</button><button class="secondary" id="criticalFault" data-permission="reportFaults"><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2zM12 9v5M12 17h.01"/></svg><span>Reportar falla</span></button></div>
+      <nav class="equipment-history-nav" aria-label="Historial del equipo"><span class="equipment-history-current" aria-current="page"><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM14 3v5h4M9 12h6M9 16h6"/></svg>Reportes</span><button class="secondary" type="button" data-open-repairs="equipment" data-tech-only><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5a6 6 0 0 0-7 8L3 17a3 3 0 0 0 4 4l4-4a6 6 0 0 0 8-7l-4 4-5-5z"/></svg>Reparaciones</button></nav>
       <div class="section-head"><h2>Reportes de esta ronda</h2><span class="count" id="equipmentReportCount"></span></div>
       <div class="report-list bounded-list" id="equipmentReportList"></div>
     </section>
@@ -798,7 +797,8 @@
     $('#toggleOperationalEquipment').hidden=Boolean(meta.retired);
     $('#editOperationalEquipment').hidden=Boolean(meta.retired);
     $('#removeOperationalEquipment').hidden=!account.isOwner||Boolean(meta.retired);
-    const policyReport=Boolean(clientMeta[meta.client].policy);$('#newReport').disabled=!meta.active;$('#newReport').textContent=policyReport?`＋ Nuevo reporte R${selectedRound}`:'📝 Generar reporte único';
+    const policyReport=Boolean(clientMeta[meta.client].policy);$('#newReport').disabled=!meta.active;$('#newReport').innerHTML='<svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>'+(policyReport?`Nuevo reporte · R${selectedRound}`:'Generar reporte único')+'</span>';
+    const options=$('#equipmentOptions');options.open=false;options.hidden=Boolean(meta.retired)||(!account.isOwner&&!can('editEquipment'));
     $('#equipmentReportCount').textContent=done?'1 reporte':'0 reportes';
     $('#equipmentReportList').innerHTML=reportCards(done?[e]:[]);
     views.equipment[1]=e[1];if(current==='equipment')$('#screenTitle').textContent=e[1];
@@ -1980,7 +1980,9 @@
     save:body=>operationsPost('/api/operaciones/worklists',body),accept:list=>{matrixWorklists=matrixWorklists.filter(row=>row.id!==list.id).concat(list);}
   });
   if(typeof HscWorklists!=='undefined')journeyUi=HscWorklists.mount({account,escape:escapeHtml,toast,show:name=>{showView(name);journeyUi.render()},round:roundForClient,
-    state:()=>({worklists:matrixWorklists,reports:matrixReports,clients:clients.map(c=>({id:c[1],name:c[0]})),equipment:equipment.map(e=>({id:e[0],name:e[1],...equipmentMeta[e[0]],client_id:equipmentMeta[e[0]]?.client})),users:operationUsers,selectedClient,selectedEquipment}),
+    photo:photoMarkup,hydrate:hydratePhotos,
+    loadTeam:async()=>{const response=await hscFetch('/api/operaciones/worklist-collaborators',{headers:{Accept:'application/json'}});const payload=await response.json();if(!response.ok||!payload.ok)throw Error('No se pudieron cargar los técnicos.');return payload.users||[];},
+    state:()=>({worklists:matrixWorklists,reports:matrixReports,clients:clients.map(c=>({id:c[1],name:c[0]})),equipment:equipment.map(e=>({id:e[0],name:e[1],brand:e[2],...equipmentMeta[e[0]],client_id:equipmentMeta[e[0]]?.client})),users:operationUsers,selectedClient,selectedEquipment}),
     loadUsers:async()=>{if(!account.isOwner)return;const response=await hscFetch('/api/operaciones/users',{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error('No se pudieron cargar los técnicos.');operationUsers=payload.users||[];},save:queueFieldAction,send:drainFieldActions,
     discardProposal:async id=>{if(fieldActionsBusy)throw Error('Espera a que termine el envío actual.');if(!await loadMatrixData())throw Error('Primero necesitamos consultar la versión confirmada; tu propuesta se conserva.');const actions=await fieldActionStorage('list');for(const action of actions)if(action.url==='/api/operaciones/worklists'&&action.body.id===id)await fieldActionStorage('delete',action);fieldRevision++;await repaintPendingState();await updateFieldActionStatus();},
     openEquipment:(client,id,round)=>{if(!equipmentMeta[id]){toast('El equipo ya no está disponible.');return;}selectedClient=client;selectedEquipment=id;selectedRound=String(round);refreshRound();showView('equipment')}

@@ -3212,7 +3212,7 @@ def _scope_operaciones_payload(payload):
                            or user_id in task.get("assigned_user_ids", [task.get("assigned_user_id")])]
         scoped["expenses"] = [expense for expense in payload.get("expenses", [])
                               if expense.get("user_id") == user_id]
-        scoped["worklists"] = [row for row in payload.get("worklists", []) if row.get("assigned_user_id") == user_id or row.get('origin') == 'client']
+        scoped["worklists"] = [row for row in payload.get("worklists", []) if row.get("assigned_user_id") == user_id or user_id in row.get('shared_user_ids', []) or row.get('origin') == 'client']
         return scoped
     if role != "client":
         return payload
@@ -3476,6 +3476,16 @@ def api_operaciones_save_worklist():
     except Exception:
         current_app.logger.exception('No se pudo guardar la jornada')
         return jsonify(ok=False, error='No se confirmó el guardado. Tu lista local se conserva.'), 503
+
+
+@app.get('/api/operaciones/worklist-collaborators')
+def api_operaciones_worklist_collaborators():
+    denied = _operations_forbidden('admin', 'technician')
+    if denied:
+        return denied
+    # Deliberately no emails, phone numbers or account permissions.
+    return jsonify(ok=True, users=[{'id':u['id'],'name':u['name']} for u in OPERACIONES_STORE.list_users()
+                                  if u.get('role')=='technician' and u.get('status')=='active'])
 
 
 @app.post('/api/operaciones/tasks')
