@@ -21,3 +21,12 @@
 @media(min-width:760px){#clientList{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(min-width:1040px){#clientList{grid-template-columns:repeat(4,minmax(0,1fr))}}
 @media(prefers-reduced-motion:reduce){#clientList .client-card{transition:none}}
+.client-launcher-tools{flex-wrap:wrap}.client-launcher-tools>#openOccasionalReport,.client-launcher-tools>.client-repairs{display:flex;flex:1;align-items:center;justify-content:center;gap:7px;min-height:46px;padding:10px 8px;background:var(--surface);color:var(--text);border:1px solid var(--line);box-shadow:none;font-size:.84rem;white-space:nowrap}.client-launcher-tools>#orderClients{order:5;margin-left:auto}
+@media(max-width:600px){#clientActions summary span{display:none}#clientActions summary{width:44px;padding:10px}}
+@keyframes client-wiggle{0%,100%{transform:rotate(-.7deg)}50%{transform:rotate(.7deg)}}
+#clientList.reordering .client-card{animation:client-wiggle .22s ease-in-out infinite;touch-action:none}
+#clientList.reordering .client-order-row:nth-child(even) .client-card{animation-delay:-.11s}
+#clientList.reordering .client-dragging{animation:none;transform:scale(1.025);opacity:.85;z-index:2;pointer-events:none}
+#clientList.reordering .client-order-actions{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+#clientList.reordering .client-order-actions:focus-within{position:static;width:auto;height:auto;overflow:visible;clip-path:none}
+@media(prefers-reduced-motion:reduce){#clientList.reordering .client-card{animation:none;outline:2px dashed var(--brand)}}

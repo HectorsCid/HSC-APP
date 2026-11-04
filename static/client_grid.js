@@ -8,11 +8,12 @@
   function attach(container,api){
     let timer=null,source=null,target=null,startX=0,startY=0,dragging=false,suppressUntil=0;
     const doc=container.ownerDocument,win=doc.defaultView;
-    function clean(){clearTimeout(timer);timer=null;source?.classList.remove('client-dragging');target?.classList.remove('client-drop-target');source=null;target=null;dragging=false;}
+    function clean(){clearTimeout(timer);timer=null;source?.classList.remove('client-dragging');if(source)source.style.removeProperty('transform');target?.classList.remove('client-drop-target');source=null;target=null;dragging=false;}
     function start(event,point){
       if(event.target.closest('.client-order-actions'))return;
       const card=event.target.closest('[data-client]');if(!card)return;
       clean();source=card;startX=point.clientX;startY=point.clientY;
+      if(api.isEditing?.()){dragging=true;source.classList.add('client-dragging');return;}
       timer=setTimeout(()=>{
         if(!api.canStart()){suppressUntil=Date.now()+1000;api.toast('Limpia la búsqueda antes de ordenar');clean();return;}
         dragging=true;suppressUntil=Date.now()+1000;source.classList.add('client-dragging');api.onStart();
@@ -22,6 +23,7 @@
       if(!source)return;
       if(!dragging){if(Math.hypot(point.clientX-startX,point.clientY-startY)>10)clean();return;}
       if(event.cancelable)event.preventDefault();
+      source.style.transform=`translate(${point.clientX-startX}px,${point.clientY-startY}px) scale(1.025)`;
       const over=doc.elementFromPoint(point.clientX,point.clientY)?.closest('.client-order-row')?.querySelector('[data-client]');
       if(over&&over!==source){target?.classList.remove('client-drop-target');target=over;target.classList.add('client-drop-target');}
       if(point.clientY<110)win.scrollBy(0,-14);else if(point.clientY>win.innerHeight-110)win.scrollBy(0,14);
@@ -36,6 +38,8 @@
     container.addEventListener('click',event=>{if(dragging||Date.now()<suppressUntil){event.preventDefault();event.stopImmediatePropagation();}},true);
     container.addEventListener('contextmenu',event=>{if(event.target.closest('[data-client]'))event.preventDefault();});
     container.addEventListener('dragstart',event=>event.preventDefault());win.addEventListener('blur',clean);
+    doc.addEventListener('pointerdown',event=>{if(api.isEditing?.()&&!container.contains(event.target)&&!event.target.closest('#orderClients,#clientActions')){clean();api.onDone?.();}},true);
+    doc.addEventListener('keydown',event=>{if(event.key==='Escape'&&api.isEditing?.()){clean();api.onDone?.();}});
   }
   const lib={read,ordered,move,save,attach};if(typeof module!=='undefined')module.exports=lib;else root.HscClientGrid=lib;
 })(typeof window!=='undefined'?window:globalThis);

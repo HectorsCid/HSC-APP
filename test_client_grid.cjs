@@ -18,4 +18,9 @@ const reorder=html.slice(html.indexOf('  async function moveClient('),html.index
 assert.ok(!reorder.includes('operationsPost'),'El orden personal no modifica el orden global');
 assert.ok(html.includes('HscClientGrid.attach'));
 assert.ok(html.includes('id="startClientOrder"'));
+const css=fs.readFileSync('static/client_grid.css','utf8'),js=fs.readFileSync('static/client_grid.js','utf8');
+assert.ok(css.includes('@keyframes client-wiggle'));
+assert.ok(css.includes('.client-order-actions:focus-within'));
+assert.ok(js.includes('api.isEditing?.()'));
+assert.ok(js.includes('api.onDone?.()'));
 console.log('OK: orden personal, persistencia, usuarios aislados, nuevos clientes, movimiento y fallos de almacenamiento');

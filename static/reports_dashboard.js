@@ -5,7 +5,8 @@
   function mount(doc,fetcher){
     const $=id=>doc.getElementById(id),library=$('reportLibrary');if(!library)return;
     const manual=$('manualReportsPanel'),equipment=$('reportEquipmentPanel'),search=$('reportLibrarySearch'),button=$('loadRecentReports'),status=$('recentReportsStatus'),dismiss=$('dismissRecentStatus');
-    library.append(equipment);
+    $('reportLibraryContent').append(equipment);
+    library.before($('reportsAdvanced'));
     let tab='draft';
     function filter(){
       let count=0;

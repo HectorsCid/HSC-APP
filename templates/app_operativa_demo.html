@@ -727,7 +727,7 @@
     $('#catalogScope').title='Cambia sólo los clientes visibles; no modifica sus pólizas';
     $('#clientList').classList.toggle('reordering',clientOrderMode);
     $('#orderClients').textContent='Listo';$('#orderClients').hidden=!clientOrderMode;
-    $('#clientGridHelp').textContent=clientOrderMode?'Arrastra a otra posición o usa las flechas. Pulsa Listo al terminar.': 'Mantén presionado un cliente para cambiar su posición.';
+    $('#clientGridHelp').textContent=clientOrderMode?'Arrastra los clientes. Toca fuera de los cuadros o pulsa Listo para terminar.': 'Mantén presionado un cliente para cambiar su posición.';
     $('#clientList').innerHTML=rows.map((c,index)=>`<div class="client-order-row"><button type="button" class="client-card" data-client="${escapeHtml(c[1])}" aria-label="${escapeHtml(c[0])}"><span class="client-logo">${photoMarkup(clientMeta[c[1]].photo,c[1].slice(0,2))}</span><span class="card-copy"><span class="card-title">${escapeHtml(c[0])}</span><span class="card-sub">${escapeHtml(c[1])} · ${equipment.filter(e=>equipmentMeta[e[0]].client===c[1]&&equipmentMeta[e[0]].active).length} equipos</span></span></button><span class="client-order-actions"><button class="mini-btn" type="button" data-move-client="${escapeHtml(c[1])}" data-direction="-1" ${index===0?'disabled':''} aria-label="Subir ${escapeHtml(c[0])}">↑</button><button class="mini-btn" type="button" data-move-client="${escapeHtml(c[1])}" data-direction="1" ${index===rows.length-1?'disabled':''} aria-label="Bajar ${escapeHtml(c[0])}">↓</button></span></div>`).join('')||'<div class="empty">No hay clientes que coincidan.</div>';
     // Son pocos logotipos: se preparan desde el inicio y quedan persistidos.
     hydratePhotos($('#clientList'),12);
@@ -1630,7 +1630,8 @@
   $('#orderClients').onclick=()=>{if($('#clientSearch').value.trim()){toast('Limpia la búsqueda antes de ordenar');return;}clientOrderMode=!clientOrderMode;renderClients();};
   $('#startClientOrder').onclick=()=>{$('#clientActions').open=false;if(!clientOrderMode)$('#orderClients').onclick();};
   $('#clientActions').addEventListener('click',event=>{if(event.target.closest('button'))$('#clientActions').open=false;});
-  HscClientGrid.attach($('#clientList'),{canStart:()=>!$('#clientSearch').value.trim(),onStart:()=>{clientOrderMode=true;$('#clientList').classList.add('reordering');$('#orderClients').hidden=false;$('#clientGridHelp').textContent='Arrastra a otra posición o usa las flechas. Pulsa Listo al terminar.';},onMove:savePersonalClientOrder,toast});
+  HscClientGrid.attach($('#clientList'),{canStart:()=>!$('#clientSearch').value.trim(),isEditing:()=>clientOrderMode,onStart:()=>{clientOrderMode=true;$('#clientList').classList.add('reordering');$('#orderClients').hidden=false;$('#clientGridHelp').textContent='Arrastra los clientes. Toca fuera de los cuadros o pulsa Listo para terminar.';},onDone:()=>{clientOrderMode=false;$('#clientList').classList.remove('reordering');$('#orderClients').hidden=true;$('#clientGridHelp').textContent='Mantén presionado un cliente para cambiar su posición.';},onMove:savePersonalClientOrder,toast});
+  const homeRepairShortcut=document.querySelector('[data-view="clients"] [data-open-repairs]');homeRepairShortcut.classList.add('client-repairs');document.querySelector('.client-launcher-tools').insertBefore(homeRepairShortcut,$('#orderClients'));
   $('#clientEditorForm').onsubmit=async event=>{
     event.preventDefault();const error=$('#clientEditorError'),name=$('#opClientName').value.trim(),matrixId=$('#opMatrixId').value.trim().toUpperCase();
     if(!$('#catalogChoice').hidden&&!$('#catalogClient').value){error.textContent='Selecciona un cliente del catálogo o la opción Crear cliente nuevo.';return;}
