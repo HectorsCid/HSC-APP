@@ -1,12 +1,13 @@
 const fs=require('node:fs'),assert=require('node:assert/strict');
 const html=fs.readFileSync('templates/reportes_inicio.html','utf8');
-const panel=html.match(/<details\b[^>]*id="manualReportsPanel"[\s\S]*?<\/details>/)?.[0];
-assert.ok(panel,'Sección plegable');
-assert.ok(!/<details[^>]*\sopen(?:\s|>)/.test(panel),'Cerrada inicialmente');
-assert.ok(panel.includes('{{ manual_records|length }}'),'Contador de registros');
+const panel=html.slice(html.indexOf('<div id="manualReportsPanel"'),html.indexOf('<details class="card reports-advanced"'));
+assert.ok(panel,'Panel de borradores y terminados');
+assert.ok(html.includes('data-report-tab="draft"'),'Pestaña de borradores');
+assert.ok(html.includes('data-report-tab="completed"'),'Pestaña de terminados');
+assert.ok(html.includes('{{ manual_records|length }}'),'Contador de registros');
 assert.ok(panel.includes('class="list manual-records" tabindex="0" role="region"'));
 assert.ok(panel.includes('refresh_manual=1'));
 for(const action of ['diag_nuevo','diag_prev_guardado','diag_eliminar','report.pdf_url'])assert.ok(panel.includes(action));
 assert.match(html,/\.manual-records\{[^}]*max-height:[^}]*overflow-y:auto/);
 assert.match(html,/@media\(max-width:650px\)/);
-console.log('OK: sección cerrada, contador, lista acotada, teclado y acciones conservadas');
+console.log('OK: pestañas, contador, lista acotada, teclado y acciones conservadas');

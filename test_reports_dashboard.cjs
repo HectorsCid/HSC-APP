@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const {matches}=require('./static/reports_dashboard.js');
+assert.ok(matches('Refrigeración · Cámara fría · RT-123','camara 123'));
+assert.ok(!matches('RT-123','Otro cliente'));
+const html=fs.readFileSync('templates/reportes_inicio.html','utf8'),js=fs.readFileSync('static/reports_dashboard.js','utf8');
+assert.ok(html.indexOf('Accesos de Reportes')<html.indexOf('Crear reporte'));
+assert.ok(html.includes('id="reportsAdvanced"'));
+assert.ok(!/<details[^>]*id="reportsAdvanced"[^>]*\sopen/.test(html));
+assert.ok(html.includes('id="loadRecentReports"'));
+assert.ok(js.includes("button.textContent='Cargando…'"));
+assert.ok(js.includes('finally{clearTimeout(timer);button.disabled=false'));
+assert.ok(js.includes('dismiss.onclick='));
+assert.ok(!js.includes('setInterval'));
+console.log('OK: navegación superior, pestañas, búsqueda, consulta explícita y espera recuperable');
