@@ -4,7 +4,7 @@ const find=name=>html.split(/\r?\n/).find(line=>line.trim().startsWith(`async fu
 (async()=>{
   let jobs=[{id:'fixed-fault',url:'/api/operaciones/faults',body:{id:'fixed-fault'},files:[],label:'Falla'}],fail=true,posts=[];
   const ctx=vm.createContext({fieldActionsBusy:false,shouldSyncNow:()=>true,updateFieldActionStatus:async()=>{},toast:()=>{},loadMatrixData:async()=>{},fieldActionStorage:async(mode,item)=>{if(mode==='list')return structuredClone(jobs);if(mode==='delete')jobs=jobs.filter(j=>j.id!==item.id);if(mode==='save')jobs=jobs.map(j=>j.id===item.id?structuredClone(item):j);},operationsPost:async(url,body)=>{posts.push(body.id);if(fail)throw Error('Sin conexión');return {fault:{id:body.id}}}});
-  Object.assign(ctx,{fieldRevision:0,lastServerPayload:null,repaintPendingState:async()=>{},updateOfflineSyncUi:()=>{}});
+  Object.assign(ctx,{HscReceiptQueue:require('./static/receipt_queue.js'),fieldRevision:0,lastServerPayload:null,repaintPendingState:async()=>{},updateOfflineSyncUi:()=>{}});
   vm.runInContext(html.slice(html.indexOf('  async function drainFieldActions('),html.indexOf('  const connectionBanner=')),ctx);
   await ctx.drainFieldActions();assert.equal(jobs.length,1);assert.equal(jobs[0].error,'Sin conexión');
   fail=false;await ctx.drainFieldActions();assert.equal(jobs.length,0);assert.deepEqual(posts,['fixed-fault','fixed-fault']);
@@ -12,6 +12,16 @@ const find=name=>html.split(/\r?\n/).find(line=>line.trim().startsWith(`async fu
   posts=[];ctx.operationsPost=async(url,body)=>{posts.push(body.id);if(body.id==='L1')throw Object.assign(Error('Conflicto'),{status:409});return {expense:{id:body.id}}};
   await ctx.drainFieldActions();assert.equal(jobs.length,1);assert.equal(jobs[0].blocked,true);assert.deepEqual(posts,['L1','E1']);
   await ctx.drainFieldActions();assert.deepEqual(posts,['L1','E1'],'Un conflicto de lista no se reenvía automáticamente ni bloquea otros gastos');
+  const receiptPhoto=new Blob([new Uint8Array([255,216,255,224,1,2])]);
+  jobs=[{id:'receipt',url:'/api/operaciones/expenses',body:{id:'R1'},receipt:true,files:[receiptPhoto]},{id:'next',url:'/api/operaciones/expenses',body:{id:'E2'},files:[]}];posts=[];let uploads=0;
+  ctx.hscFetch=async()=>{uploads++;return {ok:false,status:400,json:async()=>({error:'Selecciona una fotografía del comprobante.'})}};
+  await ctx.drainFieldActions();assert.deepEqual(posts,['R1','E2']);assert.equal(jobs.length,1);assert.equal(jobs[0].receiptBlocked,true);assert.equal(jobs[0].receiptSavedExpense.id,'R1');
+  await ctx.drainFieldActions(true);assert.equal(uploads,1,'No repetir automáticamente una foto rechazada');
+  jobs[0].error='';jobs[0].receiptBlocked=false;jobs[0].receiptRetryAfter=0;
+  ctx.hscFetch=async()=>{uploads++;return {ok:true,status:200,json:async()=>({ok:true,expense:{id:'R1',has_receipt:true}})}};
+  await ctx.drainFieldActions();assert.equal(jobs.length,0);assert.deepEqual(posts,['R1','E2'],'Al reparar sólo se sube la foto, sin volver a guardar el gasto');
+  jobs=[{id:'old',url:'/api/operaciones/expenses',body:{id:'old'},receipt:true,error:'Selecciona una fotografía del comprobante.',files:[receiptPhoto]},{id:'independent',url:'/api/operaciones/expenses',body:{id:'E3'}}];
+  await ctx.drainFieldActions();assert.equal(jobs.length,1);assert.equal(jobs[0].receiptBlocked,true);assert.equal(posts.at(-1),'E3');
   let saved={},left=false,allowStorage=false;
   Object.assign(ctx,{account:{id:'T'},reportDrafts:()=>({}),releaseEvidenceMemory(){},persistEvidence:async()=>allowStorage,rememberObservationValues:()=>{},rememberPendingReportUpload:u=>saved[u.key]=u,pendingReportUploads:()=>saved,leaveFinishedReport:()=>left=true});
   vm.runInContext(find('queueReportOnDevice'),ctx);
