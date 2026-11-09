@@ -109,6 +109,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
   <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
+<link rel="stylesheet" href="/static/scheduled_email.css?v=1">
+<script src="/static/scheduled_email.js?v=1"></script>
 </head>
 <body class="commerce-ui">
   {% include "_commerce_icons.html" %}
@@ -676,6 +678,7 @@
       });
     }
 
+    const quoteSchedule = HscScheduledEmail.mount({anchor:quoteMailError,send:quoteMailSend,sendKey:quoteMailKey,immediate:'Enviar cotización'});
     async function openQuoteMail(id){
       quoteMailContext = {id};
       quoteMailError.textContent = '';
@@ -685,6 +688,7 @@
       quoteMailKeyWrap.style.display = 'none';
       quoteMailSend.disabled = false;
       quoteMailSend.innerHTML = `${lineIcon('mail')}Enviar cotización`;
+      quoteSchedule.open('cotizacion','');
       renderQuoteHistory([]);
       renderQuoteFrequent('');
       quoteMail.classList.add('show');
@@ -693,6 +697,7 @@
         const data = await response.json();
         if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo preparar el envío.');
         quoteMailContext = data;
+        quoteSchedule.open('cotizacion',data.id);
         quoteMailTo.value = data.email || '';
         quoteMailCc.value = '';
         renderQuoteContacts(data.correos?.contactos || [], data.atencion || '', data.email || '');
@@ -744,6 +749,7 @@
       quoteMailSend.disabled = true;
       quoteMailSend.textContent = 'Enviando…';
       try{
+        if(quoteSchedule.append(form)) quoteMailError.textContent = 'Guardando el envío programado…';
         const response = await fetch(`/api/cotizaciones/${encodeURIComponent(quoteMailContext.folio || quoteMailContext.id)}/email`, {
           method:'POST', headers:{'Accept':'application/json'}, body:form
         });
@@ -753,6 +759,7 @@
         const sentEmails = [quoteMailTo.value.trim(), quoteMailCc.value.trim()].filter(Boolean).join('; ');
         quoteMail.classList.remove('show');
         quoteMailContext = null;
+        if(data.scheduled){msg(true,data.message);return;}
         fetch('/api/clientes/correos-historial', {
           method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
           body:JSON.stringify({action:'record', emails:sentEmails, nombre:sentContext?.cliente || '', rfc:sentContext?.rfc || ''})

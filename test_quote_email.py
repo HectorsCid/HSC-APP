@@ -49,6 +49,28 @@ class QuoteEmailTests(unittest.TestCase):
         })
         self.assertTrue(response.get_json()["trusted"])
 
+    def test_schedule_snapshots_pdf_without_sending(self):
+        from datetime import datetime, timedelta
+        from scheduled_email import Queue, ZONE
+        from operaciones_store import OperationsStore
+
+        queue = Queue(OperationsStore(local_path=Path(self.tmp.name) / 'mail.sqlite3'))
+        when = (datetime.now(ZONE) + timedelta(days=1)).strftime('%Y-%m-%dT07:00')
+        with (
+            patch.dict(cotizador.app.extensions, {'scheduled_email_queue':queue}),
+            patch.object(cotizador, 'smtp_config', return_value={'configured':True}),
+            patch.object(cotizador, 'authorized_to_send', return_value=True),
+            patch.object(cotizador, '_pdf_cotizacion_bytes', return_value=b'quote PDF'),
+            patch.object(cotizador, 'send_quote_email') as send,
+        ):
+            response = self.client.post('/api/cotizaciones/1587/email', data={
+                'email':'cliente@example.com', 'scheduled_for':when,
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['scheduled'])
+        self.assertEqual(queue.list('cotizacion', '1587')[0]['state'], 'pending')
+        send.assert_not_called()
+
     def test_selected_invoice_contacts_can_match_by_rfc(self):
         with patch.object(cotizador, "authorized_to_send", return_value=True):
             response = self.client.post("/api/clientes/contactos-seleccionado", json={

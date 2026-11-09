@@ -111,6 +111,8 @@
 .invoice-data-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 16px;align-items:end}.invoice-data-grid .invoice-client-row{grid-template-columns:minmax(0,1fr) 38px 38px;gap:6px;align-items:end}.invoice-data-grid .icon-btn{width:38px;height:38px;min-height:38px}.invoice-data-grid #paymentFields,.invoice-data-grid #invoiceReferences{display:contents}.invoice-data-grid .payment-tools{grid-column:1/-1;order:3;margin:0}.invoice-data-grid label{margin-top:0}.invoice-data-grid input,.invoice-data-grid select{height:38px;padding:7px 9px;text-overflow:ellipsis}.invoice-data-grid .invoice-references{border:0;padding:0;margin:0}#fiscalDetails .details-body{grid-template-columns:repeat(3,minmax(0,1fr))}.service-picker{grid-template-columns:minmax(240px,420px) auto;justify-content:start;padding:10px}.invoice-data-grid>div{min-width:0}@media(max-width:950px){.invoice-data-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.invoice-data-grid{grid-template-columns:1fr}.invoice-data-grid input,.invoice-data-grid select{height:44px}.invoice-data-grid .payment-tools{grid-column:auto}#fiscalDetails .details-body{grid-template-columns:1fr}.service-picker{grid-template-columns:minmax(0,1fr) auto}}
 </style>
   {% include "_pwa_head.html" %}
+<link rel="stylesheet" href="/static/scheduled_email.css?v=1">
+<script src="/static/scheduled_email.js?v=1"></script>
 </head>
 <body data-billing-environment="{{ facturama_environment|default('sandbox') }}">
   <div class="wrap">
@@ -1276,6 +1278,7 @@
       invoiceEmailRecipients.value = invoiceEmailContact.value || fallbackEmail || '';
       invoiceEmailContact.onchange=()=>{if(invoiceEmailContact.value) invoiceEmailRecipients.value=invoiceEmailContact.value;};
     }
+    const stampedSchedule = HscScheduledEmail.mount({anchor:invoiceEmailError,send:invoiceEmailSend,sendKey:invoiceEmailKey,immediate:'Enviar PDF y XML'});
     async function openStampedEmailModal(){
       if(!stampedEmailContext) return;
       stampSuccessModal.classList.remove('show');
@@ -1290,6 +1293,7 @@
       invoiceEmailCc.value = '';
       invoiceEmailSend.disabled = false;
       invoiceEmailSend.textContent = '✉ Enviar PDF y XML';
+      stampedSchedule.open('factura',stampedEmailContext.id);
       stampedEmailContext.correos = {};
       renderStampedEmailHistory([]);
       renderStampedFrequent('');
@@ -1363,6 +1367,7 @@
       invoiceEmailError.textContent = 'Preparando el PDF y XML para enviar. Espera la confirmación antes de volver a intentarlo.';
       try{
         const form = new FormData();
+        if(stampedSchedule.append(form)) invoiceEmailError.textContent = 'Guardando el envío programado…';
         form.append('email', invoiceEmailRecipients.value.trim());
         form.append('cc', invoiceEmailCc.value.trim());
         form.append('subject', invoiceEmailSubject.value.trim());
@@ -1376,6 +1381,14 @@
           throw new Error('Render no confirmó el envío. Antes de reintentar, revisa si el correo ya llegó para evitar duplicarlo.');
         });
         if(!response.ok || !result.ok) throw new Error(result.error || 'No se pudo enviar el correo.');
+        if(result.scheduled){
+          invoiceEmailError.classList.remove('pending');
+          invoiceEmailError.textContent=result.message;
+          invoiceEmailSend.disabled=false;
+          invoiceEmailSend.textContent='Enviar PDF y XML';
+          stampedSchedule.open('factura',stampedEmailContext.id);
+          return;
+        }
         const recordedContext = {...stampedEmailContext};
         const recordedEmails = [invoiceEmailRecipients.value.trim(), invoiceEmailCc.value.trim()].filter(Boolean).join('; ');
         fetch('/api/clientes/correos-historial', {

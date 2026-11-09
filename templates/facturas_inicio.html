@@ -212,6 +212,8 @@
 <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
 <script defer src="{{ url_for('static', filename='notifications.js', v='3') }}"></script>
+<link rel="stylesheet" href="/static/scheduled_email.css?v=1">
+<script src="/static/scheduled_email.js?v=1"></script>
 </head>
 <body class="billing-page">
 <svg class="icon-sprite" aria-hidden="true">
@@ -964,6 +966,7 @@ function renderInvoiceContacts(contacts, fallbackEmail){
   emContact.onchange=()=>{if(emContact.value) emEmail.value=emContact.value;};
 }
 
+const invoiceSchedule = HscScheduledEmail.mount({anchor:emErr,send:emConfirm,sendKey:emKey,immediate:'Enviar PDF y XML'});
 async function openEmailModal(ctx){
   emailCtx = ctx;
   emEmail.value = ctx.email || '';
@@ -978,6 +981,7 @@ async function openEmailModal(ctx){
   emErr.textContent = '';
   emConfirm.disabled = false;
   emConfirm.innerHTML = `${lineIcon('mail')}Enviar PDF y XML`;
+  invoiceSchedule.open('factura',ctx.id);
   renderInvoiceHistory([]);
   renderInvoiceFrequent('');
   renderInvoiceContacts([], ctx.email || '');
@@ -1052,6 +1056,7 @@ emConfirm.addEventListener('click', async ()=>{
   emConfirm.textContent = 'Enviando…';
   try{
     const form = new FormData();
+    if(invoiceSchedule.append(form)) emErr.textContent = 'Guardando el envío programado…';
     form.append('email', emEmail.value.trim());
     form.append('cc', emCc.value.trim());
     form.append('subject', emSubject.value.trim());
@@ -1070,6 +1075,7 @@ emConfirm.addEventListener('click', async ()=>{
     emKey.value = '';
     em.classList.remove('show');
     emailCtx = null;
+    if(data.scheduled){pageMsg.className='flash ok';pageMsg.textContent=data.message;return;}
     fetch('/api/clientes/correos-historial', {
       method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
       body:JSON.stringify({action:'record', emails:sentEmails, nombre:sentContext?.cliente || '', rfc:sentContext?.rfc || ''})

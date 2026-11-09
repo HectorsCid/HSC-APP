@@ -237,6 +237,8 @@ OPERACIONES_STORE = OperationsStore.from_environment(
     is_render=IS_RENDER, project_root=Path(__file__).resolve().parent
 )
 app.extensions['operations_store'] = OPERACIONES_STORE
+from scheduled_email import enqueue as enqueue_document_mail, install as install_document_mail
+install_document_mail(app, OPERACIONES_STORE)
 OPERACIONES_MATRIX_AUTO_SYNC = os.environ.get("OPERACIONES_MATRIX_AUTO_SYNC", "1").lower() in {"1", "true", "yes"}
 OPERACIONES_SHEETS_SYNC_ENABLED = str(
     os.environ.get("OPERACIONES_SHEETS_SYNC_ENABLED", "0")
@@ -6005,7 +6007,16 @@ def api_enviar_cotizacion(qid):
             "Ing. Héctor Silva Cid\n\n"
             "Cel: 5527605496"
         )
-        thread = email_thread_headers("cotizacion", str(cotizacion.get("id") or folio))
+        document_id = str(cotizacion.get("id") or folio)
+        if "scheduled_for" in request.form:
+            return enqueue_document_mail(
+                "cotizacion", document_id, request.form.get("scheduled_for"),
+                recipient=request.form.get("email", ""), cc=request.form.get("cc", ""),
+                subject=request.form.get("subject") or f"Cotización HSC {folio}",
+                body=request.form.get("message") or default_message,
+                pdf_bytes=_pdf_cotizacion_bytes(cotizacion), folio=folio, extra_attachments=extras,
+            )
+        thread = email_thread_headers("cotizacion", document_id)
         result = send_quote_email(
             recipient=request.form.get("email", ""),
             cc=request.form.get("cc", ""),

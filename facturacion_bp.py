@@ -28,6 +28,7 @@ from cfdi_drive import (
     load_json_file, load_payments_index, move_pending_documents,
 )
 from smtp_mailer import authorized_to_send, send_cfdi_email, smtp_config, trusted_device_token
+from scheduled_email import enqueue as enqueue_document_mail
 from email_tracking import delivery_status, email_thread_headers, read_email_deliveries, record_email_delivery
 from pdf_runtime import PdfRenderError, render_invoice_pdf_bytes
 import notification_center as notices
@@ -2882,6 +2883,12 @@ def api_invoice_email(inv_id):
         else:
             pdf = _fa_get_binary(f"/invoices/{inv_id}/pdf", "application/pdf")
             xml = _fa_get_binary(f"/invoices/{inv_id}/xml", "application/xml")
+        if "scheduled_for" in body:
+            return enqueue_document_mail(
+                "factura", inv_id, body.get("scheduled_for"), recipient=recipient, cc=body.get("cc", ""),
+                subject=subject, body=comments, pdf_bytes=pdf, xml_bytes=xml,
+                folio=folio, extra_attachments=extras,
+            )
         thread = email_thread_headers("factura", inv_id)
         result = send_cfdi_email(
             recipient=recipient,
