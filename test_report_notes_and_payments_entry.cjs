@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const html=fs.readFileSync('templates/app_operativa_demo.html','utf8');
+const payments=fs.readFileSync('templates/_operations_payments.html','utf8');
+const paymentScript=fs.readFileSync('static/operations_payments.js','utf8');
+const report=html.match(/<form id="reportForm"[\s\S]*?<\/form>/)[0];
+assert.match(report, /Correctivo y partes[^\n]*<\/details>\s*<section[^>]*report-fault-section[^\n]*<\/section>\s*<section[^>]*report-notes-section[^\n]*<textarea[^>]*name="notas"/);
+assert.equal((report.match(/name="notas"/g)||[]).length,1);
+assert.match(html,/form\.elements\.notas\.value=defaultReportNotes/);
+assert.match(html,/id="openPaymentsMenu"[^>]*>[\s\S]*?<strong>Pagos a técnicos<\/strong>/);
+assert.match(html,/menuPayments\.dataset\.appView='payments'/);
+assert.match(html,/\$\('#openExpenses'\)\.onclick=\(\)=>showView\('payments'\)/);
+assert.match(payments,/id="payLegacyExpenses"[^>]*>Revisar gastos y comprobantes/);
+assert.match(paymentScript,/\$\('#payLegacyExpenses'\)\.onclick=\(\)=>api\.show\('expenses'\)/);
+console.log('OK: accesos unificados y notas editables debajo de la falla grave.');

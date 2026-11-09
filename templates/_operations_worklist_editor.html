@@ -1,9 +1,8 @@
 <div class="modal" id="worklistEditor"><div class="sheet">
   <h2>Organizar mi jornada</h2>
   <form id="worklistForm">
-    <div class="field"><label for="worklistName">Nombre de la lista</label><input id="worklistName" maxlength="120" required placeholder="Arkansas · cocina"></div>
-    <div class="field-row"><div class="field"><label for="worklistDate">Fecha prevista</label><input id="worklistDate" type="date" required></div><div class="field" id="worklistAssigneeField"><label for="worklistAssignee">Responsable</label><select id="worklistAssignee"></select></div></div>
-    <div class="field-row"><div class="field"><label for="worklistClient">Cliente</label><select id="worklistClient" required></select></div><div class="field"><label for="worklistRound">Ronda de los equipos que agregues</label><select id="worklistRound"><option value="1">R1</option><option value="2">R2</option><option value="3">R3</option><option value="4">R4</option></select></div></div>
+    <div class="field" id="worklistClientField" hidden><label for="worklistClient">Cliente</label><select id="worklistClient" disabled></select></div>
+    <div class="field"><label for="worklistRound">Ronda de los equipos que agregues</label><select id="worklistRound"><option value="1">R1</option><option value="2">R2</option><option value="3">R3</option><option value="4">R4</option></select></div>
     <details id="worklistSharing"><summary>Compartir lista con <span id="worklistSharingCount">· Sólo para mí</span></summary><p class="editor-note">Opcional. Los técnicos seleccionados verán y podrán organizar la misma lista. El responsable administra los colaboradores.</p><div id="worklistCollaborators" class="work-scroll"></div><p id="worklistSharingStatus" role="status"></p></details>
     <h3 id="worklistSelectedCount">Tu orden de trabajo</h3><div id="worklistSelected" class="work-scroll"></div>
     <div class="field"><label for="worklistSearch">Buscar equipos para agregar</label><input id="worklistSearch" type="search" placeholder="Clave o nombre del equipo"></div>

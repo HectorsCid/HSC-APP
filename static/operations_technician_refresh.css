@@ -123,6 +123,8 @@ body[data-active-mode="tech"] .report-fault-check b,body[data-active-mode="tech"
 body[data-active-mode="tech"] .report-fault-check small{margin-top:2px;color:var(--muted);font-size:.76rem;font-weight:500}
 body[data-active-mode="tech"] .report-fault-section{padding:12px 13px;border-color:color-mix(in srgb,var(--warning) 28%,var(--line))}
 body[data-active-mode="tech"] .report-fault-section .report-fault-check{padding:0;border:0;border-radius:0;background:transparent}
+.report-notes-section{padding:13px 16px}
+.report-notes-section .field label{color:var(--text);font-size:.92rem;margin-bottom:9px}
 body[data-active-mode="tech"] .report-fault-fields{display:grid;gap:14px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 body[data-active-mode="tech"] .report-fault-fields[hidden]{display:none}
 body[data-active-mode="tech"] .report-photo-actions{margin-top:8px}

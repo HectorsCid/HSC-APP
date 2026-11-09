@@ -1,5 +1,17 @@
 const assert=require('node:assert/strict'),fs=require('node:fs');
-const {progress}=require('./static/operations_worklists.js'),{overlay}=require('./static/operations_offline.js');
+const {progress,editorDefaults}=require('./static/operations_worklists.js'),{overlay}=require('./static/operations_offline.js');
+const defaults={id:'new',client:'UVM',actor:'erick',date:'2026-11-09'};
+assert.deepEqual(editorDefaults(null,defaults),{id:'new',title:'Mi jornada',client_id:'UVM',assigned_user_id:'erick',target_date:'2026-11-09',items:[],status:'active',revision:0});
+assert.equal(editorDefaults(null,{...defaults,client:''}).client_id,'');
+const saved={id:'old',title:'Turno de cocina',client_id:'HDI',assigned_user_id:'other',target_date:'2026-11-05',items:[{id:'existing',round:'2'}],shared_user_ids:['erick']};
+const editing=editorDefaults(saved,defaults);
+assert.deepEqual(editing,saved);
+editing.items.push({id:'new',round:'3'});
+assert.equal(saved.items.length,1);
+const editorHtml=fs.readFileSync('templates/_operations_worklist_editor.html','utf8');
+assert.doesNotMatch(editorHtml,/id="worklist(?:Name|Date|Assignee)"/);
+assert.match(editorHtml,/id="worklistClientField" hidden/);
+assert.match(editorHtml,/id="worklistRound"/);
 const list={id:'L',items:[{id:'i1',equipment_id:'A1',round:'1'},{id:'i2',equipment_id:'A2',round:'2'}]};
 const reports=[{id:'old',equipment_id:'A1',round:'2',completed:true},{id:'draft',equipment_id:'A2',round:'2',completed:false}];
 assert.equal(progress(list,reports).filter(i=>i.done).length,0);

@@ -3,10 +3,10 @@
 <section class="view pay-panel" data-view="payments">
   <div class="section-head"><div><h2>Pagos a técnicos</h2><p class="muted">Todo lo pendiente, sin importar la semana.</p></div><button class="secondary" id="payRefresh" type="button">↻ Actualizar</button></div>
   <div class="pay-total"><span>Saldo total por pagar</span><strong id="payGrandTotal">—</strong><small>Gastos por reembolsar + sueldos vencidos. El domingo no borra deudas.</small></div>
+  <div class="pay-actions"><button class="secondary" id="payLegacyExpenses" type="button">Revisar gastos y comprobantes</button><button class="secondary" id="payNewExpense" type="button">＋ Registrar gasto</button></div>
   <p id="payListStatus" role="status"></p>
   <label class="pay-search">Buscar técnico<input type="search" id="paySearch" placeholder="Nombre del técnico" autocomplete="off"></label>
   <div id="payAccounts" class="pay-accounts"></div>
-  <div class="pay-actions"><button class="secondary" id="payNewExpense" type="button">＋ Registrar gasto</button><button class="secondary" id="payLegacyExpenses" type="button">Vista de gastos por fecha</button></div>
 </section>
 <section class="view pay-panel" data-view="payAccount">
   <div class="section-head"><div><p class="muted">Cuenta del técnico</p><h2 id="payName">Cargando…</h2></div><button class="secondary" id="payDetailRefresh" type="button">↻ Actualizar</button></div>

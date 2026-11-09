@@ -5,6 +5,9 @@
     const report=matches.find(r=>!r.pending_upload)||matches[0];
     return {...item,report_id:report?.id||'',done:Boolean(report),pending_upload:Boolean(report?.pending_upload)};
   });
+  const editorDefaults=(list,{id,client,actor,date})=>list?JSON.parse(JSON.stringify(list)):{
+    id,title:'Mi jornada',client_id:client,assigned_user_id:actor,target_date:date,items:[],status:'active',revision:0
+  };
   function mount(api){
     const $=s=>document.querySelector(s),esc=api.escape,uid=()=>crypto.randomUUID();
     const key=`hsc-worklist-selection-${api.account.id}`;
@@ -78,12 +81,12 @@
       document.querySelectorAll('[data-work-item]').forEach(b=>b.onclick=()=>{const item=list.items.find(i=>i.id===b.dataset.workItem);api.openEquipment(list.client_id,item.equipment_id,item.round);render()});
     }
     function renderPicker(){
-      const selectedIds=new Set(editor.items.map(i=>i.equipment_id)),client=$('#worklistClient').value,search=$('#worklistSearch').value.trim().toLocaleLowerCase();
+      const selectedIds=new Set(editor.items.map(i=>i.equipment_id)),client=editor.client_id,search=$('#worklistSearch').value.trim().toLocaleLowerCase();
       const round=$('#worklistRound').value;
       const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase();
       const terms=normalize(search).split(/\s+/).filter(Boolean);
-      const candidates=api.state().equipment.filter(e=>e.client_id===client&&e.active!==false&&!selectedIds.has(e.id)&&terms.every(term=>normalize([e.id,e.name,e.brand,e.model,e.location].join(' ')).includes(term))&&(pickerFilter==='all'||(pickerFilter==='done')===doneFor(e.id,round)));
-      $('#worklistChoices').innerHTML=candidates.map(e=>{const done=doneFor(e.id,round);return `<button type="button" class="secondary work-choice" data-add-work="${esc(e.id)}">${photo(e.id)}<span class="card-copy"><b>${esc(e.name)}</b><small>${esc(e.id)} · R${esc(round)} · ${done?'Realizado':'Pendiente'}</small></span><span class="status-dot ${done?'done':''}" aria-label="${done?'Realizado':'Pendiente'}"></span><span aria-hidden="true">＋</span></button>`}).join('')||'<p class="muted">No hay más equipos con ese filtro.</p>';
+      const candidates=client?api.state().equipment.filter(e=>e.client_id===client&&e.active!==false&&!selectedIds.has(e.id)&&terms.every(term=>normalize([e.id,e.name,e.brand,e.model,e.location].join(' ')).includes(term))&&(pickerFilter==='all'||(pickerFilter==='done')===doneFor(e.id,round))):[];
+      $('#worklistChoices').innerHTML=candidates.map(e=>{const done=doneFor(e.id,round);return `<button type="button" class="secondary work-choice" data-add-work="${esc(e.id)}">${photo(e.id)}<span class="card-copy"><b>${esc(e.name)}</b><small>${esc(e.id)} · R${esc(round)} · ${done?'Realizado':'Pendiente'}</small></span><span class="status-dot ${done?'done':''}" aria-label="${done?'Realizado':'Pendiente'}"></span><span aria-hidden="true">＋</span></button>`}).join('')||(client?'<p class="muted">No hay más equipos con ese filtro.</p>':'<p class="muted">Elige un cliente para ver sus equipos.</p>');
       document.querySelectorAll('[data-work-filter]').forEach(button=>{const active=button.dataset.workFilter===pickerFilter;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
       $('#worklistSelected').innerHTML=editor.items.map((item,index)=>`<div class="work-selected"><span class="card-copy">${index+1}. ${esc(equipmentName(item.equipment_id))}<small>${esc(item.equipment_id)} · R${esc(item.round)}</small></span><span class="work-order"><button type="button" class="mini-btn" data-move-work="${index}" data-step="-1" aria-label="Subir ${esc(item.equipment_id)}" ${index===0?'disabled':''}>↑</button><button type="button" class="mini-btn" data-move-work="${index}" data-step="1" aria-label="Bajar ${esc(item.equipment_id)}" ${index===editor.items.length-1?'disabled':''}>↓</button><button type="button" class="mini-btn" data-remove-work="${index}" aria-label="Quitar ${esc(item.equipment_id)}">×</button></span></div>`).join('')||'<p class="muted">Agrega equipos a tu recorrido.</p>';
       $('#worklistSelectedCount').textContent=`Tu orden de trabajo · ${editor.items.length} equipos`;
@@ -96,18 +99,18 @@
     }
     function edit(list=null,fromClient=false){
       editingFromClient=fromClient;pickerFilter='all';
-      editor=list?JSON.parse(JSON.stringify(list)):{id:uid(),title:'Mi jornada',client_id:api.state().selectedClient||api.state().clients[0]?.id||'',assigned_user_id:api.account.id,target_date:today(),items:[],status:'active',revision:0};
-      $('#worklistName').value=editor.title;$('#worklistDate').value=editor.target_date;
-      $('#worklistClient').innerHTML=api.state().clients.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('#worklistClient').value=editor.client_id;
-      $('#worklistClient').disabled=editor.origin!=='client'&&!owns(editor);
-      const people=[{id:api.account.id,name:api.account.name},...api.state().users.filter(u=>u.role==='technician'&&u.status==='active'&&u.id!==api.account.id)];
-      if(!people.some(p=>p.id===editor.assigned_user_id))people.push({id:editor.assigned_user_id,name:'Responsable de esta lista'});
-      $('#worklistAssignee').innerHTML=people.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');$('#worklistAssignee').value=editor.assigned_user_id;$('#worklistAssigneeField').hidden=!api.account.isOwner||editor.origin==='client';
-      $('#worklistRound').value=api.round(editor.client_id);$('#worklistSearch').value='';$('#worklistEditorError').textContent='';renderPicker();$('#worklistEditor').classList.add('open');
+      const state=api.state(), client=fromClient?state.selectedClient:'';
+      if(!list&&fromClient&&!client){api.toast('Abre un cliente antes de crear la lista.');return;}
+      editor=editorDefaults(list,{id:list?.id||uid(),client,actor:api.account.id,date:today()});
+      const chooseClient=!list&&!fromClient;
+      $('#worklistClientField').hidden=!chooseClient;
+      $('#worklistClient').disabled=!chooseClient;
+      $('#worklistClient').required=chooseClient;
+      if(chooseClient){$('#worklistClient').innerHTML='<option value="">Selecciona un cliente</option>'+state.clients.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');$('#worklistClient').value='';}
+      $('#worklistRound').value=(editor.client_id&&api.round(editor.client_id))||'1';$('#worklistSearch').value='';$('#worklistEditorError').textContent='';renderPicker();$('#worklistEditor').classList.add('open');
       $('#worklistSharing').open=false;sharing();$('#worklistSharingStatus').textContent='Cargando técnicos…';
       const editingId=editor.id;
       if(api.loadTeam)api.loadTeam().then(users=>{if(!editor||editor.id!==editingId||!$('#worklistEditor').classList.contains('open'))return;team=users;sharing();$('#worklistSharingStatus').textContent=users.length?'':'No hay otros técnicos activos.';}).catch(()=>{$('#worklistSharingStatus').textContent='No se pudieron cargar los técnicos. La selección anterior se conserva.';});
-      if(api.account.isOwner)api.loadUsers().then(()=>{if(!$('#worklistEditor').classList.contains('open'))return;const chosen=$('#worklistAssignee').value;for(const user of api.state().users.filter(u=>u.role==='technician'&&u.status==='active'))if(![...$('#worklistAssignee').options].some(o=>o.value===user.id))$('#worklistAssignee').add(new Option(user.name,user.id));$('#worklistAssignee').value=chosen}).catch(()=>api.toast('No se pudo actualizar la lista de técnicos; puedes trabajar con los que ya están cargados.'));
     }
     async function save(list){
       if(busy)return false;busy=true;$('#saveWorklist').disabled=true;
@@ -123,8 +126,8 @@
     $('#worklistSearch').oninput=renderPicker;
     $('#worklistRound').onchange=renderPicker;
     document.querySelectorAll('[data-work-filter]').forEach(button=>button.onclick=()=>{pickerFilter=button.dataset.workFilter;renderPicker()});
-    $('#worklistClient').onchange=()=>{if(editor.items.length&&!confirm('Cambiar de cliente quitará los equipos de esta lista, no sus reportes.')){$('#worklistClient').value=editor.client_id;return;}editor.client_id=$('#worklistClient').value;editor.items=[];$('#worklistRound').value=api.round(editor.client_id);renderPicker()};
-    $('#worklistForm').onsubmit=async e=>{e.preventDefault();if(!editor.items.length){$('#worklistEditorError').textContent='Agrega al menos un equipo.';return;}const result={...editor,title:$('#worklistName').value.trim(),target_date:$('#worklistDate').value,assigned_user_id:$('#worklistAssignee').value};if(await save(result)){$('#worklistEditor').classList.remove('open');if(editingFromClient){selected=result.id;render()}else choose(result.id);api.toast('Lista guardada en este dispositivo; se enviará según tu preferencia.')}};
+    $('#worklistClient').onchange=()=>{if($('#worklistClient').disabled)return;if(editor.items.length&&!confirm('Cambiar de cliente quitará los equipos de esta lista, no sus reportes.')){$('#worklistClient').value=editor.client_id;return;}editor.client_id=$('#worklistClient').value;editor.items=[];$('#worklistRound').value=(editor.client_id&&api.round(editor.client_id))||'1';renderPicker()};
+    $('#worklistForm').onsubmit=async e=>{e.preventDefault();if(!editor.client_id||!editor.items.length){$('#worklistEditorError').textContent=!editor.client_id?'Elige un cliente.':'Agrega al menos un equipo.';return;}const result={...editor};if(await save(result)){$('#worklistEditor').classList.remove('open');if(editingFromClient){selected=result.id;render()}else choose(result.id);api.toast('Lista guardada en este dispositivo; se enviará según tu preferencia.')}};
     $('#worklistTomorrow').onclick=async()=>{const list=row();if(!list)return;const d=new Date();d.setDate(d.getDate()+1);const date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;await save({...list,target_date:date,status:'active'});render()};
     $('#worklistClose').onclick=async()=>{const list=row();if(!list)return;if(list.status==='active'&&progress(list,api.state().reports).some(i=>!i.done)&&!confirm('Quedan equipos sin reporte. ¿Cerrar sólo esta lista? No modifica equipos ni reportes.'))return;await save({...list,status:list.status==='active'?'completed':'active'});render()};
     $('#worklistDelete').onclick=async()=>{const list=row();if(list&&confirm('¿Eliminar esta lista? Los equipos y sus reportes se conservan.'))if(await save({...list,status:'deleted'})){api.show('worklists');render()}};
@@ -132,5 +135,5 @@
     $('#worklistRestoreServer').onclick=async()=>{if(!confirm('¿Descartar los cambios pendientes de esta lista en este dispositivo y recuperar la versión confirmada? Los reportes y otras listas se conservan.'))return;try{await api.discardProposal(selected);render()}catch(error){api.toast(error.message)}};
     return {render};
   }
-  const api={mount,progress};if(typeof module!=='undefined')module.exports=api;else root.HscWorklists=api;
+  const api={mount,progress,editorDefaults};if(typeof module!=='undefined')module.exports=api;else root.HscWorklists=api;
 })(typeof window!=='undefined'?window:globalThis);
