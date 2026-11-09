@@ -5,3 +5,77 @@
 .scheduled-mail button { cursor: pointer; margin-block: .2rem; }
 .scheduled-mail [data-time], .scheduled-mail [data-jobs]:not(:empty) { margin-top: .55rem; }
 .scheduled-mail [data-jobs] > div { padding-block: .35rem; overflow-wrap: anywhere; }
+
+textarea[readonly][aria-haspopup="dialog"] { cursor: pointer; }
+.scheduled-mail-preview {
+  box-sizing: border-box;
+  width: min(42rem, calc(100% - 2rem));
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  padding: 0;
+  overflow: hidden;
+  color: var(--ink, CanvasText);
+  background: var(--card, Canvas);
+  border: 1px solid var(--line, currentColor);
+  border-radius: 1rem;
+}
+.scheduled-mail-preview[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.scheduled-mail-preview [hidden] { display: none !important; }
+.scheduled-mail-preview::backdrop { background: rgb(2 6 23 / 72%); }
+.scheduled-mail-preview header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: .75rem 1rem;
+  border-bottom: 1px solid var(--line, currentColor);
+}
+.scheduled-mail-preview h2 { margin: 0; font-size: 1.1rem; }
+.scheduled-mail-preview button {
+  min-height: 44px;
+  padding: .4rem .7rem;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: .5rem;
+  cursor: pointer;
+}
+.scheduled-mail-preview button:disabled { opacity: .65; cursor: wait; }
+.scheduled-mail-preview footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: .5rem;
+  padding: .75rem 1rem;
+  border-top: 1px solid var(--line, currentColor);
+}
+.scheduled-mail-preview footer:has(> small:empty) > small { display: none; }
+.scheduled-mail-preview footer:has(> small:empty):not(:has(button:not([hidden]))) { display: none; }
+.scheduled-mail-preview-body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 1rem;
+  line-height: 1.5;
+}
+.scheduled-mail-preview [data-saved-text] {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.scheduled-mail-preview label { display: grid; gap: .4rem; margin-bottom: .6rem; }
+.scheduled-mail-preview textarea, .scheduled-mail-preview input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: .65rem;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: .5rem;
+}
+.scheduled-mail-preview textarea { resize: vertical; }

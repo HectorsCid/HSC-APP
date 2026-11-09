@@ -21,8 +21,120 @@
     const mode=box.querySelector('select'), time=box.querySelector('input'), jobs=box.querySelector('[data-jobs]'), note=box.querySelector('small');
     const messageLabel = message.labels[0];
     const originalMessageLabel = messageLabel.textContent;
+    const preview = document.createElement('dialog');
+    preview.className = 'scheduled-mail-preview';
+    preview.setAttribute('aria-labelledby', `${message.id}-preview-title`);
+    preview.innerHTML = `<header>
+      <h2 id="${message.id}-preview-title">Mensaje guardado</h2>
+      <button type="button" autofocus>Cerrar</button>
+    </header>
+    <div class="scheduled-mail-preview-body">
+      <div data-saved-text tabindex="0"></div>
+      <div data-editor hidden>
+        <label>Mensaje<textarea rows="8"></textarea></label>
+        <label data-preview-auth hidden>Clave privada de envío<input type="password" autocomplete="off"></label>
+      </div>
+    </div>
+    <footer>
+      <small role="status"></small>
+      <button type="button" data-edit>Modificar mensaje</button>
+      <button type="button" data-save hidden>Guardar cambios</button>
+    </footer>`;
+    const previewBody = preview.querySelector('.scheduled-mail-preview-body');
+    const previewText = preview.querySelector('[data-saved-text]');
+    const previewEditor = preview.querySelector('[data-editor]');
+    const previewMessage = previewEditor.querySelector('textarea');
+    const previewAuth = preview.querySelector('[data-preview-auth]');
+    const previewKey = previewAuth.querySelector('input');
+    const previewStatus = preview.querySelector('[role="status"]');
+    const editButton = preview.querySelector('[data-edit]');
+    const saveButton = preview.querySelector('[data-save]');
+    const closeButton = preview.querySelector('header button');
+    let activeJob, savingMessage = false;
+    closeButton.addEventListener('click', () => preview.close());
+    preview.addEventListener('cancel', event => {
+      if (savingMessage) event.preventDefault();
+    });
+    preview.addEventListener('close', () => { previewKey.value = ''; });
+    document.body.append(preview);
+    function showSavedText(job) {
+      previewText.textContent = job?.message ?? 'El envío ya no está pendiente.';
+      previewText.hidden = false;
+      previewEditor.hidden = true;
+      previewAuth.hidden = true;
+      previewKey.value = '';
+      editButton.hidden = job?.state !== 'pending';
+      saveButton.hidden = true;
+      previewBody.scrollTop = 0;
+    }
+    function showMessage() {
+      if (!message.readOnly || preview.open || editing) return;
+      previewStatus.textContent = '';
+      showSavedText(activeJob);
+      preview.showModal();
+    }
+    editButton.addEventListener('click', () => {
+      previewMessage.value = activeJob.message;
+      previewText.hidden = true;
+      previewEditor.hidden = false;
+      editButton.hidden = true;
+      saveButton.hidden = false;
+      previewStatus.textContent = '';
+      previewMessage.focus();
+      previewMessage.setSelectionRange(0, 0);
+      previewMessage.scrollTop = 0;
+    });
+    saveButton.addEventListener('click', async () => {
+      if (savingMessage || activeJob?.state !== 'pending') return;
+      if (!previewMessage.value.trim()) {
+        previewStatus.textContent = 'Escribe el mensaje del correo.';
+        previewMessage.focus();
+        return;
+      }
+      const job = activeJob;
+      const current = revision;
+      savingMessage = true;
+      closeButton.disabled = saveButton.disabled = previewMessage.readOnly = true;
+      previewStatus.textContent = 'Guardando cambios…';
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            action: 'edit_message', id: job.id, message: previewMessage.value,
+            send_key: previewKey.value || sendKey.value
+          })
+        });
+        const data = await response.json();
+        if (current !== revision) return;
+        if (response.status === 403) {
+          previewAuth.hidden = false;
+          previewKey.focus();
+        }
+        if (Array.isArray(data.items)) {
+          render(data.items);
+          showSavedText(activeJob?.id === job.id ? activeJob : null);
+          closeButton.disabled = false;
+          closeButton.focus();
+        }
+        previewStatus.textContent = response.ok && data.ok && Array.isArray(data.items)
+          ? 'Mensaje actualizado.'
+          : data.error || 'No se pudo confirmar el cambio.';
+      } catch (_) {
+        if (current === revision) previewStatus.textContent = 'No se pudo confirmar el cambio. Puedes volver a intentar.';
+      } finally {
+        savingMessage = false;
+        closeButton.disabled = saveButton.disabled = previewMessage.readOnly = false;
+      }
+    });
+    message.addEventListener('click', showMessage);
+    message.addEventListener('keydown', event => {
+      if (!message.readOnly || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      showMessage();
+    });
     let draftMessage;
-    let url='', revision=0, available=false, editing=false, originalLabel='', active=false, confirming='';
+    let url='', revision=0, available=false, editing=false, originalLabel='', confirming='';
     const label=()=>{
       if(!send.disabled){
         if(mode.value==='later')send.textContent='Programar envío';
@@ -64,16 +176,20 @@
       }
     }
     function render(items) {
-      const activeJob = items.find(job=>['pending','sending'].includes(job.state));
-      active = Boolean(activeJob);
+      activeJob = items.find(job=>['pending','sending'].includes(job.state));
       if (typeof activeJob?.message === 'string') {
         if (!message.readOnly) draftMessage = message.value;
-        message.value = activeJob.message;
+        if (message.value !== activeJob.message || !message.readOnly) {
+          message.value = activeJob.message;
+          message.scrollTop = 0;
+        }
         message.readOnly = true;
+        message.setAttribute('aria-haspopup', 'dialog');
         messageLabel.textContent = 'Mensaje guardado del envío programado';
       } else if (message.readOnly) {
         message.value = draftMessage;
         message.readOnly = false;
+        message.removeAttribute('aria-haspopup');
         messageLabel.textContent = originalMessageLabel;
       }
       jobs.replaceChildren();
@@ -115,9 +231,12 @@
     return {
       async open(kind,id){
         const current=++revision;
+        if (preview.open) preview.close();
         message.readOnly = false;
+        message.removeAttribute('aria-haspopup');
         messageLabel.textContent = originalMessageLabel;
-        available=false;editing=false;active=false;confirming='';box.hidden=true;mode.value='now';time.value='';jobs.replaceChildren();note.textContent='';
+        activeJob = undefined;
+        available=false;editing=false;confirming='';box.hidden=true;mode.value='now';time.value='';jobs.replaceChildren();note.textContent='';
         originalLabel=send.innerHTML;label();
         if(!id)return;
         url=`/api/scheduled-email/${kind}/${encodeURIComponent(id)}`;
@@ -130,7 +249,7 @@
         }catch(_){ /* Sending immediately remains available. */ }
       },
       append(form){
-        if(active)throw Error('Este folio ya tiene un correo pendiente o en proceso. Cancélalo antes de iniciar otro envío.');
+        if(activeJob)throw Error('Este folio ya tiene un correo pendiente o en proceso. Cancélalo antes de iniciar otro envío.');
         if(!available||mode.value!=='later')return false;
         if(!time.value){time.focus();throw Error('Selecciona la fecha y hora del envío.');}
         form.append('scheduled_for',time.value);

@@ -103,6 +103,15 @@ class Queue:
                 WHERE kind={self.p} AND document_id={self.p} AND id={self.p} AND state IN {states}''',
                 (*args, kind, doc, job)).rowcount)
 
+    def edit_message(self, kind, doc, job, message):
+        self.initialize()
+        update = ("jsonb_set(payload::jsonb, '{body}', to_jsonb(CAST(%s AS text)))::text"
+                  if self.store.dialect == 'postgres' else "json_set(payload, '$.body', ?)")
+        with self.store.connection() as conn:
+            return bool(conn.execute(f'''UPDATE scheduled_document_mail SET payload={update}
+                WHERE kind={self.p} AND document_id={self.p} AND id={self.p} AND state='pending' ''',
+                (message, kind, doc, job)).rowcount)
+
     def claim(self, now):
         self.initialize()
         with self.store.connection() as conn:
@@ -163,15 +172,23 @@ def manage(kind, doc):
     if not request.is_json:
         return jsonify(ok=False, error='Solicitud inválida.'), 415
     body = request.get_json(silent=True) or {}
-    if not isinstance(body, dict) or body.get('action') not in {'cancel', 'reschedule'}:
+    if not isinstance(body, dict) or body.get('action') not in ('cancel', 'reschedule', 'edit_message'):
         return jsonify(ok=False, error='Acción inválida.'), 400
     if not authorized_to_send(body.get('send_key'), request.cookies.get('hsc_mail_trusted', '')):
         return jsonify(ok=False, error='Escribe la clave privada de envío para modificar el correo.'), 403
-    try:
-        due = scheduled_time(body.get('when')) if body['action'] == 'reschedule' else None
-    except ValueError as exc:
-        return jsonify(ok=False, error=str(exc)), 400
-    if not queue.change(kind, doc, str(body.get('id') or ''), due):
+    job = str(body.get('id') or '')
+    if body['action'] == 'edit_message':
+        message = body.get('message')
+        if not isinstance(message, str) or not message.strip() or '\x00' in message:
+            return jsonify(ok=False, error='Escribe un mensaje válido para el correo.'), 400
+        changed = queue.edit_message(kind, doc, job, message)
+    else:
+        try:
+            due = scheduled_time(body.get('when')) if body['action'] == 'reschedule' else None
+        except ValueError as exc:
+            return jsonify(ok=False, error=str(exc)), 400
+        changed = queue.change(kind, doc, job, due)
+    if not changed:
         return jsonify(ok=False, error='El envío ya no está pendiente y no se puede modificar.',
                        items=queue.list(kind, doc)), 409
     return jsonify(ok=True, available=True, items=queue.list(kind, doc))

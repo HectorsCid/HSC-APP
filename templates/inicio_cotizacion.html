@@ -109,8 +109,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='commerce_theme.css', v='1') }}">
   <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
-<link rel="stylesheet" href="/static/scheduled_email.css?v=1">
-<script src="/static/scheduled_email.js?v=3"></script>
+<link rel="stylesheet" href="/static/scheduled_email.css?v=2">
+<script src="/static/scheduled_email.js?v=4"></script>
 </head>
 <body class="commerce-ui">
   {% include "_commerce_icons.html" %}
@@ -187,10 +187,10 @@
     </div>
   </div>
 
-  <div id="quoteMail" class="mail-backdrop" aria-modal="true" role="dialog">
+  <div id="quoteMail" class="mail-backdrop" aria-modal="true" role="dialog" aria-labelledby="quoteMailTitle" tabindex="-1">
     <div class="mail-card" role="document">
       <div class="mail-head">
-        <div class="mail-title">Enviar cotización por correo</div>
+        <div class="mail-title" id="quoteMailTitle">Enviar cotización por correo</div>
         <button id="quoteMailClose" class="mail-close" type="button" aria-label="Cerrar">×</button>
       </div>
       <div class="mail-body">
@@ -694,6 +694,7 @@
       renderQuoteHistory([]);
       renderQuoteFrequent('');
       quoteMail.classList.add('show');
+      quoteMail.focus({preventScroll:true});
       try{
         const response = await fetch(`/api/cotizaciones/${encodeURIComponent(id)}/email`, {headers:{'Accept':'application/json'}});
         const data = await response.json();
@@ -709,7 +710,6 @@
         if(!data.trusted) quoteMailKeyWrap.style.display = '';
         quoteMailContext = data;
         quoteSchedule.open('cotizacion',data.id);
-        setTimeout(()=>quoteMailTo.focus(), 0);
       }catch(error){
         if(quoteMailContext !== opening) return;
         quoteMailError.textContent = error.message || String(error);

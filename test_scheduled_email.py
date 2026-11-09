@@ -99,6 +99,27 @@ class ScheduledEmailTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.get_json()['items'][0]['state'], 'sending')
 
+    def test_edit_only_updates_pending_body_and_worker_uses_it(self):
+        job = self.queue.add('cotizacion', '17', 1000, self.fields)
+        client = self.app.test_client()
+        url = '/api/scheduled-email/cotizacion/17'
+        message = 'Hola.\n\nAdjunto la cotización actualizada.'
+        payload = dict(id=job, action='edit_message', message=message)
+        with patch('scheduled_email.authorized_to_send', return_value=False):
+            self.assertEqual(client.post(url, json=payload).status_code, 403)
+        with patch('scheduled_email.authorized_to_send', return_value=True):
+            self.assertEqual(client.post(url, json={**payload, 'message': '  '}).status_code, 400)
+            result = client.post(url, json=payload)
+            self.assertEqual(result.status_code, 200)
+            self.assertEqual(client.get(url).get_json()['items'][0]['message'], message)
+            self.assertIsNone(self.queue.claim(999))
+            with (patch('scheduled_email.send_quote_email', return_value={}) as send,
+                  patch('scheduled_email.email_thread_headers', return_value={}),
+                  patch('scheduled_email.record_email_delivery')):
+                deliver_one(Queue(self.store), logging.getLogger(__name__))
+            self.assertEqual(client.post(url, json=payload).status_code, 409)
+        send.assert_called_once_with(**{**self.fields, 'body': message, 'pdf_bytes': b'pdf'})
+
     def test_invoice_email_route_queues_existing_documents_only(self):
         from facturacion_bp import facturacion_bp
         from scheduled_email import ZONE

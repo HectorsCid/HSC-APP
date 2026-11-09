@@ -212,8 +212,8 @@
 <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
 <script defer src="{{ url_for('static', filename='notifications.js', v='3') }}"></script>
-<link rel="stylesheet" href="/static/scheduled_email.css?v=1">
-<script src="/static/scheduled_email.js?v=3"></script>
+<link rel="stylesheet" href="/static/scheduled_email.css?v=2">
+<script src="/static/scheduled_email.js?v=4"></script>
 </head>
 <body class="billing-page">
 <svg class="icon-sprite" aria-hidden="true">
@@ -389,7 +389,7 @@
 </div>
 
 <!-- ===== Envío protegido por correo ===== -->
-<div id="em" class="cm-backdrop" aria-modal="true" role="dialog">
+<div id="em" class="cm-backdrop" aria-modal="true" role="dialog" aria-labelledby="emTitle" tabindex="-1">
   <div class="cm-card" role="document">
     <div class="cm-head">
       <div class="cm-title" id="emTitle">Enviar factura por correo</div>
@@ -987,6 +987,7 @@ async function openEmailModal(ctx){
   renderInvoiceContacts([], ctx.email || '');
   emStoredFiles.innerHTML = '<span class="cm-hint">Consultando documentos guardados…</span>';
   em.classList.add('show');
+  em.focus({preventScroll:true});
   try{
     const statusResponse = await fetch('/api/email/status', {headers:{'Accept':'application/json'}});
     const status = await statusResponse.json();
@@ -1021,7 +1022,6 @@ async function openEmailModal(ctx){
     });
     if(!(documents.documents || []).length) emStoredFiles.innerHTML = '<span class="cm-hint">No hay documentos adicionales guardados.</span>';
   }catch(_){ emStoredFiles.innerHTML = '<span class="cm-hint">No se pudieron consultar los documentos guardados.</span>'; }
-  setTimeout(()=>emEmail.focus(), 0);
 }
 
 function closeEmailModal(){
