@@ -6,9 +6,9 @@
     const day = new Date(Date.UTC(+parts.year,+parts.month-1,+parts.day+1));
     return `${day.toISOString().slice(0,10)}T${hour}:00`;
   }
-  const labels = {pending:'Pendiente',sending:'Enviando',sent:'Enviado',cancelled:'Cancelado',uncertain:'Sin confirmación: revisa Enviados antes de reintentar'};
+  const labels = {pending:'Pendiente',sending:'Enviando',sent:'Enviado',uncertain:'Sin confirmación: revisa Enviados antes de reintentar'};
 
-  function mount({anchor, send, sendKey, immediate}) {
+  function mount({anchor, send, sendKey, message, immediate}) {
     const box = document.createElement('section');
     box.className = 'scheduled-mail';
     box.hidden = true;
@@ -19,7 +19,10 @@
       <div data-jobs></div><small role="status"></small>`;
     anchor.before(box);
     const mode=box.querySelector('select'), time=box.querySelector('input'), jobs=box.querySelector('[data-jobs]'), note=box.querySelector('small');
-    let url='', revision=0, available=false, editing=false, originalLabel='', active=false;
+    const messageLabel = message.labels[0];
+    const originalMessageLabel = messageLabel.textContent;
+    let draftMessage;
+    let url='', revision=0, available=false, editing=false, originalLabel='', active=false, confirming='';
     const label=()=>{
       if(!send.disabled){
         if(mode.value==='later')send.textContent='Programar envío';
@@ -30,42 +33,91 @@
     };
     mode.onchange=label;
     box.querySelectorAll('[data-hour]').forEach(button=>button.onclick=()=>{time.value=tomorrow(button.dataset.hour);});
+    function actionButton(title, run) {
+      const button=document.createElement('button');
+      button.type='button';button.textContent=title;button.onclick=run;
+      return button;
+    }
+    async function change(action, job, items) {
+      if(editing || send.disabled)return;
+      const current=revision;
+      editing=true;send.disabled=true;
+      render(items);
+      note.textContent=action==='cancel'?'Cancelando el envío…':'Actualizando el horario…';
+      try{
+        const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,id:job.id,when:time.value,send_key:sendKey.value})});
+        const data=await response.json();
+        if(current!==revision)return;
+        if(Array.isArray(data.items)){
+          confirming='';
+          items=data.items;
+        }
+        if(!response.ok||!data.ok||!Array.isArray(data.items))throw Error(data.error||'No se pudo confirmar el cambio.');
+        note.textContent=action==='cancel'?'Cancelación guardada. No necesitas hacer nada más.':'Horario actualizado.';
+        mode.value='now';time.value='';
+      }catch(error){
+        if(current===revision)note.textContent=error instanceof TypeError || error instanceof SyntaxError
+          ?'No se pudo confirmar el cambio. Vuelve a abrir esta ventana para consultar el estado.'
+          :error.message;
+      }finally{
+        if(current===revision){editing=false;send.disabled=false;render(items);label();}
+      }
+    }
     function render(items) {
-      active=items.some(job=>['pending','sending'].includes(job.state));
+      const activeJob = items.find(job=>['pending','sending'].includes(job.state));
+      active = Boolean(activeJob);
+      if (typeof activeJob?.message === 'string') {
+        if (!message.readOnly) draftMessage = message.value;
+        message.value = activeJob.message;
+        message.readOnly = true;
+        messageLabel.textContent = 'Mensaje guardado del envío programado';
+      } else if (message.readOnly) {
+        message.value = draftMessage;
+        message.readOnly = false;
+        messageLabel.textContent = originalMessageLabel;
+      }
       jobs.replaceChildren();
       for(const job of items){
         const row=document.createElement('div');
-        row.textContent=`${labels[job.state] || job.state} · ${job.when} · ${job.recipient}`;
+        row.textContent=job.state==='cancelled'
+          ?`Envío cancelado. Este correo no se enviará. Estaba programado para el ${job.when} · ${job.recipient}`
+          :`${labels[job.state] || job.state} · ${job.when} · ${job.recipient}`;
         jobs.append(row);
-        if(job.state!=='pending')continue;
-        for(const [action, title] of [['reschedule','Cambiar hora'],['cancel','Cancelar envío']]){
-          const button=document.createElement('button');button.type='button';button.textContent=title;
-          button.onclick=async()=>{
-            if(editing || send.disabled)return;
-            if(action==='reschedule' && (mode.value!=='later' || !time.value)){
-              mode.value='later';label();time.focus();note.textContent='Elige la nueva hora y vuelve a pulsar Cambiar hora.';return;
-            }
-            if(!window.confirm(action==='cancel'?'¿Cancelar este correo programado?':'¿Cambiar la fecha y hora de este correo programado?'))return;
-            const current=revision;
-            editing=true;send.disabled=true;
-            try{
-              const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,id:job.id,when:time.value,send_key:sendKey.value})});
-              const data=await response.json();
-              if(current!==revision)return;
-              if(!response.ok||!data.ok)throw Error(data.error||'No se pudo modificar el envío.');
-              render(data.items);note.textContent=action==='cancel'?'Envío cancelado.':'Horario actualizado.';
-              mode.value='now';time.value='';
-            }catch(error){if(current===revision)note.textContent=error.message;}
-            finally{if(current===revision){editing=false;send.disabled=false;label();}}
-          };
-          row.append(' ',button);
+        if(job.state!=='pending' || editing)continue;
+        if(confirming===job.id){
+          const prompt=document.createElement('p');
+          prompt.textContent='¿Quieres cancelar este correo programado?';
+          const confirm=actionButton('Sí, cancelar envío',()=>change('cancel',job,items));
+          const keep=actionButton('Conservar envío',()=>{
+            confirming='';note.textContent='';render(items);
+            jobs.querySelector('[data-cancel]')?.focus();
+          });
+          keep.dataset.keep='';
+          row.append(prompt,confirm,' ',keep);
+          continue;
         }
+        const reschedule=actionButton('Cambiar hora',()=>{
+          if(send.disabled)return;
+          if(mode.value!=='later' || !time.value){
+            mode.value='later';label();time.focus();note.textContent='Elige la nueva hora y vuelve a pulsar Cambiar hora.';return;
+          }
+          if(window.confirm('¿Cambiar la fecha y hora de este correo programado?'))change('reschedule',job,items);
+        });
+        const cancel=actionButton('Cancelar envío',()=>{
+          if(send.disabled)return;
+          confirming=job.id;note.textContent='';render(items);
+          jobs.querySelector('[data-keep]')?.focus();
+        });
+        cancel.dataset.cancel='';
+        row.append(' ',reschedule,' ',cancel);
       }
     }
     return {
       async open(kind,id){
         const current=++revision;
-        available=false;editing=false;active=false;box.hidden=true;mode.value='now';time.value='';jobs.replaceChildren();note.textContent='';
+        message.readOnly = false;
+        messageLabel.textContent = originalMessageLabel;
+        available=false;editing=false;active=false;confirming='';box.hidden=true;mode.value='now';time.value='';jobs.replaceChildren();note.textContent='';
         originalLabel=send.innerHTML;label();
         if(!id)return;
         url=`/api/scheduled-email/${kind}/${encodeURIComponent(id)}`;

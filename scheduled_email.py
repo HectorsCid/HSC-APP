@@ -75,18 +75,32 @@ class Queue:
 
     def list(self, kind, doc):
         self.initialize()
+        message_expr = ("payload::jsonb->>'body'" if self.store.dialect == 'postgres'
+                        else "json_extract(payload, '$.body')")
         with self.store.connection() as conn:
-            rows = conn.execute(f'''SELECT id,due,state,recipient FROM scheduled_document_mail
+            rows = conn.execute(f'''SELECT id,due,state,recipient,
+                CASE WHEN state IN ('pending','sending') THEN {message_expr} END
+                FROM scheduled_document_mail
                 WHERE kind={self.p} AND document_id={self.p}
                 ORDER BY CASE WHEN state IN ('pending','sending') THEN 0 ELSE 1 END, due DESC LIMIT 10''', (kind, doc)).fetchall()
-        return [dict(id=job, when=_label(due), state=state, recipient=recipient) for job,due,state,recipient in rows]
+        items = []
+        for job, due, state, recipient, message in rows:
+            item = dict(id=job, when=_label(due), state=state, recipient=recipient)
+            if message is not None:
+                item['message'] = message
+            items.append(item)
+        return items
 
     def change(self, kind, doc, job, due=None):
         self.initialize()
-        updates, args = (f'due={self.p}', (due,)) if due is not None else ("state='cancelled',payload=''", ())
+        if due is None:
+            # A retry after losing the response should still confirm the saved cancellation.
+            updates, args, states = "state='cancelled',payload=''", (), "('pending','cancelled')"
+        else:
+            updates, args, states = f'due={self.p}', (due,), "('pending')"
         with self.store.connection() as conn:
             return bool(conn.execute(f'''UPDATE scheduled_document_mail SET {updates}
-                WHERE kind={self.p} AND document_id={self.p} AND id={self.p} AND state='pending' ''',
+                WHERE kind={self.p} AND document_id={self.p} AND id={self.p} AND state IN {states}''',
                 (*args, kind, doc, job)).rowcount)
 
     def claim(self, now):
@@ -158,7 +172,8 @@ def manage(kind, doc):
     except ValueError as exc:
         return jsonify(ok=False, error=str(exc)), 400
     if not queue.change(kind, doc, str(body.get('id') or ''), due):
-        return jsonify(ok=False, error='El envío ya no está pendiente y no se puede modificar.'), 409
+        return jsonify(ok=False, error='El envío ya no está pendiente y no se puede modificar.',
+                       items=queue.list(kind, doc)), 409
     return jsonify(ok=True, available=True, items=queue.list(kind, doc))
 
 

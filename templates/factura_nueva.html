@@ -112,7 +112,7 @@
 </style>
   {% include "_pwa_head.html" %}
 <link rel="stylesheet" href="/static/scheduled_email.css?v=1">
-<script src="/static/scheduled_email.js?v=1"></script>
+<script src="/static/scheduled_email.js?v=3"></script>
 </head>
 <body data-billing-environment="{{ facturama_environment|default('sandbox') }}">
   <div class="wrap">
@@ -1278,7 +1278,7 @@
       invoiceEmailRecipients.value = invoiceEmailContact.value || fallbackEmail || '';
       invoiceEmailContact.onchange=()=>{if(invoiceEmailContact.value) invoiceEmailRecipients.value=invoiceEmailContact.value;};
     }
-    const stampedSchedule = HscScheduledEmail.mount({anchor:invoiceEmailError,send:invoiceEmailSend,sendKey:invoiceEmailKey,immediate:'Enviar PDF y XML'});
+    const stampedSchedule = HscScheduledEmail.mount({anchor:invoiceEmailError,send:invoiceEmailSend,sendKey:invoiceEmailKey,message:invoiceEmailMessage,immediate:'Enviar PDF y XML'});
     async function openStampedEmailModal(){
       if(!stampedEmailContext) return;
       stampSuccessModal.classList.remove('show');

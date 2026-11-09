@@ -65,12 +65,13 @@ class ScheduledEmailTests(unittest.TestCase):
             deliver_one(self.queue, logging.getLogger(__name__))
         send.assert_called_once()
         self.assertEqual(send.call_args.kwargs['pdf_bytes'], b'pdf')
+        self.assertEqual(send.call_args.kwargs['body'], 'Mensaje')
         self.assertEqual(send.call_args.kwargs['xml_bytes'], b'xml')
         self.assertEqual(send.call_args.kwargs['extra_attachments'][0]['data'], b'orden')
         record.assert_called_once()
         self.assertEqual(self.queue.list('factura', '17')[0]['state'], 'sent')
 
-    def test_cancel_requires_mail_authorization(self):
+    def test_cancel_requires_authorization_and_stays_cancelled_on_reload_or_retry(self):
         job = self.queue.add('cotizacion', '17', 1000, self.fields)
         client = self.app.test_client()
         payload = dict(id=job, action='cancel')
@@ -78,7 +79,25 @@ class ScheduledEmailTests(unittest.TestCase):
             self.assertEqual(client.post('/api/scheduled-email/cotizacion/17', json=payload).status_code, 403)
         with patch('scheduled_email.authorized_to_send', return_value=True):
             response = client.post('/api/scheduled-email/cotizacion/17', json=payload)
+            self.assertEqual(client.post('/api/scheduled-email/cotizacion/17', json=payload).status_code, 200)
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()['items'][0]['state'], 'cancelled')
+        reopened = Flask(__name__)
+        reopened.testing = True
+        install(reopened, self.store)
+        items = reopened.test_client().get('/api/scheduled-email/cotizacion/17').get_json()['items']
+        self.assertEqual([(item['id'], item['state']) for item in items], [(job, 'cancelled')])
+        self.assertNotIn('message', items[0])
+        self.assertIsNone(reopened.extensions['scheduled_email_queue'].claim(1000))
+
+    def test_cancel_after_worker_claim_returns_current_status(self):
+        job = self.queue.add('cotizacion', '17', 1000, self.fields)
+        self.assertIsNotNone(self.queue.claim(1000))
+        with patch('scheduled_email.authorized_to_send', return_value=True):
+            response = self.app.test_client().post('/api/scheduled-email/cotizacion/17',
+                                                   json=dict(id=job, action='cancel'))
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()['items'][0]['state'], 'sending')
 
     def test_invoice_email_route_queues_existing_documents_only(self):
         from facturacion_bp import facturacion_bp

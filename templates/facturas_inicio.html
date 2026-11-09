@@ -213,7 +213,7 @@
   {% include "_pwa_head.html" %}
 <script defer src="{{ url_for('static', filename='notifications.js', v='3') }}"></script>
 <link rel="stylesheet" href="/static/scheduled_email.css?v=1">
-<script src="/static/scheduled_email.js?v=1"></script>
+<script src="/static/scheduled_email.js?v=3"></script>
 </head>
 <body class="billing-page">
 <svg class="icon-sprite" aria-hidden="true">
@@ -429,7 +429,7 @@
       <div id="emErr" class="cm-hint" style="color:var(--danger)"></div>
     </div>
     <div class="cm-actions">
-      <button class="cm-btn cm-btn-ghost" id="emCancel">Cancelar</button>
+      <button class="cm-btn cm-btn-ghost" id="emCancel">Cerrar</button>
       <button class="cm-btn cm-btn-primary" id="emConfirm"><svg class="line-icon" aria-hidden="true"><use href="#i-mail"/></svg>Enviar PDF y XML</button>
     </div>
   </div>
@@ -966,7 +966,7 @@ function renderInvoiceContacts(contacts, fallbackEmail){
   emContact.onchange=()=>{if(emContact.value) emEmail.value=emContact.value;};
 }
 
-const invoiceSchedule = HscScheduledEmail.mount({anchor:emErr,send:emConfirm,sendKey:emKey,immediate:'Enviar PDF y XML'});
+const invoiceSchedule = HscScheduledEmail.mount({anchor:emErr,send:emConfirm,sendKey:emKey,message:emMessage,immediate:'Enviar PDF y XML'});
 async function openEmailModal(ctx){
   emailCtx = ctx;
   emEmail.value = ctx.email || '';

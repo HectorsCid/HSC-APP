@@ -110,7 +110,7 @@
   <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
 <link rel="stylesheet" href="/static/scheduled_email.css?v=1">
-<script src="/static/scheduled_email.js?v=1"></script>
+<script src="/static/scheduled_email.js?v=3"></script>
 </head>
 <body class="commerce-ui">
   {% include "_commerce_icons.html" %}
@@ -223,7 +223,7 @@
         <div id="quoteMailError" class="mail-hint mail-error"></div>
       </div>
       <div class="mail-actions">
-        <button id="quoteMailCancel" class="btn" type="button">Cancelar</button>
+        <button id="quoteMailCancel" class="btn" type="button">Cerrar</button>
         <button id="quoteMailSend" class="btn btn-accent" type="button"><svg class="line-icon" aria-hidden="true"><use href="#c-mail"/></svg>Enviar cotización</button>
       </div>
     </div>
@@ -678,12 +678,14 @@
       });
     }
 
-    const quoteSchedule = HscScheduledEmail.mount({anchor:quoteMailError,send:quoteMailSend,sendKey:quoteMailKey,immediate:'Enviar cotización'});
+    const quoteSchedule = HscScheduledEmail.mount({anchor:quoteMailError,send:quoteMailSend,sendKey:quoteMailKey,message:quoteMailMessage,immediate:'Enviar cotización'});
     async function openQuoteMail(id){
-      quoteMailContext = {id};
+      const opening = {id};
+      quoteMailContext = opening;
       quoteMailError.textContent = '';
       quoteMailFiles.value = '';
       quoteMailCc.value = '';
+      quoteMailMessage.value = '';
       quoteMailKey.value = '';
       quoteMailKeyWrap.style.display = 'none';
       quoteMailSend.disabled = false;
@@ -695,9 +697,8 @@
       try{
         const response = await fetch(`/api/cotizaciones/${encodeURIComponent(id)}/email`, {headers:{'Accept':'application/json'}});
         const data = await response.json();
+        if(quoteMailContext !== opening) return;
         if(!response.ok || !data.ok) throw new Error(data.error || 'No se pudo preparar el envío.');
-        quoteMailContext = data;
-        quoteSchedule.open('cotizacion',data.id);
         quoteMailTo.value = data.email || '';
         quoteMailCc.value = '';
         renderQuoteContacts(data.correos?.contactos || [], data.atencion || '', data.email || '');
@@ -706,8 +707,11 @@
         quoteMailSubject.value = `Cotización HSC ${data.folio || ''}`;
         quoteMailMessage.value = `Buen día, estimado cliente. Envío la cotización solicitada.\n\nDe antemano muchas gracias.\n\nQuedo a sus órdenes.\n\nIng. Héctor Silva Cid\n\nCel: 5527605496`;
         if(!data.trusted) quoteMailKeyWrap.style.display = '';
+        quoteMailContext = data;
+        quoteSchedule.open('cotizacion',data.id);
         setTimeout(()=>quoteMailTo.focus(), 0);
       }catch(error){
+        if(quoteMailContext !== opening) return;
         quoteMailError.textContent = error.message || String(error);
         quoteMailSend.disabled = true;
       }

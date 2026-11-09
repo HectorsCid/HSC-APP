@@ -56,6 +56,7 @@ class QuoteEmailTests(unittest.TestCase):
 
         queue = Queue(OperationsStore(local_path=Path(self.tmp.name) / 'mail.sqlite3'))
         when = (datetime.now(ZONE) + timedelta(days=1)).strftime('%Y-%m-%dT07:00')
+        message = 'Hola, Ana.\n\nIncluyo el alcance que revisamos.\nGracias.'
         with (
             patch.dict(cotizador.app.extensions, {'scheduled_email_queue':queue}),
             patch.object(cotizador, 'smtp_config', return_value={'configured':True}),
@@ -64,11 +65,14 @@ class QuoteEmailTests(unittest.TestCase):
             patch.object(cotizador, 'send_quote_email') as send,
         ):
             response = self.client.post('/api/cotizaciones/1587/email', data={
-                'email':'cliente@example.com', 'scheduled_for':when,
+                'email':'cliente@example.com', 'scheduled_for':when, 'message':message,
             })
+            items = self.client.get('/api/scheduled-email/cotizacion/1587').get_json()['items']
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.get_json()['scheduled'])
-        self.assertEqual(queue.list('cotizacion', '1587')[0]['state'], 'pending')
+        self.assertEqual(items[0]['state'], 'pending')
+        self.assertEqual(items[0]['message'], message)
+        self.assertNotIn('pdf_bytes', items[0])
         send.assert_not_called()
 
     def test_selected_invoice_contacts_can_match_by_rfc(self):
