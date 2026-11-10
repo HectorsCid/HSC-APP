@@ -208,7 +208,7 @@
     .summary-grid{grid-template-columns:1fr}.mini-list{max-height:none}.mini-row{grid-template-columns:1fr auto}.mini-row>*{grid-column:1}.mini-row .mini-amount{grid-column:2;grid-row:1}.mini-row .mini-actions{grid-column:1/-1;justify-content:start}.schedule-row{grid-template-columns:1fr auto}.schedule-row>*{grid-column:1}.schedule-row .schedule-actions{grid-column:2;grid-row:1/5;flex-direction:column}.schedule-form-grid{grid-template-columns:1fr}.schedule-form-grid .wide{grid-column:1}.client-layout{grid-template-columns:1fr}.client-list,.client-detail{max-height:none}.client-kpis{grid-template-columns:1fr}.client-doc{grid-template-columns:1fr auto}.client-doc>*{grid-column:1}.client-doc .client-doc-actions{grid-column:2;grid-row:1/4;flex-direction:column}.balance-kpis{grid-template-columns:repeat(2,1fr)}.balance-grid{grid-template-columns:1fr}.balance-month{grid-template-columns:52px minmax(0,1fr) 82px}.balance-pending-row{grid-template-columns:1fr auto}.balance-pending-row .btn{grid-column:1/-1;justify-self:start}
   }
 </style>
-<link rel="stylesheet" href="{{ url_for('static', filename='billing_balance_layout.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='billing_balance_layout.css', v='2') }}">
 <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
 <script defer src="{{ url_for('static', filename='notifications.js', v='3') }}"></script>
@@ -296,6 +296,10 @@
           <tbody></tbody>
         </table>
       </div>
+      <section class="balance-section issued-pending-section">
+        <h3>Facturas pendientes de complemento</h3>
+        <div class="balance-pending" id="issuedPendingList"></div>
+      </section>
     </div>
 
     <div class="card" id="panelRecibidas" style="display:none">
@@ -437,7 +441,7 @@
 
 <script>
 const $ = s=>document.querySelector(s);
-for(const [id,label] of [['balanceTop','Clientes principales'],['balancePendingList','Facturas pendientes de complemento']]){
+for(const [id,label] of [['balanceTop','Clientes principales'],['balancePendingList','Facturas pendientes de complemento'],['issuedPendingList','Facturas emitidas pendientes de complemento']]){
   const list=document.getElementById(id);list.tabIndex=0;list.setAttribute('role','region');list.setAttribute('aria-label',label+' · lista desplazable');
 }
 const lineIcon = name => `<svg class="line-icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -534,13 +538,26 @@ function escAttr(value){
   return String(value || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+function pendingFromIssued(rows){
+  return rows.filter(row=>row.id&&row.type==='I'&&row.payment_method==='PPD'&&!row.paid&&Number(row.remaining_balance)>0.009&&!invoiceLifecycle(row).blocksPayment)
+    .map(row=>({...row,client_name:row.customer_name||row.customer_tax_id,pending:Number(row.remaining_balance)}))
+    .sort((a,b)=>b.pending-a.pending);
+}
+function renderPendingComplements(host,rows){
+  host.innerHTML=rows.length?rows.map(row=>`<div class="balance-pending-row"><div><strong>${escAttr(row.client_name)}</strong><span class="mini-sub">Factura ${escAttr(row.folio||'sin folio')} · ${escAttr((row.date||'').slice(0,10))}</span></div><strong>${moneyMx(row.pending)}</strong><a class="btn btn-primary" href="/pagos/nuevo?invoice_id=${encodeURIComponent(row.id)}&amp;uuid=${encodeURIComponent(row.uuid||'')}">Generar complemento</a></div>`).join(''):'<div class="empty-state">No hay facturas pendientes de complemento.</div>';
+}
+let issuedLoadVersion=0;
 async function load(){
+  const version=++issuedLoadVersion;
+  const pendingList=document.getElementById('issuedPendingList');
+  pendingList.innerHTML='<div class="empty-state">Cargando…</div>';
   tbody.innerHTML = '<tr><td colspan="10">Cargando…</td></tr>';
   try{
     const m = $('#mes').value;
     const r = await fetch(`/api/facturas/list?month=${encodeURIComponent(m)}`);
     const d = await r.json();
-    if(!r.ok) throw new Error(errorText(d.error));
+    if(version!==issuedLoadVersion)return;
+    if(!r.ok || d.ok===false) throw new Error(errorText(d.error));
     const q = ($('#q').value||'').toLowerCase();
 
     let rows = (d.data||[]).filter(x => (x.date||'').startsWith(m));
@@ -548,10 +565,12 @@ async function load(){
       rows = rows.filter(x =>
         (x.customer_name||'').toLowerCase().includes(q) ||
         (x.customer_tax_id||'').toLowerCase().includes(q) ||
-        (x.uuid||'').toLowerCase().includes(q)
+        (x.uuid||'').toLowerCase().includes(q) ||
+        String(x.folio||'').toLowerCase().includes(q)
       );
     }
 
+    renderPendingComplements(pendingList,pendingFromIssued(rows));
     tbody.innerHTML='';
     if(!rows.length){
       tbody.innerHTML = '<tr><td colspan="10" style="grid-column:1/-1;text-align:center;color:var(--muted);padding:42px 10px">No hay comprobantes para este mes o búsqueda.</td></tr>';
@@ -646,7 +665,9 @@ async function load(){
     });
 
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="10">${e.message}</td></tr>`;
+    if(version!==issuedLoadVersion)return;
+    pendingList.innerHTML='<div class="empty-state">No se pudieron consultar los complementos pendientes.</div>';
+    tbody.innerHTML = `<tr><td colspan="10">${escAttr(e.message)}</td></tr>`;
   }
 }
 
@@ -746,7 +767,7 @@ async function loadBalance(){
     document.getElementById('balanceChartTitle').textContent=scope==='year'?'Movimiento mensual del año':'Movimiento del mes seleccionado';
     chart.innerHTML=series.length?series.map(row=>{const label=new Date(`${row.month}-02T12:00:00`).toLocaleDateString('es-MX',{month:'short',year:scope==='year'?undefined:'numeric'});const width=value=>`${Math.max(1,Math.abs(Number(value||0))/maximum*100)}%`;return `<div class="balance-month"><strong>${escAttr(label)}</strong><div class="balance-bars"><span class="balance-bar income" style="width:${width(row.issued)}" title="Facturado ${moneyMx(row.issued)}"></span><span class="balance-bar collected" style="width:${width(row.collected)}" title="Cobrado ${moneyMx(row.collected)}"></span><span class="balance-bar expense" style="width:${width(row.received)}" title="Gastos ${moneyMx(row.received)}"></span></div><strong>${moneyMx(row.issued)}</strong></div>`}).join(''):'<div class="empty-state">No hay movimientos en este periodo.</div>';
     top.innerHTML=(data.top_clients||[]).length?(data.top_clients||[]).map((row,index)=>`<div class="balance-rank-row"><strong>${index+1}. ${escAttr(row.name)}</strong><strong>${moneyMx(row.total)}</strong><small>${row.count} factura(s) · Cobrado ${moneyMx(row.collected)}${row.pending?` · Pendiente ${moneyMx(row.pending)}`:''}</small></div>`).join(''):'<div class="empty-state">Sin clientes en el periodo.</div>';
-    pendingList.innerHTML=(data.pending_invoices||[]).length?(data.pending_invoices||[]).map(row=>`<div class="balance-pending-row"><div><strong>${escAttr(row.client_name)}</strong><span class="mini-sub">Factura ${escAttr(row.folio||'sin folio')} · ${escAttr((row.date||'').slice(0,10))}</span></div><strong>${moneyMx(row.pending)}</strong><a class="btn btn-primary" href="/pagos/nuevo?invoice_id=${encodeURIComponent(row.id)}&uuid=${encodeURIComponent(row.uuid||'')}">Generar complemento</a></div>`).join(''):'<div class="empty-state">No hay facturas pendientes de complemento.</div>';
+    renderPendingComplements(pendingList,data.pending_invoices||[]);
   }catch(error){chart.innerHTML=`<div class="empty-state">${escAttr(error.message)}</div>`;top.innerHTML='<div class="empty-state">No se pudo cargar.</div>';pendingList.innerHTML='';}
 }
 

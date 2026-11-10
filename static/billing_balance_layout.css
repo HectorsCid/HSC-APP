@@ -6,6 +6,9 @@ body.billing-page{display:flex;flex-direction:column;height:100vh;height:100dvh;
 .billing-page .wrap{padding-bottom:max(24px,env(safe-area-inset-bottom))}
 .balance-grid{align-items:start}
 .balance-section{min-width:0}
+.issued-pending-section{margin-top:12px;min-height:0}
+#issuedPendingList{max-height:clamp(220px,42vh,420px);max-height:clamp(220px,42dvh,420px);overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;scrollbar-color:var(--muted) var(--surface);padding-right:8px}
+#issuedPendingList:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
 #balanceTop,#balancePendingList{overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scrollbar-gutter:stable;scrollbar-width:auto;scrollbar-color:var(--muted) var(--surface);padding-right:8px;padding-bottom:8px}
 #balanceTop{max-height:clamp(180px,35vh,340px);max-height:clamp(180px,35dvh,340px)}
 #balancePendingList{max-height:clamp(220px,42vh,420px);max-height:clamp(220px,42dvh,420px)}

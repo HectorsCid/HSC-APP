@@ -68,14 +68,6 @@
   .payment-options{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
   .payment-options summary{cursor:pointer;font-weight:700}
   #selectionTotal{padding:10px 12px;border-width:1px;font-size:1rem}
-  .pending-invoices-head,.pending-invoice{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-  .pending-invoices-head label{margin:0}
-  #pendingInvoiceRows{max-height:340px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:8px}
-  .pending-invoice{padding:10px 0;border-bottom:1px solid var(--line)}
-  .pending-invoice:last-child{border-bottom:0}
-  .pending-invoice-copy{flex:1;min-width:min(190px,100%);overflow-wrap:anywhere}
-  .pending-invoice-copy small{display:block;color:var(--muted);margin-top:3px}
-  .pending-invoice-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   @media(max-width:720px){.selected-payment{grid-template-columns:1fr auto}.selected-payment label{grid-column:1/-1;grid-row:2}}
   @media(max-width:720px){.top{align-items:flex-start;flex-direction:column}.top .actions{width:100%}.top .actions .btn{flex:1}.wrap{padding:12px}.card{padding:13px}}
 </style>
@@ -222,14 +214,6 @@
     </div>
   </div>
 
-  <section class="card" id="pendingInvoicePanel" aria-labelledby="pendingInvoiceTitle">
-    <div class="pending-invoices-head">
-      <h3 class="section-title" id="pendingInvoiceTitle">Facturas pendientes de complemento</h3>
-      <div class="actions"><label for="pendingInvoiceMonth">Mes</label><input id="pendingInvoiceMonth" type="month"><button class="btn" id="refreshPendingInvoices" type="button">Actualizar</button></div>
-    </div>
-    <p id="pendingInvoiceStatus" class="pill" role="status">Consultando facturas…</p>
-    <div id="pendingInvoiceRows" tabindex="0" role="region" aria-labelledby="pendingInvoiceTitle"></div>
-  </section>
   <section class="card" aria-label="Sustituir complementos existentes">
     <details id="replacementPanel"><summary style="cursor:pointer;font-weight:700">Herramientas avanzadas · Sustituir complementos existentes</summary>
       <p class="pill">Selecciona los REP anteriores. Sus facturas se mostrarán aunque ya estén cubiertas, sin quitar sus pagos.</p>
@@ -266,11 +250,9 @@ const chosenReps = new Set();
 const selectedInvoices = new Map();
 let submissionUncertain = false;
 let candidateInvoices = [];
-let pendingListStatus = 'Consultando facturas…';
 let multipleInvoices = false, choosingInvoice = false;
 const money = value => Number(value || 0).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
 $('invoiceMonth').value = new Date().toLocaleDateString('sv-SE').slice(0,7);
-$('pendingInvoiceMonth').value=$('invoiceMonth').value;
 function renderSelected(){
   const host = $('selectedInvoices'); host.replaceChildren();
   const count=selectedInvoices.size;
@@ -300,7 +282,6 @@ function renderSelected(){
   $('previous_balance').closest('.row').style.display=selectedInvoices.size ? 'none' : '';
   $('selectionTotal').textContent=`${selectedInvoices.size} factura(s) · Total del pago: ${money(total)} MXN`;
   $('btnCrear').disabled=lock || choosingInvoice || submissionUncertain || !valid || (replacementIds.length>1 && !$('samePayment').checked);
-  renderPendingInvoices();
 }
 $('changeInvoice').onclick=()=>{if(lock||replacementId||selectedInvoices.size!==1)return;multipleInvoices=false;choosingInvoice=true;renderSelected();renderCandidates();};
 $('enableMultiple').onclick=()=>{if(lock||replacementId||!selectedInvoices.size)return;multipleInvoices=true;choosingInvoice=true;renderSelected();renderCandidates();};
@@ -334,33 +315,6 @@ async function selectInvoice(id){
     return true;
   }catch(error){msg(false,error.message);return false;}finally{lock=false;renderSelected();renderCandidates();}
 }
-function renderPendingInvoices(){
-  $('pendingInvoicePanel').hidden=Boolean(replacementId);
-  const host=$('pendingInvoiceRows');host.replaceChildren();
-  $('pendingInvoiceStatus').textContent=pendingListStatus;
-  const rows=[...candidateInvoices].sort((a,b)=>Number(b.remaining_balance)-Number(a.remaining_balance));
-  for(const invoice of rows){
-    const row=document.createElement('div');row.className='pending-invoice';
-    const info=document.createElement('div');info.className='pending-invoice-copy';
-    const client=document.createElement('strong');client.textContent=invoice.customer_name||invoice.customer_tax_id;
-    const details=document.createElement('small');details.textContent=[`Factura ${invoice.folio||invoice.uuid||invoice.id}`,String(invoice.date||'').slice(0,10)].filter(Boolean).join(' · ');
-    const actions=document.createElement('div');actions.className='pending-invoice-actions';
-    const balance=document.createElement('strong');balance.textContent=money(invoice.remaining_balance);
-    const button=document.createElement('button');button.type='button';button.className='btn';
-    const selected=selectedInvoices.has(invoice.id);
-    button.textContent=selected?'Seleccionada':'Preparar complemento';
-    button.disabled=selected||lock||submissionUncertain||(selectedInvoices.size>1&&!choosingInvoice);
-    button.onclick=async()=>{
-      if(lock||replacementId||submissionUncertain)return;
-      if(selectedInvoices.size&&!choosingInvoice){
-        if(selectedInvoices.size>1||!confirm('¿Cambiar la factura seleccionada? Se sustituirá el importe capturado para la factura anterior.'))return;
-        multipleInvoices=false;
-      }
-      if(await selectInvoice(invoice.id))$('paymentDetails').scrollIntoView?.({block:'start'});
-    };
-    info.append(client,details);actions.append(balance,button);row.append(info,actions);host.append(row);
-  }
-}
 function renderCandidates(){
   const host=$('candidateList');host.replaceChildren();const rfc=$('invoiceClient').value;
   const rows=candidateInvoices.filter(inv=>inv.customer_tax_id===rfc);
@@ -371,17 +325,15 @@ function renderCandidates(){
 $('invoiceClient').onchange=renderCandidates;
 $('loadPending').onclick=async()=>{
   if(lock)return;lock=true;$('loadPending').disabled=true;$('btnCrear').disabled=true;$('candidateStatus').textContent='Consultando facturas…';
-  const month=$('invoiceMonth').value;$('pendingInvoiceMonth').value=month;$('refreshPendingInvoices').disabled=true;
-  candidateInvoices=[];pendingListStatus='Consultando facturas…';renderPendingInvoices();$('candidateList').replaceChildren();
+  const month=$('invoiceMonth').value;
+  candidateInvoices=[];$('candidateList').replaceChildren();
   try{const response=await fetch(`/api/facturas/list?month=${encodeURIComponent(month)}`);const result=await response.json();if(!response.ok || !result.ok)throw new Error(errorText(result.error));
     candidateInvoices=(result.data || []).filter(inv=>inv.type==='I' && inv.customer_tax_id && inv.payment_method==='PPD' && inv.remaining_balance>0 && !['canceled','pending'].includes(inv.cancellation_status));
     const previous=$('invoiceClient').value || cachedInvoice?.customer?.tax_id || '';const clients=new Map(candidateInvoices.map(inv=>[inv.customer_tax_id,inv.customer_name]));
     $('invoiceClient').replaceChildren(new Option('Selecciona un cliente',''));clients.forEach((name,rfc)=>$('invoiceClient').add(new Option(`${name} · ${rfc}`,rfc)));$('invoiceClient').value=previous;
-    pendingListStatus=candidateInvoices.length?`${candidateInvoices.length} pendiente(s) · Saldo pendiente de cada factura`:'No hay facturas pendientes en este mes.';
     $('candidateStatus').textContent=candidateInvoices.length?'Selecciona el cliente para ver sus facturas.':'No hay facturas pendientes en este mes.';renderCandidates();
-  }catch(error){pendingListStatus=error.message;$('candidateStatus').textContent=error.message;}finally{lock=false;$('loadPending').disabled=false;$('refreshPendingInvoices').disabled=false;refreshTotal();renderPendingInvoices();}
+  }catch(error){$('candidateStatus').textContent=error.message;}finally{lock=false;$('loadPending').disabled=false;refreshTotal();}
 };
-$('refreshPendingInvoices').onclick=()=>{if(lock||replacementId||!$('pendingInvoiceMonth').value)return;$('invoiceMonth').value=$('pendingInvoiceMonth').value;return $('loadPending').onclick();};
 let lock = false; // antirrebote
 function renderReplacementChoices(){
   chosenReps.clear();$('prepareReplacement').disabled=true;
@@ -548,7 +500,7 @@ async function loadReplacementContext(ids){
   if(replacementId){await loadReplacementContext(replacementIds);return;}
   const id = qs.get('invoice_id'); const u = qs.get('uuid');
   if(id || u){ $('ref').value = u || id; await $('btnBuscar').onclick(); }
-  await $('loadPending').onclick();
+  else await $('loadPending').onclick();
 })();
 </script>
 </body>
