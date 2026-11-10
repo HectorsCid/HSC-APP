@@ -9,10 +9,16 @@ from memory_diagnostics import MONITOR, read_events, memory_span
 
 
 def check_smtp():
-    from smtp_mailer import smtp_config
+    from smtp_mailer import graph_access_token, smtp_config
     cfg = smtp_config()
     if not cfg['configured']:
         return dict(ok=False, status='not_configured', message='Falta configurar el correo de salida en el servidor.')
+    if cfg['provider'] == 'graph':
+        try:
+            graph_access_token(cfg, timeout=8)
+        except RuntimeError as exc:
+            return dict(ok=False, status='authentication_failed', message=str(exc))
+        return dict(ok=True, status='authenticated', message='Microsoft 365 aceptó las credenciales de la aplicación. El permiso de envío se verifica con un correo de prueba.')
     try:
         # Exactly the same TLS/login mode as sending, but no MAIL/RCPT/DATA.
         with smtplib.SMTP_SSL(cfg['host'], cfg['port'], context=ssl.create_default_context(), timeout=8) as server:

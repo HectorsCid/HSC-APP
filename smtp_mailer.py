@@ -1,3 +1,4 @@
+import base64
 import os
 import re
 import smtplib
@@ -8,8 +9,11 @@ import mimetypes
 import imaplib
 import time
 import html
+import requests
 from email.message import EmailMessage
+from email import policy
 from email.utils import formataddr, formatdate, make_msgid, parseaddr
+from urllib.parse import quote
 
 
 _HEADER_BREAKS = re.compile(r"[\r\n]+")
@@ -25,16 +29,70 @@ def smtp_config():
     password = os.getenv("SMTP_PASSWORD", "")
     from_email = os.getenv("SMTP_FROM", username).strip()
     from_name = os.getenv("SMTP_FROM_NAME", "HSC Refrigeración").strip()
+    provider = os.getenv("HSC_MAIL_PROVIDER", "smtp").strip().lower()
+    graph = {
+        "tenant_id": os.getenv("HSC_GRAPH_TENANT_ID", "").strip(),
+        "client_id": os.getenv("HSC_GRAPH_CLIENT_ID", "").strip(),
+        "client_secret": os.getenv("HSC_GRAPH_CLIENT_SECRET", ""),
+        "mailbox": os.getenv("HSC_GRAPH_MAILBOX", "").strip(),
+    }
+    if provider == "graph":
+        from_email = graph["mailbox"]
     return {
+        "provider": provider,
+        "graph": graph,
         "host": host,
         "port": port,
         "username": username,
         "password": password,
         "from_email": from_email,
         "from_name": from_name,
-        "configured": bool(host and port and username and password and from_email),
+        "configured": (
+            bool(all(graph.values()) and valid_email(from_email)) if provider == "graph"
+            else bool(provider == "smtp" and host and port and username and password and from_email)
+        ),
         "send_key": os.getenv("SMTP_SEND_KEY", ""),
     }
+
+
+def graph_access_token(cfg, *, timeout=15):
+    graph = cfg["graph"]
+    tenant = quote(graph["tenant_id"], safe="")
+    try:
+        response = requests.post(
+            f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+            data={
+                "client_id": graph["client_id"],
+                "client_secret": graph["client_secret"],
+                "grant_type": "client_credentials",
+                "scope": "https://graph.microsoft.com/.default",
+            },
+            timeout=timeout,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(f"Microsoft rechazó la autenticación de HSC (HTTP {response.status_code}).")
+        token = response.json().get("access_token")
+    except (requests.RequestException, ValueError):
+        raise RuntimeError("No se pudo completar la autenticación con Microsoft 365.") from None
+    if not token:
+        raise RuntimeError("Microsoft 365 no devolvió un token de acceso para HSC.")
+    return token
+
+
+def _send_graph(message, cfg):
+    mailbox = quote(cfg["graph"]["mailbox"], safe="")
+    token = graph_access_token(cfg)
+    try:
+        response = requests.post(
+            f"https://graph.microsoft.com/v1.0/users/{mailbox}/sendMail",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "text/plain"},
+            data=base64.b64encode(message.as_bytes(policy=policy.SMTP)),
+            timeout=30,
+        )
+    except requests.RequestException:
+        raise RuntimeError("No se pudo confirmar el envío con Microsoft 365. Revisa Enviados antes de reintentar.") from None
+    if response.status_code != 202:
+        raise RuntimeError(f"Microsoft 365 no aceptó el envío (HTTP {response.status_code}).")
 
 
 def trusted_device_token():
@@ -174,11 +232,16 @@ def send_email_with_attachments(*, recipient, subject, body, attachments, cc="",
             filename=filename,
         )
 
-    context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(cfg["host"], cfg["port"], context=context, timeout=30) as server:
-        server.login(cfg["username"], cfg["password"])
-        server.send_message(message)
-    sent_copy_saved = _save_sent_copy(message, cfg)
+    if cfg["provider"] == "graph":
+        _send_graph(message, cfg)
+        # Graph's sendMail operation queues the copy in Enviados with the send.
+        sent_copy_saved = True
+    else:
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL(cfg["host"], cfg["port"], context=context, timeout=30) as server:
+            server.login(cfg["username"], cfg["password"])
+            server.send_message(message)
+        sent_copy_saved = _save_sent_copy(message, cfg)
     return {
         "recipient": ", ".join(recipients),
         "recipients": recipients,
