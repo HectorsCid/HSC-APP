@@ -64,6 +64,18 @@
   #selectionTotal{font-size:1.2rem;font-weight:800;color:var(--ink);border:2px solid var(--brand);padding:16px;background:var(--soft)}
   .selected-payment{display:grid;grid-template-columns:minmax(0,1fr) 190px auto;gap:12px;align-items:center}
   .selected-payment label{margin:0}.selected-payment strong{overflow-wrap:anywhere}
+  [hidden]{display:none!important}
+  .payment-options{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+  .payment-options summary{cursor:pointer;font-weight:700}
+  #selectionTotal{padding:10px 12px;border-width:1px;font-size:1rem}
+  .pending-invoices-head,.pending-invoice{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .pending-invoices-head label{margin:0}
+  #pendingInvoiceRows{max-height:340px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:8px}
+  .pending-invoice{padding:10px 0;border-bottom:1px solid var(--line)}
+  .pending-invoice:last-child{border-bottom:0}
+  .pending-invoice-copy{flex:1;min-width:min(190px,100%);overflow-wrap:anywhere}
+  .pending-invoice-copy small{display:block;color:var(--muted);margin-top:3px}
+  .pending-invoice-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   @media(max-width:720px){.selected-payment{grid-template-columns:1fr auto}.selected-payment label{grid-column:1/-1;grid-row:2}}
   @media(max-width:720px){.top{align-items:flex-start;flex-direction:column}.top .actions{width:100%}.top .actions .btn{flex:1}.wrap{padding:12px}.card{padding:13px}}
 </style>
@@ -90,19 +102,10 @@
 
   <div id="msg" class="flash"></div>
 
-  <section class="card" aria-label="Sustituir complementos existentes">
-    <details id="replacementPanel"><summary style="cursor:pointer;font-weight:700">↻ ¿Facturas ya cubiertas? Sustituir complementos existentes</summary>
-      <p class="pill">Selecciona los REP anteriores. Sus facturas se mostrarán aunque ya estén cubiertas, sin quitar sus pagos.</p>
-      <button id="loadReplacementClients" type="button" class="btn">Consultar clientes y complementos</button>
-      <p id="replacementStatus" class="pill" role="status"></p>
-      <label for="replacementClient">Cliente del pago anterior</label><select id="replacementClient"><option value="">Selecciona un cliente</option></select>
-      <div id="replacementChoices"></div>
-      <button id="prepareReplacement" type="button" class="btn" disabled>Mostrar facturas para el sustituto</button>
-    </details>
-  </section>
   <section class="card" aria-label="Seleccionar facturas">
-    <h3 class="section-title">1 · Relacionar facturas</h3>
-    <p class="pill">Elige el mes y cliente. Marca las facturas pagadas; puedes combinar distintos meses sin perder tu selección.</p>
+    <h3 class="section-title" id="invoiceStepTitle">1 · Elige la factura</h3>
+    <div id="invoicePicker">
+    <p class="pill" id="pickerHint">Selecciona el cliente y elige la factura que te pagaron.</p>
     <div class="row row-2">
       <div><label for="invoiceMonth">Mes de las facturas</label><input id="invoiceMonth" type="month"></div>
       <div><label for="invoiceClient">Cliente</label><select id="invoiceClient"><option value="">Selecciona un cliente</option></select></div>
@@ -110,13 +113,7 @@
     <div class="actions" style="margin-top:10px"><button type="button" class="btn" id="loadPending">↻ Consultar facturas</button></div>
     <p id="candidateStatus" class="pill" role="status"></p>
     <div id="candidateList"></div>
-    <h4>Facturas seleccionadas</h4>
-    <div id="selectedInvoices"><p class="pill">Todavía no seleccionas facturas.</p></div>
-    <div class="balance-note" id="selectionTotal" aria-live="polite">Total del pago: $0.00 MXN</div>
-  </section>
-
-  <div class="card">
-    <details><summary style="cursor:pointer;font-weight:700">🔎 Buscar otra factura por UUID</summary>
+    <details class="payment-options" id="uuidPicker"><summary>Buscar por UUID</summary>
     <div class="row row-2">
       <div>
         <label>Folio fiscal (UUID)</label>
@@ -128,6 +125,17 @@
       </div>
     </div>
     </details>
+    </div>
+    <div id="selectedInvoices"></div>
+    <div class="actions payment-options" id="selectionActions" hidden>
+      <button class="btn" id="changeInvoice" type="button">Cambiar factura</button>
+      <button class="btn" id="enableMultiple" type="button">＋ Agregar otra factura al mismo pago</button>
+      <button class="btn" id="cancelInvoiceChoice" type="button" hidden>Volver al pago</button>
+    </div>
+  </section>
+  <div class="card" id="paymentDetails" hidden>
+    <h3 class="section-title">2 · Datos del pago</h3>
+    <details class="payment-options"><summary>Datos fiscales del receptor</summary>
     <div id="invBox" style="display:none;margin-top:12px">
       <div class="row row-2">
         <div><label>Receptor</label><input id="invReceptor" disabled /></div>
@@ -145,9 +153,7 @@
         <div><label>Código postal fiscal</label><input id="invCP" placeholder="5 dígitos" /></div>
       </div>
     </div>
-  </div>
-
-  <div class="card">
+    </details>
     <div class="row row-2">
       <div>
         <label>Importe a pagar</label>
@@ -191,6 +197,8 @@
       </div>
     </div>
     <div id="balanceNote" class="balance-note" style="display:none"></div>
+    <div class="row"><div><label for="pay_date">Fecha de pago (opcional)</label><input id="pay_date" type="datetime-local" /></div></div>
+    <details class="payment-options"><summary>Banco de origen y referencia (opcional)</summary>
     <div class="row row-2">
       <div><label for="payer_bank">Banco de origen del pago (opcional)</label>
         <select id="payer_bank"><option value="">Sin indicar</option><option value="BBA830831LJ2">BBVA México</option><option value="other">Otro banco nacional · indicar RFC</option></select>
@@ -198,16 +206,14 @@
       </div>
       <div id="payerBankOther" hidden><label for="payer_bank_rfc">RFC de la institución bancaria</label><input id="payer_bank_rfc" maxlength="12" placeholder="RFC del banco, no del cliente" /></div>
     </div>
-    <div class="row row-2">
-      <div>
-        <label>Fecha de pago (opcional)</label>
-        <input id="pay_date" type="datetime-local" />
-      </div>
+    <div class="row">
       <div>
         <label>Referencia (opcional)</label>
         <input id="reference" placeholder="No. operación, nota, etc." />
       </div>
     </div>
+    </details>
+    <div class="balance-note" id="selectionTotal" aria-live="polite">Total del pago: $0.00 MXN</div>
     <div id="samePaymentBox" hidden><label><input id="samePayment" type="checkbox"> Confirmo que los complementos seleccionados corresponden al mismo pago recibido, no a depósitos distintos.</label></div>
     <div class="actions" style="margin-top:12px">
       <button id="btnCrear" class="btn btn-ok" type="button" disabled>💳 Crear complemento</button>
@@ -215,6 +221,25 @@
       <a id="lnkVerXML" class="btn" style="display:none" target="_blank">🧩 Ver REP XML</a>
     </div>
   </div>
+
+  <section class="card" id="pendingInvoicePanel" aria-labelledby="pendingInvoiceTitle">
+    <div class="pending-invoices-head">
+      <h3 class="section-title" id="pendingInvoiceTitle">Facturas pendientes de complemento</h3>
+      <div class="actions"><label for="pendingInvoiceMonth">Mes</label><input id="pendingInvoiceMonth" type="month"><button class="btn" id="refreshPendingInvoices" type="button">Actualizar</button></div>
+    </div>
+    <p id="pendingInvoiceStatus" class="pill" role="status">Consultando facturas…</p>
+    <div id="pendingInvoiceRows" tabindex="0" role="region" aria-labelledby="pendingInvoiceTitle"></div>
+  </section>
+  <section class="card" aria-label="Sustituir complementos existentes">
+    <details id="replacementPanel"><summary style="cursor:pointer;font-weight:700">Herramientas avanzadas · Sustituir complementos existentes</summary>
+      <p class="pill">Selecciona los REP anteriores. Sus facturas se mostrarán aunque ya estén cubiertas, sin quitar sus pagos.</p>
+      <button id="loadReplacementClients" type="button" class="btn">Consultar clientes y complementos</button>
+      <p id="replacementStatus" class="pill" role="status"></p>
+      <label for="replacementClient">Cliente del pago anterior</label><select id="replacementClient"><option value="">Selecciona un cliente</option></select>
+      <div id="replacementChoices"></div>
+      <button id="prepareReplacement" type="button" class="btn" disabled>Mostrar facturas para el sustituto</button>
+    </details>
+  </section>
 
   <div class="card" id="responseCard" style="display:none">
     <h3 class="section-title">Respuesta</h3>
@@ -241,10 +266,22 @@ const chosenReps = new Set();
 const selectedInvoices = new Map();
 let submissionUncertain = false;
 let candidateInvoices = [];
+let pendingListStatus = 'Consultando facturas…';
+let multipleInvoices = false, choosingInvoice = false;
 const money = value => Number(value || 0).toLocaleString('es-MX',{style:'currency',currency:'MXN'});
 $('invoiceMonth').value = new Date().toLocaleDateString('sv-SE').slice(0,7);
+$('pendingInvoiceMonth').value=$('invoiceMonth').value;
 function renderSelected(){
   const host = $('selectedInvoices'); host.replaceChildren();
+  const count=selectedInvoices.size;
+  $('invoiceStepTitle').textContent=replacementId?'1 · Facturas del complemento anterior':count>1?'1 · Facturas del mismo pago':count?'1 · Factura seleccionada':'1 · Elige la factura';
+  $('invoicePicker').hidden=Boolean(replacementId)||Boolean(count&&!choosingInvoice);
+  $('paymentDetails').hidden=!count;
+  $('selectionActions').hidden=!count||Boolean(replacementId);
+  $('changeInvoice').hidden=count!==1||choosingInvoice;
+  $('enableMultiple').hidden=choosingInvoice;
+  $('cancelInvoiceChoice').hidden=!choosingInvoice;
+  $('pickerHint').textContent=multipleInvoices?'Elige otra factura del mismo RFC que corresponda a este mismo pago.':'Selecciona el cliente y elige la factura que te pagaron.';
   let total = 0, valid = selectedInvoices.size > 0;
   selectedInvoices.forEach(entry=>{
     total += Number(entry.amount || 0);
@@ -252,17 +289,31 @@ function renderSelected(){
     const row=document.createElement('div');row.className='balance-note selected-payment';
     const title=document.createElement('strong');title.textContent=`Factura ${entry.invoice.serie || ''} ${entry.invoice.folio || entry.invoice.uuid}`;
     const meta=document.createElement('div');meta.className='pill';meta.textContent=`Saldo: ${money(entry.invoice.remaining_balance)} · Parcialidad ${entry.invoice.next_partiality_number || 1}`;
-    const label=document.createElement('label');label.textContent='Importe aplicado a esta factura';
+    const label=document.createElement('label');label.textContent=count===1?'Importe recibido':'Importe aplicado a esta factura';
     const input=document.createElement('input');input.type='number';input.min='0.01';input.step='0.01';input.max=entry.invoice.remaining_balance;input.value=entry.amount;
     input.oninput=()=>{entry.amount=input.value;refreshTotal();};label.append(input);
     const remainder=document.createElement('div');remainder.className='pill';remainder.dataset.remaining=entry.invoice.id;remainder.textContent=`Saldo después del pago: ${money(entry.invoice.remaining_balance-Number(entry.amount))}`;
-    const remove=document.createElement('button');remove.type='button';remove.className='btn';remove.textContent='Quitar';remove.disabled=Boolean(replacementId);remove.onclick=()=>{if(lock || replacementId)return;selectedInvoices.delete(entry.invoice.id);renderSelected();renderCandidates();};
+    const remove=document.createElement('button');remove.type='button';remove.className='btn';remove.textContent='Quitar';remove.hidden=count===1&&!choosingInvoice&&!replacementId;remove.disabled=Boolean(replacementId);remove.onclick=()=>{if(lock || replacementId)return;selectedInvoices.delete(entry.invoice.id);cachedInvoice=selectedInvoices.values().next().value?.invoice||null;if(!selectedInvoices.size){multipleInvoices=false;choosingInvoice=false;}renderSelected();renderCandidates();};
     const info=document.createElement('div');info.append(title,meta,remainder);row.append(info,label,remove);host.append(row);
   });
   $('amount').closest('.row').querySelector('div').style.display=selectedInvoices.size ? 'none' : '';
   $('previous_balance').closest('.row').style.display=selectedInvoices.size ? 'none' : '';
   $('selectionTotal').textContent=`${selectedInvoices.size} factura(s) · Total del pago: ${money(total)} MXN`;
-  $('btnCrear').disabled=lock || submissionUncertain || !valid || (replacementIds.length>1 && !$('samePayment').checked);
+  $('btnCrear').disabled=lock || choosingInvoice || submissionUncertain || !valid || (replacementIds.length>1 && !$('samePayment').checked);
+  renderPendingInvoices();
+}
+$('changeInvoice').onclick=()=>{if(lock||replacementId||selectedInvoices.size!==1)return;multipleInvoices=false;choosingInvoice=true;renderSelected();renderCandidates();};
+$('enableMultiple').onclick=()=>{if(lock||replacementId||!selectedInvoices.size)return;multipleInvoices=true;choosingInvoice=true;renderSelected();renderCandidates();};
+$('cancelInvoiceChoice').onclick=()=>{if(lock)return;multipleInvoices=selectedInvoices.size>1;choosingInvoice=false;renderSelected();renderCandidates();};
+function acceptInvoice(inv){
+  const other=selectedInvoices.values().next().value?.invoice;
+  if(multipleInvoices && other && other.customer.tax_id.trim().toUpperCase()!==inv.customer.tax_id.trim().toUpperCase())throw new Error('Selecciona facturas del mismo RFC. Quita primero las del otro cliente.');
+  if(inv.payment_method!=='PPD' || inv.paid)throw new Error('Esta factura no tiene saldo PPD disponible.');
+  if(!multipleInvoices)selectedInvoices.clear();
+  if(!selectedInvoices.size){cachedInvoice=inv;$('invReceptor').value=inv.customer.legal_name;$('invRFC').value=inv.customer.tax_id;$('invRegimen').value=inv.customer.tax_system || '';$('invCP').value=inv.customer.zip || '';$('invBox').style.display='block';}
+  if(!selectedInvoices.has(inv.id))selectedInvoices.set(inv.id,{invoice:inv,amount:inv.remaining_balance});
+  $('invoiceClient').value=inv.customer.tax_id;
+  choosingInvoice=false;
 }
 function refreshTotal(){
   let total=0,valid=selectedInvoices.size>0;
@@ -271,7 +322,7 @@ function refreshTotal(){
     if(el)el.textContent=`Saldo después del pago: ${money(entry.invoice.remaining_balance-amount)}`;
   });
   $('selectionTotal').textContent=`${selectedInvoices.size} factura(s) · Total del pago: ${money(total)} MXN`;
-  $('btnCrear').disabled=lock || submissionUncertain || !valid || (replacementIds.length>1 && !$('samePayment').checked);
+  $('btnCrear').disabled=lock || choosingInvoice || submissionUncertain || !valid || (replacementIds.length>1 && !$('samePayment').checked);
 }
 async function selectInvoice(id){
   if(lock || replacementId)return;
@@ -279,12 +330,36 @@ async function selectInvoice(id){
   try{
     const response=await fetch(`/api/pagos/info/${encodeURIComponent(id)}`);const inv=await response.json();
     if(!response.ok)throw new Error(errorText(inv.error));
-    const other=selectedInvoices.values().next().value?.invoice;
-    if(other && other.customer.tax_id.trim().toUpperCase()!==inv.customer.tax_id.trim().toUpperCase())throw new Error('Selecciona facturas del mismo RFC. Quita primero las del otro cliente.');
-    if(inv.payment_method!=='PPD' || inv.paid)throw new Error('Esta factura no tiene saldo PPD disponible.');
-    if(!selectedInvoices.size){cachedInvoice=inv;$('invReceptor').value=inv.customer.legal_name;$('invRFC').value=inv.customer.tax_id;$('invRegimen').value=inv.customer.tax_system || '';$('invCP').value=inv.customer.zip || '';$('invBox').style.display='block';}
-    selectedInvoices.set(inv.id,{invoice:inv,amount:inv.remaining_balance});
-  }catch(error){msg(false,error.message);}finally{lock=false;renderSelected();renderCandidates();}
+    acceptInvoice(inv);
+    return true;
+  }catch(error){msg(false,error.message);return false;}finally{lock=false;renderSelected();renderCandidates();}
+}
+function renderPendingInvoices(){
+  $('pendingInvoicePanel').hidden=Boolean(replacementId);
+  const host=$('pendingInvoiceRows');host.replaceChildren();
+  $('pendingInvoiceStatus').textContent=pendingListStatus;
+  const rows=[...candidateInvoices].sort((a,b)=>Number(b.remaining_balance)-Number(a.remaining_balance));
+  for(const invoice of rows){
+    const row=document.createElement('div');row.className='pending-invoice';
+    const info=document.createElement('div');info.className='pending-invoice-copy';
+    const client=document.createElement('strong');client.textContent=invoice.customer_name||invoice.customer_tax_id;
+    const details=document.createElement('small');details.textContent=[`Factura ${invoice.folio||invoice.uuid||invoice.id}`,String(invoice.date||'').slice(0,10)].filter(Boolean).join(' · ');
+    const actions=document.createElement('div');actions.className='pending-invoice-actions';
+    const balance=document.createElement('strong');balance.textContent=money(invoice.remaining_balance);
+    const button=document.createElement('button');button.type='button';button.className='btn';
+    const selected=selectedInvoices.has(invoice.id);
+    button.textContent=selected?'Seleccionada':'Preparar complemento';
+    button.disabled=selected||lock||submissionUncertain||(selectedInvoices.size>1&&!choosingInvoice);
+    button.onclick=async()=>{
+      if(lock||replacementId||submissionUncertain)return;
+      if(selectedInvoices.size&&!choosingInvoice){
+        if(selectedInvoices.size>1||!confirm('¿Cambiar la factura seleccionada? Se sustituirá el importe capturado para la factura anterior.'))return;
+        multipleInvoices=false;
+      }
+      if(await selectInvoice(invoice.id))$('paymentDetails').scrollIntoView?.({block:'start'});
+    };
+    info.append(client,details);actions.append(balance,button);row.append(info,actions);host.append(row);
+  }
 }
 function renderCandidates(){
   const host=$('candidateList');host.replaceChildren();const rfc=$('invoiceClient').value;
@@ -296,13 +371,17 @@ function renderCandidates(){
 $('invoiceClient').onchange=renderCandidates;
 $('loadPending').onclick=async()=>{
   if(lock)return;lock=true;$('loadPending').disabled=true;$('btnCrear').disabled=true;$('candidateStatus').textContent='Consultando facturas…';
-  try{const response=await fetch(`/api/facturas/list?month=${encodeURIComponent($('invoiceMonth').value)}`);const result=await response.json();if(!response.ok || !result.ok)throw new Error(errorText(result.error));
+  const month=$('invoiceMonth').value;$('pendingInvoiceMonth').value=month;$('refreshPendingInvoices').disabled=true;
+  candidateInvoices=[];pendingListStatus='Consultando facturas…';renderPendingInvoices();$('candidateList').replaceChildren();
+  try{const response=await fetch(`/api/facturas/list?month=${encodeURIComponent(month)}`);const result=await response.json();if(!response.ok || !result.ok)throw new Error(errorText(result.error));
     candidateInvoices=(result.data || []).filter(inv=>inv.type==='I' && inv.customer_tax_id && inv.payment_method==='PPD' && inv.remaining_balance>0 && !['canceled','pending'].includes(inv.cancellation_status));
     const previous=$('invoiceClient').value || cachedInvoice?.customer?.tax_id || '';const clients=new Map(candidateInvoices.map(inv=>[inv.customer_tax_id,inv.customer_name]));
     $('invoiceClient').replaceChildren(new Option('Selecciona un cliente',''));clients.forEach((name,rfc)=>$('invoiceClient').add(new Option(`${name} · ${rfc}`,rfc)));$('invoiceClient').value=previous;
+    pendingListStatus=candidateInvoices.length?`${candidateInvoices.length} pendiente(s) · Saldo pendiente de cada factura`:'No hay facturas pendientes en este mes.';
     $('candidateStatus').textContent=candidateInvoices.length?'Selecciona el cliente para ver sus facturas.':'No hay facturas pendientes en este mes.';renderCandidates();
-  }catch(error){$('candidateStatus').textContent=error.message;}finally{lock=false;$('loadPending').disabled=false;refreshTotal();}
+  }catch(error){pendingListStatus=error.message;$('candidateStatus').textContent=error.message;}finally{lock=false;$('loadPending').disabled=false;$('refreshPendingInvoices').disabled=false;refreshTotal();renderPendingInvoices();}
 };
+$('refreshPendingInvoices').onclick=()=>{if(lock||replacementId||!$('pendingInvoiceMonth').value)return;$('invoiceMonth').value=$('pendingInvoiceMonth').value;return $('loadPending').onclick();};
 let lock = false; // antirrebote
 function renderReplacementChoices(){
   chosenReps.clear();$('prepareReplacement').disabled=true;
@@ -344,13 +423,14 @@ syncThemeToggle();
 
 $('btnBuscar').onclick = async () => {
   if(lock || replacementId) return;
-  msg(true,'Buscando…'); $('invBox').style.display='none'; $('btnCrear').disabled = true;
+  msg(true,'Buscando…');
   $('out').textContent = ''; $('lnkVerPDF').style.display='none'; $('lnkVerXML').style.display='none';
   const ref = $('ref').value.trim();
   if(!ref){ msg(false,'Ingresa UUID o invoice_id'); return; }
 
   try{
     lock = true;
+    $('btnCrear').disabled = true;
     let invoice_id = ref;
     if(ref.includes('-')){ // UUID
       const rs = await fetch(`/api/pagos/resolve?uuid=${encodeURIComponent(ref)}`);
@@ -358,39 +438,17 @@ $('btnBuscar').onclick = async () => {
       if(!rs.ok) throw new Error(errorText(d.error || 'UUID no encontrado'));
       invoice_id = d.id;
     }
-    const ri = await fetch(`/api/pagos/info/${invoice_id}`);
+    const ri = await fetch(`/api/pagos/info/${encodeURIComponent(invoice_id)}`);
     const inv = await ri.json();
     if(!ri.ok) throw new Error(errorText(inv.error || 'Factura no encontrada'));
 
-    const selectedCustomer=selectedInvoices.values().next().value?.invoice.customer.tax_id;
-    if(selectedCustomer && selectedCustomer.trim().toUpperCase()!==inv.customer.tax_id.trim().toUpperCase())throw new Error('Quita primero las facturas del otro cliente.');
-    cachedInvoice = inv;
-    $('invReceptor').value = inv.customer?.legal_name || '';
-    $('invRFC').value = inv.customer?.tax_id || '';
-    $('invMetodo').value = inv.payment_method || '';
-    $('invTotal').value = inv.total?.toFixed ? inv.total.toFixed(2) : inv.total;
-    $('invUUID').value = inv.uuid || '';
-    $('invRegimen').value = inv.customer?.tax_system || '';
-    $('invCP').value = inv.customer?.zip || '';
-    $('invBox').style.display='block';
+    acceptInvoice(inv);
     msg(true,'Factura encontrada');
-
-    $('amount').value = inv.remaining_balance || '';
-    $('amount').max = inv.remaining_balance || '';
-    $('previous_balance').value = inv.remaining_balance || inv.total || '';
-    $('partiality_number').value = inv.next_partiality_number || 1;
-    const note = $('balanceNote');
-    note.style.display='block';
-    note.innerHTML = `<strong>${inv.payment_count||0} pago(s) registrado(s).</strong> Pagado: $${Number(inv.paid_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} · Saldo: $${Number(inv.remaining_balance||0).toLocaleString('es-MX',{minimumFractionDigits:2})}.`;
-    $('btnCrear').disabled = (inv.payment_method !== 'PPD' || inv.paid);
-    if(inv.payment_method !== 'PPD') msg(false,'Esta factura es PUE y no requiere complemento de pago.');
-    else if(inv.paid) msg(false,'Esta factura ya está totalmente pagada.');
-    else {selectedInvoices.set(inv.id,{invoice:inv,amount:inv.remaining_balance});renderSelected();}
   }catch(e){
     msg(false,e.message);
   }finally{
     lock = false;
-    refreshTotal();
+    renderSelected();renderCandidates();
   }
 };
 
@@ -401,7 +459,7 @@ $('payment_form').addEventListener('change', () => {
   if(!allowed){$('payer_bank').value='';$('payerBankOther').hidden=true;}
 });
 $('btnCrear').onclick = async () => {
-  if(lock || submissionUncertain) return;
+  if(lock || choosingInvoice || submissionUncertain) return;
   if(!cachedInvoice){ msg(false,'Primero busca la factura'); return; }
   const body = {
     invoice_id: cachedInvoice.id,
@@ -473,7 +531,7 @@ async function loadReplacementContext(ids){
       const endpoint=ids.length===1?`/api/pagos/replacement/${encodeURIComponent(ids[0])}`:`/api/pagos/replacement-context?${new URLSearchParams(ids.map(id=>['id',id]))}`;
       const response=await fetch(endpoint);const data=await response.json();
       if(!response.ok || !data.ok)throw new Error(errorText(data.error));
-      replacementIds=ids;replacementId=ids[0];selectedInvoices.clear();$('samePaymentBox').hidden=ids.length<2;$('samePayment').checked=false;
+      replacementIds=ids;replacementId=ids[0];choosingInvoice=false;selectedInvoices.clear();$('samePaymentBox').hidden=ids.length<2;$('samePayment').checked=false;
       $('prepareReplacement').disabled=true;$('loadReplacementClients').disabled=true;$('replacementClient').disabled=true;
       data.documents.forEach(entry=>selectedInvoices.set(entry.invoice.id,entry));cachedInvoice=data.documents[0].invoice;
       $('invReceptor').value=cachedInvoice.customer.legal_name;$('invRFC').value=cachedInvoice.customer.tax_id;$('invRegimen').value=cachedInvoice.customer.tax_system;$('invCP').value=cachedInvoice.customer.zip;$('invBox').style.display='block';
@@ -489,8 +547,8 @@ async function loadReplacementContext(ids){
   const qs = new URLSearchParams(location.search);
   if(replacementId){await loadReplacementContext(replacementIds);return;}
   const id = qs.get('invoice_id'); const u = qs.get('uuid');
-  if(id || u){ $('ref').value = u || id; $('btnBuscar').click(); }
-  else $('loadPending').click();
+  if(id || u){ $('ref').value = u || id; await $('btnBuscar').onclick(); }
+  await $('loadPending').onclick();
 })();
 </script>
 </body>
