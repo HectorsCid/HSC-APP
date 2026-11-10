@@ -209,9 +209,12 @@
   }
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='billing_balance_layout.css', v='2') }}">
-<script src="/static/quick_payment.js?v=1"></script>
+<script src="/static/quick_payment.js?v=2"></script>
 <style>
   #issuedPendingList .actions{flex-wrap:wrap;justify-content:flex-end}
+  #quickPaymentContactPicker summary{cursor:pointer;font-weight:700}
+  #quickPaymentContacts{display:grid;gap:6px;margin-top:8px;max-height:180px;overflow-y:auto}
+  #quickPaymentContacts button{text-align:left;overflow-wrap:anywhere}
   @media(max-width:720px){.balance-pending-row>.actions{grid-column:1/-1;justify-content:flex-start}}
 </style>
 <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
@@ -451,7 +454,8 @@
       <div id="quickPaymentSummary" class="cm-kv"></div>
       <p class="cm-hint">Para un solo pago recibido hoy por el saldo completo de esta factura.</p>
       <label>Forma de pago<select class="cm-select" name="method"><option value="03">Transferencia electrónica</option><option value="01">Efectivo</option><option value="02">Cheque nominativo</option><option value="04">Tarjeta de crédito</option><option value="28">Tarjeta de débito</option><option value="29">Tarjeta de servicios</option></select></label>
-      <label>Enviar complemento a<input class="cm-input" name="email" list="quickPaymentContacts" autocomplete="off" required><datalist id="quickPaymentContacts"></datalist></label>
+      <label>Enviar complemento a<input class="cm-input" name="email" autocomplete="off" required></label>
+      <details id="quickPaymentContactPicker"><summary>Elegir contacto</summary><div id="quickPaymentContacts"></div></details>
       <label>Con copia (opcional)<input class="cm-input" name="cc" autocomplete="off"></label>
       <label><input type="checkbox" name="remember"> Recordar destinatario para futuros complementos de este cliente</label>
       <label id="quickPaymentKeyLabel" hidden>Clave privada de envío<input class="cm-input" type="password" name="send_key" autocomplete="off"></label>

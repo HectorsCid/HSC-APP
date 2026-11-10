@@ -1,7 +1,10 @@
 const assert=require('node:assert/strict');
-const {execute,today}=require('./static/quick_payment.js');
+const {execute,today,contactOptions}=require('./static/quick_payment.js');
 (async()=>{
   assert.match(today(),/^\d{4}-\d{2}-\d{2}$/);
+  assert.deepEqual(contactOptions({complementos:'rep@example.com',cuentas_pagar:'PAGOS@example.com; aux@example.com',contactos:[{nombre:'Pagos',correo:'pagos@example.com'},{nombre:'REP',correo:'REP@example.com'}]}),[
+    {email:'rep@example.com',label:'Preferido para complementos'},{email:'pagos@example.com',label:'Pagos'},{email:'aux@example.com',label:'Cuentas por pagar'}
+  ]);
   const state={invoice_id:'invoice',rfc:'RFC',amount:'120',date:'2026-11-09',folio:'42'};
   const fields={email:'pagos@example.com',cc:'conta@example.com',payment_form:'03',send_key:'test'};
   const calls=[];
