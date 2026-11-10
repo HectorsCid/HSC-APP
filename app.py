@@ -5690,6 +5690,7 @@ def _contactos_cliente_seleccionado(nombre="", rfc=""):
             return {
                 "compras": str(datos.get("correo_compras") or "").strip(),
                 "cuentas_pagar": str(datos.get("correo_cuentas_pagar") or legacy).strip(),
+                **({"complementos": str(datos["correo_complementos"])} if datos.get("correo_complementos") else {}),
                 "frecuentes": str(datos.get("correos_frecuentes") or "").strip(),
                 "contactos": _normalizar_contactos_cliente(datos),
                 "historial": historial,
@@ -5704,6 +5705,26 @@ def api_contactos_cliente_seleccionado():
     payload = request.get_json(silent=True) or {}
     correos = _contactos_cliente_seleccionado(payload.get("nombre"), payload.get("rfc"))
     return jsonify(ok=True, correos=correos), 200
+
+
+@app.post("/api/clientes/correo-complementos")
+def api_guardar_correo_complementos():
+    if not authorized_to_send('', request.cookies.get('hsc_mail_trusted', '')):
+        return jsonify(ok=False, error='Este navegador todavía no está autorizado.'), 403
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not str(payload.get('rfc') or '').strip():
+        return jsonify(ok=False, error='Falta identificar el RFC del cliente.'), 400
+    try:
+        emails = parse_recipients(payload.get('email'))
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    with _CLIENTES_DATA_LOCK:
+        _, selected = _resolver_cliente_catalogo('', payload['rfc'])
+        if selected is None:
+            return jsonify(ok=False, error='No se encontró el RFC en el catálogo de clientes.'), 404
+        selected['correo_complementos'] = ', '.join(emails)
+        guardar_clientes(clientes_predefinidos)
+    return jsonify(ok=True)
 
 
 @app.post("/api/clientes/correos-historial")

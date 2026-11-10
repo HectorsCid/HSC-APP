@@ -209,6 +209,11 @@
   }
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='billing_balance_layout.css', v='2') }}">
+<script src="/static/quick_payment.js?v=1"></script>
+<style>
+  #issuedPendingList .actions{flex-wrap:wrap;justify-content:flex-end}
+  @media(max-width:720px){.balance-pending-row>.actions{grid-column:1/-1;justify-content:flex-start}}
+</style>
 <script defer src="{{ url_for('static', filename='hsc_inputs.js') }}"></script>
   {% include "_pwa_head.html" %}
 <script defer src="{{ url_for('static', filename='notifications.js', v='3') }}"></script>
@@ -439,6 +444,23 @@
   </div>
 </div>
 
+<div class="cm-backdrop" id="quickPayment" role="dialog" aria-modal="true" aria-labelledby="quickPaymentTitle">
+  <form class="cm-card" id="quickPaymentForm">
+    <div class="cm-head"><strong class="cm-title" id="quickPaymentTitle">Pago recibido hoy</strong></div>
+    <div class="cm-body">
+      <div id="quickPaymentSummary" class="cm-kv"></div>
+      <p class="cm-hint">Para un solo pago recibido hoy por el saldo completo de esta factura.</p>
+      <label>Forma de pago<select class="cm-select" name="method"><option value="03">Transferencia electrónica</option><option value="01">Efectivo</option><option value="02">Cheque nominativo</option><option value="04">Tarjeta de crédito</option><option value="28">Tarjeta de débito</option><option value="29">Tarjeta de servicios</option></select></label>
+      <label>Enviar complemento a<input class="cm-input" name="email" list="quickPaymentContacts" autocomplete="off" required><datalist id="quickPaymentContacts"></datalist></label>
+      <label>Con copia (opcional)<input class="cm-input" name="cc" autocomplete="off"></label>
+      <label><input type="checkbox" name="remember"> Recordar destinatario para futuros complementos de este cliente</label>
+      <label id="quickPaymentKeyLabel" hidden>Clave privada de envío<input class="cm-input" type="password" name="send_key" autocomplete="off"></label>
+      <p id="quickPaymentStatus" class="cm-hint" role="status" aria-live="polite"></p>
+    </div>
+    <div class="cm-actions"><button class="cm-btn" type="button" id="quickPaymentClose">Cerrar</button><button class="cm-btn cm-btn-primary" type="submit" id="quickPaymentConfirm" disabled>Timbrar y enviar</button></div>
+  </form>
+</div>
+
 <script>
 const $ = s=>document.querySelector(s);
 for(const [id,label] of [['balanceTop','Clientes principales'],['balancePendingList','Facturas pendientes de complemento'],['issuedPendingList','Facturas emitidas pendientes de complemento']]){
@@ -544,8 +566,9 @@ function pendingFromIssued(rows){
     .sort((a,b)=>b.pending-a.pending);
 }
 function renderPendingComplements(host,rows){
-  host.innerHTML=rows.length?rows.map(row=>`<div class="balance-pending-row"><div><strong>${escAttr(row.client_name)}</strong><span class="mini-sub">Factura ${escAttr(row.folio||'sin folio')} · ${escAttr((row.date||'').slice(0,10))}</span></div><strong>${moneyMx(row.pending)}</strong><a class="btn btn-primary" href="/pagos/nuevo?invoice_id=${encodeURIComponent(row.id)}&amp;uuid=${encodeURIComponent(row.uuid||'')}">Generar complemento</a></div>`).join(''):'<div class="empty-state">No hay facturas pendientes de complemento.</div>';
+  host.innerHTML=rows.length?rows.map(row=>`<div class="balance-pending-row"><div><strong>${escAttr(row.client_name)}</strong><span class="mini-sub">Factura ${escAttr(row.folio||'sin folio')} · ${escAttr((row.date||'').slice(0,10))}</span></div><strong>${moneyMx(row.pending)}</strong><div class="actions"><a class="btn ${host.id==='issuedPendingList'?'':'btn-primary'}" href="/pagos/nuevo?invoice_id=${encodeURIComponent(row.id)}&amp;uuid=${encodeURIComponent(row.uuid||'')}">Generar complemento</a>${host.id==='issuedPendingList'&&row.customer_tax_id&&(!row.currency||String(row.currency).toUpperCase()==='MXN')?`<button type="button" class="btn btn-primary" data-quick-payment="${escAttr(row.id)}" data-rfc="${escAttr(row.customer_tax_id)}" data-client="${escAttr(row.client_name)}" data-folio="${escAttr(row.folio)}" data-amount="${escAttr(row.pending)}">Pago recibido hoy</button>`:''}</div></div>`).join(''):'<div class="empty-state">No hay facturas pendientes de complemento.</div>';
 }
+if(window.HscQuickPayment)window.HscQuickPayment.mount({refresh:()=>load(),notice:message=>{pageMsg.className='flash ok';pageMsg.textContent=message;}});
 let issuedLoadVersion=0;
 async function load(){
   const version=++issuedLoadVersion;

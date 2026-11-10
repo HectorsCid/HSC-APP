@@ -5,12 +5,14 @@ import json
 import copy
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 import requests
 
 import facturacion_bp as billing
 from payment_banks import payer_bank_rfc
+from smtp_mailer import authorized_to_send, parse_optional_recipients, parse_recipients, smtp_config
 
 
 pagos_bp = Blueprint("pagos", __name__, url_prefix="/api/pagos")
@@ -495,7 +497,56 @@ def crear_pago():
         }), 400
 
 
-def _create_multiple_payment(body):
+@pagos_bp.post('/crear-rapido')
+def quick_payment():
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify(ok=False, error='Solicitud inválida.'), 400
+    if not smtp_config()['configured']:
+        return jsonify(ok=False, error='El correo de salida no está configurado. No se timbró nada.'), 503
+    if not authorized_to_send(body.get('send_key'), request.cookies.get('hsc_mail_trusted', '')):
+        return jsonify(ok=False, stage='mail_authorization', error='La clave privada de envío no es correcta. No se timbró nada.'), 403
+    try:
+        recipients = parse_recipients(body.get('email'))
+        copies = parse_optional_recipients(body.get('cc'))
+        if len({address.casefold() for address in recipients + copies}) > 15:
+            raise ValueError('Máximo 15 destinatarios entre Para y CC.')
+        ident = str(body.get('invoice_id') or '').strip()
+        amount = _money(body.get('amount'))
+        form = str(body.get('payment_form') or '')
+        now = datetime.now(ZoneInfo('America/Mexico_City'))
+        if body.get('expected_date') != now.date().isoformat():
+            raise ValueError('Cambió el día en Ciudad de México. Cierra y vuelve a abrir el atajo para revisar la fecha.')
+        if not ident or amount <= 0 or form not in {'01','02','03','04','28','29'}:
+            raise ValueError('Revisa la factura, el importe y la forma de pago.')
+    except ValueError as exc:
+        return jsonify(ok=False, stage='validation', error=str(exc)), 400
+    store = current_app.extensions.get('operations_store')
+    if not store or not store.enabled:
+        return jsonify(ok=False, error='El atajo no está disponible. Usa el formulario normal.'), 503
+    try:
+        with store.resource_lock(f'quick-payment:{ident}'):
+            now = datetime.now(ZoneInfo('America/Mexico_City'))
+            if body.get('expected_date') != now.date().isoformat():
+                return jsonify(ok=False, stage='validation', error='Cambió el día. Vuelve a abrir el atajo.'), 400
+            p = store.placeholder
+            with store.connection() as conn:
+                conn.execute('CREATE TABLE IF NOT EXISTS quick_payment_intent (invoice_id TEXT PRIMARY KEY)')
+                intent = conn.execute(f'INSERT INTO quick_payment_intent VALUES ({p}) ON CONFLICT DO NOTHING RETURNING invoice_id',(ident,)).fetchone()
+            if not intent:
+                return jsonify(ok=False, stage='stamp_payment', error='Hay un timbrado anterior sin confirmar. Revisa Emitidas o Facturama antes de continuar por el formulario normal.'), 409
+            result, code = _create_multiple_payment(dict(documents=[dict(invoice_id=ident,amount=float(amount))],
+                payment_form=form,date=now.replace(tzinfo=None).isoformat(timespec='seconds')),
+                quick_rfc=str(body.get('rfc') or '').strip().upper())
+            if code < 500 and result.get_json().get('balance_saved', True):
+                with store.connection() as conn:
+                    conn.execute(f'DELETE FROM quick_payment_intent WHERE invoice_id={p}',(ident,))
+            return result, code
+    except requests.RequestException:
+        return jsonify(ok=False, stage='stamp_payment', error='No se confirmó el timbrado. Revisa Emitidas antes de volver a emitir.'), 502
+
+
+def _create_multiple_payment(body, *, quick_rfc=None):
     """Valida todo el lote antes de solicitar un único timbrado al PAC."""
     if billing._provider() != 'facturama':
         return jsonify(ok=False, error='Los complementos requieren Facturama.'), 503
@@ -545,6 +596,8 @@ def _create_multiple_payment(body):
                 raise ValueError('Esta factura tiene una sustitución por resolver. Consulta la cancelación del complemento anterior.')
             if summary['paid'] or summary['remaining_balance'] <= 0:
                 raise ValueError(f"La factura {normalized['folio'] or normalized['uuid']} ya está pagada.")
+            if quick_rfc is not None and (quick_rfc!=normalized['customer']['tax_id'].strip().upper() or _money(item.get('amount'))!=_money(summary['remaining_balance'])):
+                raise ValueError('Cambió el saldo o el receptor de la factura. Actualiza Emitidas antes de continuar.')
             part_body = dict(body, amount=item.get('amount'), previous_balance=summary['remaining_balance'], partiality_number=summary['payment_count'] + 1)
             part, normalized, unpaid = _build_facturama_payment(invoice, part_body)
             if cfdi is None:
@@ -579,9 +632,11 @@ def _create_multiple_payment(body):
             index[key] = dict(status='active', payments=[*billing._payment_entries(index.get(key)), entry], paid_amount=round(summary['paid_amount'] + entry['amount'], 2), remaining_balance=float(unpaid))
             applied.append(dict(invoice_id=normalized['id'], uuid=normalized['uuid'], folio=normalized['folio'], **entry))
         warnings = []
+        balance_saved = True
         try:
             billing._write_index(index)
         except Exception:
+            balance_saved = False
             warnings.append('El complemento ya se timbró, pero no se confirmó la actualización de saldos. No lo vuelvas a emitir; revisa su UUID en Facturama.')
         first = prepared[0][0]
         folder = (first['folio'] or first['uuid']) if len(prepared) == 1 else f'Complemento-{rep_uuid}'
@@ -598,6 +653,8 @@ def _create_multiple_payment(body):
             warnings.append('Complemento timbrado; Drive no confirmó el respaldo.')
         if warnings:
             response['warning'] = ' '.join(warnings)
+        if quick_rfc is not None:
+            response['balance_saved'] = balance_saved
         if replacement_id:
             response.update(replaces_id=replacement_id, replaces_uuid=sources[0]['uuid'],
                 replaces=[dict(id=source['id'],uuid=source['uuid']) for source in sources],
@@ -606,4 +663,5 @@ def _create_multiple_payment(body):
     except ValueError as exc:
         return jsonify(ok=False, stage='validation', error=str(exc)), 400
     except requests.HTTPError as exc:
-        return jsonify(ok=False, stage='facturama', error=billing._http_error_detail(exc)), 400
+        uncertain = quick_rfc is not None and (exc.response is None or exc.response.status_code >= 500)
+        return jsonify(ok=False, stage='stamp_payment' if uncertain else 'facturama', error=billing._http_error_detail(exc)), 502 if uncertain else 400
