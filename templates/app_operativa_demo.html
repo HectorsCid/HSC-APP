@@ -237,6 +237,7 @@
       <div class="reminder"><div class="reminder-icon">♢</div><div class="reminder-copy"><b>Resumen “Tareas para hoy”</b><span>Las tareas ya se guardan en la cuenta y quedan listas para conectarse al aviso matutino.</span></div></div>
       <div class="section-head"><h2 id="agendaListTitle">Para hoy</h2><span class="count">Ordenadas por hora</span></div>
       <div class="task-list" id="taskList"></div>
+      <section style="margin-top:20px" aria-labelledby="agendaCompletedTitle"><div class="section-head"><h2 id="agendaCompletedTitle">Trabajo realizado</h2></div><p class="editor-note">Según la fecha de terminación del reporte. Incluye los registros históricos disponibles.</p><div id="agendaCompleted" style="max-height:360px;overflow-y:auto"></div></section>
       <section id="agendaFaultSection" style="margin-top:24px" aria-labelledby="agendaFaultHeading">
         <div class="section-head"><h2 id="agendaFaultHeading">Fallas de todos los clientes</h2><span class="count" id="agendaFaultCount"></span></div>
         <p class="count">Incluye fallas sin programar. Las pendientes aparecen primero.</p>
@@ -1105,13 +1106,14 @@
     $('#monthTitle').textContent=localDate(calendarMonth+'-01').toLocaleDateString('es-MX',{month:'long',year:'numeric'});
     $('#monthGrid').innerHTML=['L','M','M','J','V','S','D'].map(day=>`<span class="month-weekday">${day}</span>`).join('')+monthCalendarCells(calendarMonth).map(key=>{
       if(!key)return '<span></span>';
-      const count=rows.filter(task=>task.scheduled_date===key&&task.status!=='Terminada').length;
-      return `<button type="button" class="month-day" data-month-day="${key}" aria-pressed="${key===agendaDate}" aria-label="${key}${count?`, ${count} pendientes`:''}">${Number(key.slice(-2))}<small>${count?`${count} ●`:''}</small></button>`;
+      const count=rows.filter(task=>task.scheduled_date===key&&task.status!=='Terminada').length,finished=agendaReportHistory(key).length;
+      return `<button type="button" class="month-day" data-month-day="${key}" aria-pressed="${key===agendaDate}" aria-label="${key}${count?`, ${count} pendientes`:''}${finished?`, ${finished} mantenimientos realizados`:''}">${Number(key.slice(-2))}<small>${[count?`${count} ●`:'',finished?`${finished} ✓`:''].filter(Boolean).join(' · ')}</small></button>`;
     }).join('');
     $$('[data-month-day]').forEach(button=>button.onclick=()=>{agendaDate=button.dataset.monthDay;renderMonthCalendar();renderAgenda()});
     $('#monthSelectedDate').textContent=localDate(agendaDate).toLocaleDateString('es-MX',{day:'numeric',month:'long'});
     const selected=rows.filter(task=>task.scheduled_date===agendaDate).sort((a,b)=>String(a.scheduled_time||'').localeCompare(String(b.scheduled_time||'')));
     $('#monthDayTasks').innerHTML=selected.length?selected.map(task=>`<article class="month-task"><b>${escapeHtml(task.scheduled_time||'Sin hora')} · ${escapeHtml(task.title)}</b><small>${escapeHtml(task.pending_upload?'Pendiente de envío':task.status||'Pendiente')}</small>${task.details?`<small>${escapeHtml(task.details)}</small>`:''}${account.isOwner&&task.status==='Solicitada'&&!task.pending_upload?`<button class="primary" data-confirm-visit="${escapeHtml(task.id)}">Confirmar / ajustar visita</button>`:''}</article>`).join(''):'<div class="empty">No hay pendientes para este día.</div>';
+    if(currentMode!=='partner'&&serverRole!=='client')$('#monthDayTasks').insertAdjacentHTML('beforeend','<h3>Trabajo realizado</h3>'+agendaHistoryMarkup(agendaDate));
     $$('[data-confirm-visit]').forEach(button=>button.onclick=()=>prepareVisitConfirmation(button.dataset.confirmVisit));
   }
   async function openMonthCalendar(){
@@ -1154,6 +1156,23 @@
     $('#agendaFaultList').innerHTML=rows.length?faultCards(rows,true):'<div class="empty">No hay fallas reportadas.</div>';
     bindPartnerFaults();
   }
+  function agendaReportHistory(day){
+    if(currentMode==='partner'||serverRole==='client')return [];
+    const unique=new Map();
+    for(const report of matrixReports){
+      if(!report.completed||report.pending_upload||normalizeReportDate(report.end||report.start)!==day)continue;
+      const key=report.matrix_id||report.id||`${report.client_id}:${report.equipment_id}:${report.round}`;
+      if(!unique.has(key))unique.set(key,report);
+    }
+    return [...unique.values()];
+  }
+  function agendaHistoryMarkup(day){
+    const groups=new Map();
+    for(const report of agendaReportHistory(day)){
+      const key=report.client_id||'';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(report);
+    }
+    return [...groups].map(([client,rows])=>`<details class="month-task"><summary><b>${rows.length} mantenimiento${rows.length===1?'':'s'} · ${escapeHtml(clientName(client)||client||'Sin cliente')}</b></summary>${rows.map(report=>{const equipmentRow=equipment.find(row=>row[0]===report.equipment_id);return `<small>${escapeHtml(report.equipment_id)}${equipmentRow?' — '+escapeHtml(equipmentRow[1]):''} · R${escapeHtml(report.round||'')}</small>`}).join('')}</details>`).join('')||'<div class="empty">No hay mantenimientos terminados registrados para esta fecha.</div>';
+  }
   function renderAgenda(){
     if(typeof journeyUi!=='undefined'&&journeyUi)journeyUi.render();
     const chosen=localDate(agendaDate),start=new Date(chosen);start.setDate(chosen.getDate()-3);
@@ -1161,7 +1180,9 @@
     $$('[data-agenda-date]').forEach(button=>button.onclick=()=>{agendaDate=button.dataset.agendaDate;renderAgenda()});
     const rows=matrixTasks.filter(task=>task.scheduled_date===agendaDate).sort((a,b)=>String(a.scheduled_time||'').localeCompare(String(b.scheduled_time||'')));
     $('#agendaDateTitle').textContent=chosen.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'});
-    $('#agendaDateSummary').textContent=rows.length?`${rows.length} actividad${rows.length===1?'':'es'} programada${rows.length===1?'':'s'}`:'Sin actividades programadas';
+    const completed=agendaReportHistory(agendaDate).length;
+    $('#agendaDateSummary').textContent=[rows.length?`${rows.length} actividad${rows.length===1?'':'es'} programada${rows.length===1?'':'s'}`:'Sin actividades programadas',completed?`${completed} mantenimiento${completed===1?'':'s'} realizado${completed===1?'':'s'}`:''].filter(Boolean).join(' · ');
+    $('#agendaCompleted').innerHTML=agendaHistoryMarkup(agendaDate);
     $('#agendaListTitle').textContent=agendaDate===dateKey(new Date())?'Para hoy':'Actividades';
     $('#taskList').innerHTML=rows.length?rows.map(task=>{const client=clientName(task.client_id),equipmentRow=equipment.find(row=>row[0]===task.equipment_id),done=task.status==='Terminada';return `<button type="button" class="task-card" data-task-id="${escapeHtml(task.id)}"><span class="task-time">${escapeHtml(task.scheduled_time||'--:--')}<small>${done?'Terminada':'Programada'}</small></span><span><span class="task-title">${escapeHtml(task.title)}</span><span class="task-sub">${escapeHtml(client||'Sin cliente')}${equipmentRow?` · ${escapeHtml(equipmentRow[1])}`:''}</span></span><span class="priority ${done?'done':String(task.priority).toLowerCase()==='alta'?'high':''}"></span></button>`}).join(''):'<div class="empty">No hay pendientes para esta fecha. Usa ＋ para agregar uno.</div>';
     $$('[data-task-id]').forEach(button=>button.onclick=()=>openTaskDetail(button.dataset.taskId));

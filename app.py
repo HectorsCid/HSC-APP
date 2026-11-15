@@ -4879,9 +4879,10 @@ def api_operaciones_finalize_report():
         try:
             from notification_delivery import enqueue
             from urllib.parse import urlencode
-            enqueue('Reporte terminado', f"{report.get('equipment_id','Equipo')} · R{report.get('round','')}",
-                    '/hsc-partner/?'+urlencode({'client':report.get('client_id',''),'open':'reports'}),
-                    f"partner-report:{report['id']}",category='reportes',audience='client',client_id=report.get('client_id') or '')
+            enqueue('Mantenimiento terminado',
+                    f"{session.get('hsc_user_name') or 'Técnico'} · {report.get('client_id','')} · {report.get('equipment_id','Equipo')} · R{report.get('round','')}",
+                    '/hsc-tecnico/?'+urlencode({'client':report.get('client_id',''),'equipment':report.get('equipment_id','')}),
+                    f"admin-report:{report['id']}",category='reportes',audience='admin',user_id='owner')
         except Exception:
             current_app.logger.exception('No se pudo notificar el reporte %s',report['id'])
         payload = report.get("payload") or {}
