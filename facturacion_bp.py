@@ -2520,6 +2520,13 @@ def api_complete_invoice_schedule(schedule_id):
     schedule = next((row for row in schedules if str(row.get("id")) == str(schedule_id)), None)
     if not schedule:
         return jsonify({"ok": False, "error": "La programación ya no existe."}), 404
+    if body.get('manual') is True:
+        if schedule.get('last_status') not in {'awaiting_confirmation', 'reminded'} or str(body.get('expected_run_key') or '') != str(schedule.get('last_run_key') or ''):
+            return jsonify(ok=False, error='El pendiente cambió. Actualiza la lista antes de marcarlo.'), 409
+        schedule['last_status'] = 'completed_manual'
+        schedule['last_error'] = ''
+        schedule['confirmed_at'] = _local_now().isoformat(timespec='seconds')
+        return jsonify(ok=True, drive_backup=_write_invoice_schedules(schedules)), 200
     schedule["last_status"] = "completed"
     schedule["last_error"] = ""
     schedule["last_invoice_id"] = str(body.get("invoice_id") or "")
