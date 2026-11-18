@@ -400,6 +400,8 @@
     async function loadFiscalCatalogs(rfc='', preferred={}){
       const normalizedRfc = String(rfc || '').trim().toUpperCase();
       const requestNumber = ++fiscalCatalogRequest;
+      // Refrescar catálogos o editar el RFC no debe reiniciar PPD/PUE.
+      const paymentChoice={forma:document.getElementById('forma').value,metodo:document.getElementById('metodo').value};
       try{
         const suffix = normalizedRfc ? `?rfc=${encodeURIComponent(normalizedRfc)}` : '';
         const response = await fetch('/api/catalogos/fiscales' + suffix, {headers:{'Accept':'application/json'}});
@@ -407,8 +409,8 @@
         if(!response.ok || !data.ok || requestNumber !== fiscalCatalogRequest) return false;
         replaceCatalog('regimen', data.regimes, preferred.regimen, '');
         replaceCatalog('uso', data.cfdi_uses, preferred.uso, 'G03');
-        replaceCatalog('forma', data.payment_forms, preferred.forma, '03');
-        replaceCatalog('metodo', data.payment_methods, preferred.metodo, 'PUE');
+        replaceCatalog('forma', data.payment_forms, preferred.forma ?? paymentChoice.forma, '03');
+        replaceCatalog('metodo', data.payment_methods, preferred.metodo ?? paymentChoice.metodo, 'PUE');
         syncForma();
         return true;
       }catch(_){
@@ -435,6 +437,7 @@
 
       const sel = document.getElementById('cliente');
       window.registerInvoiceClient=(name,record)=>{byName[name]={...(byName[name]||{}),...record};if(![...sel.options].some(o=>o.value===name))sel.add(new Option(name,name));sel.value=name;};
+      window.invoiceClientPaymentDefaults=name=>{const c=byName[name]||{};return {forma:c.forma_pago_default||'03',metodo:c.metodo_pago_default||'PUE'};};
       if (sel && sel.options.length <= 1) {
         const nombres = Object.keys(byName).sort((a,b)=>a.localeCompare(b,'es'));
         for (const nombre of nombres) {
@@ -517,15 +520,16 @@
     async function persistClientFiscalData(){
       const cliente = document.getElementById('cliente')?.value || '';
       if(!cliente) return {ok:true, skipped:true};
+      const paymentDefaults=document.getElementById('rememberPayment').checked?{
+        forma_pago_default:document.getElementById('forma').value,
+        metodo_pago_default:document.getElementById('metodo').value
+      }:{};
       try{
         const response = await fetch('/api/clientes/fiscales', {
           method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'},
           body:JSON.stringify({
             cliente,
-            ...(document.getElementById('rememberPayment').checked ? {
-              forma_pago_default:document.getElementById('forma').value,
-              metodo_pago_default:document.getElementById('metodo').value
-            } : {}),
+            ...paymentDefaults,
             rfc:document.getElementById('rfc').value,
             razon_social:document.getElementById('razon').value,
             cp:document.getElementById('cp').value,
@@ -537,6 +541,11 @@
           })
         });
         const data = await response.json();
+        if(response.ok&&data.ok&&window.registerInvoiceClient&&Object.keys(paymentDefaults).length){
+          const selected=document.getElementById('cliente').value;
+          window.registerInvoiceClient(data.cliente||cliente,paymentDefaults);
+          document.getElementById('cliente').value=selected;
+        }
         return response.ok ? data : {ok:false, error:data.error || 'No se pudieron guardar los datos del cliente.'};
       }catch(error){ return {ok:false, error:error.message}; }
     }
@@ -947,7 +956,8 @@
         document.getElementById('email').value = rec.email || rec.correo_facturacion || '';
         await loadFiscalCatalogs(rec.rfc || '', {
           regimen: String(rec.regimen_fiscal || ''),
-          uso: rec.uso_cfdi || 'G03'
+          uso: rec.uso_cfdi || 'G03',
+          ...(window.invoiceClientPaymentDefaults?window.invoiceClientPaymentDefaults(pageClientName):{})
         });
         updateFiscalStatus();
 

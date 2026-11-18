@@ -49,6 +49,19 @@ class QuoteEmailTests(unittest.TestCase):
         })
         self.assertTrue(response.get_json()["trusted"])
 
+    def test_payment_defaults_saved_and_loaded_on_new_invoice(self):
+        with patch.object(cotizador, 'guardar_clientes') as save:
+            for method, form in [('PPD', '99'), ('PUE', '03')]:
+                response = self.client.post('/api/clientes/fiscales', json={
+                    'cliente':'Bticino', 'rfc':'BTI010101AAA',
+                    'metodo_pago_default':method, 'forma_pago_default':form,
+                })
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(cotizador.clientes_predefinidos['Bticino']['metodo_pago_default'], method)
+                page = self.client.get('/facturas/nueva').get_data(as_text=True)
+                self.assertIn(f'"metodo_pago_default": "{method}"', page)
+            self.assertEqual(save.call_count, 2)
+
     def test_schedule_snapshots_pdf_without_sending(self):
         from datetime import datetime, timedelta
         from scheduled_email import Queue, ZONE
