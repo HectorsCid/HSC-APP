@@ -22,7 +22,7 @@ assert.equal(offline.overlay(base,actions,false).equipment[0].pending_upload,fal
 const source=html.slice(html.indexOf('  async function hscFetch('),html.indexOf('  function cacheServerPayload('));
 (async()=>{
  let mode='ok';
- const ctx=vm.createContext({AbortController,setTimeout,clearTimeout,serverConnection:'checking',fetch:async(url,{signal})=>{
+ const ctx=vm.createContext({HscOperationsResponse:require('./static/operations_response.js'),AbortController,setTimeout,clearTimeout,serverConnection:'checking',fetch:async(url,{signal})=>{
    if(mode==='timeout')return new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(Object.assign(Error(),{name:'AbortError'}))));
    const status=mode==='auth'?401:mode==='server'?503:200;
    return {status,ok:status===200,redirected:false,text:async()=>JSON.stringify({ok:status===200})};

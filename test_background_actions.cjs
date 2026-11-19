@@ -23,6 +23,13 @@ const find=name=>html.split(/\r?\n/).find(line=>line.trim().startsWith(`async fu
   jobs=[{id:'old',url:'/api/operaciones/expenses',body:{id:'old'},receipt:true,error:'Selecciona una fotografía del comprobante.',files:[receiptPhoto]},{id:'independent',url:'/api/operaciones/expenses',body:{id:'E3'}}];
   await ctx.drainFieldActions();assert.equal(jobs.length,1);assert.equal(jobs[0].receiptBlocked,true);assert.equal(posts.at(-1),'E3');
   let saved={},left=false,allowStorage=false;
+  jobs=[{id:'photo',url:'/api/operaciones/equipment',body:{items:[{id:'UDA47'}]},entityPhoto:'equipment',files:[receiptPhoto]},{id:'after-photo',url:'/api/operaciones/expenses',body:{id:'E4'}}];
+  posts=[];let entitySaves=0;ctx.operationsPost=async(url,body)=>{if(url.endsWith('/equipment')){entitySaves++;return {ok:true};}posts.push(body.id);return {expense:{id:body.id}};};
+  ctx.hscFetch=async()=>({ok:false,status:400,json:async()=>({error:'Selecciona una foto JPG, PNG o WebP.'})});
+  await ctx.drainFieldActions();assert.equal(entitySaves,1);assert.equal(jobs.length,1);assert.equal(jobs[0].photoBlocked,true);assert.deepEqual(posts,['E4']);
+  await ctx.drainFieldActions(true);assert.equal(entitySaves,1);
+  jobs[0].photoBlocked=false;jobs[0].photoRetryAfter=0;
+  ctx.hscFetch=async()=>({ok:true,json:async()=>({ok:true})});await ctx.drainFieldActions();assert.equal(jobs.length,0);assert.equal(entitySaves,1,'Reparar una foto no vuelve a guardar el equipo');
   Object.assign(ctx,{account:{id:'T'},reportDrafts:()=>({}),releaseEvidenceMemory(){},persistEvidence:async()=>allowStorage,rememberObservationValues:()=>{},rememberPendingReportUpload:u=>saved[u.key]=u,pendingReportUploads:()=>saved,leaveFinishedReport:()=>left=true});
   vm.runInContext(find('queueReportOnDevice'),ctx);
   await assert.rejects(ctx.queueReportOnDevice({key:'r1',photos:[{}]}));assert.equal(left,false);assert.deepEqual(saved,{});

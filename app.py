@@ -2,6 +2,8 @@
 from flask import Flask, render_template, request, redirect, url_for, make_response, flash, send_file, send_from_directory, abort, jsonify, current_app, session
 
 app = Flask(__name__)
+from request_diagnostics import install as install_request_diagnostics
+install_request_diagnostics(app)
 from report_measurements import COMPONENT_OPTIONS
 from billing_catalog import CatalogPreparing
 app.jinja_env.globals['report_component_options'] = COMPONENT_OPTIONS
