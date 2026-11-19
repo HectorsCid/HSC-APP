@@ -2,6 +2,7 @@
   'use strict';
   const isReceipt=action=>Boolean(action.receipt&&action.url==='/api/operaciones/expenses');
   const isEntityPhoto=action=>['equipment','client'].includes(action.entityPhoto);
+  const entityKeys=action=>action.entityPhoto==='equipment'?(action.body?.items||[]).map(row=>'equipment:'+row.id):action.entityPhoto==='client'?['client:'+action.body.id]:[];
   const needsPhotoRepair=action=>isEntityPhoto(action)&&Boolean(action.photoBlocked);
   const legacyFailure=action=>isReceipt(action)&&/selecciona una fotograf[ií]a del comprobante/i.test(action.error||'');
   async function prepare(entry){
@@ -34,5 +35,5 @@
     button.onclick=()=>{render();modal.classList.add('open');};modal.querySelector('[data-close-receipts]').onclick=()=>modal.classList.remove('open');
     return {refresh(value){rows=value;const signature=JSON.stringify(candidates().map(row=>[row.id,row.error,row.receiptBlocked,row.body?.concept]));if(signature!==lastSignature){lastSignature=signature;render();}}};
   }
-  const api={isReceipt,isEntityPhoto,needsPhotoRepair,legacyFailure,prepare,form,mount};if(typeof module!=='undefined')module.exports=api;else root.HscReceiptQueue=api;
+  const api={isReceipt,isEntityPhoto,entityKeys,needsPhotoRepair,legacyFailure,prepare,form,mount};if(typeof module!=='undefined')module.exports=api;else root.HscReceiptQueue=api;
 })(typeof window!=='undefined'?window:globalThis);

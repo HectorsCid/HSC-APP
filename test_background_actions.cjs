@@ -23,6 +23,14 @@ const find=name=>html.split(/\r?\n/).find(line=>line.trim().startsWith(`async fu
   jobs=[{id:'old',url:'/api/operaciones/expenses',body:{id:'old'},receipt:true,error:'Selecciona una fotografía del comprobante.',files:[receiptPhoto]},{id:'independent',url:'/api/operaciones/expenses',body:{id:'E3'}}];
   await ctx.drainFieldActions();assert.equal(jobs.length,1);assert.equal(jobs[0].receiptBlocked,true);assert.equal(posts.at(-1),'E3');
   let saved={},left=false,allowStorage=false;
+  jobs=['old','new'].map((id,i)=>({id,createdAt:i,url:'/api/operaciones/equipment',body:{items:[{id:'same'}]},entityPhoto:'equipment',files:[receiptPhoto]}));
+  let failed=true,photoSends=0;
+  ctx.operationsPost=async()=>({ok:true});
+  ctx.hscFetch=async()=>{photoSends++;return {ok:!failed,status:failed?400:200,json:async()=>({ok:!failed,error:'Foto rechazada'})};};
+  await ctx.drainFieldActions();assert.equal(photoSends,1);assert.equal(jobs.length,2);
+  await ctx.drainFieldActions(true);assert.equal(photoSends,1,'La foto nueva espera a la antigua del mismo equipo');
+  jobs[0].photoBlocked=false;jobs[0].photoRetryAfter=0;failed=false;
+  await ctx.drainFieldActions();assert.equal(photoSends,3);assert.equal(jobs.length,0);
   jobs=[{id:'photo',url:'/api/operaciones/equipment',body:{items:[{id:'UDA47'}]},entityPhoto:'equipment',files:[receiptPhoto]},{id:'after-photo',url:'/api/operaciones/expenses',body:{id:'E4'}}];
   posts=[];let entitySaves=0;ctx.operationsPost=async(url,body)=>{if(url.endsWith('/equipment')){entitySaves++;return {ok:true};}posts.push(body.id);return {expense:{id:body.id}};};
   ctx.hscFetch=async()=>({ok:false,status:400,json:async()=>({error:'Selecciona una foto JPG, PNG o WebP.'})});

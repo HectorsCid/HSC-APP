@@ -2034,6 +2034,9 @@ class OperationsStore(SheetDeliveryMixin):
                     (matrix_key, labels['a1_component'], labels['a2_component']),
                 )
             result = self.get_report_detail(final_report_id, connection=conn)
+            self._queue_notice_event(conn, {'kind':'report_completed',
+                'actor_id':_text(payload.get('_draft_user_id')), 'after':{
+                    'id':final_report_id,'client_id':row[1],'equipment_id':row[2],'round':row[3]}}, stamp)
             if submission is not None:
                 result["submission_id"] = _text(submission["submission_id"])
                 conn.execute(

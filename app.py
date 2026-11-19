@@ -4878,15 +4878,13 @@ def api_operaciones_finalize_report():
         if not report:
             draft = OPERACIONES_STORE.save_report_draft(body)
             report = OPERACIONES_STORE.finalize_report(draft["id"], submission=body)
+        # The notice was committed with the report. Its Drive backup/push is
+        # delivered by the existing persistent outbox worker, not this request.
         try:
-            from notification_delivery import enqueue
-            from urllib.parse import urlencode
-            enqueue('Mantenimiento terminado',
-                    f"{session.get('hsc_user_name') or 'Técnico'} · {report.get('client_id','')} · {report.get('equipment_id','Equipo')} · R{report.get('round','')}",
-                    '/hsc-tecnico/?'+urlencode({'client':report.get('client_id',''),'equipment':report.get('equipment_id','')}),
-                    f"admin-report:{report['id']}",category='reportes',audience='admin',user_id='owner')
+            from notification_delivery import wake_delivery
+            wake_delivery()
         except Exception:
-            current_app.logger.exception('No se pudo notificar el reporte %s',report['id'])
+            current_app.logger.exception('El aviso quedó en cola; no se pudo despertar su entrega')
         payload = report.get("payload") or {}
         fault = None
         if payload.get("falla_grave") and str(payload.get("falla_descripcion") or "").strip():
