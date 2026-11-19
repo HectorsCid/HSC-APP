@@ -144,7 +144,14 @@ _CFDI_CANCELLATION_STORE_LOCK = Lock()
 # ----------------------------------------------------------------------
 # Índice local de REP
 # ----------------------------------------------------------------------
+from payment_index_store import read as read_payment_index, write as write_payment_index, serialized as payment_serialized, endpoint as payment_endpoint, store as payment_store
+
+
 def _read_index():
+    return read_payment_index(lambda:_read_index_legacy(strict=True)) if payment_store() else _read_index_legacy()
+
+
+def _read_index_legacy(strict=False):
     if INDEX.exists():
         try:
             local = json.loads(INDEX.read_text("utf-8"))
@@ -158,11 +165,19 @@ def _read_index():
             INDEX.write_text(json.dumps(remote, ensure_ascii=False, indent=2), encoding="utf-8")
             return remote
     except Exception:
-        pass
+        if strict:
+            raise
     return {}
 
 def _write_index(d):
-    INDEX.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+    durable=write_payment_index(d)
+    try:
+        temporary=INDEX.with_suffix('.tmp')
+        temporary.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding='utf-8')
+        temporary.replace(INDEX)
+    except OSError:
+        if not durable:
+            raise
     try:
         backup_payments_index(d)
     except Exception as exc:
@@ -523,6 +538,7 @@ def _recover_replacement_relation(relation, invoice_uuid, prior):
     return prior
 
 
+@payment_serialized
 def _sync_facturama_payment_rows(rows):
     """Incorpora REP importados en Facturama al índice que alimenta saldos y balance."""
     payment_rows = []
@@ -623,6 +639,7 @@ def _rep_cancellation_state(rep_id):
         return next((m for m in matches if not m['is_latest']), matches[0])
     return {"tracked": False, "is_latest": True, "later_count": 0}
 
+@payment_serialized
 def _remove_rep_by_id(rep_id: str):
     """Elimina del índice el REP cuyo id coincide, para re-habilitar complemento."""
     idx = _read_index()
@@ -2971,6 +2988,7 @@ def api_email_status():
     }), 200
 
 @facturacion_bp.post("/invoices/<inv_id>/cancel")
+@payment_endpoint
 def api_invoice_cancel(inv_id):
     b = request.get_json(force=True) if request.data else {}
     motive = (b.get("motive") or b.get("reason") or "02").strip()

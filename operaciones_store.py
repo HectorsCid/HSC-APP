@@ -160,7 +160,8 @@ class OperationsStore(SheetDeliveryMixin):
                 import psycopg
             except ImportError as exc:  # pragma: no cover - sólo ocurre al desplegar mal
                 raise RuntimeError("Falta instalar psycopg para conectar PostgreSQL.") from exc
-            conn = psycopg.connect(self.database_url)
+            conn = psycopg.connect(self.database_url, connect_timeout=10,
+                options='-c statement_timeout=30000 -c lock_timeout=5000')
         else:
             self.local_path.parent.mkdir(parents=True, exist_ok=True)
             conn = sqlite3.connect(self.local_path, timeout=15)
@@ -1062,6 +1063,17 @@ class OperationsStore(SheetDeliveryMixin):
 
     def save_equipment_photo(self, equipment_id, photo_ref):
         return self.save_entity_photo("equipment", equipment_id, photo_ref)
+
+    def photo_entity(self, kind, ident):
+        """Fetch only the entity needed by a photo upload, never the full history."""
+        self.initialize()
+        table={'equipment':'operations_equipment','client':'operations_clients'}.get(kind)
+        if not table:
+            raise ValueError('Tipo de fotografía inválido.')
+        fields='id,client_id' if kind=='equipment' else 'id,id'
+        with self.connection() as conn:
+            row=conn.execute(f'SELECT {fields} FROM {table} WHERE id={self.placeholder}',(_text(ident),)).fetchone()
+        return {'id':row[0],'client_id':row[1]} if row else None
 
     def save_entity_photo(self, kind, equipment_id, photo_ref):
         self.initialize()

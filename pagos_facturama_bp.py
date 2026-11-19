@@ -413,6 +413,7 @@ def info(invoice_id):
 
 
 @pagos_bp.post("/crear")
+@billing.payment_endpoint
 def crear_pago():
     body = request.get_json(silent=True) or {}
     if (body.get('replacement_id') or body.get('replacement_ids')) and 'documents' not in body:
@@ -498,6 +499,7 @@ def crear_pago():
 
 
 @pagos_bp.post('/crear-rapido')
+@billing.payment_endpoint
 def quick_payment():
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
@@ -546,6 +548,7 @@ def quick_payment():
         return jsonify(ok=False, stage='stamp_payment', error='No se confirmó el timbrado. Revisa Emitidas antes de volver a emitir.'), 502
 
 
+@billing.payment_endpoint
 def _create_multiple_payment(body, *, quick_rfc=None):
     """Valida todo el lote antes de solicitar un único timbrado al PAC."""
     if billing._provider() != 'facturama':

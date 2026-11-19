@@ -4727,7 +4727,7 @@ def api_operaciones_equipment_photo_save(equipment_id, kind="equipment"):
         return denied
     if not OPERACIONES_STORE.enabled:
         return jsonify(ok=False, error="Base operativa no disponible."), 503
-    equipment = next((row for row in OPERACIONES_STORE.snapshot()["clients" if kind == "client" else "equipment"] if row["id"] == equipment_id), None)
+    equipment = OPERACIONES_STORE.photo_entity(kind, equipment_id)
     if not equipment:
         abort(404)
     try:
