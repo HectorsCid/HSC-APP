@@ -16,6 +16,7 @@
   {% with pwa_manifest_url=operations_manifest_url, pwa_name=operations_app_name %}{% include '_pwa_head.html' %}{% endwith %}
   <link rel="stylesheet" href="/static/sync_recovery.css?v=1">
   <style>
+    .sync-compact-hidden,#syncNoticeStrip[hidden]{display:none!important}
     body:not(.operations-ready) main,body:not(.operations-ready) .bottom-nav{display:none!important}
     body:not(.operations-ready) .heading{visibility:hidden}
     body:not(.operations-ready)::after{content:'Cargando tu cuenta… Si no hay conexión, vuelve a intentar actualizar.';display:block;padding:32px;text-align:center}
@@ -1395,6 +1396,23 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
       await fieldActionStorage('delete',action);toast(`${action.label}: confirmado`);
     }catch(error){action.error=error.message||'No se pudo confirmar. Se conserva para reintentar.';if(HscReceiptQueue.isFault(action)&&action.faultSavedResult){entityKeys.forEach(key=>pendingEntities.add(key));action.faultPhotoBlocked=Boolean(error.receiptRepair||[400,403,404,409,413,415,422].includes(error.status));action.faultPhotoRetryAfter=Date.now()+60000;await fieldActionStorage('save',action);continue;}if(action.entityPhoto&&action.entitySavedResult){entityKeys.forEach(key=>pendingEntities.add(key));action.photoBlocked=Boolean(error.receiptRepair||[400,403,404,409,413,415,422].includes(error.status));action.photoRetryAfter=Date.now()+60000;await fieldActionStorage('save',action);continue;}if(HscReceiptQueue.isReceipt(action)&&action.receiptSavedExpense){action.error='Gasto guardado; comprobante pendiente: '+action.error;action.receiptBlocked=Boolean(error.receiptRepair||[400,403,404,409,413,415,422].includes(error.status));action.receiptRetryAfter=Date.now()+60000;await fieldActionStorage('save',action);continue;}if(action.url==='/api/operaciones/worklists'&&[400,403,409].includes(error.status)){action.blocked=true;blockedLists.add(action.body.id);await fieldActionStorage('save',action);continue;}if(group)action.actionRetryAfter=Date.now()+60000;await fieldActionStorage('save',action);if(group&&[400,403,404,409,413,415,422].includes(error.status)){isolated.add(group);continue;}break;}}await repaintPendingState();loadMatrixData().catch(()=>{});}catch(error){toast(error.message||'No se pudo recuperar la cola pendiente.');}finally{fieldActionsBusy=false;await updateFieldActionStatus();updateOfflineSyncUi()}}
   const connectionBanner=document.createElement('div');connectionBanner.id='syncConnectionBanner';connectionBanner.className='appearance-panel';connectionBanner.innerHTML='<span></span> <button type="button" class="mini-btn">Enviar ahora</button>';document.querySelector('.view').parentElement.prepend(connectionBanner);connectionBanner.querySelector('button').onclick=handlePendingAction;
+  // Presentation only: never acknowledge, delete or pause an operation from this control.
+  const noticeStrip=document.createElement('div');noticeStrip.id='syncNoticeStrip';noticeStrip.hidden=true;noticeStrip.className='scope';noticeStrip.style.margin='12px';
+  noticeStrip.innerHTML='<span></span> <button type="button" class="mini-btn" aria-controls="fieldActionBanner syncConnectionBanner">Seguir trabajando</button>';
+  fieldActionBanner.id='fieldActionBanner';fieldActionBanner.before(noticeStrip);connectionBanner.hidden=true;
+  const noticeKey='hsc-compact-notices:'+account.id+':'+appKind;
+  let noticesCompact=false;try{noticesCompact=sessionStorage.getItem(noticeKey)==='1';}catch(_){}
+  function renderSyncDisclosure(){
+    noticeStrip.hidden=fieldActionBanner.hidden&&connectionBanner.hidden;
+    fieldActionBanner.classList.toggle('sync-compact-hidden',noticesCompact);connectionBanner.classList.toggle('sync-compact-hidden',noticesCompact);
+    const info=pendingSyncSummary(),fieldCount=fieldActionBanner.hidden?0:parseInt(fieldActionBanner.querySelector('[data-action-status]').textContent,10)||0;
+    const count=info.total-info.actions+Math.max(info.actions,fieldCount);
+    noticeStrip.querySelector('span').textContent=noticesCompact?(count?count+(count===1?' pendiente':' pendientes'):'Estado de conexión'):'';
+    const toggle=noticeStrip.querySelector('button');toggle.textContent=noticesCompact?'Ver':'Seguir trabajando';toggle.setAttribute('aria-expanded',String(!noticesCompact));
+  }
+  noticeStrip.querySelector('button').onclick=()=>{noticesCompact=!noticesCompact;try{sessionStorage.setItem(noticeKey,noticesCompact?'1':'0');}catch(_){}renderSyncDisclosure();};
+  const noticeChanges=new MutationObserver(renderSyncDisclosure);
+  for(const banner of [fieldActionBanner,connectionBanner])noticeChanges.observe(banner,{attributes:true,attributeFilter:['hidden'],childList:true,subtree:true,characterData:true});
   window.addEventListener('online',()=>drainFieldActions());setInterval(()=>{if(!document.hidden){if(!['report','equipmentEditor','clientEditor'].includes(current))loadMatrixData();drainFieldActions();if(typeof resumePendingReportUploads==='function')resumePendingReportUploads();updateOfflineSyncUi();}},30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(!['report','equipmentEditor','clientEditor'].includes(current))loadMatrixData();drainFieldActions();resumePendingReportUploads()}});setTimeout(()=>{updateFieldActionStatus();drainFieldActions()},1500);
   $('#resolveFault').onclick=async()=>{
     const fault=matrixFaults.find(item=>item.id===selectedFault);if(!fault)return;
