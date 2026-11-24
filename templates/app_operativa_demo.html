@@ -750,7 +750,7 @@
   function savePersonalClientOrder(from,to){const ids=HscClientGrid.ordered(clients,account.id).map(c=>c[1]);if(HscClientGrid.save(account.id,HscClientGrid.move(ids,from,to))){renderClients();}else toast('No se pudo guardar el orden en este dispositivo.');}
   function openClient(id){selectedClient=id;selectClientRound(id);equipmentFilter='all';$$('#equipmentFilters [data-filter]').forEach(b=>b.classList.toggle('active',b.dataset.filter==='all'));refreshRound();showView('client');journeyUi?.render();}
   function renderClientDetail(){const meta=clientMeta[selectedClient],hero=$('[data-view="client"] .hero');hero.querySelector('h2').textContent=clientName(selectedClient);hero.querySelector('p').textContent=`${selectedClient} · ${meta.policy?'Póliza activa':'Sin póliza · sólo catálogo'}`;hero.querySelector('.hero-logo').innerHTML=photoMarkup(meta.photo,selectedClient.slice(0,2));hydratePhotos(hero,1);hero.querySelector('.address span:last-child').textContent=meta.address||'Dirección por completar';views.client[1]=clientName(selectedClient);if(current==='client')$('#screenTitle').textContent=clientName(selectedClient);}
-  function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<button class="equipment-card" data-equipment="${escapeHtml(e[0])}"><span class="equipment-photo">${photoMarkup(meta.photo,'❄')}</span><span class="card-copy"><span class="card-title">${escapeHtml(e[1])}</span><span class="card-sub">${escapeHtml(e[0])} · ${escapeHtml(e[2])}${meta.photoAvailable?' · Foto registrada':''}${meta.active?'':' · Inactivo'}${meta.pendingUpload?' · Cambios pendientes de enviar':''}${reportForEquipment(e[0])?.pending_upload?' · Reporte guardado en este dispositivo':''}</span></span><span class="status-dot ${!meta.active?'off':e[3]?'done':''}" title="${!meta.active?'Inactivo':e[3]?'Realizado':'Pendiente'}"></span><span class="chevron">›</span></button>`}
+function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equipment-card" data-equipment-row="${escapeHtml(e[0])}">${meta.photo?`<button type="button" class="equipment-photo" data-enlarge-equipment="${escapeHtml(e[0])}" aria-label="Ampliar foto de ${escapeHtml(e[1])}" style="cursor:zoom-in;border:0;padding:0">${photoMarkup(meta.photo,'❄')}</button>`:'<span class="equipment-photo">❄</span>'}<button type="button" data-equipment="${escapeHtml(e[0])}" style="display:flex;align-items:center;gap:14px;align-self:stretch;flex:1;min-width:0;background:none;color:inherit;border:0;text-align:left;padding:0"><span class="card-copy"><span class="card-title">${escapeHtml(e[1])}</span><span class="card-sub">${escapeHtml(e[0])} · ${escapeHtml(e[2])}${meta.photoAvailable?' · Foto registrada':''}${meta.active?'':' · Inactivo'}${meta.pendingUpload?' · Cambios pendientes de enviar':''}${reportForEquipment(e[0])?.pending_upload?' · Reporte guardado en este dispositivo':''}</span></span><span class="status-dot ${!meta.active?'off':e[3]?'done':''}" title="${!meta.active?'Inactivo':e[3]?'Realizado':'Pendiente'}"></span><span class="chevron">›</span></button></div>`}
   function reportCards(rows){return rows.slice().sort(byEquipmentId).map(e=>{const report=reportForEquipment(e[0]);return `<button type="button" class="equipment-card" data-round-report="${escapeHtml(e[0])}"><span class="report-icon">▤</span><span class="card-copy"><span class="card-title">${escapeHtml(e[1])}</span><span class="card-sub">${escapeHtml(e[0])} · ${escapeHtml(report?.end||report?.start||demoRounds[selectedRound].date)}${report?.photo_count?` · ${report.photo_count} fotos`:''}</span></span><span class="chevron">›</span></button>`}).join('')||'<div class="empty">Todavía no hay reportes en esta ronda.</div>';}
   function renderEquipment(){
     renderClientDetail();
@@ -780,8 +780,8 @@
     const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es-MX').trim();
     const query=normalize($('#technicianEquipmentSearch').value),terms=query.split(/\s+/).filter(Boolean);
     const rows=new Map(equipment.map(row=>[row[0],row]));let visible=0,total=0;
-    $$('#equipmentList [data-equipment]').forEach(button=>{
-      const id=button.dataset.equipment,row=rows.get(id)||[],meta=equipmentMeta[id]||{};
+    $$('#equipmentList [data-equipment-row]').forEach(button=>{
+      const id=button.dataset.equipmentRow,row=rows.get(id)||[],meta=equipmentMeta[id]||{};
       const text=normalize([id,row[1],row[2],meta.model,meta.serial,meta.location,meta.department,meta.type].join(' '));
       const matches=terms.every(term=>text.includes(term));button.hidden=!matches;total++;if(matches)visible++;
     });
@@ -789,6 +789,18 @@
     $('#technicianEquipmentNoMatches').hidden=!query||visible>0;
   }
   $('#technicianEquipmentSearch').oninput=$('#technicianEquipmentSearch').onsearch=()=>{filterTechnicianEquipment();$('#equipmentList').scrollTop=0;};
+  $('#equipmentList').addEventListener('click',event=>{
+    const trigger=event.target.closest('[data-enlarge-equipment]');if(!trigger)return;
+    const id=trigger.dataset.enlargeEquipment,src=equipmentMeta[id]?.photo;if(!src)return;
+    const name=equipment.find(row=>row[0]===id)?.[1]||id;
+    const dialog=document.createElement('dialog');dialog.setAttribute('aria-label','Foto de '+name);
+    dialog.style.cssText='width:min(94vw,960px);max-height:92dvh;padding:16px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:16px';
+    const close=document.createElement('button');close.className='secondary';close.textContent='Cerrar';close.onclick=()=>dialog.close();
+    const title=document.createElement('p');title.textContent=id+' · '+name;
+    const image=document.createElement('img');image.alt='Foto de '+name;image.style.cssText='width:100%;max-height:70dvh;object-fit:contain';
+    image.onerror=()=>{image.hidden=true;title.textContent+=' · No se pudo cargar la foto.';};image.src=src;
+    dialog.append(close,title,image);document.body.append(dialog);dialog.addEventListener('close',()=>{dialog.remove();if(trigger.isConnected)trigger.focus({preventScroll:true});},{once:true});dialog.showModal();
+  });
   function renderEquipmentDetail(){
     const e=equipment.find(row=>row[0]===selectedEquipment);if(!e)return;
     const done=demoRounds[selectedRound].done.includes(e[0]);
@@ -824,9 +836,23 @@
   function renderReportEvidence(items,reportedCount=0){
     const evidence=(items||[]).filter(item=>item.url);
     $('#reportEvidenceCount').textContent=`${reportedCount||evidence.length} fotografía(s)`;
-    $('#reportEvidencePreview').innerHTML=evidence.length?evidence.map(item=>`<figure class="evidence-thumb"><img src="${escapeHtml(item.url)}" alt="Foto ${Number(item.position)||''}" loading="lazy"><figcaption>Foto ${Number(item.position)||''}</figcaption></figure>`).join(''):'<div class="empty">Este reporte no tiene fotografías disponibles.</div>';
+    const preview=$('#reportEvidencePreview');preview.replaceChildren();
+    if(!evidence.length){preview.textContent=reportedCount?'Hay fotos registradas, pero no se recibieron sus enlaces.':'Este reporte no tiene fotografías disponibles.';return;}
+    for(const item of evidence){
+      const figure=document.createElement('figure'),caption=document.createElement('figcaption'),retry=document.createElement('button');
+      const label='Foto '+item.position;figure.className='evidence-thumb';retry.type='button';retry.className='secondary';retry.textContent='Reintentar foto';
+      figure.append(caption,retry);preview.append(figure);
+      function load(){
+        retry.hidden=true;caption.textContent=label+' · Cargando…';
+        const img=document.createElement('img');img.alt=label;figure.prepend(img);
+        const failed=()=>{clearTimeout(timer);img.onload=img.onerror=null;img.removeAttribute('src');img.remove();caption.textContent=label+' · No se pudo cargar';retry.hidden=false;};
+        const timer=setTimeout(failed,20000);
+        img.onerror=failed;img.onload=()=>{clearTimeout(timer);caption.textContent=label;};img.src=item.url;
+      }
+      retry.onclick=load;load();
+    }
   }
-  let reportViewEditEquipment='',explicitReportEdit=false;
+  let reportViewEditEquipment='',explicitReportEdit=false,reportDetailSequence=0;
   function bindRoundReports(){
     $$('[data-round-report]').forEach(button=>button.onclick=async()=>{
       const e=equipment.find(row=>row[0]===button.dataset.roundReport),report=reportForEquipment(e[0]),view=$('[data-view="reportView"]');
@@ -839,7 +865,20 @@
       applyReportMeasurements(set,report?.payload||{});
       $('#reportEvidenceCount').textContent=report?'Cargando…':'0 fotografías';$('#reportEvidencePreview').innerHTML='<div class="empty">Cargando evidencias…</div>';
       views.reportView[1]=report?.id||`${e[0]}_R${selectedRound}`;showView('reportView');
-      if(report?.id){try{const response=await fetch(`/api/operaciones/reports/${encodeURIComponent(report.id)}`,{headers:{Accept:'application/json'}}),payload=await response.json();if(!response.ok||!payload.ok)throw Error();applyReportMeasurements(set,payload.report.payload);renderReportEvidence(payload.report.evidence,payload.report.photo_count)}catch(_){applyReportMeasurements(set,{});renderReportEvidence([],report.photo_count)}}
+      const sequence=++reportDetailSequence,preview=$('#reportEvidencePreview');
+      if(!report?.id||report.pending_upload){$('#reportEvidenceCount').textContent='Sin confirmar';preview.textContent=report?.pending_upload?'Reporte pendiente de envío. Las evidencias aún no están confirmadas.':'No hay un reporte confirmado para consultar.';return;}
+      async function loadDetail(){
+        preview.textContent='Cargando evidencias…';
+        try{
+          const response=await hscFetch(`/api/operaciones/reports/${encodeURIComponent(report.id)}`,{headers:{Accept:'application/json'}},20000),payload=await response.json();
+          if(sequence!==reportDetailSequence)return;
+          if(!response.ok||!payload.ok||!Array.isArray(payload.report?.evidence))throw Error();
+          applyReportMeasurements(set,{...report.payload,...payload.report.payload});renderReportEvidence(payload.report.evidence,payload.report.photo_count);
+          if(!payload.report.photo_count||payload.report.evidence.some(item=>item.url))return;
+        }catch(_){if(sequence!==reportDetailSequence)return;$('#reportEvidenceCount').textContent=report.photo_count?report.photo_count+' foto(s) registradas':'Sin confirmar';preview.textContent='No se pudo cargar el reporte. ';}
+        const retry=document.createElement('button');retry.type='button';retry.className='secondary';retry.textContent='Reintentar reporte';retry.onclick=loadDetail;preview.append(retry);
+      }
+      await loadDetail();
     });
   }
   $('#editCompletedReport').onclick=async()=>{if(!reportViewEditEquipment)return;selectedEquipment=reportViewEditEquipment;selectedClient=equipmentMeta[selectedEquipment].client;explicitReportEdit=true;try{await $('#newReport').onclick()}finally{explicitReportEdit=false}};
