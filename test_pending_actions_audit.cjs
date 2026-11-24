@@ -7,3 +7,14 @@ assert.equal(result.actions[1].recordConfirmed,true);assert.equal(result.actions
 for(const secret of ['Private name','Private concept','send_key','password','hidden'])assert(!serialized.includes(secret));
 assert.equal(input[0].id,'x');assert.equal(input[0].files[0].size,5);
 console.log('OK: diagnóstico de solo lectura, ordenado, sin contenido de fotos ni cuerpos privados.');
+const audit=require('./static/pending_actions_audit.js');
+const ancient={id:'F1',url:'/api/operaciones/faults',createdAt:Date.parse('2026-11-11T20:45:20.141Z'),body:{id:'F1'},files:[new Blob(['photo'])],faultSavedResult:{fault:{id:'F1'}},faultPhotoBlocked:true};
+assert.equal(audit.ageDays(ancient,Date.parse('2026-11-24T20:45:20.141Z')),13);
+assert.equal(audit.ageDays({},Date.now()),null);assert.equal(audit.ageDays({createdAt:Date.now()+86400000}),0);
+assert(audit.localDate(ancient).includes('14:45'),'date in Mexico City, not host timezone');
+assert(audit.localDate(ancient).includes('2026'));
+assert(audit.discardWarning(ancient).includes('definitivamente'));
+assert(audit.discardWarning(ancient).includes('No se borrará ni se revertirá'));
+assert.equal(audit.report([ancient]).actions[0].recordConfirmed,true);
+assert.equal(audit.report([ancient]).actions[0].state,'Requiere revisión');
+assert.equal(audit.report([{url:'/api/operaciones/clients/HDI/round'}]).actions[0].type,'Selección de ronda');
