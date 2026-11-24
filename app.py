@@ -4798,7 +4798,7 @@ def api_operaciones_report_detail(report_id):
             ).hexdigest()[:10]
             evidence["url"] = url_for(
                 "api_operaciones_report_evidence", report_id=report['id'],
-                position=evidence["position"], v=media_version,
+                position=evidence["position"], v=media_version, preview="960",
             )
             evidence.pop("storage_ref", None)
             evidence.pop("drive_ref", None)
@@ -5335,7 +5335,7 @@ def _serve_operations_thumbnail(kind, record_id, photo_ref):
                 original_response.direct_passthrough = False
                 original_bytes = original_response.get_data()
                 thumbnail, _, width, height = prepare_photo(
-                    original_bytes, target_size=(360, 360), thumbnail=True, wait_timeout=0
+                    original_bytes, target_size=(960, 960) if kind == "report-preview-960" else (360, 360), thumbnail=True, wait_timeout=0
                 )
                 # No guardar la imagen transparente de respaldo cuando Drive falló.
                 if width > 1 and height > 1 and OPERACIONES_STORE.enabled:
@@ -5346,6 +5346,8 @@ def _serve_operations_thumbnail(kind, record_id, photo_ref):
                     except Exception as exc:
                         current_app.logger.warning("No se pudo guardar miniatura %s/%s: %s", kind, record_id, exc)
                 usable_thumbnail = width > 1 and height > 1
+                if not usable_thumbnail:
+                    raise ValueError("Drive no entregó una imagen utilizable.")
                 response = send_file(io.BytesIO(thumbnail), mimetype="image/webp")
                 response.headers["X-HSC-Thumbnail"] = "generated"
         except Exception as exc:
@@ -5406,7 +5408,8 @@ def api_operaciones_report_evidence(report_id, position):
         abort(404)
     if _operations_role() == "client" and evidence.get("client_id") != str(session.get("hsc_client_id") or "").strip():
         abort(404)
-    return _serve_operations_thumbnail("evidence", f"{report_id}:{position}", evidence["photo_ref"])
+    kind = "report-preview-960" if request.args.get("preview") == "960" else "evidence"
+    return _serve_operations_thumbnail(kind, f"{report_id}:{position}", evidence["photo_ref"])
 
 # --- Healthcheck muy ligero para Render ---
 @app.route("/healthz")

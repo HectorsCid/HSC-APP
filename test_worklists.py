@@ -21,6 +21,23 @@ class WorklistTests(unittest.TestCase):
     def save(self, body=None, actor='T1', admin=False):
         return self.store.save_worklist(body or self.body, actor_id=actor, is_admin=admin)
 
+    def test_restore_two_companies_and_replay_after_lost_confirmation(self):
+        import sqlite3
+        self.save()
+        other={**self.body,'id':'LIST-B','mutation_id':'OTHER','client_id':'B','assigned_user_id':'T2',
+               'items':[{'id':'ITEM-B','equipment_id':'B1','round':'1'}]}
+        self.save(other,actor='T2')
+        path=Path(self.tmp.name)/'restored.sqlite'
+        dest=sqlite3.connect(path)
+        try:
+            with self.store.connection() as conn:conn.backup(dest)
+        finally:dest.close()
+        restored=OperationsStore(local_path=path)
+        self.assertEqual(restored.save_worklist(self.body,actor_id='T1')['revision'],1)
+        self.assertEqual({(r['id'],r['client_id']) for r in restored.snapshot()['worklists']},{('LIST','A'),('LIST-B','B')})
+        with self.assertRaises(PermissionError):
+            restored.save_worklist({**other,'mutation_id':'CROSS','expected_revision':1},actor_id='T1')
+
     def test_retry_order_date_close_and_delete_do_not_touch_reports(self):
         first=self.save();self.assertEqual(first['revision'],1)
         self.assertEqual(self.save()['revision'],1)

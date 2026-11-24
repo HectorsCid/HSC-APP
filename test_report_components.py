@@ -80,5 +80,20 @@ class ReportComponentTests(unittest.TestCase):
         self.assertIn('no-store',response.headers['Cache-Control'])
         download.assert_not_called()
 
+    def test_report_preview_separate_from_small_cache_and_reused(self):
+        import io
+        from PIL import Image
+        source=io.BytesIO()
+        Image.new('RGB',(1400,840)).save(source,format='JPEG')
+        self.store.save_cached_thumbnail('evidence','R:1','ref',b'old','image/webp',360,216)
+        with hsc.app.test_request_context('/'),patch.object(hsc,'OPERACIONES_STORE',self.store),patch.object(hsc,'serve_drive_image_ref_fast',return_value=source.getvalue()) as download:
+            for marker in ('generated','cache'):
+                response=hsc._serve_operations_thumbnail('report-preview-960','R:1','ref')
+                self.assertEqual(response.headers['X-HSC-Thumbnail'],marker)
+                response.direct_passthrough=False
+                with Image.open(io.BytesIO(response.get_data())) as preview:
+                    self.assertEqual(preview.size,(960,576))
+            download.assert_called_once()
+
 
 if __name__=='__main__':unittest.main()

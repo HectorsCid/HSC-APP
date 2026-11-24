@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 from flask import Blueprint, current_app, jsonify, request
 import requests
+from payment_stamp_guard import stamp, StampReview
 
 import facturacion_bp as billing
 from payment_banks import payer_bank_rfc
@@ -443,7 +444,8 @@ def crear_pago():
         body["previous_balance"] = summary["remaining_balance"]
         body["partiality_number"] = summary["payment_count"] + 1
         cfdi, normalized, unpaid = _build_facturama_payment(invoice, body)
-        result = billing._fm_request("POST", "/3/cfdis", json_body=cfdi, timeout=75)
+        result, confirm_stamp = stamp([normalized['uuid']], lambda: billing._fm_request("POST", "/3/cfdis", json_body=cfdi, timeout=75),
+            confirmed_reps=lambda key:{entry.get('rep_id') for entry in billing._stored_payment_entries(billing._payment_record(index,key))})
         rep_id = str(_pick(result, "Id") or "")
         rep_uuid = _facturama_uuid(result)
         if not rep_id or not billing._valid_cfdi_uuid(rep_uuid):
@@ -465,6 +467,7 @@ def crear_pago():
             "remaining_balance": float(unpaid),
         }
         billing._write_index(index)
+        confirm_stamp()
         billing.notices.publish("Pago y complemento registrados",
                                 f"Factura {normalized['folio'] or normalized['uuid']}: pago de ${payment_entry['amount']:,.2f}; saldo ${float(unpaid):,.2f}.",
                                 category="pagos", key=f"payment-{rep_uuid}", url="/facturacion")
@@ -486,6 +489,8 @@ def crear_pago():
                 "El complemento se timbró correctamente, pero Drive no confirmó el respaldo."
             )
         return jsonify(response), 200
+    except StampReview as exc:
+        return jsonify(ok=False, stage='stamp_review', error=str(exc)), 409
     except ValueError as exc:
         message = str(exc)
         lowered = message.lower()
@@ -616,7 +621,8 @@ def _create_multiple_payment(body, *, quick_rfc=None):
             if seen_uuids != {str(uuid).lower() for uuid,_ in originals}:
                 raise ValueError('La sustitución debe conservar las mismas facturas. Para cambiar la relación de facturas, revisa el caso antes de timbrar.')
             cfdi['Relations'] = {'Type':'04', 'Cfdis':[{'Uuid':source['uuid']} for source in sources]}
-        result = billing._fm_request('POST', '/3/cfdis', json_body=cfdi, timeout=75)
+        result, confirm_stamp = stamp(seen_uuids, lambda: billing._fm_request('POST', '/3/cfdis', json_body=cfdi, timeout=75),
+            confirmed_reps=lambda key:{entry.get('rep_id') for entry in billing._stored_payment_entries(billing._payment_record(index,key))})
         rep_id, rep_uuid = str(_pick(result, 'Id') or ''), _facturama_uuid(result)
         if not rep_id or not billing._valid_cfdi_uuid(rep_uuid):
             return jsonify(ok=False, stage='stamp_payment', error='Facturama no confirmó el complemento. Revisa el listado antes de reintentar.'), 502
@@ -638,6 +644,7 @@ def _create_multiple_payment(body, *, quick_rfc=None):
         balance_saved = True
         try:
             billing._write_index(index)
+            confirm_stamp()
         except Exception:
             balance_saved = False
             warnings.append('El complemento ya se timbró, pero no se confirmó la actualización de saldos. No lo vuelvas a emitir; revisa su UUID en Facturama.')
@@ -663,6 +670,8 @@ def _create_multiple_payment(body, *, quick_rfc=None):
                 replaces=[dict(id=source['id'],uuid=source['uuid']) for source in sources],
                 next_action='Solicita cancelar cada REP anterior con motivo 01 y el UUID del nuevo. El pago no se contará dos veces.')
         return jsonify(response), 200
+    except StampReview as exc:
+        return jsonify(ok=False, stage='stamp_review', error=str(exc)), 409
     except ValueError as exc:
         return jsonify(ok=False, stage='validation', error=str(exc)), 400
     except requests.HTTPError as exc:

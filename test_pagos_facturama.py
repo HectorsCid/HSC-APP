@@ -1,4 +1,7 @@
 import os
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from operaciones_store import OperationsStore
 import unittest
 from unittest.mock import patch
 
@@ -14,6 +17,10 @@ class FacturamaPaymentTests(unittest.TestCase):
 
     def setUp(self):
         self.app = Flask(__name__)
+        folder=TemporaryDirectory();self.addCleanup(folder.cleanup)
+        self.app.extensions['operations_store']=OperationsStore(local_path=Path(folder.name)/'test.sqlite')
+        from payment_index_store import read
+        with self.app.app_context():read(lambda:{})
         self.app.register_blueprint(payments.pagos_bp)
         self.client = self.app.test_client()
         self.env = patch.dict(os.environ, {

@@ -29,6 +29,9 @@ const html=fs.readFileSync('templates/app_operativa_demo.html','utf8');
   assert.equal(rows.length,0);assert.equal(posted.filter(url=>url.endsWith('/faults')).length,1,'do not repeat confirmed fault save');
   assert.deepEqual(uploads.map(url=>url.split('/').at(-1)),['1','2','3'],'resume at failed photo, not photo 1');
   assert(posted.some(url=>url.endsWith('/resolve')));
+  rows=[{id:'invalid',createdAt:1,url:'/api/operaciones/tasks',body:{id:'T1'}},{id:'dependent',createdAt:2,url:'/api/operaciones/tasks/T1/complete',body:{}},{id:'independent',createdAt:3,url:'/api/operaciones/expenses',body:{id:'G1'}}];
+  ctx.operationsPost=async url=>{if(url.endsWith('/tasks'))throw Object.assign(Error('Revisar actividad'),{status:400});return {ok:true};};
+  await ctx.drainFieldActions();assert.deepEqual(rows.map(x=>x.id),['invalid','dependent']);
   assert(html.includes('faultPhotoRetryAfter=Date.now()+60000'));
   // HTTP rejection keeps all the photos and checkpoints the confirmed base record.
   const action={url:'/api/operaciones/faults',body:{id:'F2'},files:[photo()]};

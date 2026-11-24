@@ -1,5 +1,8 @@
 """Regresiones locales: ningún timbrado, cancelación ni archivo de producción."""
 import copy
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from operaciones_store import OperationsStore
 import unittest
 from test_facturama import FacturamaIntegrationTests
 from unittest.mock import patch
@@ -15,6 +18,8 @@ class ReplacementTests(unittest.TestCase):
 
     def setUp(self):
         self.app = Flask(__name__)
+        folder=TemporaryDirectory();self.addCleanup(folder.cleanup)
+        self.app.extensions['operations_store']=OperationsStore(local_path=Path(folder.name)/'test.sqlite')
         self.app.config['TESTING'] = True
         self.app.register_blueprint(billing.facturacion_bp)
         self.app.register_blueprint(payments.pagos_bp)

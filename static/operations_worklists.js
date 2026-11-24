@@ -171,7 +171,7 @@
       }catch(error){api.toast(error.message);}finally{opener.disabled=false;}
     };
     $('#worklistRestoreServer').onclick=async()=>{if(!confirm('¿Descartar los cambios pendientes de esta lista en este dispositivo y recuperar la versión confirmada? Los reportes y otras listas se conservan.'))return;try{await api.discardProposal(selected);render()}catch(error){api.toast(error.message)}};
-    return {render};
+    return {render,review(id){choose(id);if(row()?.sync_error)$('#worklistCompare').click();}};
   }
   const api={mount,progress,editorDefaults};if(typeof module!=='undefined')module.exports=api;else root.HscWorklists=api;
 })(typeof window!=='undefined'?window:globalThis);
