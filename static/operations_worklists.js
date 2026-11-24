@@ -132,6 +132,44 @@
     $('#worklistClose').onclick=async()=>{const list=row();if(!list)return;if(list.status==='active'&&progress(list,api.state().reports).some(i=>!i.done)&&!confirm('Quedan equipos sin reporte. ¿Cerrar sólo esta lista? No modifica equipos ni reportes.'))return;await save({...list,status:list.status==='active'?'completed':'active'});render()};
     $('#worklistDelete').onclick=async()=>{const list=row();if(list&&confirm('¿Eliminar esta lista? Los equipos y sus reportes se conservan.'))if(await save({...list,status:'deleted'})){api.show('worklists');render()}};
     $('#backToWorklists').onclick=()=>api.show('worklists');
+    $('#worklistCompare').onclick=async()=>{
+      const opener=$('#worklistCompare');opener.disabled=true;
+      try{
+        const {server,action,count}=await api.compareProposal(selected),local=action.body;
+        const dialog=document.createElement('dialog');dialog.style.cssText='width:min(94vw,640px);max-height:88dvh;overflow:auto;padding:18px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:16px';
+        dialog.setAttribute('aria-label','Comparar lista de trabajo');
+        const add=(tag,text)=>{const el=document.createElement(tag);el.textContent=text;dialog.append(el);return el;};
+        add('h2','Comparar: '+server.title);
+        add('p','Propuesta del '+new Date(action.createdAt).toLocaleString('es-MX')+'. Se revisa sólo este cambio. Otros pendientes de esta lista: '+(count-1)+'.');
+        const choice=(label,a,b)=>{
+          const wrapper=add('label',label+' '),select=document.createElement('select');wrapper.style.display='block';wrapper.style.margin='12px 0';
+          select.add(new Option('Servidor: '+a,'server'));select.add(new Option('Teléfono: '+b,'local'));wrapper.append(select);return ()=>select.value==='local';
+        };
+        const fields=[['title','Nombre'],['status','Estado'],['client_id','Cliente'],['assigned_user_id','Responsable'],['target_date','Fecha'],['shared_user_ids','Compartida con']];
+        const picks={};for(const [k,label] of fields){const fmt=v=>Array.isArray(v)?v.join(', ')||'Nadie':String(v??'');const a=fmt(server[k]??(k==='shared_user_ids'?[]:'')),b=fmt(local[k]??(k==='shared_user_ids'?[]:''));if(a!==b)picks[k]=choice(label,a,b);}
+        const ids=l=>l.items.map(i=>i.equipment_id),aIds=ids(server),bIds=ids(local);
+        const name=id=>id+' · '+equipmentName(id);
+        add('p','Orden del servidor: '+aIds.join(' → '));add('p','Orden del teléfono: '+bIds.join(' → '));
+        const localOrder=aIds.join('|')!==bIds.join('|')?choice('Orden (los equipos adicionales quedan al final)','Orden del servidor','Orden del teléfono'):()=>false;
+        const items=new Map();for(const id of new Set([...aIds,...bIds])){
+          const a=server.items.find(i=>i.equipment_id===id),b=local.items.find(i=>i.equipment_id===id);
+          if(a&&b&&String(a.round)===String(b.round)){items.set(id,()=>a);continue;}
+          const pick=choice(name(id),a?'Ronda '+a.round:'No incluir',b?'Ronda '+b.round:'No incluir');items.set(id,()=>pick()?b:a);
+        }
+        add('p','Se conserva la opción del servidor salvo donde elijas la del teléfono. Cerrar no modifica nada.');
+        const status=add('p','');status.setAttribute('role','status');
+        const close=add('button','Cerrar');close.className='secondary';close.onclick=()=>dialog.close();
+        const save=add('button','Guardar selección');save.className='primary';save.onclick=async()=>{
+          const body={...server,expected_revision:server.revision,mutation_id:uid()};for(const [k,pick] of Object.entries(picks))if(pick())body[k]=local[k]??(k==='shared_user_ids'?[]:'');
+          const order=localOrder()?[...bIds,...aIds]:[...aIds,...bIds];body.items=[...new Set(order)].map(id=>items.get(id)()).filter(Boolean);
+          if(!body.items.length){status.textContent='Elige al menos un equipo.';return;}
+          if(body.status==='deleted'&&!confirm('¿Confirmas eliminar esta lista?'))return;
+          save.disabled=true;close.disabled=true;status.textContent='Guardando…';
+          try{await api.resolveProposal(action,body);dialog.close();render();api.toast('Selección confirmada. Se resolvió esta propuesta.');}catch(e){status.textContent=e.message+' Si la lista cambió, cierra y vuelve a comparar.';}finally{save.disabled=false;close.disabled=false;}
+        };
+        dialog.oncancel=event=>{if(save.disabled)event.preventDefault();};dialog.onclose=()=>dialog.remove();document.body.append(dialog);dialog.showModal();
+      }catch(error){api.toast(error.message);}finally{opener.disabled=false;}
+    };
     $('#worklistRestoreServer').onclick=async()=>{if(!confirm('¿Descartar los cambios pendientes de esta lista en este dispositivo y recuperar la versión confirmada? Los reportes y otras listas se conservan.'))return;try{await api.discardProposal(selected);render()}catch(error){api.toast(error.message)}};
     return {render};
   }
