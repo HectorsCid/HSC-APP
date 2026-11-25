@@ -1396,6 +1396,62 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
       await fieldActionStorage('delete',action);toast(`${action.label}: confirmado`);
     }catch(error){action.error=error.message||'No se pudo confirmar. Se conserva para reintentar.';if(HscReceiptQueue.isFault(action)&&action.faultSavedResult){entityKeys.forEach(key=>pendingEntities.add(key));action.faultPhotoBlocked=Boolean(error.receiptRepair||[400,403,404,409,413,415,422].includes(error.status));action.faultPhotoRetryAfter=Date.now()+60000;await fieldActionStorage('save',action);continue;}if(action.entityPhoto&&action.entitySavedResult){entityKeys.forEach(key=>pendingEntities.add(key));action.photoBlocked=Boolean(error.receiptRepair||[400,403,404,409,413,415,422].includes(error.status));action.photoRetryAfter=Date.now()+60000;await fieldActionStorage('save',action);continue;}if(HscReceiptQueue.isReceipt(action)&&action.receiptSavedExpense){action.error='Gasto guardado; comprobante pendiente: '+action.error;action.receiptBlocked=Boolean(error.receiptRepair||[400,403,404,409,413,415,422].includes(error.status));action.receiptRetryAfter=Date.now()+60000;await fieldActionStorage('save',action);continue;}if(action.url==='/api/operaciones/worklists'&&[400,403,409].includes(error.status)){action.blocked=true;blockedLists.add(action.body.id);await fieldActionStorage('save',action);continue;}if(group)action.actionRetryAfter=Date.now()+60000;await fieldActionStorage('save',action);if(group&&[400,403,404,409,413,415,422].includes(error.status)){isolated.add(group);continue;}break;}}await repaintPendingState();loadMatrixData().catch(()=>{});}catch(error){toast(error.message||'No se pudo recuperar la cola pendiente.');}finally{fieldActionsBusy=false;await updateFieldActionStatus();updateOfflineSyncUi()}}
   const connectionBanner=document.createElement('div');connectionBanner.id='syncConnectionBanner';connectionBanner.className='appearance-panel';connectionBanner.innerHTML='<span></span> <button type="button" class="mini-btn">Enviar ahora</button>';document.querySelector('.view').parentElement.prepend(connectionBanner);connectionBanner.querySelector('button').onclick=handlePendingAction;
+  const reportDetails=document.createElement('button');reportDetails.type='button';reportDetails.className='mini-btn';reportDetails.hidden=true;reportDetails.textContent='Detalle de reportes';connectionBanner.append(reportDetails);
+  reportDetails.onclick=()=>{
+    const dialog=document.createElement('dialog');dialog.setAttribute('aria-label','Reportes por enviar');dialog.style.cssText='width:min(94vw,600px);max-height:85dvh;overflow:auto;background:var(--surface);color:var(--text);padding:16px;border-radius:16px';
+    const add=(parent,tag,text)=>{const el=document.createElement(tag);el.textContent=text;parent.append(el);return el;};
+    function render(){
+      dialog.replaceChildren();add(dialog,'h2','Reportes por enviar');
+      const close=add(dialog,'button','Cerrar');close.className='secondary';close.onclick=()=>dialog.close();
+      const rows=Object.values(pendingReportUploads());
+      if(!rows.length)add(dialog,'p','Ya no quedan reportes en la cola de envío.');
+      for(const r of rows){
+        const card=add(dialog,'article','');card.className='form-section';add(card,'h3',[r.client,r.equipment,'R'+r.round].join(' · '));
+        add(card,'p','Inicio del reporte: '+(r.data?.inicio||'Sin fecha registrada')+' · Fotos esperadas: '+(r.photoCount??'sin dato'));
+        add(card,'small','Envío: '+r.submissionId);
+        add(card,'p',r.error||(r.blocked?'Necesita revisión; no hay un motivo registrado.':backgroundReportUploads.has(r.key)?'Enviando…':'En espera; no hay un error registrado.'));
+        const note=add(card,'p','');note.setAttribute('role','status');
+        const check=add(card,'button','Consultar servidor');check.className='secondary';
+        check.onclick=async()=>{if(!r.id){note.textContent='Sin identificador remoto: no se puede confirmar este envío.';return;}check.disabled=true;try{
+          const response=await hscFetch('/api/operaciones/reports/'+encodeURIComponent(r.id),{headers:{Accept:'application/json'},cache:'no-store'},15000),payload=await response.json();
+          note.textContent=response.ok&&payload.ok&&payload.report?.state==='completed'&&HscReportCollaboration.confirmed(r,payload.report)?'El servidor confirma este envío.':'No se pudo confirmar este envío exacto. Esto no demuestra que se haya perdido.';
+        }catch(_){note.textContent='No se pudo consultar el servidor. El pendiente se conserva.';}finally{check.disabled=false;}};
+        const edit=add(card,'button','Abrir y corregir');edit.className='primary';
+        edit.onclick=async()=>{
+          edit.disabled=true;note.textContent='Preparando el reporte…';
+          const open=async()=>{
+            const saved=pendingReportUploads()[r.key];
+            if(!saved||saved.submissionId!==r.submissionId){render();return;}
+            if(backgroundReportUploads.has(r.key)){note.textContent='Este envío está en curso. Espera a que termine.';return;}
+            if(!r.round||equipmentMeta[r.equipment]?.client!==r.client||!clientMeta[r.client]?.policy||reportKey(r.equipment,r.round)!==r.key){note.textContent='No se pudo identificar el equipo y la ronda en esta cuenta. El envío se conserva.';return;}
+            if(current==='report'){note.textContent='Vuelve primero a Clientes para no interrumpir el reporte abierto.';return;}
+            selectedClient=r.client;selectedEquipment=r.equipment;selectedRound=String(r.round);refreshRound();
+            if(!await $('#newReport').onclick(null,saved)){note.textContent='No se pudo abrir el reporte para corregirlo. El envío se conserva.';return;}
+            if(current!=='report'||activeReportContext?.key!==r.key){note.textContent='El reporte ya no está abierto. El envío se conserva.';return;}
+            forgetPendingReportUpload(r.key,r.submissionId);dialog.close();
+            const conflicts=$('#reportConflicts'),photos=/foto|photo|evidence|imagen/i.test([saved.code,saved.error].join(' '));
+            if(!conflicts.hidden)conflicts.scrollIntoView({block:'center'});
+            else if(photos){const section=$('#reportEvidenceSection');section.open=true;section.scrollIntoView({block:'start'});}
+            toast('Revisa el reporte y pulsa Finalizar para enviarlo.');
+          };
+          try{if(navigator.locks)await navigator.locks.request('hsc-report-sync-'+account.id,{ifAvailable:true},lock=>lock?open():(note.textContent='Hay un envío en curso. Intenta cuando termine.'));
+            else if(reportQueueDraining)note.textContent='Hay un envío en curso. Intenta cuando termine.';
+            else{reportQueueDraining=true;try{await open();}finally{reportQueueDraining=false;}}
+          }catch(error){note.textContent=error.message||'No se pudo abrir el reporte.';}finally{edit.disabled=false;}
+        };
+        const discard=add(card,'button','Descartar este envío');discard.className='danger';
+        discard.onclick=async()=>{discard.disabled=true;try{
+          const run=()=>{const current=Object.values(pendingReportUploads()).find(x=>x.submissionId===r.submissionId&&x.key===r.key);
+            if(!current){render();return;}
+            if(backgroundReportUploads.has(r.key)||reportQueueDraining){note.textContent='Se está sincronizando. Espera un momento y vuelve a intentar.';return;}
+            if(!confirm('¿Descartar sólo el envío de '+r.equipment+' · R'+r.round+'? Dejará de enviarse. Si no fue confirmado, sus cambios podrían no llegar al servidor. No se eliminan fotos, borradores ni otros reportes.'))return;
+            forgetPendingReportUpload(r.key,r.submissionId);fieldRevision++;render();repaintPendingState().catch(()=>{});};
+          if(navigator.locks)await navigator.locks.request('hsc-report-sync-'+account.id,{ifAvailable:true},lock=>lock?run():(note.textContent='Envío en curso. Intenta cuando termine.'));else run();
+        }catch(error){note.textContent=error.message;}finally{discard.disabled=false;}};
+      }
+    }
+    render();document.body.append(dialog);dialog.onclose=()=>dialog.remove();dialog.showModal();
+  };
   // Presentation only: never acknowledge, delete or pause an operation from this control.
   const noticeStrip=document.createElement('div');noticeStrip.id='syncNoticeStrip';noticeStrip.hidden=true;noticeStrip.className='scope';noticeStrip.style.margin='12px';
   noticeStrip.innerHTML='<span></span> <button type="button" class="mini-btn" aria-controls="fieldActionBanner syncConnectionBanner">Seguir trabajando</button>';
@@ -1406,6 +1462,7 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
     noticeStrip.hidden=fieldActionBanner.hidden&&connectionBanner.hidden;
     fieldActionBanner.classList.toggle('sync-compact-hidden',noticesCompact);connectionBanner.classList.toggle('sync-compact-hidden',noticesCompact);
     const info=pendingSyncSummary(),fieldCount=fieldActionBanner.hidden?0:parseInt(fieldActionBanner.querySelector('[data-action-status]').textContent,10)||0;
+    if(reportDetails.hidden!==!info.reports)reportDetails.hidden=!info.reports;
     const count=info.total-info.actions+Math.max(info.actions,fieldCount);
     noticeStrip.querySelector('span').textContent=noticesCompact?(count?count+(count===1?' pendiente':' pendientes'):'Estado de conexión'):'';
     const toggle=noticeStrip.querySelector('button');toggle.textContent=noticesCompact?'Ver':'Seguir trabajando';toggle.setAttribute('aria-expanded',String(!noticesCompact));
@@ -1587,14 +1644,15 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
   }
   $('#singleWorkReport').onclick=()=>openStandaloneReport('trabajo');
   $('#openOccasionalReport').onclick=()=>$('#standaloneReportModal').classList.add('open');$('#closeStandaloneReport').onclick=()=>$('#standaloneReportModal').classList.remove('open');$$('[data-standalone-type]').forEach(button=>button.onclick=()=>{$('#standaloneReportModal').classList.remove('open');openStandaloneReport(button.dataset.standaloneType,'',false)});
-  $('#newReport').onclick=async()=>{
+  $('#newReport').onclick=async(_event,repair=null)=>{
     const e=equipment.find(row=>row[0]===selectedEquipment),form=$('#reportForm');if(!e)return false;
     const key=reportKey(e[0],selectedRound),pending=pendingReportUploads()[key];
     if(pending){
-      if(backgroundReportUploads.has(key)||!pending.blocked){toast('Este reporte tiene un envío pendiente; conservamos sus fotos');resumePendingReportUploads();return false}
+      if(backgroundReportUploads.has(key)||(!pending.blocked&&!repair)){toast('Este reporte tiene un envío pendiente; conservamos sus fotos');resumePendingReportUploads();return false}
+      if(repair&&(repair.key!==key||repair.submissionId!==pending.submissionId))return false;
       const savedContext={...pending,draftId:pending.code==='report_completed'?'':pending.id,editReportId:pending.remoteReportId||pending.editReportId||'',localBaseline:pending.baseValues||{},revision:pending.baseRevision,conflicts:pending.conflicts||[]};
-      try{persistReportContext(savedContext,pending.data);forgetPendingReportUpload(key,pending.submissionId)}catch(error){toast('No se pudo preparar la revisión; conservamos el envío pendiente.');return false}
-      matrixReports=matrixReports.filter(item=>item.id!==`offline:${key}`);await loadMatrixData();
+      try{if(persistReportContext(savedContext,pending.data)===null)return false;if(!repair)forgetPendingReportUpload(key,pending.submissionId)}catch(error){toast('No se pudo preparar la revisión; conservamos el envío pendiente.');return false}
+      matrixReports=matrixReports.filter(item=>item.id!==`offline:${key}`);if(!repair)await loadMatrixData();
     }
     form.reset();
     if(!clientMeta[equipmentMeta[e[0]].client].policy){openStandaloneReport('refrigeracion',e[0]);return false;}
@@ -1614,7 +1672,7 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
     ensureReportDates();context.localData=collectReportData();context.proposalIds=saved?.proposalIds||{};context.localVersions=saved?.localVersions||{};context.conflicts=saved?.conflicts||[];$('#discardDraft').hidden=!Object.keys(localDraft).length;
     if(original)acceptReportState(context,original.payload,-1);else persistReportContext(context,context.localData);
     showView('report');renderReportConflicts();
-    try{await restoreEvidence();if(pending){for(const photo of evidenceForReport())photo.uploaded=false;await persistEvidence()}}catch(error){$('#evidenceError').textContent='No se pudo recuperar el respaldo de fotos. Conservamos los registros del dispositivo.'}
+    try{await restoreEvidence();if(pending){for(const photo of evidenceForReport())photo.uploaded=false;await persistEvidence()}}catch(error){$('#evidenceError').textContent='No se pudo recuperar el respaldo de fotos. Conservamos los registros del dispositivo.';if(repair)return false}
     renderExistingEvidence();renderEvidence();
     try{
       if(!shouldSyncNow()){$('#reportCollaborationStatus').textContent='Modo sin conexión · respaldo en este dispositivo';return true;}
@@ -1940,9 +1998,11 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
     await completePendingReportUpload(upload);refreshRound();toast('Reporte confirmado; no se volvió a enviar.');return true;
   }
   async function restoreEvidence(){const key=draftKey();if(loadedEvidenceKeys.has(key))return;const records=await evidenceRecordsForKey(key);loadedEvidenceKeys.add(key);if(!records.length)return;const restored=records.map(record=>{const file=new File([record.blob],record.name,{type:record.type,lastModified:record.lastModified});return {file,url:URL.createObjectURL(file),slot:Number(record.position),sourceFingerprint:record.sourceFingerprint||`${record.name}:${record.size}:${record.lastModified}`,mutationId:record.mutationId||newEvidenceMutationId(),editorId:record.editorId||'',uploaded:Boolean(record.uploaded),backedUp:true}});reportEvidenceByKey.set(key,restored);renderEvidence()}
+  let reportQueueDraining=false;
   async function resumePendingReportUploads(manual=false){
     if(typeof navigator!=='undefined'&&navigator.locks)return navigator.locks.request(`hsc-report-sync-${account.id}`,{ifAvailable:true},lock=>lock?drainPendingReportUploads(manual):undefined);
-    return drainPendingReportUploads(manual);
+    if(reportQueueDraining)return;reportQueueDraining=true;
+    try{return await drainPendingReportUploads(manual);}finally{reportQueueDraining=false;}
   }
   async function drainPendingReportUploads(manual=false){
     if(!shouldSyncNow(manual))return;
