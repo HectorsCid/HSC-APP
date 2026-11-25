@@ -5181,6 +5181,70 @@ def api_operaciones_save_fault():
         return jsonify({"ok": False, "error": "No se pudo registrar la falla."}), 500
 
 
+@app.route('/api/operaciones/faults/<path:fault_id>/quote', methods=['GET', 'POST'])
+@app.get('/api/operaciones/faults/<path:fault_id>/quote/pdf', defaults={'pdf': True})
+def operations_fault_quote(fault_id, pdf=False):
+    role = _operations_role()
+    owner = role == 'admin' and session.get('hsc_user_id') == 'owner'
+    preview = 'folio' in request.args
+    if session.get('hsc_authenticated') is not True or (not owner and (role != 'client' or request.method == 'POST' or preview)):
+        abort(403)
+    if not OPERACIONES_STORE.enabled:
+        abort(503)
+    row = OPERACIONES_STORE.fault_quote_scope(fault_id)
+    if not row or not row[0] or (not owner and session.get('hsc_client_id') != row[0]):
+        abort(404)
+    client, error = _partner_documents_client(row[0])
+    if error:
+        return error
+    body = request.get_json(silent=True) if request.method == 'POST' else {}
+    if not isinstance(body, dict):
+        return jsonify(ok=False, error='Solicitud inválida.'), 400
+    if request.method == 'POST' and body.get('unlink') is True:
+        OPERACIONES_STORE.set_fault_quote(fault_id, row[0], None)
+        return jsonify(ok=True, quote=None)
+    lookup = preview or request.method == 'POST'
+    if not lookup and not row[1]:
+        if pdf:
+            abort(404)
+        return jsonify(ok=True, quote=None)
+    target = str((body.get('folio') if request.method == 'POST' else request.args.get('folio')) if lookup else row[1]).strip()
+    if not target or len(target) > 200:
+        return jsonify(ok=False, error='Escribe el folio completo.'), 400
+    path = _ruta_cotizaciones()
+    try:
+        items = json.loads(path.read_text('utf-8'))
+    except (OSError, ValueError):
+        return jsonify(ok=False, error='No se pudo consultar el catálogo de cotizaciones.'), 503
+    if isinstance(items, dict):
+        items = items.get('items') or items.get('data') or []
+    identity = _partner_documents_identity(client)
+    matches = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        ident = str(item.get('id') or item.get('folio') or item.get('numero') or item.get('uuid') or '').strip()
+        folio = str(item.get('folio') or item.get('numero') or ident).strip()
+        if ident and (folio if lookup else ident) == target and _partner_quote_matches(item, identity):
+            matches.append((ident, folio, item))
+    if len(matches) != 1:
+        return jsonify(ok=False, error='No hay una cotización única con ese folio para este cliente.'), 404
+    ident, folio, item = matches[0]
+    if request.method == 'POST':
+        if body.get('quote_id') != ident or not OPERACIONES_STORE.set_fault_quote(fault_id, row[0], ident):
+            return jsonify(ok=False, error='La selección cambió. Busca el folio de nuevo.'), 409
+    if pdf:
+        try:
+            response = send_file(io.BytesIO(_pdf_cotizacion_bytes(item)), mimetype='application/pdf',
+                                 download_name=secure_filename(f'Cotizacion-{folio}.pdf'))
+        except (FileNotFoundError, OSError):
+            abort(404)
+    else:
+        response = jsonify(ok=True, quote=dict(id=ident, folio=folio, client=client['name'], total=_partner_quote_total(item)))
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
+
+
 @app.delete('/api/operaciones/faults/<path:fault_id>')
 def api_operaciones_delete_fault(fault_id):
     denied = _operations_forbidden("admin")

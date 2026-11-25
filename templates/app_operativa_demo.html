@@ -903,11 +903,38 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
       return `<div class="fault-card-wrap"><button type="button" class="fault-card ${resolved?'resolved':''}" data-fault-id="${escapeHtml(fault.id)}"><div class="fault-top"><h3>${escapeHtml(title)}</h3><span class="fault-status">${escapeHtml(status)}</span></div>${showClient?`<p><strong>${escapeHtml(clientName(fault.client_id||equipmentMeta[fault.equipment_id]?.client)||fault.client_id||'Cliente sin identificar')}</strong></p>`:''}<p class="fault-description">${escapeHtml(fault.description||'Falla reportada')}</p>${date?`<p class="fault-date">${escapeHtml(date)}</p>`:''}<small class="count">${escapeHtml(fault.priority||'Alta')}</small></button>${account.isOwner?`<button type="button" class="fault-more" data-fault-menu="${escapeHtml(fault.id)}" aria-label="Opciones de la falla" aria-expanded="false">⋯</button><div class="fault-menu" hidden><button type="button" data-delete-fault="${escapeHtml(fault.id)}">Eliminar falla</button></div>`:''}</div>`;
     }).join('');
   }
+  let faultQuoteSequence=0;
+  async function showFaultQuote(fault){
+    const seq=++faultQuoteSequence,owner=account.isOwner&&account.id==='owner';
+    let box=$('#faultQuote');if(!box){box=document.createElement('section');box.id='faultQuote';box.className='form-section';$('#faultEvidencePreview').after(box);}
+    box.replaceChildren();box.hidden=true;if(!owner&&serverRole!=='client')return;
+    const url='/api/operaciones/faults/'+encodeURIComponent(fault.id)+'/quote',active=()=>seq===faultQuoteSequence&&selectedFault===fault.id;
+    const add=(tag,label)=>{const el=document.createElement(tag);el.textContent=label;box.append(el);return el;};
+    const status=()=>{const el=add('small','');el.setAttribute('role','status');return el;};
+    try{
+      const res=await hscFetch(url,{cache:'no-store'}),data=await res.json();if(!active())return;
+      if(!res.ok||!data.ok)throw Error(data.error||'No se pudo consultar la cotización.');
+      if(!owner&&!data.quote)return;
+      box.hidden=false;add('h3','Cotización de la falla');
+      if(data.quote){const link=add('a','Ver cotización · '+data.quote.folio);link.href=url+'/pdf';link.target='_blank';link.rel='noopener';}
+      if(!owner)return;
+      const input=add('input','');input.placeholder='Número de cotización';input.setAttribute('aria-label','Folio de cotización');
+      const find=add('button','Buscar folio');find.type='button';const note=status();
+      const submit=async(body)=>{const result=await operationsPost(url,body);if(active()&&result.ok)await showFaultQuote(fault);};
+      find.onclick=async()=>{const folio=input.value.trim();if(!folio){note.textContent='Escribe el folio completo.';input.focus();return;}
+        find.disabled=true;note.textContent='Buscando…';try{const res=await hscFetch(url+'?folio='+encodeURIComponent(folio),{cache:'no-store'}),p=await res.json();
+          if(!active())return;if(!res.ok||!p.quote)throw Error(p.error||'No se encontró la cotización.');
+          if(confirm('¿'+(data.quote?'Reemplazar el vínculo por':'Vincular')+' la cotización '+p.quote.folio+' de '+p.quote.client+' por '+Number(p.quote.total).toLocaleString('es-MX')+'? El cliente podrá abrir el PDF.'))await submit({folio,quote_id:p.quote.id});else note.textContent='';
+        }catch(e){note.textContent=e.message;}finally{find.disabled=false;}};
+      if(data.quote){const remove=add('button','Quitar vínculo');remove.type='button';remove.onclick=async()=>{if(!confirm('¿Quitar la cotización de esta falla? No se borrará el documento.'))return;remove.disabled=true;try{await submit({unlink:true});}catch(e){note.textContent=e.message;}finally{remove.disabled=false;}};}
+    }catch(e){if(!active())return;box.hidden=false;add('p','No se pudo consultar la cotización.');const retry=add('button','Reintentar');retry.onclick=()=>showFaultQuote(fault);
+      if(owner){const remove=add('button','Quitar vínculo');remove.onclick=async()=>{if(!confirm('¿Quitar el vínculo de esta falla aunque el documento no esté disponible?'))return;try{await operationsPost(url,{unlink:true});if(active())showFaultQuote(fault);}catch(err){toast(err.message);}};}}
+  }
   function bindPartnerFaults(){
     $$('[data-fault-id]').forEach(button=>button.onclick=()=>{
       const fault=matrixFaults.find(item=>item.id===button.dataset.faultId);if(!fault)return;
       if(faultAttentionUi&&!faultAttentionUi.canOpen(fault.id))return;
-      selectedFault=fault.id;
+      selectedFault=fault.id;showFaultQuote(fault);
       const equipmentRow=equipment.find(item=>item[0]===fault.equipment_id),status=String(fault.status||'Reportada');
       const resolved=/resuelt|cerrad|atendid|terminad|reparad/i.test(status);
       $('#faultDetailTitle').textContent=fault.description||'Falla reportada';

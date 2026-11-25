@@ -239,6 +239,10 @@ class OperationsStore(SheetDeliveryMixin):
                 source TEXT NOT NULL DEFAULT 'sheets', raw_json TEXT NOT NULL DEFAULT '{}',
                 sync_status TEXT NOT NULL DEFAULT 'synced', updated_at TEXT NOT NULL
             )""",
+            """CREATE TABLE IF NOT EXISTS operations_fault_quotes (
+                fault_id TEXT PRIMARY KEY REFERENCES operations_faults(id),
+                client_id TEXT NOT NULL, quote_id TEXT NOT NULL
+            )""",
             """CREATE TABLE IF NOT EXISTS operations_fault_evidence (
                 id TEXT PRIMARY KEY, fault_id TEXT NOT NULL, position INTEGER NOT NULL,
                 storage_ref TEXT NOT NULL DEFAULT '', drive_ref TEXT NOT NULL DEFAULT '',
@@ -1778,6 +1782,27 @@ class OperationsStore(SheetDeliveryMixin):
                     (json.dumps(permissions or {}, ensure_ascii=False), stamp, _text(user_id)),
                 )
         return next(user for user in self.list_users() if user["id"] == _text(user_id))
+
+    def fault_quote_scope(self, fault_id):
+        self.initialize()
+        with self.connection() as conn:
+            return conn.execute(
+                f"SELECT f.client_id,q.quote_id FROM operations_faults f LEFT JOIN operations_fault_quotes q "
+                f"ON q.fault_id=f.id AND q.client_id=f.client_id WHERE f.id={self.placeholder} AND f.deleted_at=''",
+                (fault_id,)).fetchone()
+
+    def set_fault_quote(self, fault_id, client_id, quote_id):
+        self.initialize()
+        p = self.placeholder
+        with self.connection() as conn:
+            if not quote_id:
+                conn.execute(f"DELETE FROM operations_fault_quotes WHERE fault_id={p} AND client_id={p}", (fault_id, client_id))
+                return True
+            return conn.execute(
+                f"INSERT INTO operations_fault_quotes(fault_id,client_id,quote_id) "
+                f"SELECT id,client_id,{p} FROM operations_faults WHERE id={p} AND client_id={p} AND deleted_at='' "
+                "ON CONFLICT(fault_id) DO UPDATE SET client_id=excluded.client_id,quote_id=excluded.quote_id",
+                (quote_id, fault_id, client_id)).rowcount == 1
 
     def delete_fault(self, fault_id):
         """Oculta una falla sin perder su evidencia ni reimportarla desde Sheets."""
