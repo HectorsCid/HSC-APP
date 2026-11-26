@@ -1,3 +1,16 @@
+<dialog id="worklistDeleteDialog" aria-labelledby="worklistDeleteTitle" aria-describedby="worklistDeleteHelp">
+  <h2 id="worklistDeleteTitle">¿Eliminar esta lista?</h2>
+  <p id="worklistDeleteHelp">Solo se eliminará la lista. Los equipos y sus reportes se conservan.</p>
+  <form method="dialog"><button type="submit" value="cancel" class="secondary" autofocus>Cancelar</button><button type="button" id="worklistDeleteConfirm" class="danger">Eliminar lista</button></form>
+</dialog>
+<style>
+#worklistDeleteDialog{box-sizing:border-box;width:min(440px,100%);max-width:100%;padding:20px;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow-wrap:anywhere}
+#worklistDeleteDialog::backdrop{background:rgba(5,12,23,.64)}
+#worklistDeleteDialog h2{margin:0}
+#worklistDeleteDialog p{color:var(--muted);margin:10px 0 20px}
+#worklistDeleteDialog form{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:600px){ #worklistDeleteDialog{position:fixed;inset:auto 0 0;margin:0 auto;border-radius:20px 20px 0 0;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}}
+</style>
 <div class="modal" id="worklistEditor"><div class="sheet">
   <h2>Lista de trabajo</h2>
   <form id="worklistForm">

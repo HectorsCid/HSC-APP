@@ -11,6 +11,14 @@
   function mount(api){
     const $=s=>document.querySelector(s),esc=api.escape,uid=()=>crypto.randomUUID();
     const key=`hsc-worklist-selection-${api.account.id}`;
+    function confirmDelete(list){
+      const dialog=$('#worklistDeleteDialog');if(!dialog||dialog.open)return Promise.resolve(false);
+      $('#worklistDeleteTitle').textContent=list.title?`¿Eliminar «${list.title}»?`:'¿Eliminar esta lista?';
+      dialog.returnValue='cancel';
+      dialog.onclick=e=>{const b=dialog.getBoundingClientRect();if(e.target===dialog&&(e.clientX<b.left||e.clientX>b.right||e.clientY<b.top||e.clientY>b.bottom))dialog.close('cancel')};
+      $('#worklistDeleteConfirm').onclick=()=>dialog.close('delete');
+      return new Promise(resolve=>{dialog.addEventListener('close',()=>resolve(dialog.returnValue==='delete'),{once:true});dialog.showModal()});
+    }
     const returnButton=document.createElement('button');returnButton.id='returnToWorklist';returnButton.type='button';returnButton.className='secondary';returnButton.textContent='☑ Volver a mi jornada';returnButton.hidden=true;returnButton.onclick=()=>{api.show('worklist');render()};document.querySelector('[data-view="equipment"]').prepend(returnButton);
     let selected='';try{selected=localStorage.getItem(key)||''}catch(_){}
     let editor=null,busy=false,editingFromClient=false,pickerFilter='all',team=[];
@@ -58,7 +66,7 @@
       container.querySelectorAll('[data-client-work-item]').forEach(button=>button.onclick=()=>{const [listId,itemId]=button.dataset.clientWorkItem.split(':');const list=state.worklists.find(l=>l.id===listId),item=list?.items.find(i=>i.id===itemId);if(item){selected=listId;api.openEquipment(list.client_id,item.equipment_id,item.round)}});
       container.querySelectorAll('[data-client-work-action]').forEach(button=>button.onclick=async()=>{
         const [action,id]=button.dataset.clientWorkAction.split(':'),list=state.worklists.find(l=>l.id===id);if(!list)return;
-        if(action==='delete'&&!confirm('¿Eliminar esta lista? No se borran equipos ni reportes.'))return;
+        if(action==='delete'&&!await confirmDelete(list))return;
         if(action==='close'&&progress(list,state.reports).some(i=>!i.done)&&!confirm('Quedan equipos sin reporte. ¿Cerrar sólo la lista?'))return;
         const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);
         const next=action==='tomorrow'?{...list,target_date:todayFrom(tomorrow)}:{...list,status:action==='reopen'?'active':action==='close'?'completed':'deleted'};
@@ -147,7 +155,7 @@
     $('#worklistForm').onsubmit=async e=>{e.preventDefault();if(!editor.client_id||!editor.items.length){$('#worklistEditorError').textContent=!editor.client_id?'Elige un cliente.':'Agrega al menos un equipo.';return;}const result={...editor};if(await save(result)){$('#worklistEditor').classList.remove('open');if(editingFromClient){selected=result.id;render()}else choose(result.id);api.toast('Lista guardada en este dispositivo; se enviará según tu preferencia.')}};
     $('#worklistTomorrow').onclick=async()=>{const list=row();if(!list)return;const d=new Date();d.setDate(d.getDate()+1);const date=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;await save({...list,target_date:date,status:'active'});render()};
     $('#worklistClose').onclick=async()=>{const list=row();if(!list)return;if(list.status==='active'&&progress(list,api.state().reports).some(i=>!i.done)&&!confirm('Quedan equipos sin reporte. ¿Cerrar sólo esta lista? No modifica equipos ni reportes.'))return;await save({...list,status:list.status==='active'?'completed':'active'});render()};
-    $('#worklistDelete').onclick=async()=>{const list=row();if(list&&confirm('¿Eliminar esta lista? Los equipos y sus reportes se conservan.'))if(await save({...list,status:'deleted'})){api.show('worklists');render()}};
+    $('#worklistDelete').onclick=async()=>{const list=row();if(list&&await confirmDelete(list))if(await save({...list,status:'deleted'})){api.show('worklists');render()}};
     $('#backToWorklists').onclick=()=>api.show('worklists');
     $('#worklistCompare').onclick=async()=>{
       const opener=$('#worklistCompare');opener.disabled=true;
@@ -180,7 +188,7 @@
           const body={...server,expected_revision:server.revision,mutation_id:uid()};for(const [k,pick] of Object.entries(picks))if(pick())body[k]=local[k]??(k==='shared_user_ids'?[]:'');
           const order=localOrder()?[...bIds,...aIds]:[...aIds,...bIds];body.items=[...new Set(order)].map(id=>items.get(id)()).filter(Boolean);
           if(!body.items.length){status.textContent='Elige al menos un equipo.';return;}
-          if(body.status==='deleted'&&!confirm('¿Confirmas eliminar esta lista?'))return;
+          if(body.status==='deleted'&&!await confirmDelete(body))return;
           save.disabled=true;close.disabled=true;status.textContent='Guardando…';
           try{await api.resolveProposal(action,body);dialog.close();render();api.toast('Selección confirmada. Se resolvió esta propuesta.');}catch(e){status.textContent=e.message+' Si la lista cambió, cierra y vuelve a comparar.';}finally{save.disabled=false;close.disabled=false;}
         };

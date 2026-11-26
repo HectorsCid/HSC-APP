@@ -41,6 +41,19 @@ const origin='http://127.0.0.1:8766';
     assert.notEqual(await page.locator('#worklistSelected .work-selected').first().innerText(),first);
     await page.locator('#saveWorklist').click();await page.locator('#clientActiveRoute .client-worklist-items button').first().waitFor();
     assert.equal(await page.locator('#clientActiveRoute .client-worklist-items button').count(),2);
+    await page.locator('#clientToday').click();
+    const dialog=page.locator('#worklistDeleteDialog');
+    for(const dismiss of ['cancel','outside','back']){
+      await page.locator('#worklistDelete').click();await dialog.waitFor();
+      assert.match(await dialog.locator('h2').innerText(),/Mi jornada/);
+      if(dismiss==='cancel')await dialog.getByRole('button',{name:'Cancelar'}).click();
+      else if(dismiss==='outside')await page.touchscreen.tap(5,40);
+      else await page.evaluate(()=>history.back());
+      await dialog.waitFor({state:'hidden'});await page.locator('.view.active #worklistDelete').waitFor();
+      assert.equal(await page.locator('#worklistItems [data-work-item]').count(),2);
+    }
+    await page.locator('#worklistDelete').click();await dialog.getByRole('button',{name:'Eliminar lista'}).click();
+    await page.locator('[data-view="worklists"].active').waitFor();
     assert.deepEqual(errors,[]);console.log('OK: arranque limpio, ficha del cliente y acceso a equipos.');
   }finally{try{await browser?.close()}finally{server.kill()}}
 })().catch(e=>{console.error(e);process.exitCode=1});

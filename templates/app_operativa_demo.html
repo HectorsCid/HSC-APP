@@ -388,7 +388,7 @@
 
 <div class="modal" id="profileEditModal"><div class="sheet"><div class="eyebrow">Mi cuenta</div><h2>Editar perfil</h2><div class="field"><label for="ownProfileName">Nombre visible</label><input id="ownProfileName" maxlength="100" autocomplete="name"></div><div class="field" id="ownProfilePhotoField" style="margin-top:12px"><label for="ownProfilePhoto">Fotografía opcional</label><input id="ownProfilePhoto" type="file" accept="image/jpeg,image/png,image/webp"><p class="editor-note">JPG, PNG o WebP de máximo 8 MB.</p></div><div class="sheet-actions"><button class="secondary" id="closeOwnProfile" type="button">Cancelar</button><button class="primary" id="saveOwnProfile" type="button">Guardar perfil</button></div></div></div>
 {% include '_operations_worklist_editor.html' %}
-<script src="/static/operations_worklists.js?v=11"></script>
+<script src="/static/operations_worklists.js?v=12"></script>
 <script src="/static/operations_partner_lists.js?v=1"></script>
 <style>.fault-attention-slot{display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:12px;min-width:0}.fault-attention-slot img{width:100%;height:140px;object-fit:cover;border-radius:8px}.fault-attention-slot label{font-size:.8rem;text-align:center}#faultAttentionHistory article{display:block;margin:12px 0}#faultAttentionHistory small{display:block;margin:6px 0;color:var(--muted)}#faultAttentionHistory p{margin:8px 0}#faultAttentionMessage{margin-top:10px;white-space:pre-wrap}</style>
 <script src="/static/operations_fault_attention.js?v=1"></script>
@@ -784,6 +784,7 @@
     initializeBrowserNavigation();
   }
   window.addEventListener('popstate',async()=>{
+    const deletion=document.getElementById('worklistDeleteDialog');if(deletion?.open){deletion.close('cancel');writeBrowserNavigation(false,false,current,historyStack);return;}
     if(['clientEditor','equipmentEditor'].includes(current)&&editorDirty&&!confirm('¿Salir sin guardar estos cambios?')){writeBrowserNavigation(false,false,current,historyStack);return;}
     editorDirty=false;handlingHistoryPop=true;try{await goBack()}finally{handlingHistoryPop=false;}
     // El gesto de Android/iOS siempre queda dentro de la aplicación. La ruta
