@@ -40,21 +40,18 @@ vm.runInContext(page.slice(page.indexOf('  function applyAccess(){'),page.indexO
 ctx.applyAccess();
 assert.equal(admin.dataset.roleHidden,'false');
 assert.equal(el('#profileControlHeading').textContent,'Administración');
-assert(el('#profileExpenseState').hidden,'No decorative zero counters');
+assert(!page.includes('id="pendingExpenseNavBadge"'),'Debt must not create a navigation notification');
 ctx.expenses=[{status:'Pendiente',reimbursable:true,amount:100},{status:'Aprobado',reimbursable:true,amount:300}];ctx.applyAccess();
-assert.equal(el('#profileExpenseState').textContent,'2 por pagar');
-assert(!el('#profileExpenseState').hidden);
-assert(!el('#pendingExpenseNavBadge').hidden);
+assert(!elements.has('#profileExpenseState')&&!elements.has('#pendingExpenseNavBadge'));
 const paymentsLine=page.split(/\r?\n/).find(line=>line.includes('const payOriginalAccess='));
 vm.runInContext(paymentsLine,ctx);ctx.applyAccess();
 assert.equal(el('#profileExpenseTitle').textContent,'Pagos a técnicos');
-assert.equal(el('#profileExpenseState').textContent,'2 por pagar','Owner payment shortcut retains pending indicator');
+assert(!elements.has('#profileExpenseState'),'Owner shortcut does not nag about outstanding expenses');
 // Evaluate base access again as a technician (payment wrapper is owner-only).
 vm.runInContext(page.slice(page.indexOf('  function applyAccess(){'),page.indexOf('  async function syncGoogleNow(')),ctx);
 ctx.account.isOwner=false;ctx.serverRole='technician';ctx.applyAccess();
 assert.equal(admin.dataset.roleHidden,'true');
 assert.equal(el('#profileExpenseTitle').textContent,'Mis gastos');
 assert.equal(el('#profileControlHeading').textContent,'Mi trabajo');
-assert(el('#pendingExpenseNavBadge').hidden);
 assert.equal(permissions.dataset.roleHidden,'true');
 console.log('OK: Profile hierarchy, no redundant summary, pending visibility, owner/technician access, notifications, and guarded sign-out.');

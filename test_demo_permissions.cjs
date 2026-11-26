@@ -59,7 +59,7 @@ assert.match(html, /id="openExpenses"/);
 assert.match(html, /id="openUsersProfile"/);
 assert.match(html, /Gastos de técnicos/);
 assert.match(html, /data-expense-status="Liquidado"/);
-assert.match(html, /id="pendingExpenseNavBadge"/);
+assert.doesNotMatch(html, /id="pendingExpenseNavBadge"/);
 assert.doesNotMatch(html, /Pendientes de R2|id="pendingList"|id="agendaPendingCount"/);
 assert.match(html, /id="singleWorkReport"/);
 assert.match(html, /id="openOccasionalReport"/);

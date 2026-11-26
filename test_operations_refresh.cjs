@@ -28,7 +28,7 @@ console.log('OK: no redraw for unchanged data; changes, pending work and photo v
   context.lastServerPayload.equipment[0].photo_url='/photo?v=3';await context.repaintPendingState();
   assert.equal(context.paints,2,'An actual changed photo remains visible');
   const parents=[{children:[],append(...nodes){this.children.push(...nodes)}},{children:[],append(...nodes){this.children.push(...nodes)}}];
-  const componentContext=vm.createContext({escapeHtml:x=>x,$:()=>({elements:{namedItem:name=>({parentElement:parents[name==='a1'?0:1]})}}),document:{createElement:tag=>({tag})}});
+  const componentContext=vm.createContext({escapeHtml:x=>x,$:()=>({elements:{namedItem:name=>({closest:()=>({after:field=>parents[name==='a1'?0:1].append(...field.children)})})}}),document:{createElement:tag=>({tag,append(...children){this.children=children}})}});
   const componentStart=html.indexOf('  function setupReportComponents(){'),componentEnd=html.indexOf('  function openPhotoPicker(',componentStart);
   vm.runInContext(html.slice(componentStart,componentEnd),componentContext);
   for(let i=0;i<2;i++){const [label,select]=parents[i].children;assert.equal(select.name,`a${i+1}_component`);assert.equal(label.htmlFor,select.id);assert.ok(select.innerHTML.includes('Sin especificar'));assert.ok(select.innerHTML.includes('Resistencia'));}

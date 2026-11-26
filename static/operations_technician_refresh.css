@@ -117,6 +117,19 @@ body[data-active-mode="tech"] .form-section .report-circuit-secondary>summary sm
 body[data-active-mode="tech"] .form-section .report-circuit-secondary>summary::after{content:'⌄';margin-left:auto;color:var(--muted);transform:none}
 body[data-active-mode="tech"] .form-section .report-circuit-secondary[open]>summary::after{transform:rotate(180deg)}
 body[data-active-mode="tech"] .report-circuit-secondary>.report-measure-grid{padding:0 13px 13px}
+#reportForm .report-circuit-card{padding:0;border:0;background:transparent;box-shadow:none}
+#reportForm .report-circuit-heading{margin-bottom:8px;color:var(--muted)}
+#reportForm .report-measure-grid{grid-template-columns:repeat(4,minmax(0,1fr));align-items:end}
+#reportForm .report-measure-grid .field{position:relative;min-width:0}
+#reportForm .report-measure-grid input{padding-right:32px}
+#reportForm .measure-unit{position:absolute;right:9px;bottom:15px;pointer-events:none;color:var(--muted)}
+#reportForm .report-temp-entry{gap:4px}
+#reportForm .report-temp-entry button{min-width:40px;width:40px;padding:0}
+#reportForm .report-temp-entry+.measure-unit{right:51px}
+#reportForm .report-circuit-secondary{border-top:1px solid var(--line);border-radius:0}
+#reportForm .report-circuit-secondary>summary{min-height:44px;padding:6px 0;background:transparent}
+#reportForm .report-circuit-secondary>.report-measure-grid{padding:0}
+@media(max-width:700px){#reportForm .report-measure-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}
 body[data-active-mode="tech"] .report-fault-check{gap:11px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--deep)}
 body[data-active-mode="tech"] .report-fault-check>span{min-width:0}
 body[data-active-mode="tech"] .report-fault-check b,body[data-active-mode="tech"] .report-fault-check small{display:block}
