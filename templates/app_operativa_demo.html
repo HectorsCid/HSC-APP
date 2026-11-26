@@ -133,7 +133,7 @@
     #reportDates summary{width:fit-content;color:var(--brand-2)} #reportDates summary::after{content:"⌄"} #reportDates[open] summary::after{transform:rotate(180deg)}
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='operations_profile.css', v='20260923-1') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='operations_technician_refresh.css', v='20261126-1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='operations_technician_refresh.css', v='20261126-2') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='equipment_detail.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='client_grid.css') }}">
   <script defer src="{{ url_for('static', filename='nested_list_scroll.js') }}"></script>
@@ -581,10 +581,11 @@
   function setupReportComponents(){
     const options=['Compresor','Motor','Ventilador','Resistencia','Bomba','Otro'];
     for(const position of [1,2]){
-      const input=$('#reportForm').elements.namedItem('a'+position),label=document.createElement('label'),select=document.createElement('select');
-      select.name=`a${position}_component`;select.id=`reportAmpComponent${position}`;label.htmlFor=select.id;label.textContent='Componente medido';
-      select.innerHTML='<option value="">Sin especificar</option>'+options.map(option=>`<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('');
-      const field=document.createElement('div');field.className='field';field.append(label,select);input.closest('.field').after(field);
+      const input=$('#reportForm').elements.namedItem('a'+position),field=input.closest('.field'),label=field.querySelector('label'),select=document.createElement('select');
+      select.name=`a${position}_component`;select.id=`reportAmpComponent${position}`;select.className='component-chip';
+      select.setAttribute('aria-label','Componente medido en amperaje, circuito '+position);
+      select.innerHTML='<option value="">Componente</option>'+options.map(option=>`<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('');
+      const heading=document.createElement('div');heading.className='amp-heading';label.before(heading);heading.append(label,select);field.classList.add('amp-field');
     }
   }
   setupReportComponents();

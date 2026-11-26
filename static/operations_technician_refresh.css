@@ -119,7 +119,10 @@ body[data-active-mode="tech"] .form-section .report-circuit-secondary[open]>summ
 body[data-active-mode="tech"] .report-circuit-secondary>.report-measure-grid{padding:0 13px 13px}
 #reportForm .report-circuit-card{padding:0;border:0;background:transparent;box-shadow:none}
 #reportForm .report-circuit-heading{margin-bottom:8px;color:var(--muted)}
-#reportForm .report-measure-grid{grid-template-columns:repeat(4,minmax(0,1fr));align-items:end}
+#reportForm .report-measure-grid{grid-template-columns:repeat(3,minmax(0,1fr));align-items:end}
+#reportForm .amp-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#reportForm .amp-heading label{margin:0}
+#reportForm select.component-chip{width:auto;max-width:100%;min-height:36px;padding:3px 8px;border:1px solid var(--line);border-radius:20px;background:var(--surface-2);color:var(--brand-2);font-size:.82rem;cursor:pointer;appearance:auto}
 #reportForm .report-measure-grid .field{position:relative;min-width:0}
 #reportForm .report-measure-grid input{padding-right:32px}
 #reportForm .measure-unit{position:absolute;right:9px;bottom:15px;pointer-events:none;color:var(--muted)}
@@ -129,7 +132,7 @@ body[data-active-mode="tech"] .report-circuit-secondary>.report-measure-grid{pad
 #reportForm .report-circuit-secondary{border-top:1px solid var(--line);border-radius:0}
 #reportForm .report-circuit-secondary>summary{min-height:44px;padding:6px 0;background:transparent}
 #reportForm .report-circuit-secondary>.report-measure-grid{padding:0}
-@media(max-width:700px){#reportForm .report-measure-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}
+@media(max-width:700px){#reportForm .report-measure-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}#reportForm .amp-field{grid-column:1/-1}}
 body[data-active-mode="tech"] .report-fault-check{gap:11px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--deep)}
 body[data-active-mode="tech"] .report-fault-check>span{min-width:0}
 body[data-active-mode="tech"] .report-fault-check b,body[data-active-mode="tech"] .report-fault-check small{display:block}
