@@ -80,6 +80,21 @@ class ReportComponentTests(unittest.TestCase):
         self.assertIn('no-store',response.headers['Cache-Control'])
         download.assert_not_called()
 
+    def test_equipment_zoom_does_not_enlarge_cached_thumbnail(self):
+        import io
+        from PIL import Image
+        original=io.BytesIO()
+        Image.new('RGB',(1800,1200)).save(original,format='JPEG')
+        self.store.save_cached_thumbnail('equipment','VC4','ref',b'small','image/webp',360,240)
+        with hsc.app.test_request_context('/?preview=1440'),patch.object(hsc,'OPERACIONES_STORE',self.store),patch.object(self.store,'get_media_ref',return_value='ref'),patch.object(hsc,'serve_drive_image_ref_fast',return_value=original.getvalue()) as download:
+            for marker in ('generated','cache'):
+                response=hsc.api_operaciones_photo('equipment','VC4')
+                self.assertEqual(response.headers['X-HSC-Thumbnail'],marker)
+                response.direct_passthrough=False
+                with Image.open(io.BytesIO(response.get_data())) as image:
+                    self.assertEqual(image.size,(1440,960))
+            download.assert_called_once()
+
     def test_report_preview_separate_from_small_cache_and_reused(self):
         import io
         from PIL import Image

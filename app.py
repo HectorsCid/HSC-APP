@@ -5399,7 +5399,7 @@ def _serve_operations_thumbnail(kind, record_id, photo_ref):
                 original_response.direct_passthrough = False
                 original_bytes = original_response.get_data()
                 thumbnail, _, width, height = prepare_photo(
-                    original_bytes, target_size=(960, 960) if kind == "report-preview-960" else (360, 360), thumbnail=True, wait_timeout=0
+                    original_bytes, target_size={"report-preview-960": (960, 960), "equipment-preview-1440": (1440, 1440)}.get(kind, (360, 360)), thumbnail=True, wait_timeout=0
                 )
                 # No guardar la imagen transparente de respaldo cuando Drive falló.
                 if width > 1 and height > 1 and OPERACIONES_STORE.enabled:
@@ -5459,7 +5459,8 @@ def api_operaciones_photo(kind, record_id):
                  else _OPERACIONES_MEDIA_REFS.get((kind, record_id)))
     if not photo_ref:
         abort(404)
-    return _serve_operations_thumbnail(kind, record_id, photo_ref)
+    variant = "equipment-preview-1440" if kind == "equipment" and request.args.get("preview") == "1440" else kind
+    return _serve_operations_thumbnail(variant, record_id, photo_ref)
 
 
 @app.get('/api/operaciones/reports/<path:report_id>/evidence/<int:position>')
