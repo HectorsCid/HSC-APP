@@ -54,6 +54,15 @@ const origin='http://127.0.0.1:8766';
     }
     await page.locator('#worklistDelete').click();await dialog.getByRole('button',{name:'Eliminar lista'}).click();
     await page.locator('[data-view="worklists"].active').waitFor();
+    await page.locator('[data-nav="agenda"]').click();
+    const agenda=page.locator('[data-view="agenda"].active');
+    assert.equal(await agenda.locator('[data-agenda-date]').count(),7);
+    await agenda.locator('[data-agenda-date]').first().click();
+    assert.equal(await agenda.locator('#agendaDayContext').textContent(),'Día seleccionado');
+    await agenda.locator('#openMonthCalendar').click();await page.locator('#monthCalendarModal.open').waitFor();
+    await page.locator('#monthCalendarModal.open button').filter({hasText:'Cerrar'}).click();
+    await agenda.locator('#agendaFaultSection summary').click();await agenda.locator('#agendaFaultList').waitFor();
+    await agenda.locator('#openTask').click();await page.locator('#taskModal.open').waitFor();
     assert.deepEqual(errors,[]);console.log('OK: arranque limpio, ficha del cliente y acceso a equipos.');
   }finally{try{await browser?.close()}finally{server.kill()}}
 })().catch(e=>{console.error(e);process.exitCode=1});

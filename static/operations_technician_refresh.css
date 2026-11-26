@@ -242,6 +242,20 @@ html[data-theme="light"] body[data-active-mode="tech"] :is([data-view="clientDev
 .client-list-frame :is(.card-sub,.round-history-row small){color:var(--list-secondary)}
 .history-frame #roundReportList{background:var(--list-row);border:0;padding:0 10px}
 .history-frame #roundReportList h3{color:var(--list-secondary)}
+[data-view="agenda"] .agenda-date{padding:4px 0 10px!important;border:0!important;background:transparent!important}
+[data-view="agenda"] .agenda-date h2::first-letter{text-transform:uppercase}
+[data-view="agenda"] #taskList>.empty{padding:16px;text-align:left;color:var(--muted)}
+[data-view="agenda"] #openTask{color:var(--brand-2);min-height:44px}
+.agenda-finished #agendaCompleted{max-height:360px;overflow:auto}
+.agenda-fold{margin-top:24px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.agenda-fold summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:52px;padding:10px 13px;cursor:pointer;list-style:none}
+.agenda-fold summary::-webkit-details-marker{display:none}
+.agenda-fold summary .count{margin-left:auto;text-align:right}
+.agenda-fold summary::after{content:'⌄';color:var(--muted)}
+.agenda-fold[open] summary::after{transform:rotate(180deg)}
+.agenda-fold #agendaFaultList{margin:0 10px 10px}
+.agenda-shortcuts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:16px}
+.agenda-shortcuts .mini-btn{display:inline-flex;align-items:center;gap:6px}
 html[data-theme="light"] #clientFaultList .fault-card:not(.resolved) .fault-status{color:#982840;background:#ffe9ed}
 html[data-theme="light"] #clientFaultList .fault-card.resolved .fault-status{color:#116440;background:#ddf4e7}
 body[data-client-layout="classic"] [data-view="client"].active~:is([data-view="clientHistory"],[data-view="clientIssues"]){margin-top:24px;border-top:1px solid var(--line);padding-top:16px}

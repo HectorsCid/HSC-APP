@@ -133,7 +133,7 @@
     #reportDates summary{width:fit-content;color:var(--brand-2)} #reportDates summary::after{content:"⌄"} #reportDates[open] summary::after{transform:rotate(180deg)}
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='operations_profile.css', v='20260923-1') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='operations_technician_refresh.css', v='20261126-9') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='operations_technician_refresh.css', v='20261126-10') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='equipment_detail.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='client_grid.css') }}">
   <script defer src="{{ url_for('static', filename='nested_list_scroll.js') }}"></script>
@@ -251,20 +251,13 @@
     </section>
 
     <section class="view" data-view="agenda">
-      <button class="mini-btn" id="agendaPayments" data-admin-only type="button">Pagos a técnicos</button>
-      <button class="user-card" id="openWorklists" type="button" hidden><span class="reminder-icon">☑</span><span class="card-copy"><b>Mi jornada</b><small id="worklistSummary">Organizar los equipos que quiero trabajar</small></span><span class="chevron">›</span></button>
-      <button class="user-card" type="button" data-open-repairs data-tech-only><span class="reminder-icon">🔧</span><span class="card-copy"><b>Reparaciones</b><small data-repair-summary>Historial por cliente y equipo</small></span><span class="chevron">›</span></button>
-      <div class="agenda-date"><div><div class="eyebrow">Agenda del técnico</div><h2 id="agendaDateTitle">Agenda</h2><p id="agendaDateSummary">Cargando pendientes…</p></div><div class="agenda-actions"><button class="mini-btn" id="openMonthCalendar" title="Calendario del mes" aria-label="Abrir calendario del mes">▦</button><button class="mini-btn" id="openTask">＋</button></div></div>
+      <div class="agenda-date"><div><div class="eyebrow" id="agendaDayContext">Hoy</div><h2 id="agendaDateTitle">Agenda</h2><p id="agendaDateSummary"></p></div><button class="mini-btn" id="openMonthCalendar" aria-label="Abrir calendario del mes"><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v16H4zM8 3v5m8-5v5M4 10h16"/></svg></button></div>
       <div class="calendar-strip" id="agendaDays"></div>
-      <div class="reminder"><div class="reminder-icon">♢</div><div class="reminder-copy"><b>Resumen “Tareas para hoy”</b><span>Las tareas ya se guardan en la cuenta y quedan listas para conectarse al aviso matutino.</span></div></div>
-      <div class="section-head"><h2 id="agendaListTitle">Para hoy</h2><span class="count">Ordenadas por hora</span></div>
+      <div class="section-head"><h2 id="agendaListTitle">Actividades</h2><button type="button" class="mini-btn" id="openTask" aria-label="Agregar actividad">＋ Actividad</button></div>
       <div class="task-list" id="taskList"></div>
-      <section style="margin-top:20px" aria-labelledby="agendaCompletedTitle"><div class="section-head"><h2 id="agendaCompletedTitle">Trabajo realizado</h2></div><p class="editor-note">Según la fecha de terminación del reporte. Incluye los registros históricos disponibles.</p><div id="agendaCompleted" style="max-height:360px;overflow-y:auto"></div></section>
-      <section id="agendaFaultSection" style="margin-top:24px" aria-labelledby="agendaFaultHeading">
-        <div class="section-head"><h2 id="agendaFaultHeading">Fallas de todos los clientes</h2><span class="count" id="agendaFaultCount"></span></div>
-        <p class="count">Incluye fallas sin programar. Las pendientes aparecen primero.</p>
-        <div id="agendaFaultList" tabindex="0" role="region" aria-label="Fallas reportadas de todos los clientes"></div>
-      </section>
+      <section class="agenda-finished" aria-labelledby="agendaCompletedTitle" hidden><div class="section-head"><h2 id="agendaCompletedTitle">Trabajo realizado</h2></div><div id="agendaCompleted"></div></section>
+      <details id="agendaFaultSection" class="agenda-fold"><summary><b id="agendaFaultHeading">Fallas de clientes</b><span id="agendaFaultCount" class="count"></span></summary><div id="agendaFaultList" tabindex="0" role="region" aria-label="Fallas reportadas de todos los clientes"></div></details>
+      <div class="agenda-shortcuts"><button class="user-card" id="openWorklists" type="button" hidden><span class="reminder-icon">☑</span><span class="card-copy"><b>Mi jornada</b><small id="worklistSummary">Organizar los equipos que quiero trabajar</small></span><span class="chevron">›</span></button><button class="mini-btn" type="button" data-open-repairs data-tech-only><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 5a6 6 0 0 0-7 8L3 17a3 3 0 0 0 4 4l4-4a6 6 0 0 0 8-7l-4 4-5-5z"/></svg> Reparaciones</button><button class="mini-btn" id="agendaPayments" data-admin-only type="button">Pagos a técnicos</button></div>
     </section>
 
     <section class="view" data-view="users">
@@ -1350,10 +1343,12 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
     const rows=matrixTasks.filter(task=>task.scheduled_date===agendaDate).sort((a,b)=>String(a.scheduled_time||'').localeCompare(String(b.scheduled_time||'')));
     $('#agendaDateTitle').textContent=chosen.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long'});
     const completed=agendaReportHistory(agendaDate).length;
-    $('#agendaDateSummary').textContent=[rows.length?`${rows.length} actividad${rows.length===1?'':'es'} programada${rows.length===1?'':'s'}`:'Sin actividades programadas',completed?`${completed} mantenimiento${completed===1?'':'s'} realizado${completed===1?'':'s'}`:''].filter(Boolean).join(' · ');
+    const isToday=agendaDate===dateKey(new Date());$('#agendaDayContext').textContent=isToday?'Hoy':'Día seleccionado';
+    $('#agendaDateSummary').hidden=true;
+    $('#agendaCompletedTitle').closest('section').hidden=!completed;
     $('#agendaCompleted').innerHTML=agendaHistoryMarkup(agendaDate);
-    $('#agendaListTitle').textContent=agendaDate===dateKey(new Date())?'Para hoy':'Actividades';
-    $('#taskList').innerHTML=rows.length?rows.map(task=>{const client=clientName(task.client_id),equipmentRow=equipment.find(row=>row[0]===task.equipment_id),done=task.status==='Terminada';return `<button type="button" class="task-card" data-task-id="${escapeHtml(task.id)}"><span class="task-time">${escapeHtml(task.scheduled_time||'--:--')}<small>${done?'Terminada':'Programada'}</small></span><span><span class="task-title">${escapeHtml(task.title)}</span><span class="task-sub">${escapeHtml(client||'Sin cliente')}${equipmentRow?` · ${escapeHtml(equipmentRow[1])}`:''}</span></span><span class="priority ${done?'done':String(task.priority).toLowerCase()==='alta'?'high':''}"></span></button>`}).join(''):'<div class="empty">No hay pendientes para esta fecha. Usa ＋ para agregar uno.</div>';
+    $('#agendaListTitle').textContent='Actividades';
+    $('#taskList').innerHTML=rows.length?rows.map(task=>{const client=clientName(task.client_id),equipmentRow=equipment.find(row=>row[0]===task.equipment_id),done=task.status==='Terminada';return `<button type="button" class="task-card" data-task-id="${escapeHtml(task.id)}"><span class="task-time">${escapeHtml(task.scheduled_time||'--:--')}<small>${done?'Terminada':'Programada'}</small></span><span><span class="task-title">${escapeHtml(task.title)}</span><span class="task-sub">${escapeHtml(client||'Sin cliente')}${equipmentRow?` · ${escapeHtml(equipmentRow[1])}`:''}</span></span><span class="priority ${done?'done':String(task.priority).toLowerCase()==='alta'?'high':''}"></span></button>`}).join(''):'<div class="empty">No hay actividades para este día.</div>';
     $$('[data-task-id]').forEach(button=>button.onclick=()=>openTaskDetail(button.dataset.taskId));
     renderAgendaFaults();
     if($('#monthCalendarModal').classList.contains('open'))renderMonthCalendar();
