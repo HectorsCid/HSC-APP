@@ -23,7 +23,7 @@
       const members=editor.shared_user_ids||[];
       const people=[...team];for(const id of members)if(!people.some(p=>p.id===id))people.push({id,name:'Técnico no disponible'});
       $('#worklistCollaborators').innerHTML=people.filter(p=>p.id!==editor.assigned_user_id).map(p=>`<label><input type="checkbox" data-share-user="${esc(p.id)}" ${members.includes(p.id)?'checked':''} ${owns(editor)?'':'disabled'}> ${esc(p.name)}</label>`).join('');
-      $('#worklistSharingCount').textContent=members.length?`· ${members.length} colaborador(es)`:'· Sin compartir';
+      $('#worklistSharingCount').textContent=members.length?`· ${members.length}`:'';
       document.querySelectorAll('[data-share-user]').forEach(input=>input.onchange=()=>{editor.shared_user_ids=[...document.querySelectorAll('[data-share-user]:checked')].map(i=>i.dataset.shareUser);sharing()});
     }
     const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
@@ -39,11 +39,14 @@
       const section=$('#clientWorklistSection');if(section)section.hidden=!lists.length;
       const drawer=$('#clientListsDrawer');if(drawer){drawer.hidden=!lists.length;if(drawer.dataset.listClient!==state.selectedClient){drawer.open=false;drawer.dataset.listClient=state.selectedClient}}
       const primary=$('#clientToday');
+      let activeListId='';const activeHost=$('#clientActiveRoute');if(activeHost){activeHost.replaceChildren();activeHost.hidden=true}
       if(primary){
         const mine=lists.filter(l=>l.status==='active'&&l.target_date===today()&&(l.assigned_user_id===api.account.id||(l.shared_user_ids||[]).includes(api.account.id)));
         const next=mine.find(l=>l.id===selected)||mine[0],items=next?progress(next,state.reports):[];
+        activeListId=next?.id||'';
         $('#clientTodayTitle').textContent=next?'Continuar mi lista':'Crear lista de hoy';
         const subtitle=$('#clientTodayProgress');subtitle.hidden=!next;subtitle.textContent=next?`${items.filter(i=>i.done).length} de ${items.length} atendidos`:'';
+        const upcoming=items.find(i=>!i.done);if(upcoming)subtitle.textContent+=' · Siguiente: '+equipmentName(upcoming.equipment_id);
         primary.onclick=()=>next?choose(next.id):edit(null,true);
       }
       container.innerHTML=lists.map(list=>{
@@ -62,6 +65,10 @@
         if(await save(next))render();
       });
       container.querySelectorAll('[data-client-work-action]').forEach(button=>{const [action,id]=button.dataset.clientWorkAction.split(':'),list=state.worklists.find(l=>l.id===id);if(action==='delete'&&list&&list.origin!=='client'&&!owns(list))button.hidden=true;});
+      if(activeHost&&activeListId){
+        const card=container.children[lists.findIndex(l=>l.id===activeListId)];
+        if(card){card.querySelector('header b').textContent='Mi recorrido de hoy';card.querySelector('[data-open-client-worklist]').hidden=true;activeHost.append(card);activeHost.hidden=false;if(section)section.hidden=!container.children.length}
+      }
     }
     const todayFrom=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     function render(){
@@ -95,20 +102,20 @@
       const round=$('#worklistRound').value;
       const normalize=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase();
       const terms=normalize(search).split(/\s+/).filter(Boolean);
-      const candidates=client?api.state().equipment.filter(e=>e.client_id===client&&e.active!==false&&!selectedIds.has(e.id)&&terms.every(term=>normalize([e.id,e.name,e.brand,e.model,e.location].join(' ')).includes(term))&&(pickerFilter==='all'||(pickerFilter==='done')===doneFor(e.id,round))):[];
-      $('#worklistChoices').innerHTML=candidates.map(e=>{const done=doneFor(e.id,round);return `<button type="button" class="secondary work-choice" data-add-work="${esc(e.id)}">${photo(e.id)}<span class="card-copy"><b>${esc(e.name)}</b><small>${esc(e.id)} · R${esc(round)} · ${done?'Realizado':'Pendiente'}</small></span><span class="status-dot ${done?'done':''}" aria-label="${done?'Realizado':'Pendiente'}"></span><span aria-hidden="true">＋</span></button>`}).join('')||(client?'<p class="muted">No hay más equipos con ese filtro.</p>':'<p class="muted">Elige un cliente para ver sus equipos.</p>');
+      const candidates=client?api.state().equipment.filter(e=>e.client_id===client&&e.active!==false&&terms.every(term=>normalize([e.id,e.name,e.brand,e.model,e.location].join(' ')).includes(term))&&(pickerFilter==='all'||(pickerFilter==='done')===doneFor(e.id,round))):[];
+      $('#worklistChoices').innerHTML=candidates.map(e=>{const done=doneFor(e.id,round);return `<button type="button" class="secondary work-choice" aria-pressed="${selectedIds.has(e.id)}" data-add-work="${esc(e.id)}">${photo(e.id)}<span class="card-copy"><b>${esc(e.name)}</b><small>${esc(e.id)} · R${esc(round)} · ${done?'Realizado':'Pendiente'}</small></span><span class="status-dot ${done?'done':''}" aria-label="${done?'Realizado':'Pendiente'}"></span><span aria-hidden="true">${selectedIds.has(e.id)?'✓':'＋'}</span></button>`}).join('')||(client?'<p class="muted">No hay más equipos con ese filtro.</p>':'<p class="muted">Elige un cliente para ver sus equipos.</p>');
       document.querySelectorAll('[data-work-filter]').forEach(button=>{const active=button.dataset.workFilter===pickerFilter;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
       $('#worklistSelected').innerHTML=editor.items.map((item,index)=>`<div class="work-selected"><span class="card-copy">${index+1}. ${esc(equipmentName(item.equipment_id))}<small>${esc(item.equipment_id)} · R${esc(item.round)}</small></span><span class="work-order"><button type="button" class="mini-btn" data-move-work="${index}" data-step="-1" aria-label="Subir ${esc(item.equipment_id)}" ${index===0?'disabled':''}>↑</button><button type="button" class="mini-btn" data-move-work="${index}" data-step="1" aria-label="Bajar ${esc(item.equipment_id)}" ${index===editor.items.length-1?'disabled':''}>↓</button><button type="button" class="mini-btn" data-remove-work="${index}" aria-label="Quitar ${esc(item.equipment_id)}">×</button></span></div>`).join('')||'<p class="muted">Agrega equipos a tu recorrido.</p>';
-      $('#worklistSelectedCount').textContent=`Tu orden de trabajo · ${editor.items.length} equipos`;
-      $('#worklistSelected').querySelectorAll('.work-selected').forEach((row,index)=>{const item=editor.items[index],done=doneFor(item.equipment_id,item.round);row.insertAdjacentHTML('afterbegin',photo(item.equipment_id));row.querySelector('.card-copy').insertAdjacentHTML('beforeend',`<small><span class="status-dot ${done?'done':''}"></span> ${done?'Realizado':'Pendiente'}</small>`);});
-      if(api.hydrate)api.hydrate($('#worklistSelected'),8);
+      $('#worklistSelectedCount').textContent=`Mi recorrido · ${editor.items.length}`;
+      $('#worklistSelected').querySelectorAll('.work-selected').forEach((row,index)=>{const item=editor.items[index],done=doneFor(item.equipment_id,item.round);row.querySelector('.card-copy').insertAdjacentHTML('beforeend',`<small class="work-state"><span class="status-dot ${done?'done':''}"></span> ${done?'Realizado':'Pendiente'}</small>`);});
+      $('#workRoute').hidden=!editor.items.length;
       if(api.hydrate)api.hydrate($('#worklistChoices'),8);
-      document.querySelectorAll('[data-add-work]').forEach(b=>b.onclick=()=>{if(editor.items.length>=200){api.toast('Máximo 200 equipos por lista.');return;}editor.items.push({id:uid(),equipment_id:b.dataset.addWork,round:$('#worklistRound').value});renderPicker()});
+      document.querySelectorAll('[data-add-work]').forEach(b=>b.onclick=()=>{const idx=editor.items.findIndex(i=>i.equipment_id===b.dataset.addWork);if(idx>=0){editor.items.splice(idx,1);renderPicker();return}if(editor.items.length>=200){api.toast('Máximo 200 equipos por lista.');return;}editor.items.push({id:uid(),equipment_id:b.dataset.addWork,round:$('#worklistRound').value});renderPicker()});
       document.querySelectorAll('[data-move-work]').forEach(b=>b.onclick=()=>{const i=Number(b.dataset.moveWork),j=i+Number(b.dataset.step);[editor.items[i],editor.items[j]]=[editor.items[j],editor.items[i]];renderPicker()});
       document.querySelectorAll('[data-remove-work]').forEach(b=>b.onclick=()=>{editor.items.splice(Number(b.dataset.removeWork),1);renderPicker()});
     }
     function edit(list=null,fromClient=false){
-      editingFromClient=fromClient;pickerFilter='all';
+      editingFromClient=fromClient;pickerFilter='all';$('#workRoute').open=true;
       const state=api.state(), client=fromClient?state.selectedClient:'';
       if(!list&&fromClient&&!client){api.toast('Abre un cliente antes de crear la lista.');return;}
       editor=editorDefaults(list,{id:list?.id||uid(),client,actor:api.account.id,date:today()});

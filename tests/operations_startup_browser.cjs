@@ -31,6 +31,16 @@ const origin='http://127.0.0.1:8766';
     assert.equal(await page.locator('button[data-client-layout="classic"]').getAttribute('aria-pressed'),'true');
     await page.locator('#classicSettings').click();await page.locator('button[data-client-layout="tiles"]').click();
     await page.locator('#backBtn').click();await page.locator('.hub-grid').waitFor();
+    await page.locator('#clientToday').click();
+    const pick=page.locator('#worklistChoices [data-add-work]');
+    await pick.first().click();await pick.nth(1).click();
+    assert.equal(await page.locator('#worklistSelected .work-selected').count(),2);
+    assert.equal(await pick.first().getAttribute('aria-pressed'),'true');
+    const first=await page.locator('#worklistSelected .work-selected').first().innerText();
+    await page.locator('[data-move-work="0"][data-step="1"]').click();
+    assert.notEqual(await page.locator('#worklistSelected .work-selected').first().innerText(),first);
+    await page.locator('#saveWorklist').click();await page.locator('#clientActiveRoute .client-worklist-items button').first().waitFor();
+    assert.equal(await page.locator('#clientActiveRoute .client-worklist-items button').count(),2);
     assert.deepEqual(errors,[]);console.log('OK: arranque limpio, ficha del cliente y acceso a equipos.');
   }finally{try{await browser?.close()}finally{server.kill()}}
 })().catch(e=>{console.error(e);process.exitCode=1});

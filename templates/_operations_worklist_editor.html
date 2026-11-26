@@ -1,19 +1,47 @@
 <div class="modal" id="worklistEditor"><div class="sheet">
-  <h2>Organizar mi jornada</h2>
+  <h2>Lista de trabajo</h2>
   <form id="worklistForm">
     <div class="field" id="worklistClientField" hidden><label for="worklistClient">Cliente</label><select id="worklistClient" disabled></select></div>
-    <div class="field"><label for="worklistRound">Ronda de los equipos que agregues</label><select id="worklistRound"><option value="1">R1</option><option value="2">R2</option><option value="3">R3</option><option value="4">R4</option></select></div>
-    <details id="worklistSharing"><summary>Compartir lista con <span id="worklistSharingCount">· Sólo para mí</span></summary><p class="editor-note">Opcional. Los técnicos seleccionados verán y podrán organizar la misma lista. El responsable administra los colaboradores.</p><div id="worklistCollaborators" class="work-scroll"></div><p id="worklistSharingStatus" role="status"></p></details>
-    <h3 id="worklistSelectedCount">Tu orden de trabajo</h3><div id="worklistSelected" class="work-scroll"></div>
-    <div class="field"><label for="worklistSearch">Buscar equipos para agregar</label><input id="worklistSearch" type="search" placeholder="Clave o nombre del equipo"></div>
+    <div class="work-body"><div class="work-settings"><select aria-label="Ronda para nuevos equipos" id="worklistRound"><option value="1">Ronda 1</option><option value="2">Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select>
+    <details id="worklistSharing"><summary>Compartir <span id="worklistSharingCount"></span></summary><div id="worklistCollaborators" class="work-scroll"></div><p id="worklistSharingStatus" role="status"></p></details></div>
+    <details id="workRoute" open><summary id="worklistSelectedCount">Mi recorrido</summary><div id="worklistSelected" class="work-scroll"></div></details>
+    <div class="field work-catalog"><label for="worklistSearch">Agregar equipos</label><input id="worklistSearch" type="search" placeholder="Buscar por clave o nombre"></div>
     <div class="filters" id="worklistEquipmentFilters"><button type="button" class="chip active" data-work-filter="all" aria-pressed="true">Todos</button><button type="button" class="chip" data-work-filter="done" aria-pressed="false">Realizados</button><button type="button" class="chip" data-work-filter="pending" aria-pressed="false">Pendientes</button></div>
     <div id="worklistChoices" class="work-scroll"></div>
-    <p id="worklistEditorError" role="alert"></p>
+    </div><p id="worklistEditorError" role="alert"></p>
     <div class="work-actions"><button id="closeWorklistEditor" class="secondary" type="button">Cancelar</button><button id="saveWorklist" class="primary" type="submit">Guardar lista</button></div>
   </form>
 </div></div>
 <style>
 .work-actions,.work-order{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.work-selected{display:flex;align-items:center;gap:10px;padding:8px;border-bottom:1px solid var(--line)}.work-selected>.card-copy{flex:1;min-width:0;overflow-wrap:anywhere}.work-selected small,#worklistItems small{display:block;color:var(--muted);margin-top:4px}.work-order{flex-shrink:0}.work-order button{min-width:44px;min-height:44px}.work-scroll{max-height:280px;overflow:auto;overscroll-behavior:contain}.work-choice{display:block;width:100%;text-align:left;margin:6px 0;white-space:normal;overflow-wrap:anywhere}#worklistEditor .sheet{max-height:90dvh;overflow:auto}#worklistEditorError{color:var(--danger)}#worklistCards b,#worklistItems b{white-space:normal;overflow-wrap:anywhere}#worklistCards .card-copy{min-width:0;flex:1}#worklistCards small{display:block}#worklistTomorrow,#worklistEdit,#worklistClose,#worklistDelete{white-space:normal}
+</style>
+<style>
+#worklistEditor .sheet{display:flex;flex-direction:column;overflow:hidden;max-height:min(88dvh,800px);min-height:0}
+#worklistEditor h2{margin:0 0 10px}
+#worklistForm{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#worklistForm .work-body{overflow:auto;min-height:0;overscroll-behavior:contain;padding:2px}
+#worklistForm .work-settings{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:12px}
+#worklistForm #worklistRound,#worklistForm #worklistSharing{width:auto;min-height:36px;margin:0;padding:5px 10px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;font-size:.85rem}
+#worklistForm #worklistSharing summary{min-height:22px}
+#worklistForm #worklistSharing[open]{flex:1 1 100%}
+#workRoute,#worklistForm #worklistChoices,#clientActiveRoute .client-worklist-card{border:1px solid var(--line);border-radius:14px;background:var(--deep);padding:5px}
+#workRoute summary{padding:8px;font-weight:700;cursor:pointer}
+#workRoute .work-scroll{max-height:150px}
+#workRoute .work-selected{display:flex;align-items:center;gap:5px;padding:6px;border-top:1px solid var(--line);border-bottom:0}
+#workRoute .work-order{display:flex;flex-wrap:nowrap;gap:2px;margin:0}
+#workRoute .work-order button{min-width:32px;min-height:40px;padding:0}
+#workRoute .work-state{display:inline}
+#worklistForm .work-catalog{margin-top:16px}
+#worklistForm #worklistChoices{max-height:none;overflow:visible}
+#worklistForm .work-choice{margin:0;background:var(--surface)}
+#worklistForm .work-choice+.work-choice{margin-top:6px}
+#worklistForm .work-choice[aria-pressed=true]{border-color:var(--brand);background:var(--surface-2)}
+#worklistForm .work-actions{flex:none;display:grid;grid-template-columns:1fr 1.4fr;margin:0;padding-top:10px;border-top:1px solid var(--line)}
+#worklistEditorError:empty{display:none}
+#clientActiveRoute{margin-top:12px}
+#clientActiveRoute .client-worklist-items{display:grid;gap:0;max-height:180px;overflow:auto}
+#clientActiveRoute .client-worklist-items button{background:none;border:0;border-top:1px solid var(--line);border-radius:0;padding:10px;text-align:left}
+#clientActiveRoute button[hidden]{display:none}
 </style>
 <style>
 .work-selected .status-dot{display:inline-block;width:8px;height:8px;margin-right:6px;vertical-align:middle}.work-selected .card-copy{font-size:.85rem}
