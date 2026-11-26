@@ -33,7 +33,7 @@ const elements=new Map(),el=id=>{
   return elements.get(id);
 };
 const admin=el('admin'),permissions=el('permissions');permissions.dataset.permission='editIds';
-const ctx=vm.createContext({document:{body:{dataset:{}}},$:el,$$:s=>s==='[data-admin-only]'?[admin]:s==='[data-permission]'?[permissions]:[],
+const ctx=vm.createContext({HscPayments:require("./static/operations_payments.js"),document:{body:{dataset:{}}},$:el,$$:s=>s==='[data-admin-only]'?[admin]:s==='[data-permission]'?[permissions]:[],
   account:{isOwner:true},clientPreview:false,currentMode:'tech',serverRole:'admin',can:()=>false,renderProfileIdentity(){},
   visibleExpenses:()=>ctx.expenses,expenses:[],updateOfflineSyncUi(){},});
 vm.runInContext(page.slice(page.indexOf('  function applyAccess(){'),page.indexOf('  async function syncGoogleNow(')),ctx);
@@ -41,14 +41,14 @@ ctx.applyAccess();
 assert.equal(admin.dataset.roleHidden,'false');
 assert.equal(el('#profileControlHeading').textContent,'Administración');
 assert(el('#profileExpenseState').hidden,'No decorative zero counters');
-ctx.expenses=[{status:'Pendiente',amount:100},{status:'Aprobado',amount:300}];ctx.applyAccess();
-assert.equal(el('#profileExpenseState').textContent,'1 por revisar');
+ctx.expenses=[{status:'Pendiente',reimbursable:true,amount:100},{status:'Aprobado',reimbursable:true,amount:300}];ctx.applyAccess();
+assert.equal(el('#profileExpenseState').textContent,'2 por pagar');
 assert(!el('#profileExpenseState').hidden);
 assert(!el('#pendingExpenseNavBadge').hidden);
 const paymentsLine=page.split(/\r?\n/).find(line=>line.includes('const payOriginalAccess='));
 vm.runInContext(paymentsLine,ctx);ctx.applyAccess();
 assert.equal(el('#profileExpenseTitle').textContent,'Pagos a técnicos');
-assert.equal(el('#profileExpenseState').textContent,'1 por revisar','Owner payment shortcut retains pending indicator');
+assert.equal(el('#profileExpenseState').textContent,'2 por pagar','Owner payment shortcut retains pending indicator');
 // Evaluate base access again as a technician (payment wrapper is owner-only).
 vm.runInContext(page.slice(page.indexOf('  function applyAccess(){'),page.indexOf('  async function syncGoogleNow(')),ctx);
 ctx.account.isOwner=false;ctx.serverRole='technician';ctx.applyAccess();

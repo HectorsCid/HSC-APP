@@ -22,7 +22,7 @@ def plan_task_notices(event_id, event):
         user = '' if created else expense['user_id']
         if user == actor and not created:
             return []
-        return [dict(title='Nuevo gasto por revisar' if created else 'Actualización de tu gasto',
+        return [dict(title='Nuevo gasto registrado' if created else 'Actualización de tu gasto',
             body=f"{expense.get('technician_name') or ''} · {expense['concept']} · ${expense['amount']:,.2f} · {expense['status']}",
             url='/hsc-tecnico/?open=expenses', tag=f'expense-event:{event_id}',
             category='gastos' if created else 'pagos', audience='admin' if created or user=='owner' else 'technician',

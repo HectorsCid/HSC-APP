@@ -7,7 +7,7 @@ const rows=[{id:'a',user_id:'T1',technician_name:'Uno',expense_date:'2026-09-14'
 {id:'b',user_id:'T2',technician_name:'Dos',expense_date:'2026-09-19',amount:200,status:'Liquidado',reimbursable:true},
 {id:'old',user_id:'T1',technician_name:'Uno',expense_date:'2026-09-12',amount:50,status:'Pendiente',reimbursable:true}];
 const context={$,$$:()=>[],visibleExpenses:()=>rows,account:{isOwner:true},localDate:s=>new Date(s+'T12:00:00'),dateKey:d=>d.toISOString().slice(0,10),money:n=>String(n),escapeHtml:s=>String(s||''),clientName:()=>'',equipment:[],expenseStatusClass:()=>'',openExpenseDetail:()=>{}};
-vm.createContext(context);vm.runInContext(source.slice(start,end),context);
+context.HscPayments=require('./static/operations_payments.js');vm.createContext(context);vm.runInContext(source.slice(start,end),context);
 assert.deepEqual(Array.from(vm.runInContext("expenseWeekBounds('2026-09-19')",context)),['2026-09-13','2026-09-19']);
 assert.deepEqual(Array.from(vm.runInContext("expenseWeekBounds('2026-09-20')",context)),['2026-09-20','2026-09-26']);
 assert.deepEqual(Array.from(vm.runInContext("expenseWeekBounds('2027-01-01')",context)),['2026-12-27','2027-01-02']);

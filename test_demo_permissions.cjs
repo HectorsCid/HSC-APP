@@ -69,7 +69,7 @@ assert.match(script, /function openStandaloneReport\(type,equipmentId=''/);
 assert.match(html, /data-view="expenses"/);
 assert.match(html, /id="expenseModal"/);
 assert.match(html, /id="expenseReceipt"/);
-assert.match(html, /data-expense-status="Aprobado"/);
+assert.doesNotMatch(html, /data-expense-status="Aprobado"/);
 assert.match(script, /\/api\/operaciones\/expenses/);
 assert.match(html, /data-style-option="corporate"/);
 assert.match(html, /data-style-option="fusion"/);
