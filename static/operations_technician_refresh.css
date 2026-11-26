@@ -229,3 +229,20 @@ body[data-client-layout="classic"] .classic-edit{display:inline-flex;margin-top:
 body[data-client-layout="classic"] .hub-grid{display:none}
 body[data-client-layout="classic"] [data-view="client"].active~:is([data-view="clientDevices"],[data-view="clientHistory"],[data-view="clientIssues"]){display:block}
 body[data-client-layout="classic"] [data-view="client"].active~[data-view="clientDevices"] #equipmentFilters{display:none}
+.client-appearance{margin-top:24px;padding-top:16px;border-top:1px solid var(--line)}
+.client-appearance h2{font-size:1rem;margin:0}
+.client-appearance p{font-size:.82rem;color:var(--muted)}
+body[data-active-mode="tech"] :is([data-view="clientDevices"],[data-view="clientHistory"],[data-view="clientIssues"]){--list-edge:#566b84;--list-back:#0d1727;--list-row:#25364c;--list-secondary:#c5d2df}
+html[data-theme="light"] body[data-active-mode="tech"] :is([data-view="clientDevices"],[data-view="clientHistory"],[data-view="clientIssues"]){--list-edge:#97acc1;--list-back:#dce6ef;--list-row:#fff;--list-secondary:#465a70}
+.client-list-frame{padding:5px;border:1px solid var(--list-edge);border-radius:16px;background:var(--list-back);overflow:hidden}
+.inventory-frame{margin-top:10px}
+.client-list-frame #equipmentList{margin-top:0!important}
+.client-list-frame>:first-child{border-radius:11px}
+.client-list-frame :is(.equipment-card,.fault-card){background:var(--list-row)}
+.client-list-frame :is(.card-sub,.round-history-row small){color:var(--list-secondary)}
+.history-frame #roundReportList{background:var(--list-row);border:0;padding:0 10px}
+.history-frame #roundReportList h3{color:var(--list-secondary)}
+html[data-theme="light"] #clientFaultList .fault-card:not(.resolved) .fault-status{color:#982840;background:#ffe9ed}
+html[data-theme="light"] #clientFaultList .fault-card.resolved .fault-status{color:#116440;background:#ddf4e7}
+body[data-client-layout="classic"] [data-view="client"].active~:is([data-view="clientHistory"],[data-view="clientIssues"]){margin-top:24px;border-top:1px solid var(--line);padding-top:16px}
+body[data-client-layout="classic"] [data-view="client"].active~:is([data-view="clientHistory"],[data-view="clientIssues"])>.section-head{margin-top:0}

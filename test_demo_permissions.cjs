@@ -61,7 +61,7 @@ assert.match(html, /Gastos de técnicos/);
 assert.match(html, /data-expense-status="Liquidado"/);
 assert.doesNotMatch(html, /id="pendingExpenseNavBadge"/);
 assert.doesNotMatch(html, /Pendientes de R2|id="pendingList"|id="agendaPendingCount"/);
-assert.match(html, /id="singleWorkReport"/);
+assert.doesNotMatch(html, /id="singleWorkReport"/);
 assert.match(html, /id="openOccasionalReport"/);
 assert.match(html, /id="standaloneReportModal"/);
 assert.match(html, /Generar reporte único/);
