@@ -221,3 +221,11 @@ body[data-active-mode="tech"] .report-evidence-shortcut small{color:var(--muted)
 #clientListsDrawer{margin-top:16px}
 #clientListsDrawer summary{cursor:pointer;padding:12px 0;color:var(--muted)}
 [data-view="clientDevices"] .search{margin-top:12px}
+.client-layout-picker{display:flex;gap:3px;width:fit-content;margin-top:15px;padding:3px;background:var(--deep);border:1px solid var(--line);border-radius:12px}
+.client-layout-picker button{border:0;border-radius:9px;background:transparent;color:var(--muted);min-height:36px;padding:4px 12px;cursor:pointer}
+.client-layout-picker button[aria-pressed=true]{background:var(--surface-2);color:var(--text);font-weight:650}
+.classic-edit{display:none}
+body[data-client-layout="classic"] .classic-edit{display:inline-flex;margin-top:10px}
+body[data-client-layout="classic"] .hub-grid{display:none}
+body[data-client-layout="classic"] [data-view="client"].active~:is([data-view="clientDevices"],[data-view="clientHistory"],[data-view="clientIssues"]){display:block}
+body[data-client-layout="classic"] [data-view="client"].active~[data-view="clientDevices"] #equipmentFilters{display:none}

@@ -18,6 +18,15 @@ const origin='http://127.0.0.1:8766';
     const tiles=page.locator('.view.active [data-client-dest]');
     assert.equal(await tiles.count(),4);
     await tiles.first().click();await page.locator('.view.active #equipmentList').waitFor();
+    await page.locator('#backBtn').click();
+    await page.locator('[data-home-filter="pending"]').click();
+    await page.locator('.view.active #equipmentFilters [data-filter="pending"][aria-pressed="true"]').waitFor();
+    await page.locator('#backBtn').click();await page.locator('[data-client-dest="clientSettings"]').click();
+    await page.locator('[data-view="clientEditor"].active').waitFor();await page.locator('#backBtn').click();
+    await page.locator('button[data-client-layout="classic"]').click();
+    await page.locator('#equipmentList').waitFor();await page.locator('#roundReportList').waitFor();
+    await page.reload();await page.locator('body.operations-ready #equipmentList').waitFor();
+    assert.equal(await page.locator('button[data-client-layout="classic"]').getAttribute('aria-pressed'),'true');
     assert.deepEqual(errors,[]);console.log('OK: arranque limpio, ficha del cliente y acceso a equipos.');
   }finally{try{await browser?.close()}finally{server.kill()}}
 })().catch(e=>{console.error(e);process.exitCode=1});
