@@ -190,3 +190,23 @@ body[data-active-mode="tech"] .report-evidence-shortcut small{color:var(--muted)
 @media(hover:hover){
   body[data-active-mode="tech"] :is(.client-card,.equipment-card,.report-card,.secondary,.mini-btn):hover{border-color:color-mix(in srgb,var(--brand) 55%,var(--line));background:color-mix(in srgb,var(--brand) 6%,var(--surface))}
 }
+
+#clientRound[hidden]{display:none}
+.progress-label .client-round-trigger{width:auto;min-height:36px;padding:4px 11px;border-radius:10px;font-weight:650}
+#clientRoundPicker{position:fixed;inset:auto 0 0;width:min(100%,420px);max-width:100%;margin:0 auto;padding:20px 20px calc(16px + env(safe-area-inset-bottom));border:1px solid var(--line);border-radius:20px 20px 0 0;background:var(--surface);color:var(--text)}
+#clientRoundPicker::backdrop{background:rgba(4,10,20,.6)}
+#clientRoundPicker h3{margin:0 0 12px}
+.round-wheel-frame{position:relative}
+.round-wheel-frame::before{content:"";position:absolute;inset:48px 0;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);pointer-events:none}
+#clientRoundWheel{position:relative;height:144px;overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;text-align:center}
+#clientRoundWheel::before,#clientRoundWheel::after{content:"";display:block;height:48px}
+#clientRoundWheel [role=option]{height:48px;display:grid;place-items:center;color:var(--muted);scroll-snap-align:center;cursor:pointer}
+#clientRoundWheel [aria-selected=true]{color:var(--text);font-weight:700}
+.round-wheel-actions{display:flex;gap:10px;margin-top:16px}
+.round-wheel-actions button{flex:1}
+#roundReportList{border-block:1px solid var(--line)}
+#roundReportList h3{margin:0;padding:12px 4px 3px;font-size:.8rem;font-weight:600;color:var(--muted)}
+#roundReportList .round-history-row{width:100%;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 4px;text-align:left;font:inherit;color:var(--text);background:transparent;border:0;border-radius:0;cursor:pointer}
+#roundReportList .round-history-row+.round-history-row{border-top:1px solid var(--line)}
+#roundReportList .round-history-row small,#roundReportList .round-history-row>span:last-child{color:var(--muted)}
+#toggleRoundHistory{margin-top:8px}

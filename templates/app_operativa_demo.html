@@ -133,7 +133,7 @@
     #reportDates summary{width:fit-content;color:var(--brand-2)} #reportDates summary::after{content:"⌄"} #reportDates[open] summary::after{transform:rotate(180deg)}
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='operations_profile.css', v='20260923-1') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='operations_technician_refresh.css', v='20261126-3') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='operations_technician_refresh.css', v='20261126-5') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='equipment_detail.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='client_grid.css') }}">
   <script defer src="{{ url_for('static', filename='nested_list_scroll.js') }}"></script>
@@ -164,13 +164,14 @@
     </section>
 
     <section class="view" data-view="client">
-      <article class="hero"><div class="hero-top"><div class="hero-logo">—</div><div><h2>Cargando cliente…</h2><p>Validando empresa asignada</p></div></div><div class="address"><span>⌖</span><span>La información aparecerá después de validar tu cuenta.</span></div><div class="field" style="margin-top:15px"><label for="clientRound">Consultar ronda</label><select id="clientRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select></div><div class="stats" id="equipmentFilters"><button type="button" class="stat active" data-filter="all" aria-pressed="true"><b id="roundEquipment">0</b><span>Equipos · Todos</span></button><button type="button" class="stat" data-filter="done" aria-pressed="false"><b id="roundReports">0</b><span>Atendidos</span></button><button type="button" class="stat" data-filter="pending" aria-pressed="false"><b id="roundPendingCount">0</b><span>Pendientes</span></button><span id="roundLabel" hidden>R2</span></div><div class="progress"><i id="roundProgress"></i></div><div class="progress-label"><span>Avance del periodo</span><b id="roundProgressText"></b></div></article>
+      <article class="hero"><div class="hero-top"><div class="hero-logo">—</div><div><h2>Cargando cliente…</h2><p>Validando empresa asignada</p></div></div><div class="address"><span>⌖</span><span>La información aparecerá después de validar tu cuenta.</span></div><select hidden id="clientRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select><div class="stats" id="equipmentFilters"><button type="button" class="stat active" data-filter="all" aria-pressed="true"><b id="roundEquipment">0</b><span>Equipos · Todos</span></button><button type="button" class="stat" data-filter="done" aria-pressed="false"><b id="roundReports">0</b><span>Atendidos</span></button><button type="button" class="stat" data-filter="pending" aria-pressed="false"><b id="roundPendingCount">0</b><span>Pendientes</span></button><span id="roundLabel" hidden>R2</span></div><div class="progress"><i id="roundProgress"></i></div><div class="progress-label"><button type="button" class="stat client-round-trigger" id="clientRoundTrigger" aria-haspopup="dialog">Ronda 2 ⌄</button><b id="roundProgressText"></b></div></article>
+      <dialog id="clientRoundPicker" aria-labelledby="roundPickerTitle"><h3 id="roundPickerTitle">Seleccionar ronda</h3><div class="round-wheel-frame"><div id="clientRoundWheel" role="listbox" aria-labelledby="roundPickerTitle" tabindex="0"></div></div><div class="round-wheel-actions"><button type="button" id="roundCancel" class="secondary">Cancelar</button><button type="button" id="roundApply" class="primary">Listo</button></div></dialog>
       <div class="client-tools"><button class="secondary" id="editOperationalClient" data-permission="editClientData" title="Modificar datos del cliente">✎ Editar cliente</button><button class="secondary" id="addOperationalEquipment" data-permission="addEquipment" title="Registrar otro equipo">＋ Equipo</button><button class="secondary" id="singleWorkReport" data-permission="createReports" data-tech-only title="Crear un reporte sin elegir equipo de la póliza">📝 Reporte único</button><button class="secondary" id="newClientWorklist" data-tech-only type="button">＋ Crear lista</button></div>
       <div data-tech-only><section id="clientWorklistSection" class="client-worklists" hidden><div class="section-head"><h2>Trabajo para hoy</h2></div><div id="clientWorklistCards"></div></section></div>
       <div class="section-head"><h2>Equipos</h2><span class="count" id="roundPending"></span></div>
       <div class="search"><span>⌕</span><input id="technicianEquipmentSearch" type="search" placeholder="Buscar nombre, ID, marca, modelo o ubicación" aria-label="Buscar equipos por nombre, ID, marca, modelo o ubicación"></div>
       <p class="count" id="technicianEquipmentSearchCount" aria-live="polite"></p><div class="equipment-list bounded-list" id="equipmentList" style="margin-top:10px"></div><div class="empty" id="technicianEquipmentNoMatches" role="status" hidden>No hay equipos que coincidan con tu búsqueda y el estado seleccionado.</div>
-      <div class="section-head"><h2>Reportes de la ronda</h2><span class="count" id="roundReportCount"></span></div><div class="report-list bounded-list" id="roundReportList"></div>
+      <div class="section-head"><h2>Reportes de la ronda</h2><span class="count" id="roundReportCount"></span></div><div id="roundReportList"></div><button type="button" class="secondary" id="toggleRoundHistory" aria-controls="roundReportList" aria-expanded="false" hidden></button>
       <div class="section-head"><h2>Fallas del cliente</h2><span class="count" id="clientFaultCount"></span></div><div class="user-list bounded-list" id="clientFaultList"></div>
     </section>
 
@@ -783,6 +784,26 @@
   function renderClientDetail(){const meta=clientMeta[selectedClient],hero=$('[data-view="client"] .hero');hero.querySelector('h2').textContent=clientName(selectedClient);hero.querySelector('p').textContent=`${selectedClient} · ${meta.policy?'Póliza activa':'Sin póliza · sólo catálogo'}`;hero.querySelector('.hero-logo').innerHTML=photoMarkup(meta.photo,selectedClient.slice(0,2));hydratePhotos(hero,1);hero.querySelector('.address span:last-child').textContent=meta.address||'Dirección por completar';views.client[1]=clientName(selectedClient);if(current==='client')$('#screenTitle').textContent=clientName(selectedClient);}
 function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equipment-card" data-equipment-row="${escapeHtml(e[0])}">${meta.photo?`<button type="button" class="equipment-photo" data-enlarge-equipment="${escapeHtml(e[0])}" aria-label="Ampliar foto de ${escapeHtml(e[1])}" style="cursor:zoom-in;border:0;padding:0">${photoMarkup(meta.photo,'❄')}</button>`:'<span class="equipment-photo">❄</span>'}<button type="button" data-equipment="${escapeHtml(e[0])}" style="display:flex;align-items:center;gap:14px;align-self:stretch;flex:1;min-width:0;background:none;color:inherit;border:0;text-align:left;padding:0"><span class="card-copy"><span class="card-title">${escapeHtml(e[1])}</span><span class="card-sub">${escapeHtml(e[0])} · ${escapeHtml(e[2])}${meta.photoAvailable?' · Foto registrada':''}${meta.active?'':' · Inactivo'}${meta.pendingUpload?' · Cambios pendientes de enviar':''}${reportForEquipment(e[0])?.pending_upload?' · Reporte guardado en este dispositivo':''}</span></span><span class="status-dot ${!meta.active?'off':e[3]?'done':''}" title="${!meta.active?'Inactivo':e[3]?'Realizado':'Pendiente'}"></span><span class="chevron">›</span></button></div>`}
   function reportCards(rows){return rows.slice().sort(byEquipmentId).map(e=>{const report=reportForEquipment(e[0]);return `<button type="button" class="equipment-card" data-round-report="${escapeHtml(e[0])}"><span class="report-icon">▤</span><span class="card-copy"><span class="card-title">${escapeHtml(e[1])}</span><span class="card-sub">${escapeHtml(e[0])} · ${escapeHtml(report?.end||report?.start||demoRounds[selectedRound].date)}${report?.photo_count?` · ${report.photo_count} fotos`:''}</span></span><span class="chevron">›</span></button>`}).join('')||'<div class="empty">Todavía no hay reportes en esta ronda.</div>';}
+  let historyScope='',historyExpanded=false;
+  function renderRoundHistory(rows){
+    const scope=JSON.stringify([selectedClient,selectedRound]),list=$('#roundReportList'),toggle=$('#toggleRoundHistory');
+    if(scope!==historyScope){historyScope=scope;historyExpanded=false;list.scrollTop=0}
+    const entries=rows.map(row=>{const r=reportForEquipment(row[0]);return {row,day:normalizeReportDate(r?.end)||normalizeReportDate(r?.start)}})
+      .sort((a,b)=>b.day.localeCompare(a.day)||byEquipmentId(a.row,b.row));
+    if(entries.length<=3)historyExpanded=false;
+    const visible=historyExpanded?entries:entries.slice(0,3);
+    const groups=new Map();for(const {row,day} of visible){if(!groups.has(day))groups.set(day,[]);groups.get(day).push(row)}
+    const fmt=new Intl.DateTimeFormat('es-MX',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
+    list.innerHTML=Array.from(groups,([day,items])=>{
+      const date=day?new Date(day+'T12:00:00Z'):null;
+      const title=date&&Number.isFinite(date.getTime())?fmt.format(date):'Sin fecha registrada';
+      return '<section><h3>'+title+'</h3>'+items.map(([id,name])=>`<button type="button" class="round-history-row" data-round-report="${escapeHtml(id)}"><span><strong>${escapeHtml(name)}</strong> <small>· ${escapeHtml(id)}</small></span><span aria-hidden="true">›</span></button>`).join('')+'</section>';
+    }).join('')||'<div class="empty">Todavía no hay reportes en esta ronda.</div>';
+    list.classList.toggle('bounded-list',historyExpanded);
+    toggle.hidden=entries.length<=3;toggle.setAttribute('aria-expanded',String(historyExpanded));
+    toggle.textContent=historyExpanded?'Ver solo los recientes':`Ver los ${entries.length} reportes`;
+    toggle.onclick=()=>{historyExpanded=!historyExpanded;renderRoundHistory(rows);list.scrollTop=0;bindRoundReports()};
+  }
   function renderEquipment(){
     renderClientDetail();
     const round=demoRounds[selectedRound],all=equipment.filter(e=>equipmentMeta[e[0]].client===selectedClient).map(e=>[e[0],e[1],e[2],round.done.includes(e[0])]).sort(byEquipmentId);
@@ -799,7 +820,7 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
     $('#roundProgress').style.width=`${active.length?completed/active.length*100:0}%`;
     $('#roundProgressText').textContent=`${active.length?Math.round(completed/active.length*100):0}% · ${completed} de ${active.length} activos`;
     $('#roundReportCount').textContent=`R${selectedRound} · ${all.filter(e=>e[3]).length} reportes`;
-    $('#roundReportList').innerHTML=reportCards(all.filter(e=>e[3]));
+    renderRoundHistory(all.filter(e=>e[3]));
     renderClientFaults();
     renderEquipmentDetail();
     $$('[data-equipment]').forEach(b=>b.onclick=()=>{
@@ -1195,7 +1216,7 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
     bindRoundReports();
   }
   function refreshRound(){
-    $$('[data-round-select]').forEach(select=>select.value=selectedRound);renderEquipment();renderPartnerDashboard();journeyUi?.render();
+    $$('[data-round-select]').forEach(select=>select.value=selectedRound);$('#clientRoundTrigger').textContent=`Ronda ${selectedRound} ⌄`;renderEquipment();renderPartnerDashboard();journeyUi?.render();
   }
   $('#clientSearch').oninput=e=>renderClients(e.target.value);$('#backBtn').onclick=goBack;$('#closeFault').onclick=()=>$('#faultModal').classList.remove('open');
   const localDate=value=>{const date=value?new Date(`${value}T12:00:00`):new Date();return Number.isNaN(date.getTime())?new Date():date};
@@ -1589,6 +1610,21 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
   $('#copyInvite').onclick=async()=>{if(!createdInviteUrl)return;try{await navigator.clipboard.writeText(createdInviteUrl);toast('Enlace copiado')}catch(_){toast('Mantén presionado el enlace para copiarlo')}};
   $('#finishInvite').onclick=()=>{$('#inviteModal').classList.remove('open');loadUsers()};
   $$('[data-round-select]').forEach(select=>select.onchange=()=>{selectedRound=select.value;rememberClientRound(selectedClient,selectedRound);refreshRound();saveOperationalNavigation();});
+  {
+    const trigger=$('#clientRoundTrigger'),picker=$('#clientRoundPicker'),wheel=$('#clientRoundWheel'),source=$('#clientRound');
+    const rows=Array.from(source.options,(option,i)=>{
+      const row=document.createElement('div');row.id='roundChoice'+i;row.textContent=option.text;row.setAttribute('role','option');wheel.append(row);
+      row.onclick=()=>move(i);return row;
+    });
+    const index=()=>Math.max(0,Math.min(rows.length-1,Math.round(wheel.scrollTop/rows[0].offsetHeight)));
+    function highlight(){if(!picker.open)return;const i=index();rows.forEach((row,j)=>row.setAttribute('aria-selected',String(i===j)));wheel.setAttribute('aria-activedescendant',rows[i].id)}
+    function move(i){i=Math.max(0,Math.min(rows.length-1,i));wheel.scrollTop=i*rows[0].offsetHeight;highlight()}
+    trigger.onclick=()=>{picker.showModal();wheel.focus();move(source.selectedIndex)};
+    wheel.onscroll=highlight;
+    wheel.onkeydown=e=>{const i=index(),n={ArrowUp:i-1,ArrowDown:i+1,Home:0,End:rows.length-1}[e.key];if(n!==undefined){e.preventDefault();move(n)}};
+    $('#roundCancel').onclick=()=>picker.close();
+    $('#roundApply').onclick=()=>{const i=index();picker.close();if(i!==source.selectedIndex){source.selectedIndex=i;source.dispatchEvent(new Event('change',{bubbles:true}))}};
+  }
   let activeReportContext=null,reportOpenSequence=0,reportDraftSaveTimer=0;
   const reportDraftStorageKey=`hsc-report-drafts-v2-${account.id}`,reportDraftFlights=new Map();
   const reportEditorId=crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`;
