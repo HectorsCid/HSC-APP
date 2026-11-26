@@ -13,7 +13,7 @@ const context = vm.createContext({
   demoRounds:Object.fromEntries(['1','2','3','4'].map(r=>[r,{}])),
   savedClientRounds:()=>({}),pendingReportUploads:()=>({}),renderObservationPickers(){},
   localStorage:{setItem(){}},clientRoundsStorageKey:'rounds',byEquipmentId:(a,b)=>a[0].localeCompare(b[0]),
-  $:()=>element,document:{body:element},escapeHtml:x=>x,
+  $:()=>element,$$:()=>[],document:{body:element},escapeHtml:x=>x,
   renderClients(){},refreshRound(){},renderAgenda(){},renderExpenses(){},announcePendingExpenses(){},
   restored:0,saved:0,
 });
@@ -58,6 +58,7 @@ nav.account.isOwner=true;nav.appKind='technician';nav.serverRole='admin';nav.res
 console.log('OK: destino de notificación de un solo uso y recarga en la misma pantalla, incluida vista Partner administrativa.');
 const backSource=html.slice(html.indexOf('  function parentView('),html.indexOf('  function initializeBrowserNavigation('));
 const goBackSource=html.split(/\r?\n/).find(line=>line.trim().startsWith('async function goBack('));
+nav.clientHubViews=['clientDevices','clientHistory','clientIssues','clientSettings'];
 let modalOpen=true;
 Object.assign(nav,{document:{querySelector:()=>modalOpen?{classList:{remove(){modalOpen=false}}}:null},browserHistoryReady:false,handlingHistoryPop:false,activeReportContext:null});
 vm.runInContext(backSource+'\n'+goBackSource,nav);
@@ -66,3 +67,5 @@ nav.goBack();assert.equal(nav.current,'equipment');nav.goBack();assert.equal(nav
 nav.currentMode='partner';nav.current='reportView';nav.goBack();assert.equal(nav.current,'partnerReports');nav.goBack();assert.equal(nav.current,'partner');
 assert.ok(!['report','clientEditor','equipmentEditor'].includes(nav.current));
 console.log('OK: Atrás cierra ventanas y sigue reporte → equipo → cliente, sin reabrir formularios.');
+for(const view of nav.clientHubViews){assert.equal(nav.parentView(view),'client');assert.ok(html.includes('data-client-dest="'+view+'"'));assert.ok(html.includes('data-view="'+view+'"'))}
+nav.historyStack=['clients','client','clientHistory','reportView'];assert.equal(nav.parentView('reportView'),'clientHistory');

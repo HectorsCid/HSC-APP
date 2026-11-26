@@ -133,7 +133,7 @@
     #reportDates summary{width:fit-content;color:var(--brand-2)} #reportDates summary::after{content:"⌄"} #reportDates[open] summary::after{transform:rotate(180deg)}
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='operations_profile.css', v='20260923-1') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='operations_technician_refresh.css', v='20261126-5') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='operations_technician_refresh.css', v='20261126-6') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='equipment_detail.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='client_grid.css') }}">
   <script defer src="{{ url_for('static', filename='nested_list_scroll.js') }}"></script>
@@ -164,15 +164,19 @@
     </section>
 
     <section class="view" data-view="client">
-      <article class="hero"><div class="hero-top"><div class="hero-logo">—</div><div><h2>Cargando cliente…</h2><p>Validando empresa asignada</p></div></div><div class="address"><span>⌖</span><span>La información aparecerá después de validar tu cuenta.</span></div><select hidden id="clientRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select><div class="stats" id="equipmentFilters"><button type="button" class="stat active" data-filter="all" aria-pressed="true"><b id="roundEquipment">0</b><span>Equipos · Todos</span></button><button type="button" class="stat" data-filter="done" aria-pressed="false"><b id="roundReports">0</b><span>Atendidos</span></button><button type="button" class="stat" data-filter="pending" aria-pressed="false"><b id="roundPendingCount">0</b><span>Pendientes</span></button><span id="roundLabel" hidden>R2</span></div><div class="progress"><i id="roundProgress"></i></div><div class="progress-label"><button type="button" class="stat client-round-trigger" id="clientRoundTrigger" aria-haspopup="dialog">Ronda 2 ⌄</button><b id="roundProgressText"></b></div></article>
+      <article class="hero"><div class="hero-top"><div class="hero-logo">—</div><div><h2>Cargando cliente…</h2><p>Validando empresa asignada</p></div></div><select hidden id="clientRound" data-round-select><option value="1">Ronda 1</option><option value="2" selected>Ronda 2</option><option value="3">Ronda 3</option><option value="4">Ronda 4</option></select><div class="progress"><i id="roundProgress"></i></div><div class="progress-label"><button type="button" class="stat client-round-trigger" id="clientRoundTrigger" aria-haspopup="dialog">Ronda 2 ⌄</button><b id="roundProgressText"></b></div></article>
       <dialog id="clientRoundPicker" aria-labelledby="roundPickerTitle"><h3 id="roundPickerTitle">Seleccionar ronda</h3><div class="round-wheel-frame"><div id="clientRoundWheel" role="listbox" aria-labelledby="roundPickerTitle" tabindex="0"></div></div><div class="round-wheel-actions"><button type="button" id="roundCancel" class="secondary">Cancelar</button><button type="button" id="roundApply" class="primary">Listo</button></div></dialog>
-      <div class="client-tools"><button class="secondary" id="editOperationalClient" data-permission="editClientData" title="Modificar datos del cliente">✎ Editar cliente</button><button class="secondary" id="addOperationalEquipment" data-permission="addEquipment" title="Registrar otro equipo">＋ Equipo</button><button class="secondary" id="singleWorkReport" data-permission="createReports" data-tech-only title="Crear un reporte sin elegir equipo de la póliza">📝 Reporte único</button><button class="secondary" id="newClientWorklist" data-tech-only type="button">＋ Crear lista</button></div>
-      <div data-tech-only><section id="clientWorklistSection" class="client-worklists" hidden><div class="section-head"><h2>Trabajo para hoy</h2></div><div id="clientWorklistCards"></div></section></div>
-      <div class="section-head"><h2>Equipos</h2><span class="count" id="roundPending"></span></div>
+      <div class="hub-primary" data-tech-only><button class="primary" id="clientToday" type="button"><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v15H5zM8 10h8M8 14h5"/></svg><span id="clientTodayTitle">Crear lista de hoy</span><small id="clientTodayProgress" hidden></small></button><button type="button" class="secondary" id="clientFaultQuick" data-permission="reportFaults"><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2zM12 9v5M12 17h.01"/></svg>Reportar falla</button></div>
+      <div class="hub-grid"><button type="button" class="hub-tile" data-client-dest="clientDevices"><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v12H3zM8 20h8M12 17v3"/></svg><strong>Equipos</strong><small id="clientDeviceBadge">Inventario</small></button><button type="button" class="hub-tile" data-client-dest="clientHistory"><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8M8 16h5"/></svg><strong>Reportes</strong><small id="clientReportBadge">Historial</small></button><button type="button" class="hub-tile" data-client-dest="clientIssues"><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2zM12 9v5M12 17h.01"/></svg><strong>Fallas</strong><small id="clientIssueBadge">Seguimiento</small></button><button type="button" class="hub-tile" data-client-dest="clientSettings"><svg class="equipment-line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h8m4 0h6M3 17h3m4 0h11M11 4h4v6h-4zM6 14h4v6H6z"/></svg><strong>Ajustes</strong><small id="clientSettingsHint">Datos del cliente</small></button></div>
+      <details data-tech-only id="clientListsDrawer" hidden><summary>Mis listas de trabajo</summary><button class="secondary" id="newClientWorklist" data-tech-only type="button">＋ Crear lista</button>      <div data-tech-only><section id="clientWorklistSection" class="client-worklists" hidden><div class="section-head"><h2>Trabajo para hoy</h2></div><div id="clientWorklistCards"></div></section></div></details>
+    </section>
+    <section class="view" data-view="clientDevices">      <div class="section-head"><h2>Equipos</h2><span class="count" id="roundPending"></span></div><button class="secondary" id="addOperationalEquipment" data-permission="addEquipment" title="Registrar otro equipo">＋ Equipo</button><div class="stats" id="equipmentFilters"><button type="button" class="stat active" data-filter="all" aria-pressed="true"><b id="roundEquipment">0</b><span>Equipos · Todos</span></button><button type="button" class="stat" data-filter="done" aria-pressed="false"><b id="roundReports">0</b><span>Atendidos</span></button><button type="button" class="stat" data-filter="pending" aria-pressed="false"><b id="roundPendingCount">0</b><span>Pendientes</span></button><span id="roundLabel" hidden>R2</span></div>
       <div class="search"><span>⌕</span><input id="technicianEquipmentSearch" type="search" placeholder="Buscar nombre, ID, marca, modelo o ubicación" aria-label="Buscar equipos por nombre, ID, marca, modelo o ubicación"></div>
       <p class="count" id="technicianEquipmentSearchCount" aria-live="polite"></p><div class="equipment-list bounded-list" id="equipmentList" style="margin-top:10px"></div><div class="empty" id="technicianEquipmentNoMatches" role="status" hidden>No hay equipos que coincidan con tu búsqueda y el estado seleccionado.</div>
-      <div class="section-head"><h2>Reportes de la ronda</h2><span class="count" id="roundReportCount"></span></div><div id="roundReportList"></div><button type="button" class="secondary" id="toggleRoundHistory" aria-controls="roundReportList" aria-expanded="false" hidden></button>
-      <div class="section-head"><h2>Fallas del cliente</h2><span class="count" id="clientFaultCount"></span></div><div class="user-list bounded-list" id="clientFaultList"></div>
+    </section>
+    <section class="view" data-view="clientHistory">      <div class="section-head"><h2>Reportes de la ronda</h2><span class="count" id="roundReportCount"></span></div><div id="roundReportList"></div><button type="button" class="secondary" id="toggleRoundHistory" aria-controls="roundReportList" aria-expanded="false" hidden></button><div data-tech-only><button class="secondary" id="singleWorkReport" data-permission="createReports" title="Crear un reporte sin elegir equipo de la póliza">📝 Reporte único</button></div></section>
+    <section class="view" data-view="clientIssues">      <div class="section-head"><h2>Fallas del cliente</h2><span class="count" id="clientFaultCount"></span></div><div class="user-list bounded-list" id="clientFaultList"></div></section>
+    <section class="view" data-view="clientSettings"><div class="section-head"><h2>Datos del cliente</h2></div><p id="clientSettingsName"></p><div class="address" id="clientSettingsAddress"><span>⌖</span><span>La información aparecerá después de validar tu cuenta.</span></div><button class="secondary" id="editOperationalClient" data-permission="editClientData" title="Modificar datos del cliente">✎ Editar cliente</button>
     </section>
 
     <section class="view" data-view="equipment">
@@ -381,7 +385,7 @@
 
 <div class="modal" id="profileEditModal"><div class="sheet"><div class="eyebrow">Mi cuenta</div><h2>Editar perfil</h2><div class="field"><label for="ownProfileName">Nombre visible</label><input id="ownProfileName" maxlength="100" autocomplete="name"></div><div class="field" id="ownProfilePhotoField" style="margin-top:12px"><label for="ownProfilePhoto">Fotografía opcional</label><input id="ownProfilePhoto" type="file" accept="image/jpeg,image/png,image/webp"><p class="editor-note">JPG, PNG o WebP de máximo 8 MB.</p></div><div class="sheet-actions"><button class="secondary" id="closeOwnProfile" type="button">Cancelar</button><button class="primary" id="saveOwnProfile" type="button">Guardar perfil</button></div></div></div>
 {% include '_operations_worklist_editor.html' %}
-<script src="/static/operations_worklists.js?v=8"></script>
+<script src="/static/operations_worklists.js?v=9"></script>
 <script src="/static/operations_partner_lists.js?v=1"></script>
 <style>.fault-attention-slot{display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:12px;min-width:0}.fault-attention-slot img{width:100%;height:140px;object-fit:cover;border-radius:8px}.fault-attention-slot label{font-size:.8rem;text-align:center}#faultAttentionHistory article{display:block;margin:12px 0}#faultAttentionHistory small{display:block;margin:6px 0;color:var(--muted)}#faultAttentionHistory p{margin:8px 0}#faultAttentionMessage{margin-top:10px;white-space:pre-wrap}</style>
 <script src="/static/operations_fault_attention.js?v=1"></script>
@@ -530,6 +534,10 @@
   views.payments=['Administración','Pagos a técnicos'];views.payAccount=['Pagos','Cuenta del técnico'];
   views.repairs=['HSC Técnico','Reparaciones'];views.repair=['Reparaciones','Historial de la visita'];views.repairEditor=['Reparaciones','Registrar visita'];
   views.worklists=['Agenda','Mi jornada'];views.worklist=['Mi jornada','Mi lista de equipos'];
+  const hubNames={clientDevices:'Equipos',clientHistory:'Reportes',clientIssues:'Fallas',clientSettings:'Ajustes'},clientHubViews=Object.keys(hubNames);
+  for(const key of clientHubViews)views[key]=['Cliente',hubNames[key]];
+  $$('[data-client-dest]').forEach(btn=>btn.onclick=()=>showView(btn.dataset.clientDest));
+  $('#clientFaultQuick').onclick=()=>{if(can('reportFaults'))openFaultForm()};
   function showPartnerScopeError(message){
     if(serverRole!=='client')return;
     $('#partnerClientLogo').textContent='!';
@@ -680,6 +688,8 @@
   function browserNavigationUrl(view=current,guard=false){const url=new URL(location.href);url.hash=guard?'hsc-proteccion':`hsc-${view}`;return `${url.pathname}${url.search}${url.hash}`;}
   function writeBrowserNavigation(replace=false,guard=false,view=current,stack=historyStack){if(!browserHistoryReady)return;const state=browserNavigationState(guard,view,stack),url=browserNavigationUrl(view,guard);if(replace)window.history.replaceState(state,'',url);else window.history.pushState(state,'',url);}
   function canonicalPath(view){
+    if(clientHubViews.includes(view))return ['clients','client',view];
+    if(currentMode!=='partner'&&((current==='clientDevices'&&['equipment','equipmentEditor'].includes(view))||(current==='clientHistory'&&view==='reportView')||(current==='clientSettings'&&view==='clientEditor')))return ['clients','client',current,view];
     if(view==='expenses'&&account.isOwner)return ['clients','profile','payments','expenses'];
     if(view==='payments')return ['clients','profile','payments'];
     if(view==='payAccount')return ['clients','profile','payments','payAccount'];
@@ -692,6 +702,8 @@
     return paths[view]||[view];
   }
   function parentView(view){
+    if(clientHubViews.includes(view))return 'client';
+    if(historyStack.at(-1)===view&&clientHubViews.includes(historyStack.at(-2)))return historyStack.at(-2);
     if(view==='expenses'&&account.isOwner)return 'payments';
     if(view==='payAccount')return 'payments';
     if(view==='payments')return 'profile';
@@ -710,7 +722,7 @@
     writeBrowserNavigation(false,false,current,historyStack);
     $('#backBtn').hidden=false;
   }
-  function showView(name,push=true){if(name===current){$('#backBtn').hidden=false;applyAccess();saveOperationalNavigation();if(name==='partnerDocuments')loadPartnerDocuments();return;}if(push)historyStack=canonicalPath(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=false;navMode(currentMode);$('.bottom-nav').hidden=currentMode==='partner'||name==='inviteAccept'||name==='report';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();saveOperationalNavigation();if(name==='agenda')renderAgenda();if(name==='expenses')renderExpenses();if(name==='users')loadUsers();if(name==='partnerDocuments')loadPartnerDocuments();if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,name,historyStack);scrollTo({top:0,behavior:'smooth'});}
+  function showView(name,push=true){if(name===current){$('#backBtn').hidden=false;applyAccess();saveOperationalNavigation();if(name==='partnerDocuments')loadPartnerDocuments();return;}if(push)historyStack=canonicalPath(name);current=name;$$('.view').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$('#eyebrow').textContent=views[name][0];$('#screenTitle').textContent=views[name][1];$('#backBtn').hidden=false;navMode(currentMode);$('.bottom-nav').hidden=currentMode==='partner'||name==='inviteAccept'||name==='report';$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.nav===name||(clientHubViews.includes(name)||name==='client'||name==='equipment'||name==='report'||name==='clientEditor'||name==='equipmentEditor')&&b.dataset.nav==='clients'));applyAccess();saveOperationalNavigation();if(name==='clientDevices')hydratePhotos($('#equipmentList'),12);if(name==='agenda')renderAgenda();if(name==='expenses')renderExpenses();if(name==='users')loadUsers();if(name==='partnerDocuments')loadPartnerDocuments();if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,name,historyStack);scrollTo({top:0,behavior:'smooth'});}
   async function goBack(){const modal=document.querySelector('.modal.open');if(modal){if(modal.id==='visitRequestModal'){closeVisitRequest();return;}if(modal.id==='taskModal'&&taskFromCalendar){returnToMonthCalendar();return;}modal.classList.remove('open');return;}const target=parentView(current);if(target===current)return;await showView(target,false);if(current!==target)return;historyStack=canonicalPath(target);if(browserHistoryReady&&!handlingHistoryPop)writeBrowserNavigation(true,false,target,historyStack)}
   function openRoot(name){if(name===current)return;historyStack=[name];showView(name,false);if(browserHistoryReady)writeBrowserNavigation(true,false,name,historyStack);}
   let restoringReportOpen=false;
@@ -728,6 +740,7 @@
     if(appKind==='partner'||serverRole==='client'||(account.isOwner&&state.mode==='partner'))currentMode='partner';
     else currentMode='tech';
     const allowedRoots=currentMode==='partner'?['partner','partnerEquipment','equipment','partnerReports','partnerFaults','partnerDocuments','reportView']:['clients','client','equipment','report','reportView','agenda','profile','expenses','worklists','worklist','repairs','repair','repairEditor'];
+    if(currentMode!=='partner')allowedRoots.push(...clientHubViews);
     if(account.isOwner)allowedRoots.push('users','userPermissions','clientEditor','equipmentEditor','payments','payAccount');
     const requestedSection=entryParams.get('open');
     if(currentMode!=='partner'&&requestedSection==='expenses')state.view='expenses';
@@ -781,7 +794,7 @@
   }
   function savePersonalClientOrder(from,to){const ids=HscClientGrid.ordered(clients,account.id).map(c=>c[1]);if(HscClientGrid.save(account.id,HscClientGrid.move(ids,from,to))){renderClients();}else toast('No se pudo guardar el orden en este dispositivo.');}
   function openClient(id){selectedClient=id;selectClientRound(id);equipmentFilter='all';$$('#equipmentFilters [data-filter]').forEach(b=>b.classList.toggle('active',b.dataset.filter==='all'));refreshRound();showView('client');journeyUi?.render();}
-  function renderClientDetail(){const meta=clientMeta[selectedClient],hero=$('[data-view="client"] .hero');hero.querySelector('h2').textContent=clientName(selectedClient);hero.querySelector('p').textContent=`${selectedClient} · ${meta.policy?'Póliza activa':'Sin póliza · sólo catálogo'}`;hero.querySelector('.hero-logo').innerHTML=photoMarkup(meta.photo,selectedClient.slice(0,2));hydratePhotos(hero,1);hero.querySelector('.address span:last-child').textContent=meta.address||'Dirección por completar';views.client[1]=clientName(selectedClient);if(current==='client')$('#screenTitle').textContent=clientName(selectedClient);}
+  function renderClientDetail(){const meta=clientMeta[selectedClient],hero=$('[data-view="client"] .hero');hero.querySelector('h2').textContent=clientName(selectedClient);hero.querySelector('p').textContent=`${selectedClient} · ${meta.policy?'Póliza activa':'Sin póliza · sólo catálogo'}`;hero.querySelector('.hero-logo').innerHTML=photoMarkup(meta.photo,selectedClient.slice(0,2));hydratePhotos(hero,1);$('#clientSettingsName').textContent=clientName(selectedClient);$('#clientSettingsAddress span:last-child').textContent=meta.address||'Dirección por completar';views.client[1]=clientName(selectedClient);if(current==='client')$('#screenTitle').textContent=clientName(selectedClient);}
 function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equipment-card" data-equipment-row="${escapeHtml(e[0])}">${meta.photo?`<button type="button" class="equipment-photo" data-enlarge-equipment="${escapeHtml(e[0])}" aria-label="Ampliar foto de ${escapeHtml(e[1])}" style="cursor:zoom-in;border:0;padding:0">${photoMarkup(meta.photo,'❄')}</button>`:'<span class="equipment-photo">❄</span>'}<button type="button" data-equipment="${escapeHtml(e[0])}" style="display:flex;align-items:center;gap:14px;align-self:stretch;flex:1;min-width:0;background:none;color:inherit;border:0;text-align:left;padding:0"><span class="card-copy"><span class="card-title">${escapeHtml(e[1])}</span><span class="card-sub">${escapeHtml(e[0])} · ${escapeHtml(e[2])}${meta.photoAvailable?' · Foto registrada':''}${meta.active?'':' · Inactivo'}${meta.pendingUpload?' · Cambios pendientes de enviar':''}${reportForEquipment(e[0])?.pending_upload?' · Reporte guardado en este dispositivo':''}</span></span><span class="status-dot ${!meta.active?'off':e[3]?'done':''}" title="${!meta.active?'Inactivo':e[3]?'Realizado':'Pendiente'}"></span><span class="chevron">›</span></button></div>`}
   function reportCards(rows){return rows.slice().sort(byEquipmentId).map(e=>{const report=reportForEquipment(e[0]);return `<button type="button" class="equipment-card" data-round-report="${escapeHtml(e[0])}"><span class="report-icon">▤</span><span class="card-copy"><span class="card-title">${escapeHtml(e[1])}</span><span class="card-sub">${escapeHtml(e[0])} · ${escapeHtml(report?.end||report?.start||demoRounds[selectedRound].date)}${report?.photo_count?` · ${report.photo_count} fotos`:''}</span></span><span class="chevron">›</span></button>`}).join('')||'<div class="empty">Todavía no hay reportes en esta ronda.</div>';}
   let historyScope='',historyExpanded=false;
@@ -812,7 +825,7 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
     $('#equipmentList').innerHTML=rows.map(equipmentCard).join('')||'<div class="empty">No hay equipos con este estado en la ronda seleccionada.</div>';
     filterTechnicianEquipment();
     // Adelanta la siguiente pantalla del teléfono sin solicitar los 388 equipos.
-    hydratePhotos($('#equipmentList'),12);
+    if(current==='clientDevices')hydratePhotos($('#equipmentList'),12);
     $('#roundLabel').textContent=`R${selectedRound}`;$('#roundReports').textContent=completed;
     $('#roundPendingCount').textContent=active.length-completed;
     $$('#equipmentFilters [data-filter]').forEach(b=>{b.classList.toggle('active',b.dataset.filter===equipmentFilter);b.setAttribute('aria-pressed',String(b.dataset.filter===equipmentFilter));});
@@ -820,6 +833,7 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
     $('#roundProgress').style.width=`${active.length?completed/active.length*100:0}%`;
     $('#roundProgressText').textContent=`${active.length?Math.round(completed/active.length*100):0}% · ${completed} de ${active.length} activos`;
     $('#roundReportCount').textContent=`R${selectedRound} · ${all.filter(e=>e[3]).length} reportes`;
+    $('#clientDeviceBadge').textContent=`${all.length} en inventario`;$('#clientReportBadge').textContent=`${all.filter(e=>e[3]).length} en esta ronda`;
     renderRoundHistory(all.filter(e=>e[3]));
     renderClientFaults();
     renderEquipmentDetail();
@@ -1032,6 +1046,7 @@ function equipmentCard(e){const meta=equipmentMeta[e[0]];return `<div class="equ
     const pending=rows.filter(fault=>!/resuelt|cerrad|atendid|terminad|reparad/i.test(String(fault.status||''))).length;
     $('#clientFaultList').innerHTML=faultCards(rows);
     $('#clientFaultCount').textContent=rows.length?`${pending} pendiente${pending===1?'':'s'} · ${rows.length} total`:'Sin fallas';
+    $('#clientIssueBadge').textContent=pending?`${pending} pendiente${pending===1?'':'s'}`:'Sin pendientes';
     bindPartnerFaults();
   }
   function partnerDocumentCacheKey(clientId){return `hsc-partner-documents-v7-${account.id}-${clientId}`}

@@ -210,3 +210,14 @@ body[data-active-mode="tech"] .report-evidence-shortcut small{color:var(--muted)
 #roundReportList .round-history-row+.round-history-row{border-top:1px solid var(--line)}
 #roundReportList .round-history-row small,#roundReportList .round-history-row>span:last-child{color:var(--muted)}
 #toggleRoundHistory{margin-top:8px}
+.hub-primary,.hub-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}
+.hub-primary button,.hub-tile{display:grid;justify-items:start;align-content:center;gap:7px;text-align:left;min-width:0}
+.hub-primary button{min-height:68px;padding:12px 14px}
+.hub-primary small{font-size:.78rem}
+.hub-tile{position:relative;padding:16px;min-height:94px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:16px;font:inherit;cursor:pointer}
+.hub-tile svg{color:var(--brand-2)}
+.hub-tile small{color:var(--muted)}
+.hub-tile:focus-visible,.hub-tile:hover{border-color:var(--brand)}
+#clientListsDrawer{margin-top:16px}
+#clientListsDrawer summary{cursor:pointer;padding:12px 0;color:var(--muted)}
+[data-view="clientDevices"] .search{margin-top:12px}

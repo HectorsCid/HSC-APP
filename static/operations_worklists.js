@@ -37,6 +37,15 @@
       const container=$('#clientWorklistCards');if(!container)return;
       const lists=state.worklists.filter(l=>l.client_id===state.selectedClient&&['active','completed'].includes(l.status)&&canSee(l)).sort((a,b)=>Number(a.status==='completed')-Number(b.status==='completed')||a.target_date.localeCompare(b.target_date));
       const section=$('#clientWorklistSection');if(section)section.hidden=!lists.length;
+      const drawer=$('#clientListsDrawer');if(drawer){drawer.hidden=!lists.length;if(drawer.dataset.client!==state.selectedClient){drawer.open=false;drawer.dataset.client=state.selectedClient}}
+      const primary=$('#clientToday');
+      if(primary){
+        const mine=lists.filter(l=>l.status==='active'&&l.target_date===today()&&(l.assigned_user_id===api.account.id||(l.shared_user_ids||[]).includes(api.account.id)));
+        const next=mine.find(l=>l.id===selected)||mine[0],items=next?progress(next,state.reports):[];
+        $('#clientTodayTitle').textContent=next?'Continuar mi lista':'Crear lista de hoy';
+        const subtitle=$('#clientTodayProgress');subtitle.hidden=!next;subtitle.textContent=next?`${items.filter(i=>i.done).length} de ${items.length} atendidos`:'';
+        primary.onclick=()=>next?choose(next.id):edit(null,true);
+      }
       container.innerHTML=lists.map(list=>{
         const items=progress(list,state.reports),done=items.filter(i=>i.done).length;
         return `<article class="client-worklist-card"><header><b>${esc(list.title)}</b><button type="button" class="mini-btn" data-open-client-worklist="${esc(list.id)}" aria-label="Abrir lista ${esc(list.title)}">☑ Abrir lista</button><button type="button" class="mini-btn" data-edit-client-worklist="${esc(list.id)}" aria-label="Editar lista ${esc(list.title)}">✎ Editar</button><details class="client-worklist-options"><summary aria-label="Opciones de la lista ${esc(list.title)}">⋯</summary><div><button type="button" data-client-work-action="${list.status==='active'?'tomorrow':'reopen'}:${esc(list.id)}">${list.status==='active'?'Pasar a mañana':'Reabrir'}</button>${list.status==='active'?`<button type="button" data-client-work-action="close:${esc(list.id)}">Cerrar lista</button>`:''}<button type="button" data-client-work-action="delete:${esc(list.id)}">Eliminar lista</button></div></details></header><small>${list.origin==='client'?'Creada por el cliente · ':''}${esc(dateLabel(list.target_date))} · ${list.status==='completed'?'Cerrada · ':''}${done}/${items.length} con reporte${list.pending_upload?' · pendiente de enviar':''}</small><div class="client-worklist-items">${items.map((item,index)=>`<button type="button" class="${item.done?'done':''}" data-client-work-item="${esc(list.id)}:${esc(item.id)}">${item.done?'✓':index+1}. ${esc(equipmentName(item.equipment_id))}</button>`).join('')}</div></article>`;
