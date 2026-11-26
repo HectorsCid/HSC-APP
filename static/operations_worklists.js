@@ -37,7 +37,7 @@
       const container=$('#clientWorklistCards');if(!container)return;
       const lists=state.worklists.filter(l=>l.client_id===state.selectedClient&&['active','completed'].includes(l.status)&&canSee(l)).sort((a,b)=>Number(a.status==='completed')-Number(b.status==='completed')||a.target_date.localeCompare(b.target_date));
       const section=$('#clientWorklistSection');if(section)section.hidden=!lists.length;
-      const drawer=$('#clientListsDrawer');if(drawer){drawer.hidden=!lists.length;if(drawer.dataset.client!==state.selectedClient){drawer.open=false;drawer.dataset.client=state.selectedClient}}
+      const drawer=$('#clientListsDrawer');if(drawer){drawer.hidden=!lists.length;if(drawer.dataset.listClient!==state.selectedClient){drawer.open=false;drawer.dataset.listClient=state.selectedClient}}
       const primary=$('#clientToday');
       if(primary){
         const mine=lists.filter(l=>l.status==='active'&&l.target_date===today()&&(l.assigned_user_id===api.account.id||(l.shared_user_ids||[]).includes(api.account.id)));
