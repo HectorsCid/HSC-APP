@@ -2913,6 +2913,8 @@ def api_invoice_email(inv_id):
         from billing_policies import packet, read_pdf, PolicyError
         try:
             info, extras = packet(body["policy_client"], inv_id, download=True)
+            if info.get("annual"):
+                raise PolicyError("Usa Enviar 4 documentos desde la póliza del Lote 86.")
             if info["token"] != body.get("policy_token") or (info["required"] and not info["oc"]):
                 raise PolicyError("El expediente está incompleto o cambió. Vuelve a preparar el correo.")
             if info["signed"]:

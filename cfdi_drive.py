@@ -77,6 +77,14 @@ def _upsert_file(service, parent_id, filename, content, mimetype):
     ).execute()
 
 
+def backup_policy_file(policy,parts,filename,data):
+    service=get_drive_service_user(timeout=35)
+    parent=FACTURAS_ROOT_FOLDER_ID
+    for part in [policy["client"],"Pólizas",policy["branch"],policy["name"],*parts]:
+        parent=_get_or_create_folder(service,parent,part)
+    return _upsert_file(service,parent,filename,data,"application/pdf")
+
+
 def _download_file(service, file_id):
     buffer = io.BytesIO()
     downloader = MediaIoBaseDownload(buffer, service.files().get_media(fileId=file_id))

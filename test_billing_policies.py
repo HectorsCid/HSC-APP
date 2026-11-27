@@ -11,6 +11,11 @@ from operaciones_store import OperationsStore
 
 
 class PolicyFlow(unittest.TestCase):
+    def test_billing_home_template_compiles(self):
+        from jinja2 import Environment,FileSystemLoader
+        env=Environment(loader=FileSystemLoader(Path(__file__).parent/"templates"))
+        env.get_template("facturas_inicio.html")
+
     def setUp(self):
         folder=tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
@@ -92,6 +97,43 @@ class PolicyFlow(unittest.TestCase):
         self.assertEqual(rows[1]["Folio fiscal"],"AAA")
         self.assertIn("Pendiente",rows[2]["Estado"])
         self.assertEqual(self.http.get(self.base+"/a/relacion.csv?desde=2026-02&hasta=2026-01").status_code,400)
+
+    def test_annual_order_previous_service_year_and_two_separate_deliveries(self):
+        from flask import current_app
+        p=dict(key="v",client="Visscher",branch="Lote 86",name="Contrato 86",rfc="VCM1401063I9")
+        current_app.extensions["commercial_policies"]=lambda:[p]
+        self.mock("facturacion_bp._read_invoice_schedules",return_value=[dict(id="sch",template_id="t",policy_name=p["name"],policy_client="v")])
+        self.mock("smtp_mailer.authorized_to_send",return_value=True)
+        self.mock("facturacion_bp.authorized_to_send",return_value=True)
+        self.mock("cfdi_drive.backup_policy_file")
+        self.mock("billing_policies.current_invoice",return_value=("100",b"%PDF-orig",b"<xml/>"))
+        sign=self.mock("smtp_mailer.send_email_with_attachments")
+        final=self.mock("facturacion_bp.send_cfdi_email",return_value={"recipients":["final@example.org"]})
+        self.mock("email_tracking.record_email_delivery")
+        root=self.base+"/v"
+        self.assertEqual(self.http.post(root+"/firmante",json=dict(policy=p["name"],signer="firma@example.org",recipient="final@example.org")).status_code,200)
+        policies.sql("INSERT INTO billing_policy_rules VALUES (?,?)",("v",'{"previous":true}'),write=True)
+        self.assertTrue(policies.tag_template("doc","t",p["rfc"],"2027-01","sch"))
+        policies.deliver_ready();policies.deliver_ready()
+        sign.assert_called_once()
+        self.assertEqual(sign.call_args.kwargs["recipient"],"firma@example.org")
+        self.assertEqual([x["data"] for x in sign.call_args.kwargs["attachments"]],[b"%PDF-orig"])
+        def order(year):
+            return self.http.post(root+"/oc-anual",data=dict(policy=p["name"],year=year,file=(io.BytesIO(b"%PDF-"+year.encode()),year+".pdf")))
+        self.assertEqual(order("2027").status_code,200)
+        self.assertFalse(policies.packet("v","doc")[0]["oc"])
+        self.assertEqual(order("2026").status_code,200)
+        def send():
+            return self.http.post(root+"/doc/expediente",json={"token":policies.packet("v","doc")[0]["token"]})
+        self.assertEqual(send().status_code,400)
+        self.assertEqual(self.http.post(root+"/doc/signed",data={"file":(io.BytesIO(b"%PDF-signed"),"Firmada.pdf")}).status_code,200)
+        policies.deliver_ready();final.assert_not_called()
+        self.assertEqual(send().status_code,200)
+        self.assertEqual(send().status_code,400)
+        final.assert_called_once()
+        args=final.call_args.kwargs
+        self.assertEqual(args["recipient"],"final@example.org")
+        self.assertEqual([args["pdf_bytes"],args["xml_bytes"]]+[a["data"] for a in args["extra_attachments"]],[b"%PDF-orig",b"<xml/>",b"%PDF-2026",b"%PDF-signed"])
 
     def test_automatic_waits_for_signature_and_order_and_only_sends_once(self):
         cfg=dict(templates=["t"],automatic=["Chiller"],signed=True,oc=True,email="admin@example.org")

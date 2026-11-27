@@ -18,6 +18,48 @@ class PolicyError(ValueError):
     pass
 
 
+def annual_contract(key,name):
+    return next((p for p in commercial() if p["key"]==key and p["name"]==name
+                 and p["rfc"]=="VCM1401063I9" and p["branch"].strip().casefold()=="lote 86"),None)
+
+
+def signature_contacts(key,name):
+    rows=sql("SELECT signer,recipient FROM billing_policy_signers WHERE client_id=? AND policy=?",(key,name))
+    return dict(signer=rows[0][0],recipient=rows[0][1]) if rows else dict(signer="",recipient="")
+
+
+@bp.post("/<key>/firmante")
+def configure_signer(key):
+    from smtp_mailer import authorized_to_send,parse_recipients
+    b=request.get_json() or {}
+    name=b.get("policy","")
+    if not annual_contract(key,name): raise PolicyError("Configura primero la póliza del Lote 86.")
+    if not authorized_to_send(b.get("send_key"),request.cookies.get("hsc_mail_trusted","")):
+        return jsonify(ok=False,error="Se necesita la clave de envío para autorizar al firmante."),403
+    try:
+        signer=parse_recipients(b.get("signer"))
+        recipient=parse_recipients(b.get("recipient"))
+    except ValueError as exc: raise PolicyError(str(exc)) from exc
+    if len(signer)!=1: raise PolicyError("Elige un solo firmante.")
+    sql("INSERT INTO billing_policy_signers VALUES (?,?,?,?) ON CONFLICT(client_id,policy) DO UPDATE SET signer=excluded.signer,recipient=excluded.recipient",
+        (key,name,signer[0],"; ".join(recipient)),write=True)
+    return jsonify(ok=True)
+
+
+@bp.post("/<key>/oc-anual")
+def annual_order(key):
+    name=request.form.get("policy","");year=request.form.get("year","")
+    p=annual_contract(key,name)
+    if not p or not re.fullmatch(r"20[0-9]{2}",year):raise PolicyError("Selecciona la póliza del Lote 86 y el año de servicio.")
+    upload=request.files.get("file");data=read_pdf(upload)
+    from cfdi_drive import backup_policy_file
+    backup_policy_file(p,["Órdenes de compra",year],"OC-"+year+".pdf",data)
+    sql("""INSERT INTO billing_policy_orders VALUES (?,?,?,?,?,?) ON CONFLICT(client_id,policy,period)
+        DO UPDATE SET filename=excluded.filename,digest=excluded.digest,content=excluded.content""",
+        (key,name,year,secure_filename(upload.filename) or "OC.pdf",hashlib.sha256(data).hexdigest(),data),write=True)
+    return jsonify(ok=True)
+
+
 @bp.errorhandler(PolicyError)
 def invalid(exc):
     return jsonify(ok=False, error=str(exc)), 400
@@ -91,7 +133,7 @@ def link(inv, c, name, period, *, queue=True):
         (inv,c["id"],c["rfc"],name,period),write=True)
     if not sql("SELECT 1 FROM billing_policy_invoices WHERE invoice_id=? AND client_id=? AND rfc=?", (inv,c["id"],c["rfc"])):
         raise PolicyError("Esta factura ya está vinculada a otro cliente.")
-    if queue and name in rules(c["id"]).get("automatic",[]):
+    if queue and not annual_contract(c["id"],name) and name in rules(c["id"]).get("automatic",[]):
         sql("""INSERT INTO billing_policy_mail(invoice_id,client_id,policy,state,due) VALUES (?,?,?,'waiting',0)
             ON CONFLICT(invoice_id) DO UPDATE SET client_id=excluded.client_id,policy=excluded.policy,state='waiting',due=0,note=''
             WHERE billing_policy_mail.state IN ('waiting','manual')""",(inv,c["id"],name),write=True)
@@ -108,6 +150,9 @@ def tag_template(inv, template, rfc, period, schedule_id=""):
             if rules(p["key"]).get("previous"):
                 period=(date.fromisoformat(period+"-01")-timedelta(days=1)).isoformat()[:7]
             link(inv,client(p["key"]),p["name"],period,queue=False)
+            if annual_contract(p["key"],p["name"]) and signature_contacts(p["key"],p["name"])["signer"]:
+                sql("""INSERT INTO billing_policy_mail(invoice_id,client_id,policy,state,due,note)
+                    VALUES (?,?,?,'sign_wait',0,'Por solicitar firma') ON CONFLICT(invoice_id) DO NOTHING""",(inv,p["key"],p["name"]),write=True)
             return True
     # A legacy template is not a contract. Keep historical invoice links intact.
     return False
@@ -151,7 +196,12 @@ def detail(key):
         row["auto_state"],row["auto_note"]=jobs.get(row["id"],("",""))
     templates=[dict(id=t["id"],name=t["name"]) for t in _read_invoice_templates()
                if c["rfc"] and str((t.get("receiver") or {}).get("tax_id") or "").upper()==c["rfc"]]
-    return jsonify(ok=True,client=c,rules=rules(key),templates=templates,invoices=rows,configured=[p for p in commercial() if p['key']==key and p['rfc']==c['rfc']])
+    configured=[dict(p) for p in commercial() if p['key']==key and p['rfc']==c['rfc']]
+    for p in configured:
+        if annual_contract(key,p["name"]):
+            p["signature"]=signature_contacts(key,p["name"])
+            p["orders"]=dict(sql("SELECT period,filename FROM billing_policy_orders WHERE client_id=? AND policy=? AND length(period)=4",(key,p["name"])))
+    return jsonify(ok=True,client=c,rules=rules(key),templates=templates,invoices=rows,configured=configured)
 
 
 @bp.post("/<key>/rules")
@@ -203,9 +253,9 @@ def manual_link(key):
         name=str(b.get("policy") or "").strip()
         if not sql("SELECT 1 FROM billing_policy_invoices WHERE client_id=? AND rfc=? AND invoice_id=? AND policy=?", (key,c['rfc'],inv,name)):
             assigned_policy(key,c['rfc'],name)
-    if sql("SELECT 1 FROM billing_policy_mail WHERE invoice_id=? AND state='sending'",(inv,)):
+    if sql("SELECT 1 FROM billing_policy_mail WHERE invoice_id=? AND state IN ('sending','sign_sending','final_sending')",(inv,)):
         raise PolicyError("El correo está en proceso. Espera antes de editar el vínculo.")
-    sql("UPDATE billing_policy_mail SET state='manual',note='Envío manual' WHERE invoice_id=? AND client_id=? AND state='waiting'",(inv,key),write=True)
+    sql("UPDATE billing_policy_mail SET state='manual',note='Envío manual' WHERE invoice_id=? AND client_id=? AND state IN ('waiting','sign_wait')",(inv,key),write=True)
     if b.get("unlink") is True:
         sql("DELETE FROM billing_policy_invoices WHERE client_id=? AND invoice_id=?", (key,inv),write=True)
     else:
@@ -248,9 +298,13 @@ def save_order(key,inv):
 
 @bp.post("/<key>/<inv>/signed")
 def save_signed(key,inv):
-    context(key,inv)
+    _,name,period=context(key,inv)
     u=request.files.get("file")
     content=read_pdf(u)
+    p=annual_contract(key,name)
+    if p:
+        from cfdi_drive import backup_policy_file
+        backup_policy_file(p,[period,"Firmadas"],secure_filename(inv)+"-firmada.pdf",content)
     sql("""INSERT INTO billing_policy_signed VALUES (?,?,?,?) ON CONFLICT(invoice_id)
         DO UPDATE SET filename=excluded.filename,content=excluded.content WHERE billing_policy_signed.client_id=excluded.client_id""",
         (inv,key,secure_filename(u.filename) or "Firmada.pdf",content),write=True)
@@ -306,13 +360,18 @@ def packet(key,inv,download=False):
     from facturacion_bp import _invoice_pdf_metadata, list_invoice_support_documents, download_invoice_support_documents
     c,name,month=context(key,inv)
     cfg=rules(key)
+    special=annual_contract(key,name)
     info=dict(email=cfg.get("email") or c["email"],cc=cfg.get("cc",""),subject=cfg.get("subject",""),message=cfg.get("message",""),
               policy=name,period=month,signed=cfg.get("signed",False),required=cfg.get("oc",False),oc="")
     cols="filename,digest,period"+(",content" if download else "")
     rows=sql(f"SELECT {cols} FROM billing_policy_orders WHERE client_id=? AND policy=? AND period IN (?,?,?) ORDER BY period DESC",(key,name,"invoice:"+inv,month,month[:4]))
     extra=[]
     marker=""
-    if not rows or rows[0][2] != "invoice:"+inv:
+    if special:
+        rows=[row for row in rows if row[2]==month[:4]]
+        signed=sql("SELECT filename,content FROM billing_policy_signed WHERE client_id=? AND invoice_id=?",(key,inv))
+        info.update(annual=True,required=True,signed=True,email=signature_contacts(key,name)["recipient"],cc="",signed_file=signed[0][0] if signed else "",signed_digest=hashlib.sha256(bytes(signed[0][1])).hexdigest() if signed else "")
+    elif not rows or rows[0][2] != "invoice:"+inv:
         meta=_invoice_pdf_metadata(inv)
         folder=meta.get("drive_folder_name") or meta.get("internal_folio")
         if folder and meta.get("client_name"):
@@ -330,6 +389,8 @@ def packet(key,inv,download=False):
         row=rows[0]
         info["oc"]=row[0]; marker=row[1]
         if download: extra=[dict(data=bytes(row[3]),filename=row[0],content_type="application/pdf")]
+    if special and download and signed:
+        extra.append(dict(data=bytes(signed[0][1]),filename=signed[0][0],content_type="application/pdf"))
     info["token"]=hashlib.sha256(json.dumps([key,inv,info,marker],sort_keys=True).encode()).hexdigest()
     return info,extra
 
@@ -340,11 +401,102 @@ def prepare(key,inv):
     return jsonify(ok=True,packet=info)
 
 
+def claim(query,params):
+    store=current_app.extensions["operations_store"]
+    with store.connection() as conn:
+        return conn.execute(query.replace("?",store.placeholder),params).rowcount==1
+
+
+def current_invoice(inv,rfc):
+    import facturacion_bp as billing
+    doc=billing._facturama_invoice_row(billing._fm_request("GET",f"/api/cfdi/{inv}",params={"type":"issued"}))
+    if doc["id"]!=inv or doc["customer_tax_id"]!=rfc or doc["type"]!="I" or doc["cancellation_status"]!="active":
+        raise PolicyError("Revisa el RFC y la vigencia de la factura.")
+    xml=billing._decode_facturama_file(billing._fm_request("GET",f"/Cfdi/xml/issued/{inv}"))
+    pdf=billing._facturama_printable_pdf(xml,inv)
+    if not xml or not pdf:raise PolicyError("No se recuperaron los documentos de la factura.")
+    return doc["folio"] or doc["uuid"],pdf,xml
+
+
+@bp.post("/<key>/<inv>/solicitar-firma")
+def request_signature(key,inv):
+    from smtp_mailer import authorized_to_send
+    b=request.get_json() or {}
+    if not authorized_to_send(b.get("send_key"),request.cookies.get("hsc_mail_trusted","")):
+        return jsonify(ok=False,error="Necesitas la clave de envío."),403
+    _,name,_=context(key,inv)
+    if not annual_contract(key,name) or not signature_contacts(key,name)["signer"]:
+        raise PolicyError("Configura primero el firmante del Lote 86.")
+    if not claim("""INSERT INTO billing_policy_mail(invoice_id,client_id,policy,state,due,note)
+        VALUES (?,?,?,'sign_wait',0,'Por solicitar firma') ON CONFLICT(invoice_id) DO UPDATE SET
+        policy=excluded.policy,state='sign_wait',due=0,note='Por solicitar firma'
+        WHERE billing_policy_mail.state='manual' AND billing_policy_mail.client_id=excluded.client_id""",(inv,key,name)):
+        raise PolicyError("Ya hay una solicitud o entrega registrada. No se duplicó el correo.")
+    return jsonify(ok=True)
+
+
+def signature_job():
+    from smtp_mailer import send_email_with_attachments
+    now=int(time.time())
+    rows=sql("SELECT invoice_id,client_id,policy FROM billing_policy_mail WHERE state='sign_wait' AND due<=? ORDER BY due LIMIT 1",(now,))
+    if not rows:return
+    inv,key,name=rows[0]
+    if not claim("UPDATE billing_policy_mail SET due=? WHERE invoice_id=? AND state='sign_wait' AND due<=?",(now+900,inv,now)):return
+    try:
+        c,actual,period=context(key,inv)
+        signer=signature_contacts(key,name)["signer"]
+        if not annual_contract(key,name) or actual!=name or not signer:
+            raise PolicyError("Revisa la póliza y el firmante.")
+        folio,pdf,_=current_invoice(inv,c["rfc"])
+    except Exception:
+        sql("UPDATE billing_policy_mail SET note='No se pudo preparar la solicitud de firma',due=? WHERE invoice_id=? AND state='sign_wait'",(now+1800,inv),write=True)
+        return
+    if not claim("UPDATE billing_policy_mail SET state='sign_sending',note='Solicitud en proceso; verifica Enviados antes de repetir' WHERE invoice_id=? AND state='sign_wait' AND due=?",(inv,now+900)):return
+    try:
+        send_email_with_attachments(recipient=signer,subject=f"Solicitud de firma · Factura {folio} · Lote 86",
+            body=f"Buen día, adjunto la factura {folio} del servicio de {period}. Por favor, devuélvela firmada. Gracias.",
+            attachments=[dict(filename=f"Factura-{folio}.pdf",content_type="application/pdf",data=pdf)])
+        state,note="sign_sent","Esperando factura firmada"
+    except Exception:
+        state,note="sign_uncertain","Solicitud sin confirmar. Revisa el correo enviado."
+    sql("UPDATE billing_policy_mail SET state=?,note=? WHERE invoice_id=? AND state='sign_sending'",(state,note,inv),write=True)
+
+
+@bp.post("/<key>/<inv>/expediente")
+def final_packet(key,inv):
+    import facturacion_bp as billing
+    from email_tracking import record_email_delivery
+    b=request.get_json() or {}
+    if not billing.authorized_to_send(b.get("send_key"),request.cookies.get("hsc_mail_trusted","")):
+        return jsonify(ok=False,error="Necesitas la clave de envío."),403
+    info,extras=packet(key,inv,download=True)
+    if not info.get("annual") or not info["email"] or len(extras)!=2 or info["token"]!=b.get("token"):
+        raise PolicyError("Falta la OC anual, la firmada o el destinatario final, o el expediente cambió.")
+    if sum(len(a["data"]) for a in extras)>15*1024*1024:raise PolicyError("Los adjuntos superan 15 MB.")
+    c,name,period=context(key,inv)
+    folio,pdf,xml=current_invoice(inv,c["rfc"])
+    sql("INSERT INTO billing_policy_mail(invoice_id,client_id,policy,state,due) VALUES (?,?,?,'manual',0) ON CONFLICT(invoice_id) DO NOTHING",(inv,key,name),write=True)
+    if not claim("""UPDATE billing_policy_mail SET state='final_sending',note='Envío final en proceso'
+        WHERE invoice_id=? AND client_id=? AND policy=? AND state IN ('manual','sign_sent','sign_wait','sign_uncertain','waiting')""",(inv,key,name)):
+        raise PolicyError("Ya existe un envío final o un envío en proceso. Verifica su estado.")
+    try:
+        sent=billing.send_cfdi_email(recipient=info["email"],cc="",subject=f"Factura {folio} · {name} · {period}",
+            body=f"Buen día, adjunto el expediente completo de la factura {folio} correspondiente a {period}.",
+            folio=folio,pdf_bytes=pdf,xml_bytes=xml,extra_attachments=extras)
+        record_email_delivery("factura",inv,recipients=sent.get("recipients"),folio=folio,message_id=sent.get("message_id"))
+    except Exception:
+        sql("UPDATE billing_policy_mail SET state='final_uncertain',note='Verifica Enviados antes de repetir' WHERE invoice_id=?",(inv,),write=True)
+        raise PolicyError("El envío final no quedó confirmado. Revisa Enviados.")
+    sql("UPDATE billing_policy_mail SET state='final_sent',note='Expediente enviado' WHERE invoice_id=?",(inv,),write=True)
+    return jsonify(ok=True)
+
+
 def deliver_ready():
     """Una consulta indexada en reposo; como máximo una preparación por ciclo."""
     import facturacion_bp as billing
     from email_tracking import delivery_status,record_email_delivery,email_thread_headers
     now=int(time.time())
+    signature_job()
     candidates=sql("SELECT invoice_id,client_id,policy,due FROM billing_policy_mail WHERE state='waiting' AND due<=? ORDER BY due,invoice_id LIMIT 1",(now,))
     if not candidates:return
     inv,key,name,old=candidates[0]
@@ -360,7 +512,7 @@ def deliver_ready():
     try:
         c,policy,period=context(key,inv)
         cfg=rules(key)
-        if policy!=name or name not in cfg.get("automatic",[]):return end("manual","Envío manual")
+        if annual_contract(key,policy) or policy!=name or name not in cfg.get("automatic",[]):return end("manual","Envío manual")
         if delivery_status("factura",inv)["sent"]:return end("sent","Ya enviada")
         scheduled=current_app.extensions.get("scheduled_email_queue")
         if scheduled and any(j.get("state") in ("pending","sending","sent","uncertain") for j in scheduled.list("factura",inv)):

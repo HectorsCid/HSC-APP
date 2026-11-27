@@ -55,13 +55,14 @@ window.HscPolicies=(()=>{
     const now=k=>parts.find(p=>p.type===k).value,month=now('year')+'-'+now('month');
     if(!year)year=now('year');
     const first=periods[0]||month,years=[];
+    const annual=configured.find(p=>p.name===selected&&p.signature);
     for(let y=Math.min(+first.slice(0,4),+now('year'));y<=Math.max(+(periods.at(-1)||month).slice(0,4),+now('year'));y++)years.push(String(y));
     const months=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     const timeline=months.map((label,index)=>{
       const period=year+'-'+String(index+1).padStart(2,'0'),docs=policy.filter(i=>i.period===period);
       const valid=docs.filter(i=>!invoiceLifecycle(i).blocksPayment);
       const missing=!valid.length&&period>=first&&period<=month;
-      const state=valid.length?(valid.every(i=>i.email_delivery?.sent)?'Enviada':'Sin envío registrado'):missing?'Sin factura vigente vinculada':period>month?'Próximo':'Sin historial';
+      const state=valid.length?(annual?[...new Set(valid.map(i=>i.auto_note||(i.email_delivery?.sent?'Envío anterior registrado':'Sin envío registrado')))].join(' · '):valid.every(i=>i.email_delivery?.sent)?'Enviada':'Sin envío registrado'):missing?'Sin factura vigente vinculada':period>month?'Próximo':'Sin historial';
       const line=`<strong>${label}</strong><span>${valid.map(i=>'Factura '+e(i.folio||i.uuid)).join(' · ')}</span><small>${e(state)}</small>`;
       return {label,missing,html:docs.length?`<details class="policy-month"><summary>${line}</summary>${docs.map(row).join('')}</details>`:`<div class="policy-month ${missing?'policy-gap':''}">${line}</div>`};
     });
@@ -75,6 +76,8 @@ window.HscPolicies=(()=>{
         <button class="btn" data-link="${e(i.id)}">${i.policy?'Editar vínculo':'Vincular a póliza'}</button></div></div>`;
     }
     detail.innerHTML=`${names.length>1?'<button class="btn" id="choosePolicy">← Elegir otra póliza</button>':''}<p>${e(c.name)} · ${e(branch(selected))}</p><h2>${e(selected)}</h2>
+      ${annual?`<details><summary>OC anual · ${e(annual.orders[year]||'Sin cargar para '+year)}</summary><form id="annualOrder"><label>Año de servicio <input type="number" name="year" min="2000" max="2099" required value="${e(year)}"></label><label>Orden de compra (PDF)<input type="file" required name="file" accept="application/pdf"></label><button class="btn">Guardar OC anual</button></form></details>
+      <details><summary>Firma y entrega · ${annual.signature.signer?'Configuradas':'Configurar correos'}</summary><form id="annualContacts">${field('Enviar el PDF para firma a','signer',annual.signature.signer,'email')}${field('Enviar expediente final a','recipient',annual.signature.recipient)}${field('Clave de envío (si el equipo no está autorizado)','send_key','','password')}<button class="btn">Guardar y solicitar firma en nuevas facturas de esta programación</button></form></details>`:''}
       <div class="panel-head"><h3>Meses de servicio</h3><label>Año <select id="policyYear">${years.map(y=>`<option ${y===year?'selected':''}>${y}</option>`).join('')}</select></label></div>
       <p class="${gaps.length?'policy-gap':''}">${gaps.length?'Sin factura vinculada: '+gaps.join(', '):'Sin meses pendientes en el periodo revisado.'}</p>
       <small>Seguimiento desde ${e(first)}${periods.length?' (primer mes vinculado)':' (mes actual; aún sin historial)'} hasta el mes actual.</small>
@@ -95,6 +98,15 @@ window.HscPolicies=(()=>{
       <details><summary>Otras facturas · ${other.length}</summary>${other.map(row).join('')||'Sin otras facturas.'}</details>
       ${c.rfc?'':'<p>Vincula el RFC del cliente en Operaciones para consultar su facturación.</p>'}`;
     detail.querySelector('#policyYear').onchange=ev=>{year=ev.target.value;render();};
+    if(annual){
+      const bind=(sel,send)=>{const form=detail.querySelector(sel);form.onsubmit=async ev=>{
+        ev.preventDefault();const b=form.querySelector('button'),id=key; b.disabled=true;
+        const data=new FormData(form);data.set('policy',selected);
+        try{await send(data);if(id===key)await open(id);}catch(err){alert(err.message);}finally{b.disabled=false;}
+      };};
+      bind('#annualOrder',data=>api(path()+'/oc-anual',{method:'POST',body:data}));
+      bind('#annualContacts',data=>post(path()+'/firmante',Object.fromEntries(data)));
+    }
     const choose=detail.querySelector('#choosePolicy');if(choose)choose.onclick=()=>{selected='';year='';render();};
     const report=detail.querySelector('form[action]');
     detail.querySelector('section[aria-label]').before(report.closest('details'));
@@ -144,6 +156,23 @@ window.HscPolicies=(()=>{
       const [d,status]=await Promise.all([api(url+'/packet'),api('/api/email/status')]);
       if(!mail.open||n!==composer||key!==id)return;
       const p=d.packet, fill=s=>s.replace(/\{(folio|poliza|periodo)\}/g,(_,k)=>({folio:i.folio,poliza:p.policy,periodo:p.period})[k]);
+      if(p.annual){
+        dialog('Expediente · Factura '+i.folio,`<p>Lote 86 · Servicio ${e(p.period)}</p><p>PDF original y XML incluidos.</p><p>OC ${e(p.period.slice(0,4))}: ${e(p.oc||'Falta cargarla en la póliza')}</p><form id="signedOnly"><label>Factura firmada: ${e(p.signed_file||'Pendiente')}<input name="file" required type="file" accept="application/pdf"></label><button class="btn">Guardar firmada</button></form><p>Entrega final: ${e(p.email||'Configura el destinatario en Firma y entrega')}</p><form id="finalFour">${status.trusted?'':field('Clave de envío','send_key','','password')}<button class="btn btn-primary" ${!p.oc||!p.signed_file||!p.email||['final_sent','final_sending','final_uncertain'].includes(i.auto_state)?'disabled':''}>Enviar 4 documentos</button></form>`);
+        if(['','manual'].includes(i.auto_state)&&!i.email_delivery?.sent&&!p.signed_file){
+          const button=document.createElement('button');button.type='button';button.className='btn';button.textContent='Solicitar firma al contacto configurado';
+          mail.querySelector('#finalFour').prepend(button);
+          button.onclick=async()=>{button.disabled=true;try{await post(url+'/solicitar-firma',{send_key:mail.querySelector('[name=send_key]')?.value||''});mail.close();await open(id);}
+            catch(err){text(mail.querySelector('[role=status]'),err.message);button.disabled=false;}};
+        }
+        for(const [sel,final] of [['#signedOnly',false],['#finalFour',true]]){
+          const f=mail.querySelector(sel);f.onsubmit=async ev=>{ev.preventDefault();const b=ev.submitter;b.disabled=true;
+            try{if(final){await post(url+'/expediente',{token:p.token,...Object.fromEntries(new FormData(f))});mail.close();await open(id);}
+                else{await api(url+'/signed',{method:'POST',body:new FormData(f)});await compose(i);}}
+            catch(err){text(mail.querySelector('[role=status]'),err.message);b.disabled=false;}
+          };
+        }
+        return;
+      }
       dialog('Enviar factura '+i.folio,`${i.email_delivery?.sent?`<p>Último envío: ${e(i.email_delivery.last_sent_at)} · ${e((i.email_delivery.recipients||[]).join(', '))}</p>`:''}<p>PDF y XML incluidos · ${e(p.policy)} · ${e(p.period)}</p>
       <p>${e(p.warning|| (p.oc?'OC incluida: '+p.oc:p.required?'Falta la orden de compra.':'Sin orden de compra vinculada.'))}</p>
       <details ${p.required&&!p.oc?'open':''}><summary>${p.oc?'Cambiar OC':'Vincular OC'}</summary><form id="uploadPolicyOC">

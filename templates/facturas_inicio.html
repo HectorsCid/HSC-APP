@@ -133,7 +133,10 @@
   #policyDetail .policy-month>summary strong:before{content:'▸ ';color:var(--muted)}
   #policyDetail .policy-month[open]>summary strong:before{content:'▾ '}
   .policy-gap{color:var(--warn);font-weight:700}
-  @media(max-width:540px){#policyDetail div.policy-month,#policyDetail .policy-month>summary{grid-template-columns:1fr auto}#policyDetail .policy-month small{grid-column:1/-1}}
+  @media(max-width:540px){
+    #policyDetail div.policy-month,#policyDetail .policy-month>summary{grid-template-columns:1fr auto}
+    #policyDetail .policy-month small{grid-column:1/-1}
+  }
   #policyDetail form,#policyMail form{margin-top:.75rem}
   #policyDetail .balance-pending-row small{display:block;color:var(--muted)}
   .tab{padding:7px 13px;background:var(--surface);font-weight:750}
@@ -1329,7 +1332,7 @@ if(arrivalParams.get('complemento') === '1' && arrivalParams.get('enviar_complem
     rfc:arrivalParams.get('rfc') || '', email:''});
 }
 </script>
-<script src="/static/billing_policies.js?v=5"></script>
+<script src="/static/billing_policies.js?v=6"></script>
 </body>
 </html>
 
