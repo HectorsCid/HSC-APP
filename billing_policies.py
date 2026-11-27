@@ -268,11 +268,18 @@ def export_relation(key):
     def idx(v): return int(v[:4])*12+int(v[5:])-1
     if idx(last)-idx(first)>=120: raise PolicyError("Selecciona hasta diez años.")
     links=sql("SELECT invoice_id,policy,period FROM billing_policy_invoices WHERE client_id=? AND rfc=? AND period BETWEEN ? AND ? ORDER BY period,policy",(key,c["rfc"],first,last))
+    selected=request.args.get("poliza","")
+    if selected:
+        known=any(p["key"]==key and p["rfc"]==c["rfc"] and p["name"]==selected for p in commercial())
+        if not known and not sql("SELECT 1 FROM billing_policy_invoices WHERE client_id=? AND rfc=? AND policy=? LIMIT 1",(key,c["rfc"],selected)):
+            raise PolicyError("La póliza no corresponde al cliente.")
+        links=[link for link in links if link[1]==selected]
     docs={r["id"]:r for r in invoices(c)} if links else {}
     if any(i not in docs for i,_,_ in links): raise PolicyError("El historial aún no confirma todas las facturas vinculadas. Actualízalo antes de descargar.")
     names=sorted({n for _,n,_ in links}|
                  {p["name"] for p in commercial() if p["key"]==key and p["rfc"]==c["rfc"]}) or [""]
     groups={}
+    if selected: names=[selected]
     for i,n,m in links: groups.setdefault((m,n),[]).append(docs[i])
     statuses=read_email_deliveries() if links else {}
     out=io.StringIO()

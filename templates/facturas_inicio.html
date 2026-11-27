@@ -127,6 +127,13 @@
   #policyDetail>details{padding:16px;margin:14px 0;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
   #policyDetail summary{font-weight:700}#policyDetail details[open]>summary{margin-bottom:16px}
   #policyDetail .balance-pending-row{padding-block:14px;gap:12px;flex-wrap:wrap}
+  .policy-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:14px}
+  #policyDetail .policy-month{padding:12px 6px;border:0;border-bottom:1px solid var(--line)}
+  #policyDetail div.policy-month,#policyDetail .policy-month>summary{display:grid;grid-template-columns:minmax(85px,.6fr) 1fr auto;gap:10px;align-items:center}
+  #policyDetail .policy-month>summary strong:before{content:'▸ ';color:var(--muted)}
+  #policyDetail .policy-month[open]>summary strong:before{content:'▾ '}
+  .policy-gap{color:var(--warn);font-weight:700}
+  @media(max-width:540px){#policyDetail div.policy-month,#policyDetail .policy-month>summary{grid-template-columns:1fr auto}#policyDetail .policy-month small{grid-column:1/-1}}
   #policyDetail form,#policyMail form{margin-top:.75rem}
   #policyDetail .balance-pending-row small{display:block;color:var(--muted)}
   .tab{padding:7px 13px;background:var(--surface);font-weight:750}
@@ -1322,7 +1329,7 @@ if(arrivalParams.get('complemento') === '1' && arrivalParams.get('enviar_complem
     rfc:arrivalParams.get('rfc') || '', email:''});
 }
 </script>
-<script src="/static/billing_policies.js?v=4"></script>
+<script src="/static/billing_policies.js?v=5"></script>
 </body>
 </html>
 

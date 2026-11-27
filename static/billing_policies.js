@@ -3,7 +3,7 @@ window.HscPolicies=(()=>{
   const list=document.querySelector('#policyClients'),detail=document.querySelector('#policyDetail'),mail=document.querySelector('#policyMail');
   const base='/api/facturacion/polizas', enc=encodeURIComponent;
   const e=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let directory=null,key='',model=null,seq=0,view=0,serviceMonth='';
+  let directory=null,key='',model=null,seq=0,view=0,selected='',year='';
   async function api(url,opts){
     const res=await fetch(url,opts);const d=await res.json().catch(()=>({}));
     if(!res.ok||!d.ok)throw Error(d.error||'No se pudo consultar el expediente. Intenta nuevamente.');
@@ -20,7 +20,7 @@ window.HscPolicies=(()=>{
     list.querySelectorAll('[data-key]').forEach(b=>b.onclick=()=>open(b.dataset.key));
     if(key&&!rows.some(c=>c.id===key))back();
   }
-  function back(){++seq;key='';model=null;serviceMonth='';list.hidden=false;detail.hidden=true;detail.replaceChildren();document.querySelector('#policyBack').hidden=true;}
+  function back(){++seq;key='';model=null;selected='';year='';list.hidden=false;detail.hidden=true;detail.replaceChildren();document.querySelector('#policyBack').hidden=true;}
   document.querySelector('#policyBack').onclick=()=>{const id=key;back();[...list.querySelectorAll('[data-key]')].find(b=>b.dataset.key===id)?.focus();};
   async function show(force=false){
     const n=++view;
@@ -30,7 +30,7 @@ window.HscPolicies=(()=>{
     }catch(err){text(list,err.message);}
   }
   async function open(id){
-    if(key!==id)serviceMonth='';
+    if(key!==id){selected='';year='';}
     key=id;model=null;const n=++seq;list.hidden=true;detail.hidden=false;document.querySelector('#policyBack').hidden=false;text(detail,'Consultando facturas…');
     try{const d=await api(path());if(n!==seq)return;model=d;render();}
     catch(err){if(n===seq)text(detail,err.message);}
@@ -40,11 +40,32 @@ window.HscPolicies=(()=>{
   const delivery=i=>i.email_delivery?.sent?'Enviada · '+(i.email_delivery.last_sent_at||'').slice(0,10):'Por enviar';
   function render(){
     const {client:c,rules:r,invoices:all,templates}=model;
-    const policy=all.filter(i=>i.policy&&(!serviceMonth||i.period===serviceMonth)).sort((a,b)=>b.period.localeCompare(a.period)||String(b.date||'').localeCompare(String(a.date||'')));
     const other=all.filter(i=>!i.policy);
     const configured=model.configured||[];
     const names=[...new Set([...configured.map(p=>p.name),...all.map(i=>i.policy).filter(Boolean)])];
-    const today=new Date(), month=serviceMonth||today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
+    const branch=n=>configured.find(p=>p.name===n)?.branch||'Historial sin lote asignado';
+    if(!names.includes(selected))selected=names.length===1?names[0]:'';
+    if(!selected){
+      detail.innerHTML=`<h2>${e(c.name)}</h2><h3>${names.length?'Elige una póliza':'Sin pólizas disponibles'}</h3><div class="policy-options">${names.map(n=>`<button class="policy-tile" data-pick="${e(n)}"><strong>${e(n)}</strong><small>${e(branch(n))}</small></button>`).join('')}</div>`;
+      detail.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>{selected=b.dataset.pick;year='';render();});
+      return;
+    }
+    const policy=all.filter(i=>i.policy===selected), periods=policy.map(i=>i.period).filter(Boolean).sort();
+    const parts=new Intl.DateTimeFormat('en',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit'}).formatToParts(new Date());
+    const now=k=>parts.find(p=>p.type===k).value,month=now('year')+'-'+now('month');
+    if(!year)year=now('year');
+    const first=periods[0]||month,years=[];
+    for(let y=Math.min(+first.slice(0,4),+now('year'));y<=Math.max(+(periods.at(-1)||month).slice(0,4),+now('year'));y++)years.push(String(y));
+    const months=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const timeline=months.map((label,index)=>{
+      const period=year+'-'+String(index+1).padStart(2,'0'),docs=policy.filter(i=>i.period===period);
+      const valid=docs.filter(i=>!invoiceLifecycle(i).blocksPayment);
+      const missing=!valid.length&&period>=first&&period<=month;
+      const state=valid.length?(valid.every(i=>i.email_delivery?.sent)?'Enviada':'Sin envío registrado'):missing?'Sin factura vigente vinculada':period>month?'Próximo':'Sin historial';
+      const line=`<strong>${label}</strong><span>${valid.map(i=>'Factura '+e(i.folio||i.uuid)).join(' · ')}</span><small>${e(state)}</small>`;
+      return {label,missing,html:docs.length?`<details class="policy-month"><summary>${line}</summary>${docs.map(row).join('')}</details>`:`<div class="policy-month ${missing?'policy-gap':''}">${line}</div>`};
+    });
+    const gaps=timeline.filter(m=>m.missing).map(m=>m.label);
     function row(i){
       const canceled=invoiceLifecycle(i).blocksPayment;
       return `<div class="balance-pending-row"><div><strong>${e(i.policy?i.period+' · '+i.policy:'Factura '+i.folio)}</strong><small>Folio ${e(i.folio)} · ${e((i.date||'').slice(0,10))} · ${e(canceled?invoiceLifecycle(i).label:i.email_delivery?.sent?delivery(i):i.auto_note||(i.auto_state==='waiting'?'Automático pendiente':delivery(i)))}</small></div>
@@ -53,7 +74,12 @@ window.HscPolicies=(()=>{
         <a class="btn" href="/api/invoices/${enc(i.id)}/pdf" target="_blank">PDF</a>
         <button class="btn" data-link="${e(i.id)}">${i.policy?'Editar vínculo':'Vincular a póliza'}</button></div></div>`;
     }
-    detail.innerHTML=`<h2>${e(c.name)}</h2>${configured.map(p=>`<p><strong>${e(p.name)}</strong> · ${e(p.branch)}</p>`).join('')}<details><summary>Configurar pólizas y correo</summary>
+    detail.innerHTML=`${names.length>1?'<button class="btn" id="choosePolicy">← Elegir otra póliza</button>':''}<p>${e(c.name)} · ${e(branch(selected))}</p><h2>${e(selected)}</h2>
+      <div class="panel-head"><h3>Meses de servicio</h3><label>Año <select id="policyYear">${years.map(y=>`<option ${y===year?'selected':''}>${y}</option>`).join('')}</select></label></div>
+      <p class="${gaps.length?'policy-gap':''}">${gaps.length?'Sin factura vinculada: '+gaps.join(', '):'Sin meses pendientes en el periodo revisado.'}</p>
+      <small>Seguimiento desde ${e(first)}${periods.length?' (primer mes vinculado)':' (mes actual; aún sin historial)'} hasta el mes actual.</small>
+      <section aria-label="Detalle mensual">${timeline.map(m=>m.html).join('')}</section>
+      <details><summary>Configuración del cliente y correo</summary>
       <form id="policyRules" class="schedule-form-grid">${field('Para','email',r.email||c.email)}${field('CC','cc',r.cc)}
       ${field('Asunto · admite {folio}, {poliza} y {periodo}','subject',r.subject||'Factura {folio} · {poliza} · {periodo}')}
       <label>Mensaje<textarea class="cm-input" name="message">${e(r.message||'Buen día, adjunto la factura {folio} de {poliza}, correspondiente a {periodo}.')}</textarea></label>
@@ -64,13 +90,14 @@ window.HscPolicies=(()=>{
       ${field('Clave de envío para activar automático (si el equipo no está autorizado)','send_key','','password')}</div>
       <button class="btn">Guardar configuración</button></form></details>
       <details><summary>Descargar relación por periodo</summary><form method="get" action="${path()}/relacion.csv">
-      ${field('Desde','desde',month.slice(0,4)+'-01','month')}${field('Hasta','hasta',month,'month')}
+      <input type="hidden" name="poliza" value="${e(selected)}">${field('Desde','desde',first.slice(0,4)===year?first:year+'-01','month')}${field('Hasta','hasta',year===now('year')?month:year+'-12','month')}
       <button class="btn">Descargar CSV para Excel</button></form></details>
-      <details open><summary>Facturas de póliza · ${policy.length}</summary><label>Mes de servicio <input type="month" id="policyMonth" value="${e(serviceMonth)}"></label>${policy.map(row).join('')||'<p>Sin facturas vinculadas para esta selección.</p>'}</details>
       <details><summary>Otras facturas · ${other.length}</summary>${other.map(row).join('')||'Sin otras facturas.'}</details>
       ${c.rfc?'':'<p>Vincula el RFC del cliente en Operaciones para consultar su facturación.</p>'}`;
-    detail.querySelector('#policyMonth').onchange=ev=>{serviceMonth=ev.target.value;render();};
+    detail.querySelector('#policyYear').onchange=ev=>{year=ev.target.value;render();};
+    const choose=detail.querySelector('#choosePolicy');if(choose)choose.onclick=()=>{selected='';year='';render();};
     const report=detail.querySelector('form[action]');
+    detail.querySelector('section[aria-label]').before(report.closest('details'));
     report.onsubmit=async ev=>{
       ev.preventDefault();const p=new URLSearchParams(new FormData(report)),b=report.querySelector('button');
       if(!p.get('desde')||!p.get('hasta')||p.get('desde')>p.get('hasta')){alert('Selecciona el mes inicial y final en orden.');return;}
