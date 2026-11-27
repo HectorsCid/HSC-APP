@@ -52,6 +52,19 @@ class InvoiceScheduleTests(unittest.TestCase):
         self.assertTrue(data["ok"])
         self.assertEqual(data["schedule"]["mode"], "confirm")
 
+    def test_link_only_preserves_paused_schedule_and_rejects_wrong_client(self):
+        self.app.extensions["commercial_policies"]=lambda:[
+            dict(key='AL',client='Alpha',rfc=TEMPLATE['receiver']['tax_id'],branch='Norte',name='Chiller')]
+        with self.app.app_context(), patch.object(billing,"_read_invoice_templates",return_value=[TEMPLATE]):
+            prev=billing._validated_invoice_schedule(dict(template_id='template-1',active=False))
+            prev.update(next_run='2027-04-01T09:00:00-06:00',last_status='awaiting_confirmation')
+            linked=billing._validated_invoice_schedule(dict(policy_name='Chiller',policy_client='AL'),prev)
+            self.assertEqual(linked['policy_name'],'Chiller')
+            for field in ('active','next_run','last_status','recipient','mode'):
+                self.assertEqual(linked[field],prev[field])
+            with self.assertRaises(ValueError):
+                billing._validated_invoice_schedule(dict(policy_name='Chiller',policy_client='OTHER'),prev)
+
     def test_automatic_schedule_requires_explicit_acknowledgement(self):
         with self.app.app_context(), patch.object(billing, "_read_invoice_templates", return_value=[TEMPLATE]):
             with self.assertRaisesRegex(ValueError, "autorizas el timbrado automático"):

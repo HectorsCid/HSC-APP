@@ -15,13 +15,13 @@ window.HscPolicies=(()=>{
   function cards(){
     const q=document.querySelector('#q').value.trim().toLowerCase();
     const rows=directory.filter(c=>[c.name,c.rfc].join(' ').toLowerCase().includes(q));
-    list.innerHTML=rows.map(c=>`<button class="client-item ${c.id===key?'active':''}" data-key="${e(c.id)}">
-      <strong>${c.photo?`<img loading="lazy" alt="" width="32" height="32" style="vertical-align:middle;object-fit:contain" src="/api/operaciones/photo/client/${enc(c.id)}"> `:''}${e(c.name)}</strong><small>${e(c.rfc||'Sin RFC vinculado')}${c.unconfirmed?' · '+e(c.unconfirmed)+' sin envío registrado':''}</small></button>`).join('')||'Sin clientes con póliza para esta búsqueda.';
+    list.innerHTML=rows.map(c=>`<button class="policy-tile" data-key="${e(c.id)}">
+      <span class="policy-logo">${c.photo?`<img loading="lazy" alt="" width="48" height="48" src="/api/operaciones/photo/client/${enc(c.id)}">`:e(c.name.slice(0,2).toUpperCase())}</span><strong>${e(c.name)}</strong><small>${c.policy_count?e(c.policy_count)+' póliza(s) por lote':'Historial de facturas'}${c.unconfirmed?' · '+e(c.unconfirmed)+' sin envío registrado':''}</small></button>`).join('')||(q?'Sin coincidencias.':'Todavía no hay pólizas. Crea la primera en Editar cliente → Configurar lote.');
     list.querySelectorAll('[data-key]').forEach(b=>b.onclick=()=>open(b.dataset.key));
-    if(!rows.some(c=>c.id===key)){
-      if(rows.length)open(rows[0].id);else{++seq;key='';model=null;text(detail,'');}
-    }
+    if(key&&!rows.some(c=>c.id===key))back();
   }
+  function back(){++seq;key='';model=null;serviceMonth='';list.hidden=false;detail.hidden=true;detail.replaceChildren();document.querySelector('#policyBack').hidden=true;}
+  document.querySelector('#policyBack').onclick=()=>{const id=key;back();[...list.querySelectorAll('[data-key]')].find(b=>b.dataset.key===id)?.focus();};
   async function show(force=false){
     const n=++view;
     try{
@@ -30,7 +30,8 @@ window.HscPolicies=(()=>{
     }catch(err){text(list,err.message);}
   }
   async function open(id){
-    key=id;model=null;const n=++seq;cards();text(detail,'Consultando facturas…');
+    if(key!==id)serviceMonth='';
+    key=id;model=null;const n=++seq;list.hidden=true;detail.hidden=false;document.querySelector('#policyBack').hidden=false;text(detail,'Consultando facturas…');
     try{const d=await api(path());if(n!==seq)return;model=d;render();}
     catch(err){if(n===seq)text(detail,err.message);}
   }
@@ -41,7 +42,8 @@ window.HscPolicies=(()=>{
     const {client:c,rules:r,invoices:all,templates}=model;
     const policy=all.filter(i=>i.policy&&(!serviceMonth||i.period===serviceMonth)).sort((a,b)=>b.period.localeCompare(a.period)||String(b.date||'').localeCompare(String(a.date||'')));
     const other=all.filter(i=>!i.policy);
-    const names=[...new Set([...templates.map(t=>t.name),...all.map(i=>i.policy).filter(Boolean)])];
+    const configured=model.configured||[];
+    const names=[...new Set([...configured.map(p=>p.name),...all.map(i=>i.policy).filter(Boolean)])];
     const today=new Date(), month=serviceMonth||today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0');
     function row(i){
       const canceled=invoiceLifecycle(i).blocksPayment;
@@ -51,13 +53,11 @@ window.HscPolicies=(()=>{
         <a class="btn" href="/api/invoices/${enc(i.id)}/pdf" target="_blank">PDF</a>
         <button class="btn" data-link="${e(i.id)}">${i.policy?'Editar vínculo':'Vincular a póliza'}</button></div></div>`;
     }
-    detail.innerHTML=`<h2>${e(c.name)}</h2><details><summary>Configurar pólizas y correo</summary>
+    detail.innerHTML=`<h2>${e(c.name)}</h2>${configured.map(p=>`<p><strong>${e(p.name)}</strong> · ${e(p.branch)}</p>`).join('')}<details><summary>Configurar pólizas y correo</summary>
       <form id="policyRules" class="schedule-form-grid">${field('Para','email',r.email||c.email)}${field('CC','cc',r.cc)}
       ${field('Asunto · admite {folio}, {poliza} y {periodo}','subject',r.subject||'Factura {folio} · {poliza} · {periodo}')}
       <label>Mensaje<textarea class="cm-input" name="message">${e(r.message||'Buen día, adjunto la factura {folio} de {poliza}, correspondiente a {periodo}.')}</textarea></label>
       ${check('Requiere factura firmada','signed',r.signed)}${check('Requiere orden de compra','oc',r.oc)}
-      <div class="wide">Plantillas que generan facturas de póliza:
-      ${templates.map(t=>`<label style="display:block"><input type="checkbox" name="tpl" value="${e(t.id)}" ${r.templates?.[t.id]?'checked':''}> ${e(t.name)}</label>`).join('')||'Sin plantillas para este RFC.'}</div>
       ${check('Facturar el mes de servicio anterior','previous',r.previous)}
       <div class="wide">Envío por póliza (solo nuevas facturas; las anteriores no se envían al activar):
       ${names.map(n=>`<label style="display:block">${e(n)} <select data-policy-mode="${e(n)}"><option value="manual">Manual</option><option value="auto" ${r.automatic?.includes(n)?'selected':''}>Automático al completar</option></select></label>`).join('')}
@@ -66,7 +66,7 @@ window.HscPolicies=(()=>{
       <details><summary>Descargar relación por periodo</summary><form method="get" action="${path()}/relacion.csv">
       ${field('Desde','desde',month.slice(0,4)+'-01','month')}${field('Hasta','hasta',month,'month')}
       <button class="btn">Descargar CSV para Excel</button></form></details>
-      <div class="panel-head"><h3>Facturas de póliza · ${policy.length}</h3><label>Mes de servicio <input type="month" id="policyMonth" value="${e(serviceMonth)}"></label></div>${policy.map(row).join('')||'<p>Sin facturas vinculadas para esta selección.</p>'}
+      <details open><summary>Facturas de póliza · ${policy.length}</summary><label>Mes de servicio <input type="month" id="policyMonth" value="${e(serviceMonth)}"></label>${policy.map(row).join('')||'<p>Sin facturas vinculadas para esta selección.</p>'}</details>
       <details><summary>Otras facturas · ${other.length}</summary>${other.map(row).join('')||'Sin otras facturas.'}</details>
       ${c.rfc?'':'<p>Vincula el RFC del cliente en Operaciones para consultar su facturación.</p>'}`;
     detail.querySelector('#policyMonth').onchange=ev=>{serviceMonth=ev.target.value;render();};
@@ -97,7 +97,9 @@ window.HscPolicies=(()=>{
   }
   function edit(i){
     const id=key,url=path()+'/link';
-    dialog('Vincular factura '+i.folio,`<form>${field('Nombre de la póliza','policy',i.policy||'Póliza de mantenimiento')}${field('Mes del servicio','period',i.period||i.date.slice(0,7),'month')}
+    const opts=(model.configured||[]).map(p=>[p.name,p.branch+' · '+p.name]);
+    if(i.policy&&!opts.some(([n])=>n===i.policy))opts.push([i.policy,i.policy+' · histórica']);
+    dialog('Vincular factura '+i.folio,`<form><label>Póliza del cliente<select name="policy" required><option value="">Elige una póliza</option>${opts.map(([n,label])=>`<option value="${e(n)}" ${n===i.policy?'selected':''}>${e(label)}</option>`).join('')}</select></label>${!opts.length?'<p>Crea una póliza en Editar cliente → Configurar lote.</p>':''}${field('Mes del servicio','period',i.period||i.date.slice(0,7),'month')}
       ${model.rules.automatic?.length&&!i.email_delivery?.sent?check('Aplicar envío automático a esta factura si la póliza lo permite','queue',false):''}
       <button class="btn btn-primary">Guardar vínculo</button>${i.policy?'<button type="button" class="btn" data-remove>Quitar vínculo</button>':''}</form>`);
     async function save(unlink){

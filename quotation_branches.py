@@ -1,10 +1,35 @@
 """Catálogo de sucursales de cotización, sin duplicar la ficha fiscal."""
 import re
+import json
 import unicodedata
 
 
 def branch_key(value):
     return ' '.join(unicodedata.normalize('NFKC', str(value or '')).split()).casefold()
+
+
+def branch_settings(raw, branches, contacts):
+    data = json.loads(raw)
+    if not isinstance(data, dict) or set(data) - set(branches):
+        raise ValueError("La configuración no corresponde a los lotes guardados.")
+    eligible = [c["nombre"] for c in contacts if c.get("tipo") in ("compras","ambos")]
+    valid = {n for n in eligible if eligible.count(n)==1}
+    result, assigned = {}, set()
+    for branch, opts in data.items():
+        if not isinstance(opts, dict):
+            raise ValueError("Configuración de lote inválida.")
+        people, policies = opts.get("contacts", []), opts.get("policies", [])
+        if not isinstance(people,list) or not all(isinstance(n,str) and n in valid for n in people):
+            raise ValueError("Revisa los contactos del lote " + branch)
+        if not isinstance(policies,list) or not all(isinstance(n,str) and 0<len(n.strip())<=100 for n in policies):
+            raise ValueError("Escribe un nombre de póliza de hasta 100 caracteres.")
+        names=[n.strip() for n in policies]
+        for n in names:
+            if branch_key(n) in assigned:
+                raise ValueError("Cada póliza del cliente necesita un nombre distinto: " + n)
+            assigned.add(branch_key(n))
+        result[branch] = {"contacts":list(dict.fromkeys(people)), "policies":names}
+    return result
 
 
 def validate_branches(values):

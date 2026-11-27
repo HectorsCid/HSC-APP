@@ -82,6 +82,19 @@ class BranchRoutesTest(unittest.TestCase):
         self.assertEqual(self.snapshots[-1]['Cliente nuevo']['rfc'], 'VCA010101XXX')
         self.assertEqual(self.catalog['Visscher Caravelle']['sucursales'], ['Lote 86', 'Lote 83'])
 
+    def test_quote_mail_uses_only_configured_branch_contacts(self):
+        config={'Lote 86':{'contacts':['Sol'],'policies':['Mantenimiento 86']}}
+        self.edit(['Lote 86','Lote 83'],contacto_nombre=['Sol','Alondra'],
+                  contacto_correo=['sol@example.com','otra@example.com'],contacto_tipo=['compras','ambos'],
+                  branch_settings=json.dumps(config))
+        self.assertEqual(self.snapshots[-1]['Visscher Caravelle']['branch_settings'],config)
+        for branch,expected in [('Lote 86',['sol@example.com']),('Lote 83',[])]:
+            mail=cotizador._correos_cotizacion(dict(cliente='Visscher Caravelle',sucursal=branch,
+                                                receptor={'email':'general@example.com'}))
+            self.assertEqual([p['correo'] for p in mail['contactos']],expected)
+            self.assertEqual(mail['historial'],[])
+            self.assertEqual(cotizador._correo_individual_preferido(mail),next(iter(expected),''))
+
     def test_create_cannot_overwrite_existing_customer(self):
         before = copy.deepcopy(self.catalog)
         self.client.post('/nuevo_cliente', data={'nombre': 'Visscher Caravelle', 'sucursal_nombre': ['X']})

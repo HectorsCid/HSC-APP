@@ -307,6 +307,7 @@ def _template_invoice_payload(template, schedule, run_key):
         "cliente_carpeta": str(template.get("client_name") or receiver.get("name") or "").strip(),
         "request_id": f"schedule-{schedule['id']}-{run_key}",
         "policy_template_id": template.get("id",""),
+        "policy_schedule_id": schedule.get("id",""),
         "policy_period": run_key,
         "confirmed": True,
         "retenciones": {
@@ -1810,7 +1811,8 @@ def facturar():
                         from billing_policies import tag_template
                         result["policy_linked"] = tag_template(str(inv_id), payload["policy_template_id"],
                             str((payload.get("receptor") or {}).get("rfc") or "").strip().upper(),
-                            payload.get("policy_period") or datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m"))
+                            payload.get("policy_period") or datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m"),
+                            payload.get("policy_schedule_id",""))
                     except Exception:
                         current_app.logger.exception("No se pudo clasificar la factura ya timbrada %s", inv_id)
                         result["policy_review"] = True
@@ -2489,8 +2491,14 @@ def _validated_invoice_schedule(body, previous=None):
     if mode == "auto_stamp_email" and not recipient:
         raise ValueError("Escribe el correo al que se enviará la factura automática.")
     now = _local_now()
+    policy_name=str(body.get("policy_name",(previous or {}).get("policy_name","")) or "")
+    policy_client=str(body.get("policy_client",(previous or {}).get("policy_client","")) or "")
+    if policy_name:
+        from billing_policies import assigned_policy
+        assigned_policy(policy_client,str(receiver.get("tax_id") or "").upper(),policy_name)
     return {
         "id": str((previous or {}).get("id") or uuid4()),
+        "policy_name": policy_name, "policy_client":policy_client if policy_name else "",
         "name": name,
         "template_id": template_id,
         "frequency": "monthly",
@@ -2506,7 +2514,7 @@ def _validated_invoice_schedule(body, previous=None):
             "Ing. Héctor Silva Cid\n\nCel: 5527605496"
         )))).strip(),
         "active": bool(body.get("active", (previous or {}).get("active", True))),
-        "next_run": _next_monthly_run(day, at_time, after=now - timedelta(minutes=1)).isoformat(),
+        "next_run": (previous.get("next_run") if previous and previous.get("day")==day and previous.get("time")==at_time else None) or _next_monthly_run(day, at_time, after=now - timedelta(minutes=1)).isoformat(),
         "created_at": (previous or {}).get("created_at") or now.isoformat(timespec="seconds"),
         "updated_at": now.isoformat(timespec="seconds"),
         "last_run_key": (previous or {}).get("last_run_key", ""),
@@ -2529,7 +2537,8 @@ def api_invoice_schedules():
         item["client_name"] = template.get("client_name") or (template.get("receiver") or {}).get("name") or ""
         rows.append(item)
     rows.sort(key=lambda item: (not bool(item.get("active")), str(item.get("next_run") or "")))
-    return jsonify({"ok": True, "data": rows, "push_configured": _push_configured()}), 200
+    from billing_policies import commercial
+    return jsonify({"ok": True, "data": rows, "policies":commercial(), "push_configured": _push_configured()}), 200
 
 
 @facturacion_bp.post("/invoice-schedules")

@@ -49,7 +49,7 @@ from auth_google import (
 )
 from pdf_runtime import PdfRenderError, PdfRendererBusy, render_pdf_file, pdf_render_slot
 from photo_runtime import prepare_photo
-from quotation_branches import catalog_branches, select_branch, validate_branches
+from quotation_branches import catalog_branches, select_branch, validate_branches, branch_settings
 
 # NEW: para detectar RefreshError con claridad
 from google.auth.exceptions import RefreshError
@@ -1556,6 +1556,11 @@ def _actualizar_datos_cliente_desde_form():
         except ValueError as exc:
             flash(str(exc))
             return False
+        if sucursal:
+            allowed = (clientes_predefinidos[cliente].get('branch_settings', {}).get(sucursal, {}).get('contacts', []))
+            if any(n not in allowed for n in request.form.getlist('atencion') if n):
+                flash("Elige un contacto asignado a este lote.")
+                return False
         datos_cliente['cliente'] = cliente
         datos_cliente['sucursal'] = sucursal
         datos_cliente['atencion'] = request.form.getlist('atencion')
@@ -2576,6 +2581,14 @@ def editar_cliente():
         merged = dict(datos)
         if sucursales is not None:
             merged['sucursales'] = sucursales
+            if 'branch_settings' in request.form:
+                try:
+                    merged['branch_settings'] = branch_settings(request.form['branch_settings'], sucursales, contactos)
+                    if any(v['policies'] for v in merged['branch_settings'].values()) and not rfc:
+                        raise ValueError('Guarda el RFC del cliente antes de crear una póliza de facturación.')
+                except ValueError as exc:
+                    flash(str(exc))
+                    return redirect(url_for('editar_cliente', cliente=nombre_actual))
         # Formularios antiguos no deben desactivar una póliza por omitir el campo.
         if request.form.get('poliza_present') == '1':
             merged['tiene_poliza'] = request.form.get('tiene_poliza') == '1'
@@ -2624,6 +2637,13 @@ def editar_cliente():
     datos_vista = dict(datos)
     datos_vista["contactos"] = _normalizar_contactos_cliente(datos)
     datos_vista['sucursales'] = _catalogo_sucursales_cotizacion().get(nombre_actual, [])
+    try:
+        from billing_policies import sql, rules
+        key = datos.get('id_cliente') or ''
+        datos_vista['previous_policies'] = sorted(set(rules(key).get('templates', {}).values()) |
+            {row[0] for row in sql("SELECT DISTINCT policy FROM billing_policy_invoices WHERE client_id=? AND rfc=?", (key,datos.get('rfc','')))}) if key else []
+    except Exception:
+        datos_vista['previous_policies'] = []
     return render_template('editar_cliente.html', cliente=nombre_actual, datos=datos_vista)
 
 
@@ -3790,6 +3810,14 @@ def _billing_policy_identity(client):
 
 
 app.extensions["policy_identity"] = _billing_policy_identity
+
+def _commercial_policies():
+    with _CLIENTES_DATA_LOCK:
+        return [dict(client=name, key=c.get('id_cliente',''), rfc=str(c.get('rfc') or '').upper(),
+                     branch=b, name=n) for name,c in clientes_predefinidos.items() if isinstance(c,dict)
+                for b,s in c.get('branch_settings',{}).items() for n in s.get('policies',[])]
+
+app.extensions["commercial_policies"] = _commercial_policies
 
 
 def _partner_quote_matches(item, identity):
@@ -5985,6 +6013,12 @@ def _correos_cotizacion(cotizacion):
     nombre = str(cotizacion.get("cliente") or "").strip()
     receptor = cotizacion.get("receptor") or {}
     correos = _contactos_cliente_seleccionado(nombre, receptor.get("rfc"))
+    branch = cotizacion.get('sucursal') or (cotizacion.get('datos') or {}).get('sucursal')
+    if branch:
+        _, catalog = _resolver_cliente_catalogo(nombre, receptor.get("rfc"))
+        people = (catalog or {}).get('branch_settings',{}).get(branch,{}).get('contacts',[])
+        contacts = [c for c in correos['contactos'] if c['nombre'] in people and c['tipo'] in ('compras','ambos')]
+        return dict(contactos=contacts, compras=_correos_por_tipo(contacts,'compras','ambos'), cuentas_pagar='', frecuentes='', historial=[])
     fallback = str(receptor.get("correo_facturacion") or receptor.get("email") or "").strip()
     if not correos["compras"]:
         correos["compras"] = fallback or correos["cuentas_pagar"]

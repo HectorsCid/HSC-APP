@@ -119,6 +119,14 @@
   #policyDetail h3{margin:1.25rem 0 .5rem}
   #policyDetail details{padding:.75rem 0;border-block:1px solid var(--line)}
   #policyDetail summary{cursor:pointer}
+  #panelPolizas [hidden]{display:none!important}
+  #policyClients{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),1fr));gap:14px;margin-top:18px}
+  .policy-tile{display:grid;align-content:start;justify-items:start;gap:9px;padding:18px;text-align:left;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:16px;min-height:142px;cursor:pointer}
+  .policy-tile:hover,.policy-tile:focus-visible{border-color:var(--accent)}
+  .policy-logo{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:var(--soft);font-weight:750}.policy-logo img{object-fit:contain}.policy-tile small{color:var(--muted)}
+  #policyDetail>details{padding:16px;margin:14px 0;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+  #policyDetail summary{font-weight:700}#policyDetail details[open]>summary{margin-bottom:16px}
+  #policyDetail .balance-pending-row{padding-block:14px;gap:12px;flex-wrap:wrap}
   #policyDetail form,#policyMail form{margin-top:.75rem}
   #policyDetail .balance-pending-row small{display:block;color:var(--muted)}
   .tab{padding:7px 13px;background:var(--surface);font-weight:750}
@@ -351,8 +359,8 @@
       </section>
     </div>
     <div class="card" id="panelPolizas" style="display:none">
-      <div class="panel-head"><h2>Pólizas activas</h2><button class="btn" id="policyReload">Actualizar</button></div>
-      <div class="client-layout"><div class="client-list" id="policyClients"></div><div class="client-detail" id="policyDetail" aria-live="polite"></div></div>
+      <div class="panel-head"><h2>Pólizas por cliente</h2><button class="btn" id="policyBack" hidden>← Clientes</button><button class="btn" id="policyReload">Actualizar</button></div>
+      <div id="policyClients"></div><section id="policyDetail" aria-live="polite" hidden></section>
     </div>
     <dialog id="policyMail" class="cm-card" style="max-height:90vh;overflow:auto;color:var(--ink);background:var(--surface)"></dialog>
     <div class="card" id="panelClientes" style="display:none">
@@ -370,6 +378,7 @@
       <div class="schedule-form-grid">
         <div class="wide"><label for="scheduleName">Nombre del recordatorio</label><input id="scheduleName" class="cm-input" type="text" placeholder="Ej. Mantenimiento mensual Alpha" /></div>
         <div class="wide"><label for="scheduleTemplate">Plantilla</label><select id="scheduleTemplate" class="cm-select"></select></div>
+        <div class="wide"><label for="schedulePolicy">Póliza del cliente</label><select id="schedulePolicy" class="cm-select"></select></div>
         <div><label for="scheduleDay">Día de cada mes</label><input id="scheduleDay" class="cm-input" type="number" min="1" max="31" value="1" /></div>
         <div><label for="scheduleTime">Hora</label><input id="scheduleTime" class="cm-input" type="time" value="09:00" /></div>
         <div class="wide"><label for="scheduleMode">Qué debe hacer</label><select id="scheduleMode" class="cm-select"><option value="reminder">Sólo recordarme</option><option value="confirm" selected>Notificarme para confirmar y timbrar</option><option value="auto_stamp">Timbrar automáticamente</option><option value="auto_stamp_email">Timbrar y enviar por correo automáticamente</option></select><div class="cm-hint">La confirmación es la opción recomendada. El modo automático usa exactamente los datos guardados en la plantilla.</div></div>
@@ -890,6 +899,15 @@ const scheduleEmailFields=document.getElementById('scheduleEmailFields');
 const scheduleDefaultMessage='Buen día, estimado cliente. Envío la factura solicitada.\n\nDe antemano muchas gracias.\n\nQuedo a sus órdenes.\n\nIng. Héctor Silva Cid\n\nCel: 5527605496';
 function scheduleModeFields(){scheduleEmailFields.classList.toggle('hidden',scheduleMode.value!=='auto_stamp_email');}
 scheduleMode.onchange=scheduleModeFields;
+let scheduledPolicies=[];
+function fillSchedulePolicies(templateId,row={}){
+  const select=document.getElementById('schedulePolicy'),template=invoiceTemplates.find(t=>String(t.id)===templateId);
+  select.replaceChildren(new Option('Sin póliza vinculada',''));
+  for(const p of scheduledPolicies.filter(p=>p.rfc===String(template?.receiver?.tax_id||'').toUpperCase())){
+    const opt=new Option(p.branch+' · '+p.name,p.name);opt.dataset.client=p.key;select.add(opt);
+    if(p.key===row.policy_client && p.name===row.policy_name)opt.selected=true;
+  }
+}
 function openScheduleModal(templateId='', schedule=null){
   const row=schedule||{};
   document.getElementById('scheduleId').value=row.id||'';
@@ -897,6 +915,7 @@ function openScheduleModal(templateId='', schedule=null){
   const select=document.getElementById('scheduleTemplate');
   select.innerHTML=invoiceTemplates.map(item=>`<option value="${escAttr(item.id)}">${escAttr(item.name)} · ${escAttr(item.client_name||item.receiver?.name||'Sin cliente')}</option>`).join('');
   select.value=String(row.template_id||templateId||invoiceTemplates[0]?.id||'');
+  fillSchedulePolicies(select.value,row);
   document.getElementById('scheduleDay').value=row.day||1;
   document.getElementById('scheduleTime').value=row.time||'09:00';
   scheduleMode.value=row.mode||'confirm';
@@ -916,6 +935,7 @@ document.getElementById('scheduleClose').onclick=closeScheduleModal;
 document.getElementById('scheduleCancel').onclick=closeScheduleModal;
 scheduleModal.addEventListener('click',event=>{if(event.target===scheduleModal)closeScheduleModal();});
 document.getElementById('scheduleTemplate').onchange=event=>{
+  fillSchedulePolicies(event.target.value);
   const template=invoiceTemplates.find(item=>String(item.id)===event.target.value);
   if(template&&!document.getElementById('scheduleRecipient').value)document.getElementById('scheduleRecipient').value=template.receiver?.email||'';
 };
@@ -938,6 +958,7 @@ async function loadSchedules(){
   try{
     const response=await fetch('/api/invoice-schedules');const result=await response.json();
     if(!response.ok||!result.ok)throw new Error(errorText(result.error));invoiceSchedules=result.data||[];
+    scheduledPolicies=result.policies||[];
     if(!invoiceSchedules.length){list.innerHTML='<div class="empty-state">Todavía no hay facturas programadas.</div>';return;}
     list.innerHTML=invoiceSchedules.map(row=>{const [label,statusClass]=scheduleStatus(row);const next=row.next_run?new Date(row.next_run).toLocaleString('es-MX',{dateStyle:'medium',timeStyle:'short'}):'—';const retry=row.last_status==='email_error'&&row.last_invoice_id?`<button class="btn" data-retry-schedule-email="${escAttr(row.id)}">Reintentar correo</button>`:'';const generate=row.active&&['awaiting_confirmation','reminded'].includes(row.last_status)?`<a class="btn btn-primary" href="/facturas/nueva?template_id=${encodeURIComponent(row.template_id)}&amp;schedule_id=${encodeURIComponent(row.id)}">Revisar y generar factura</a>`:'';return `<div class="schedule-row ${row.active?'':'paused'}"><div><div class="mini-title">${escAttr(row.name)}</div><div class="mini-sub">${escAttr(row.template_name)} · ${escAttr(row.client_name)}</div></div><div><strong>Día ${row.day}</strong><div class="mini-sub">${escAttr(row.time)} h</div></div><div><span class="schedule-status ${statusClass}">${label}</span><div class="mini-sub">Siguiente: ${escAttr(next)}</div></div><div class="mini-sub">${row.last_error?escAttr(row.last_error):({reminder:'Sólo recordatorio',confirm:'Confirmar y timbrar',auto_stamp:'Timbrado automático',auto_stamp_email:'Timbrado y correo automáticos'}[row.mode]||'')}</div><div class="schedule-actions">${generate}${['awaiting_confirmation','reminded'].includes(row.last_status)?`<button class="btn" type="button" data-complete-schedule="${escAttr(row.id)}">Marcar como realizada</button>`:''}${retry}<button class="btn" data-edit-schedule="${escAttr(row.id)}">Editar</button><button class="btn" data-toggle-schedule="${escAttr(row.id)}">${row.active?'Pausar':'Activar'}</button><button class="btn btn-danger" data-delete-schedule="${escAttr(row.id)}">Eliminar</button></div></div>`}).join('');
     list.querySelectorAll('[data-edit-schedule]').forEach(button=>button.onclick=()=>openScheduleModal('',invoiceSchedules.find(row=>String(row.id)===button.dataset.editSchedule)));
@@ -961,8 +982,12 @@ async function loadSchedules(){
 document.getElementById('scheduleSave').onclick=async event=>{
   const button=event.currentTarget;const error=document.getElementById('scheduleError');error.textContent='';button.disabled=true;button.textContent='Guardando…';
   const automatic=['auto_stamp','auto_stamp_email'].includes(scheduleMode.value);
-  if(automatic&&!confirm('Esta opción podrá generar CFDI reales cada mes sin pedirte autorización en ese momento. ¿Confirmas que deseas guardar esta automatización?')){button.disabled=false;button.textContent='Guardar programación';return;}
+  const existing=invoiceSchedules.find(s=>s.id===document.getElementById('scheduleId').value);
+  if(automatic&&existing?.mode!==scheduleMode.value&&!confirm('Esta opción podrá generar CFDI reales cada mes sin pedirte autorización en ese momento. ¿Confirmas que deseas guardar esta automatización?')){button.disabled=false;button.textContent='Guardar programación';return;}
   const payload={id:document.getElementById('scheduleId').value,name:document.getElementById('scheduleName').value,template_id:document.getElementById('scheduleTemplate').value,day:Number(document.getElementById('scheduleDay').value),time:document.getElementById('scheduleTime').value,mode:scheduleMode.value,recipient:document.getElementById('scheduleRecipient').value,cc:document.getElementById('scheduleCc').value,subject:document.getElementById('scheduleSubject').value,message:document.getElementById('scheduleMessage').value,active:true,automatic_acknowledged:automatic};
+  const selected=document.getElementById('schedulePolicy').selectedOptions[0];
+  payload.policy_name=selected.value;payload.policy_client=selected.dataset.client||'';
+  payload.active=invoiceSchedules.find(s=>s.id===payload.id)?.active??true;
   try{const result=await saveScheduleOverride(payload,{});if(!result.drive_backup){error.textContent='Quedó guardada temporalmente, pero Drive no confirmó el respaldo. Vuelve a guardar antes de cerrar.';return;}closeScheduleModal();pageMsg.className='flash ok';pageMsg.textContent='Factura programada y respaldada correctamente.';loadSchedules();}catch(exc){error.textContent=exc.message;}finally{button.disabled=false;button.textContent='Guardar programación';}
 };
 
@@ -1297,7 +1322,7 @@ if(arrivalParams.get('complemento') === '1' && arrivalParams.get('enviar_complem
     rfc:arrivalParams.get('rfc') || '', email:''});
 }
 </script>
-<script src="/static/billing_policies.js?v=2"></script>
+<script src="/static/billing_policies.js?v=4"></script>
 </body>
 </html>
 

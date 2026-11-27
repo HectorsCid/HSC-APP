@@ -1,5 +1,9 @@
 <fieldset class="branch-editor" data-branch-editor id="sucursales">
   <legend>Sucursales, lotes o proyectos</legend>
+  {% if cliente is defined and datos is defined %}
+  <script type="application/json" data-lot-config>{{ datos.get('branch_settings',{})|tojson }}</script>
+  <datalist id="existingPolicies">{% for n in datos.get('previous_policies',[]) %}<option value="{{ n }}"></option>{% endfor %}</datalist>
+  {% endif %}
   <input type="hidden" name="sucursales_present" value="1">
   <p class="hint">Guárdalos una vez y elígelos al cotizar. Comparten los datos fiscales y el RFC de este cliente.</p>
   <div class="branch-list" data-branch-list>
@@ -17,4 +21,4 @@
   <template data-branch-template><div class="branch-row"><input name="sucursal_nombre" maxlength="100" placeholder="Ej. Lote 86" aria-label="Nombre de sucursal" autocomplete="off" autocapitalize="none" spellcheck="false"><button class="btn branch-remove" type="button" data-remove-branch aria-label="Quitar sucursal" title="Quitar de la lista"><svg class="line-icon" aria-hidden="true"><use href="#c-trash"/></svg></button></div></template>
 </fieldset>
 <link rel="stylesheet" href="{{ url_for('static', filename='quotation_branches.css', v='1') }}">
-<script defer src="{{ url_for('static', filename='quotation_branches.js', v='1') }}"></script>
+<script defer src="{{ url_for('static', filename='quotation_branches.js', v='2') }}"></script>

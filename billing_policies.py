@@ -38,11 +38,28 @@ def clients(key=None):
     if not store.enabled:
         raise PolicyError("No está conectada la base de Operaciones.")
     rows = []
+    configured=commercial()
     for c in store.list_clients(client_id=key):
-        if c["policy_active"]:
-            ident = current_app.extensions["policy_identity"](c)
+        ident = current_app.extensions["policy_identity"](c)
+        owned=[p for p in configured if p["key"]==c["id"] and p["rfc"]==ident["rfc"]]
+        if c["policy_active"] or owned:
             rows.append(dict(id=c["id"], name=c["name"], rfc=ident["rfc"], photo=c["has_photo"], email=ident.get("email","")))
+    for p in configured:
+        if (not key or key==p["key"]) and not any(row["id"]==p["key"] for row in rows):
+            rows.append(dict(id=p["key"], name=p["client"],rfc=p["rfc"],photo=False,email=""))
     return rows
+
+
+def commercial():
+    rows=current_app.extensions.get("commercial_policies",lambda:[])()
+    return [dict(p,key=p["key"] or "fiscal-"+p["rfc"]) for p in rows if p["rfc"]]
+
+
+def assigned_policy(key,rfc,name):
+    match=[p for p in commercial() if p["key"]==key and p["rfc"]==rfc and p["name"]==name]
+    if len(match)!=1:
+        raise PolicyError("La póliza no está configurada para este cliente y lote.")
+    return match[0]
 
 
 def client(key):
@@ -80,21 +97,19 @@ def link(inv, c, name, period, *, queue=True):
             WHERE billing_policy_mail.state IN ('waiting','manual')""",(inv,c["id"],name),write=True)
 
 
-def tag_template(inv, template, rfc, period):
-    if not template:
-        return False
-    for key, raw in sql("SELECT client_id,rules FROM billing_policy_rules"):
-        cfg = json.loads(raw)
-        name = cfg.get("templates",{}).get(template)
-        if not name:
-            continue
-        candidates=clients(key)
-        if not candidates or not rfc or candidates[0]["rfc"]!=rfc:
-            continue
-        start=date.fromisoformat(period+"-01")
-        if cfg.get("previous"): period=(start-timedelta(days=1)).isoformat()[:7]
-        link(inv,candidates[0],name,period)
-        return True
+def tag_template(inv, template, rfc, period, schedule_id=""):
+    if schedule_id:
+        from facturacion_bp import _read_invoice_schedules
+        sch=next((s for s in _read_invoice_schedules() if s["id"]==schedule_id),None)
+        if not sch or sch["template_id"]!=template:
+            raise PolicyError("La programación no corresponde a esta plantilla.")
+        if sch.get("policy_name"):
+            p=assigned_policy(sch.get("policy_client"),rfc,sch["policy_name"])
+            if rules(p["key"]).get("previous"):
+                period=(date.fromisoformat(period+"-01")-timedelta(days=1)).isoformat()[:7]
+            link(inv,client(p["key"]),p["name"],period,queue=False)
+            return True
+    # A legacy template is not a contract. Keep historical invoice links intact.
     return False
 
 
@@ -104,11 +119,16 @@ def index():
     rows=clients()
     tracked={(c["id"],c["rfc"]):c for c in rows}
     deliveries=read_email_deliveries()
+    contracts=commercial()
+    for c in rows:
+        c["policy_count"]=sum(p["key"]==c["id"] and p["rfc"]==c["rfc"] for p in contracts)
     for key,rfc,inv in sql("SELECT client_id,rfc,invoice_id FROM billing_policy_invoices"):
         c=tracked.get((key,rfc))
-        if c is not None and not delivery_status("factura",inv,deliveries).get("sent"):
-            c["unconfirmed"]=c.get("unconfirmed",0)+1
-    return jsonify(ok=True, clients=rows)
+        if c is not None:
+            c["history"]=True
+            if not delivery_status("factura",inv,deliveries).get("sent"):
+                c["unconfirmed"]=c.get("unconfirmed",0)+1
+    return jsonify(ok=True, clients=[c for c in rows if c["policy_count"] or c.get("history")])
 
 
 @bp.get("/<key>")
@@ -131,7 +151,7 @@ def detail(key):
         row["auto_state"],row["auto_note"]=jobs.get(row["id"],("",""))
     templates=[dict(id=t["id"],name=t["name"]) for t in _read_invoice_templates()
                if c["rfc"] and str((t.get("receiver") or {}).get("tax_id") or "").upper()==c["rfc"]]
-    return jsonify(ok=True,client=c,rules=rules(key),templates=templates,invoices=rows)
+    return jsonify(ok=True,client=c,rules=rules(key),templates=templates,invoices=rows,configured=[p for p in commercial() if p['key']==key and p['rfc']==c['rfc']])
 
 
 @bp.post("/<key>/rules")
@@ -150,6 +170,7 @@ def save_rules(key):
     cfg.update({k:body.get(k) is True for k in ("signed","oc","previous")},templates=templates)
     names=set(templates.values())|{row[0] for row in sql("SELECT DISTINCT policy FROM billing_policy_invoices WHERE client_id=?",(key,))}
     auto=body.get("automatic") or []
+    names.update(p['name'] for p in commercial() if p['key']==key and p['rfc']==c['rfc'])
     if not isinstance(auto,list) or any(not isinstance(n,str) or n not in names for n in auto):
         raise PolicyError("Selecciona una póliza válida para el envío automático.")
     if auto:
@@ -178,6 +199,10 @@ def manual_link(key):
     inv=b.get("id")
     if not any(i["id"]==inv for i in invoices(c)):
         raise PolicyError("La factura no corresponde al RFC de este cliente.")
+    if b.get("unlink") is not True:
+        name=str(b.get("policy") or "").strip()
+        if not sql("SELECT 1 FROM billing_policy_invoices WHERE client_id=? AND rfc=? AND invoice_id=? AND policy=?", (key,c['rfc'],inv,name)):
+            assigned_policy(key,c['rfc'],name)
     if sql("SELECT 1 FROM billing_policy_mail WHERE invoice_id=? AND state='sending'",(inv,)):
         raise PolicyError("El correo está en proceso. Espera antes de editar el vínculo.")
     sql("UPDATE billing_policy_mail SET state='manual',note='Envío manual' WHERE invoice_id=? AND client_id=? AND state='waiting'",(inv,key),write=True)
@@ -245,7 +270,8 @@ def export_relation(key):
     links=sql("SELECT invoice_id,policy,period FROM billing_policy_invoices WHERE client_id=? AND rfc=? AND period BETWEEN ? AND ? ORDER BY period,policy",(key,c["rfc"],first,last))
     docs={r["id"]:r for r in invoices(c)} if links else {}
     if any(i not in docs for i,_,_ in links): raise PolicyError("El historial aún no confirma todas las facturas vinculadas. Actualízalo antes de descargar.")
-    names=sorted(set(rules(key).get("templates",{}).values())|{n for _,n,_ in links}) or [""]
+    names=sorted({n for _,n,_ in links}|
+                 {p["name"] for p in commercial() if p["key"]==key and p["rfc"]==c["rfc"]}) or [""]
     groups={}
     for i,n,m in links: groups.setdefault((m,n),[]).append(docs[i])
     statuses=read_email_deliveries() if links else {}

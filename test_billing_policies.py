@@ -33,7 +33,8 @@ class PolicyFlow(unittest.TestCase):
         self.mock("facturacion_bp.billing_client_groups",return_value=([dict(rfc="A",invoices=[dict(id="inv"),dict(id="other")])],{}))
         self.base="/api/facturacion/polizas"
         self.http.post(self.base+"/a/rules",json=dict(templates=["t"],signed=True,oc=True,previous=True))
-        self.assertTrue(policies.tag_template("inv","t","A","2026-01"))
+        self.assertFalse(policies.tag_template("inv","t","A","2026-01"))
+        policies.link("inv",policies.client("a"),"Chiller","2025-12",queue=False)
 
     def mock(self,target,**kwargs):
         p=patch(target,**kwargs)
@@ -41,7 +42,7 @@ class PolicyFlow(unittest.TestCase):
         return p.start()
 
     def test_directory_history_and_identity(self):
-        self.assertEqual([c["id"] for c in self.http.get(self.base).json["clients"]],["a","b"])
+        self.assertEqual([c["id"] for c in self.http.get(self.base).json["clients"]],["a"])
         rows=self.http.get(self.base+"/a").json["invoices"]
         self.assertEqual([(r["policy"],r["period"]) for r in rows],[("Chiller","2025-12"),("","")])
         self.assertFalse(policies.tag_template("other","t","B","2026-01"))
@@ -76,7 +77,7 @@ class PolicyFlow(unittest.TestCase):
 
     def test_invoice_order_does_not_leak_to_other_month_or_invoice(self):
         self.http.post(self.base+"/a/inv/oc",data={"file":(io.BytesIO(b"%PDF-order"),"December.pdf"),"scope":"month"})
-        policies.tag_template("feb","t","A","2026-03")
+        policies.link("feb",policies.client("a"),"Chiller","2026-02",queue=False)
         self.assertEqual(policies.packet("a","feb")[0]["oc"],"")
         self.assertEqual(policies.packet("a","inv")[0]["oc"],"December.pdf")
 
@@ -97,7 +98,7 @@ class PolicyFlow(unittest.TestCase):
         self.mock("smtp_mailer.authorized_to_send",return_value=True)
         self.assertEqual(self.http.post(self.base+"/a/rules",json=cfg).status_code,200)
         self.assertEqual(policies.sql("SELECT invoice_id FROM billing_policy_mail"),[])  # no retroactivos
-        policies.tag_template("new","t","A","2026-11")
+        policies.link("new",policies.client("a"),"Chiller","2026-11",queue=True)
         send=self.mock("facturacion_bp.send_cfdi_email",return_value={"recipients":[cfg["email"]]})
         self.mock("facturacion_bp._fm_request",return_value={})
         self.mock("facturacion_bp._facturama_invoice_row",return_value=dict(id="new",customer_tax_id="A",type="I",cancellation_status="active",folio="123"))

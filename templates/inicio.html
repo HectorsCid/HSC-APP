@@ -672,14 +672,17 @@
 
       selectAtencion.innerHTML = '';
 
-      (d.atencion || []).forEach((persona, i) => {
+      const people=sucursal.value?(d.branch_settings?.[sucursal.value]?.contacts||[]):(d.atencion||[]);
+      if(!people.length && sucursal.value)selectAtencion.add(new Option('Este lote aún no tiene contactos',''));
+      if(people.length>1 && sucursal.value && !people.includes(valorActual))selectAtencion.add(new Option('Elige una persona',''));
+      people.forEach((persona, i) => {
         const opt = document.createElement('option');
         opt.value = persona;
         opt.textContent = persona;
 
         if (persona === valorActual) {
           opt.selected = true;
-        } else if (!valorActual && i === 0) {
+        } else if (!valorActual && i === 0 && (!sucursal.value || people.length===1)) {
           opt.selected = true;
         }
 
@@ -717,8 +720,14 @@
     cargarSucursales(selectCliente.value, true);
 
     selectCliente.addEventListener('change', () => {
-      cargarDatosCliente(selectCliente.value, false);
       cargarSucursales(selectCliente.value, false);
+      cargarDatosCliente(selectCliente.value, false);
+    });
+    sucursal.addEventListener('change',()=>{
+      selectAtencion.replaceChildren();
+      cargarDatosCliente(selectCliente.value,true);
+      if(selectAtencion.options.length>1)selectAtencion.value='';
+      if(selectAtencion.selectedIndex<0){selectAtencion.prepend(new Option('Elige una persona',''));selectAtencion.value='';}
     });
 
     const btnEditar = document.getElementById('btnEditarCliente');
