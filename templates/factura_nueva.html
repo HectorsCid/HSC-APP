@@ -172,7 +172,7 @@
         </div>
         <div><label for="retencionIsr">Retención ISR</label><select id="retencionIsr"><option value="0">Sin retención</option><option value="0.0125">ISR 1.25%</option><option value="0.1">ISR 10%</option></select></div>
         <div><label for="retencionIva">Retención IVA</label><select id="retencionIva"><option value="0">Sin retención</option><option value="0.03">3%</option><option value="0.04">4%</option><option value="0.053333">5.3333%</option><option value="0.06">6%</option><option value="0.106667">10.6667%</option><option value="0.16">16%</option></select></div>
-        <div><label for="aliasFactura">Alias para guardar en Drive (opcional)</label><input id="aliasFactura" maxlength="100" placeholder="Ej. Mantenimiento septiembre" autocomplete="off" /></div>
+        <div><label for="aliasFactura">Nombre de la factura</label><input id="aliasFactura" maxlength="100" placeholder="Ej. Mantenimiento septiembre" autocomplete="off" /></div>
         </div>
         <input id="serie" value="HSC" maxlength="25" type="hidden" />
         <!-- Conserva las condiciones de plantillas anteriores sin mostrar un campo de captura. -->
@@ -937,6 +937,7 @@
         const data = await r.json();
         if(!data.ok){ msg(false, data.error?.message || 'Cotización no disponible'); return; }
         pageQuoteFolio = String(data.folio || '').trim();
+        document.getElementById('aliasFactura').value=data.nombre_documento||'';
         pageClientName = String(data.cliente || '').trim();
         document.getElementById('folioCotizacion').value = pageQuoteFolio;
         const clientSelect = document.getElementById('cliente');
@@ -1051,7 +1052,7 @@
       stampConfirmGo.hidden = true;
       stampConfirmModal.classList.add('show');
     }
-    function openStampConfirmation(){
+    async function openStampConfirmation(){
       lastValidationError = '';
       if(!valReceptor() || !valConceptos()){
         showStampError(lastValidationError || 'Revisa los datos marcados antes de continuar.');
@@ -1062,7 +1063,13 @@
       const rfc = document.getElementById('rfc').value.trim().toUpperCase();
       const method = document.getElementById('metodo').value;
       const payment = document.getElementById('forma').selectedOptions[0]?.textContent || document.getElementById('forma').value;
-      const invoiceAlias = document.getElementById('aliasFactura').value.trim();
+      const nameField=document.getElementById('aliasFactura');
+      if(!nameField.value.trim()){
+        const choice=await askDocumentName('Nombre de la factura');
+        if(choice===null)return;
+        nameField.value=choice;
+      }
+      const invoiceAlias = nameField.value.trim();
       const production = document.body.dataset.billingEnvironment === 'production';
       document.getElementById('stampConfirmTitle').textContent = production ? 'Confirmar timbrado real' : 'Confirmar timbrado de prueba';
       document.getElementById('stampConfirmText').textContent = production
@@ -1081,7 +1088,7 @@
         <div>RFC<strong>${escapeHtml(rfc)}</strong></div>
         <div>Total<strong>${escapeHtml(document.getElementById('totalCell').textContent.trim())}</strong></div>
         <div>Pago<strong>${escapeHtml(method)} · ${escapeHtml(payment)}</strong></div>
-        ${invoiceAlias ? `<div>Carpeta en Drive<strong>${escapeHtml(invoiceAlias)} - folio</strong></div>` : ''}`;
+        ${invoiceAlias ? `<div>Nombre de la factura<strong>${escapeHtml(invoiceAlias)}</strong></div>` : ''}`;
       stampConfirmModal.classList.add('show');
       setTimeout(()=>stampConfirmGo.focus(), 0);
     }
@@ -1584,6 +1591,7 @@
 })();
 </script>
 
+{% include 'document_name.html' %}
 </body>
 </html>
 

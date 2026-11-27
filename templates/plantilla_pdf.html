@@ -119,9 +119,19 @@
     <div><strong>Vista previa de la cotización</strong><small>Revisa el documento antes de generar el PDF.</small></div>
     <div class="preview-actions">
       <a class="preview-btn" href="{{ url_for('inicio', _anchor='form-partida') }}">← Volver a editar</a>
-      <a class="preview-btn primary" href="{{ url_for('generar_pdf') }}">Generar PDF</a>
+      <form action="{{ url_for('generar_pdf') }}" method="post" id="previewGenerate">
+        <input type="hidden" name="desde_vista_previa" value="1">
+        <input type="hidden" name="nombre_borrador" value="{{ datos.nombre_borrador or '' }}">
+        <button type="button" class="preview-btn primary" onclick="choosePreviewName(this)">Generar PDF</button>
+      </form>
     </div>
   </nav>
+  {% include 'document_name.html' %}
+  <script>async function choosePreviewName(button){
+    const f=button.form,n=await askDocumentName('Nombre de la cotización',f.elements.nombre_borrador.value);
+    if(n===null)return;
+    button.disabled=true;f.elements.nombre_borrador.value=n;f.requestSubmit();
+  }</script>
   {% endif %}
   {# ---- Defaults/guards for retenciones ---- #}
   {% set _datos = datos if datos is defined else {} %}

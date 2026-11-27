@@ -58,7 +58,7 @@ from google.auth.exceptions import RefreshError
 from werkzeug.utils import safe_join, secure_filename
 from werkzeug.security import check_password_hash, generate_password_hash
 from smtp_mailer import authorized_to_send, parse_recipients, send_quote_email, smtp_config, trusted_device_token
-from cfdi_drive import delete_pending_document, list_pending_documents, save_pending_document
+from cfdi_drive import delete_pending_document, list_pending_documents, save_pending_document, document_stem, safe_drive_name
 from email_tracking import delivery_status, email_thread_headers, read_email_deliveries, record_email_delivery
 from reportes_bp import (
     reportes_bp,
@@ -2235,12 +2235,16 @@ def guardar_costos_internos():
 @app.route('/generar_pdf', methods=['GET', 'POST'])
 def generar_pdf():
     import shutil
+    if request.method == 'GET':
+        return redirect(url_for('vista_previa'))
     # Cliente, folio y partidas deben pertenecer a la misma captura. El servidor
     # atiende más de una solicitud a la vez, por lo que la instantánea se toma
     # bajo un único candado antes de iniciar el render y la subida a Drive.
     with _QUOTE_STATE_LOCK:
         if request.method == 'POST':
-            if not _actualizar_datos_cliente_desde_form():
+            if request.form.get('desde_vista_previa') == '1':
+                datos_cliente['nombre_borrador'] = (request.form.get('nombre_borrador') or '').strip()[:100]
+            elif not _actualizar_datos_cliente_desde_form():
                 return redirect(url_for('inicio'))
         pendientes = [p for p in partidas if p.get("precio_pendiente")]
         if pendientes:
@@ -2278,7 +2282,8 @@ def generar_pdf():
     if sucursal_segura:
         cliente_folder = os.path.join(cliente_folder, sucursal_segura)
     os.makedirs(cliente_folder, exist_ok=True)
-    nombre_archivo = f"{cliente_seguro} - {sucursal_segura} - {cot}.pdf" if sucursal_segura else f"{cliente_seguro} - {cot}.pdf"
+    titulo = safe_drive_name(datos.get("nombre_borrador"), "")[:100]
+    nombre_archivo = document_stem(cliente, cot, titulo) + ".pdf"
     ruta_pdf = os.path.abspath(os.path.join(cliente_folder, nombre_archivo))
 
     img_path = Path("img/logo.png").resolve().as_uri()
@@ -2463,6 +2468,8 @@ def generar_pdf():
             "fecha": datetime.now().isoformat(timespec="seconds"),
             "total": round(float(total), 2),
             "view_url": archivo_url,           # ← AÑADIDO
+            "nombre_documento": titulo,
+            "pdf_filename": nombre_archivo,
             "receptor": rec,
             "conceptos": conceptos,
             "datos": datos,
@@ -5921,8 +5928,13 @@ def _pdf_cotizacion_bytes(cotizacion):
     cliente = canonical_name or cliente_raw
     folio = str(cotizacion.get("folio") or cotizacion.get("id") or "S-F").strip()
     cliente_seguro = cliente.replace("/", "-").replace("\\", "-")
-    nombre = f"{cliente} - {folio}.pdf"
+    nombre = cotizacion.get("pdf_filename") or f"{cliente} - {folio}.pdf"
+    sucursal = safe_drive_name(cotizacion.get("sucursal"), "")
+    if Path(nombre).name != nombre:
+        raise ValueError("Nombre de PDF inválido")
     for candidate in (
+        Path(current_app.root_path) / "cotizaciones" / cliente_seguro / sucursal / nombre,
+        Path(current_app.root_path) / "static" / "cotizaciones" / cliente_seguro / sucursal / nombre,
         Path(current_app.root_path) / "cotizaciones" / cliente_seguro / nombre,
         Path(current_app.root_path) / "static" / "cotizaciones" / cliente_seguro / nombre,
     ):
@@ -5954,7 +5966,7 @@ def api_pdf_cotizacion(qid):
         sucursal = str(cotizacion.get("sucursal") or (cotizacion.get("datos") or {}).get("sucursal") or "").strip()
         folio = str(cotizacion.get("folio") or cotizacion.get("id") or qid).strip()
         partes = [valor.replace("/", "-").replace("\\", "-") for valor in (cliente, sucursal, folio) if valor]
-        nombre = " - ".join(partes) + ".pdf"
+        nombre = cotizacion.get("pdf_filename") or " - ".join(partes) + ".pdf"
         return send_file(
             io.BytesIO(_pdf_cotizacion_bytes(cotizacion)),
             mimetype="application/pdf",
@@ -6284,6 +6296,7 @@ def api_cotizacion_detalle(qid):
         "ok": True,
         "id": match.get("id") or match.get("folio") or match.get("numero") or match.get("uuid") or str(qid),
         "cliente": canonical_name or match.get("cliente") or "",
+        "nombre_documento": match.get("nombre_documento") or "",
         "fecha": match.get("fecha") or match.get("created_at") or "",
         "folio": match.get("folio") or match.get("numero") or "",
         "total": total,

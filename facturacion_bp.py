@@ -21,9 +21,10 @@ from billing_catalog import CatalogPreparing
 import time
 from zoneinfo import ZoneInfo
 from werkzeug.utils import secure_filename
+from urllib.parse import quote
 
 from cfdi_drive import (
-    backup_cfdi, backup_json_file, backup_payments_index,
+    backup_cfdi, backup_json_file, backup_payments_index, document_stem,
     download_invoice_support_documents, list_invoice_support_documents,
     load_json_file, load_payments_index, move_pending_documents,
 )
@@ -2812,14 +2813,14 @@ def api_invoice_pdf(inv_id):
             xml = _decode_facturama_file(_fm_request("GET", f"/Cfdi/xml/issued/{inv_id}"))
             metadata = _invoice_pdf_metadata(inv_id)
             content = _facturama_printable_pdf(xml, inv_id)
-            filename_folio = " - ".join(filter(None, [metadata.get("invoice_alias"), metadata["internal_folio"]])) or inv_id
-            filename_folio = secure_filename(filename_folio) or secure_filename(inv_id) or "factura"
+            filename = (document_stem(metadata.get("client_name"), metadata["internal_folio"] or inv_id, metadata["invoice_alias"])
+                        if metadata.get("invoice_alias") else "Factura-HSC-" + (secure_filename(metadata["internal_folio"] or inv_id) or "factura"))
         except (requests.HTTPError, ValueError, OSError, PdfRenderError) as exc:
             detail = _http_error_detail(exc) if isinstance(exc, requests.HTTPError) else {"message": str(exc)}
             return jsonify({"ok": False, "error": detail}), 400
         return Response(
             content, mimetype="application/pdf",
-            headers={"Content-Disposition": f"inline; filename=Factura-HSC-{filename_folio}.pdf"},
+            headers={"Content-Disposition": "inline; filename=" + (secure_filename(filename) or "factura") + ".pdf; filename*=UTF-8''" + quote(filename + ".pdf", safe="")},
         )
     try:
         content = _fa_get_binary(f"/invoices/{inv_id}/pdf", "application/pdf")

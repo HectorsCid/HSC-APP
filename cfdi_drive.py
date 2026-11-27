@@ -27,6 +27,15 @@ def safe_drive_name(value, fallback):
     return (text or fallback)[:120]
 
 
+def document_stem(client, folio, title):
+    # Drive's upload helper limits the whole filename to 120 characters.
+    # Reserve the extension and keep the folio even for long client names.
+    client = safe_drive_name(client, "Cliente")[:42]
+    folio = safe_drive_name(folio, "S-F")[:40]
+    title = safe_drive_name(title, "")
+    return " - ".join(filter(None, [client, folio, title]))[:116].rstrip(" .-")
+
+
 def _list_children(service, parent_id, folders_only=False):
     query = f"'{parent_id}' in parents and trashed=false"
     if folders_only:
@@ -228,14 +237,14 @@ def backup_cfdi(cliente, folio_interno, uuid, pdf_bytes, xml_bytes, document_typ
     client_name = safe_drive_name(cliente, "SIN_CLIENTE")
     folio_name = safe_drive_name(folio_interno, f"SIN_FOLIO-{uuid}")
     alias_name = safe_drive_name(folder_alias, "") if str(folder_alias or "").strip() else ""
-    folder_name = safe_drive_name(f"{alias_name} - {folio_name}", folio_name) if alias_name else folio_name
+    folder_name = document_stem(client_name, folio_name, alias_name) if alias_name else folio_name
     client_folder_id = _get_or_create_folder(service, FACTURAS_ROOT_FOLDER_ID, client_name)
     folio_folder_id = _get_or_create_folder(service, client_folder_id, folder_name)
 
     prefix = safe_drive_name(document_type, "CFDI")
     file_base = f"{prefix}-{folio_name}" if prefix == "Factura" else f"{prefix}-{uuid}"
     pdf = _upsert_file(
-        service, folio_folder_id, f"{file_base}.pdf", pdf_bytes, "application/pdf"
+        service, folio_folder_id, f"{folder_name if alias_name else file_base}.pdf", pdf_bytes, "application/pdf"
     )
     xml = _upsert_file(
         service, folio_folder_id, f"{file_base}.xml", xml_bytes, "application/xml"

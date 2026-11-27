@@ -697,6 +697,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
                 "internal_folio": "1370",
                 "order_number": "OC-BTICINO-45872",
                 "invoice_alias": "Mantenimiento septiembre",
+                "client_name": "Bticino",
             },
         }
         with patch.object(billing, "_fm_request", return_value={"Content": encoded}):
@@ -704,7 +705,7 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data.startswith(b"%PDF-"))
         self.assertEqual(response.mimetype, "application/pdf")
-        self.assertIn("Factura-HSC-Mantenimiento_septiembre_-_1370.pdf", response.headers["Content-Disposition"])
+        self.assertIn("Bticino%20-%201370%20-%20Mantenimiento%20septiembre.pdf", response.headers["Content-Disposition"])
 
     def test_xml_download_uses_alias_and_internal_folio(self):
         encoded = base64.b64encode(self.SAMPLE_XML).decode("ascii")

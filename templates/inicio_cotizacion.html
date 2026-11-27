@@ -367,7 +367,7 @@
       const quote_id = raw.quote_id || id;
       const facturar_url = quote_id ? `/facturas/nueva?quote_id=${encodeURIComponent(quote_id)}` : '#';
 
-      return { id, cliente, sucursal, fecha, folio, total, resumen, view_url, facturar_url, email_delivery:raw.email_delivery||{}, _raw: raw };
+      return { id, cliente, sucursal, fecha, folio, total, resumen, view_url, facturar_url, nombre_borrador:raw.nombre_documento||'', email_delivery:raw.email_delivery||{}, _raw: raw };
     }
 
     function normalizeDraft(raw, i){
@@ -376,7 +376,7 @@
       const lineas = Array.isArray(raw.partidas) ? raw.partidas : [];
       return {
         id,
-        nombre_borrador: raw.nombre_borrador || datos.nombre_borrador || '',
+        nombre_borrador: raw.nombre_documento || raw.nombre_borrador || datos.nombre_borrador || '',
         cliente: raw.cliente || datos.cliente || 'Sin cliente',
         sucursal: raw.sucursal || datos.sucursal || '',
         fecha: raw.actualizado || raw.fecha || datos.fecha || '',
@@ -395,7 +395,7 @@
       }
       tbody.innerHTML = list.map(it => `
         <tr>
-          <td>${it.borrador && it.nombre_borrador
+          <td>${it.nombre_borrador
             ? `<strong>${escapeHTML(it.nombre_borrador)}</strong><div class="muted">${escapeHTML(it.cliente||'')}${it.sucursal ? ` · ${escapeHTML(it.sucursal)}` : ''}</div>`
             : `${escapeHTML(it.cliente||'')}${it.sucursal ? `<div class="muted">${escapeHTML(it.sucursal)}</div>` : ''}`}</td>
           <td>${escapeHTML(fmtDate(it.fecha)||'')}</td>

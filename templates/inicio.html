@@ -512,6 +512,14 @@
   (()=>{
     const form=document.getElementById('form-datos'),button=document.getElementById('generateQuotePdf'),progress=document.getElementById('quotePdfProgress');
     let generating=false;
+    button.addEventListener('click',async e=>{
+      e.preventDefault();
+      if(generating || !form.reportValidity())return;
+      const field=document.getElementById('nombre-borrador');
+      const name=await askDocumentName('Nombre de la cotización',field.value);
+      if(name===null)return;
+      field.value=name;form.requestSubmit(button);
+    });
     form.addEventListener('submit',event=>{
       if(generating){event.preventDefault();return;}
       if(event.submitter!==button)return;
@@ -524,6 +532,7 @@
     window.addEventListener('pageshow',()=>{generating=false;button.removeAttribute('aria-disabled');button.style.pointerEvents='';progress.hidden=true;progress.style.display='none';});
   })();
   </script>
+  {% include 'document_name.html' %}
   <!-- Datos clientes embebidos -->
 <script type="application/json" id="clientes-data">
   {{ clientes | tojson | safe }}
