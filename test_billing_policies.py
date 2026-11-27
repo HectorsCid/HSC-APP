@@ -79,3 +79,37 @@ class PolicyFlow(unittest.TestCase):
         policies.tag_template("feb","t","A","2026-03")
         self.assertEqual(policies.packet("a","feb")[0]["oc"],"")
         self.assertEqual(policies.packet("a","inv")[0]["oc"],"December.pdf")
+
+    def test_relation_in_service_order_including_missing_months(self):
+        import csv
+        self.mock("facturacion_bp.billing_client_groups",return_value=([dict(rfc="A",invoices=[
+            dict(id="inv",uuid="AAA",folio="1387",date="2026-03-18")])],{}))
+        res=self.http.get(self.base+"/a/relacion.csv?desde=2025-11&hasta=2026-01")
+        rows=list(csv.DictReader(io.StringIO(res.data.decode("utf-8-sig"))))
+        self.assertEqual([r["Mes del servicio"] for r in rows],["2025-11","2025-12","2026-01"])
+        self.assertEqual(rows[1]["Folio interno"],"1387")
+        self.assertEqual(rows[1]["Folio fiscal"],"AAA")
+        self.assertIn("Pendiente",rows[2]["Estado"])
+        self.assertEqual(self.http.get(self.base+"/a/relacion.csv?desde=2026-02&hasta=2026-01").status_code,400)
+
+    def test_automatic_waits_for_signature_and_order_and_only_sends_once(self):
+        cfg=dict(templates=["t"],automatic=["Chiller"],signed=True,oc=True,email="admin@example.org")
+        self.mock("smtp_mailer.authorized_to_send",return_value=True)
+        self.assertEqual(self.http.post(self.base+"/a/rules",json=cfg).status_code,200)
+        self.assertEqual(policies.sql("SELECT invoice_id FROM billing_policy_mail"),[])  # no retroactivos
+        policies.tag_template("new","t","A","2026-11")
+        send=self.mock("facturacion_bp.send_cfdi_email",return_value={"recipients":[cfg["email"]]})
+        self.mock("facturacion_bp._fm_request",return_value={})
+        self.mock("facturacion_bp._facturama_invoice_row",return_value=dict(id="new",customer_tax_id="A",type="I",cancellation_status="active",folio="123"))
+        self.mock("facturacion_bp._decode_facturama_file",return_value=b"<xml/>")
+        self.mock("facturacion_bp._facturama_printable_pdf",return_value=b"%PDF-")
+        self.mock("email_tracking.record_email_delivery")
+        policies.deliver_ready()
+        self.http.post(self.base+"/a/new/signed",data={"file":(io.BytesIO(b"%PDF-signed"),"firmada.pdf")})
+        policies.deliver_ready()
+        send.assert_not_called()
+        self.http.post(self.base+"/a/new/oc",data={"file":(io.BytesIO(b"%PDF-order"),"OC.pdf")})
+        policies.deliver_ready()
+        policies.deliver_ready()
+        send.assert_called_once()
+        self.assertEqual([x["filename"] for x in send.call_args.kwargs["extra_attachments"]],["OC.pdf","firmada.pdf"])

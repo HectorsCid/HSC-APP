@@ -185,6 +185,11 @@ class OperationsStore(SheetDeliveryMixin):
         blob_type = "BYTEA" if self.dialect == "postgres" else "BLOB"
         statements = [
             "CREATE TABLE IF NOT EXISTS billing_policy_rules (client_id TEXT PRIMARY KEY, rules TEXT NOT NULL)",
+            """CREATE TABLE IF NOT EXISTS billing_policy_mail (invoice_id TEXT PRIMARY KEY, client_id TEXT NOT NULL,
+                policy TEXT NOT NULL, state TEXT NOT NULL, due BIGINT NOT NULL, note TEXT NOT NULL DEFAULT '')""",
+            "CREATE INDEX IF NOT EXISTS policy_mail_due ON billing_policy_mail(state,due)",
+            f"""CREATE TABLE IF NOT EXISTS billing_policy_signed (invoice_id TEXT PRIMARY KEY, client_id TEXT NOT NULL,
+                filename TEXT NOT NULL, content {blob_type} NOT NULL)""",
             "CREATE TABLE IF NOT EXISTS billing_policy_invoices (invoice_id TEXT PRIMARY KEY, client_id TEXT NOT NULL, rfc TEXT NOT NULL, policy TEXT NOT NULL, period TEXT NOT NULL)",
             f"""CREATE TABLE IF NOT EXISTS billing_policy_orders (client_id TEXT NOT NULL, policy TEXT NOT NULL,
                 period TEXT NOT NULL, filename TEXT NOT NULL, digest TEXT NOT NULL, content {blob_type} NOT NULL,

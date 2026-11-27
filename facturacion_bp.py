@@ -2894,6 +2894,11 @@ def api_invoice_email(inv_id):
         return jsonify({"ok": False, "error": "La clave de envío no es correcta."}), 403
 
     extras = []
+    store=current_app.extensions.get("operations_store")
+    if store is not None and store.enabled:
+        from billing_policies import sql
+        if sql("SELECT 1 FROM billing_policy_mail WHERE invoice_id=? AND state IN ('waiting','sending')",(inv_id,)):
+            return jsonify(ok=False,error="Esta factura tiene envío automático pendiente. Revisa su expediente en Pólizas."),409
     if body.get("policy_client"):
         from billing_policies import packet, read_pdf, PolicyError
         try:

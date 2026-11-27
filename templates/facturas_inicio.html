@@ -114,6 +114,7 @@
   .notice-bell.has-unread .notice-bell-count{display:block}
   .tabs{gap:7px;margin:12px 0 10px;flex-wrap:wrap}
   #policyMail:not([open]){display:none}
+  #policyMail [hidden]{display:none!important}
   #policyMail::backdrop{background:#091320a8}
   #policyDetail h3{margin:1.25rem 0 .5rem}
   #policyDetail details{padding:.75rem 0;border-block:1px solid var(--line)}
@@ -1296,7 +1297,7 @@ if(arrivalParams.get('complemento') === '1' && arrivalParams.get('enviar_complem
     rfc:arrivalParams.get('rfc') || '', email:''});
 }
 </script>
-<script src="/static/billing_policies.js?v=1"></script>
+<script src="/static/billing_policies.js?v=2"></script>
 </body>
 </html>
 

@@ -230,6 +230,8 @@ def install(app, store):
             try:
                 with app.app_context():
                     deliver_one(queue, app.logger)
+                    from billing_policies import deliver_ready
+                    deliver_ready()
             except Exception:
                 app.logger.exception('No se pudo revisar la cola de correos programados')
             delay.wait(30)
