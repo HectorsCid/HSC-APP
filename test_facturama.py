@@ -392,6 +392,24 @@ class FacturamaIntegrationTests(unittest.TestCase):
         self.assertEqual(args[1].strftime("%Y-%m-%d"), "2026-07-01")
         self.assertEqual(args[2].strftime("%Y-%m-%d"), "2026-07-31")
 
+    def test_invoice_list_period_includes_both_months(self):
+        for first, last, expected_end in [
+            ("2026-01", "2026-12", "2026-12-31"),
+            ("2026-06", "2026-11", "2026-11-30"),
+            ("2023-12", "2024-02", "2024-02-29"),
+        ]:
+            with self.subTest(last=last), patch.object(billing, "_facturama_period_rows", return_value=[]) as fetch:
+                response = self.client.get("/api/facturas/list", query_string={"start": first, "end": last})
+                self.assertEqual(response.status_code, 200)
+                kind, start, end = fetch.call_args.args
+                self.assertEqual((kind, str(start.date()), str(end.date())), ("issued", first + "-01", expected_end))
+
+    def test_invoice_list_rejects_invalid_period_before_fetch(self):
+        with patch.object(billing, "_facturama_period_rows") as fetch:
+            for query in ["start=2026-06", "start=2026-11&end=2026-06", "month=2026-13"]:
+                self.assertEqual(self.client.get("/api/facturas/list?" + query).status_code, 400)
+            fetch.assert_not_called()
+
     def test_invoice_list_normalizes_facturama_labels_for_actions(self):
         rows = [{
             "Id": "ppd-1", "Uuid": self.VALID_UUID, "CfdiType": "ingreso",

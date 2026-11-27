@@ -95,7 +95,8 @@
   .wrap::-webkit-scrollbar{width:10px}.wrap::-webkit-scrollbar-thumb{background:#64748b;border:2px solid transparent;border-radius:999px;background-clip:padding-box}.wrap::-webkit-scrollbar-track{background:transparent}
   .title{font-size:1.5rem;font-weight:900;letter-spacing:-.025em}
   .pill{margin-top:2px;color:var(--muted)}
-  .filters{gap:8px}
+  .filters{gap:8px;flex-wrap:wrap}
+  .filters [hidden]{display:none!important}
   .filters label{font-size:.76rem;font-weight:800;color:var(--muted)}
   select,input[type="search"],.cm-input,.cm-select{background:var(--surface);color:var(--ink);border-color:var(--line);outline:none}
   select:focus,input:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 18%,transparent)}
@@ -259,12 +260,16 @@
     <div class="row">
       <div>
         <div class="title">Facturación</div>
-        <div class="pill">Comprobantes del mes y acciones rápidas</div>
+        <div class="pill">Comprobantes y acciones rápidas</div>
       </div>
       <div class="filters">
         <input id="q" type="search" placeholder="Buscar receptor, RFC o folio" />
-        <label for="mes">Mes</label>
-        <select id="mes"></select>
+        <select id="issuedScope" aria-label="Consultar emitidas por"><option value="month">Mes</option><option value="year">Año</option><option value="range">Periodo</option></select>
+        <label id="monthLabel" for="mes" hidden>Mes</label>
+        <select id="mes" aria-label="Mes de consulta"></select>
+        <select id="issuedYear" aria-label="Año de consulta" hidden></select>
+        <label for="issuedFrom" hidden>Desde</label><select id="issuedFrom" hidden></select>
+        <label for="issuedTo" hidden>Hasta</label><select id="issuedTo" hidden></select>
         <button class="notice-bell" type="button" data-hsc-notices aria-label="Abrir centro de avisos" title="Avisos de facturación">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path><path d="M10 21h4"></path></svg>
           <span class="notice-bell-count" data-notice-count aria-hidden="true"></span>
@@ -526,6 +531,7 @@ if(arrivalParams.get('complemento') === '1'){
     Object.values(panels).forEach(sel=>document.querySelector(sel).style.display='none');
     document.querySelector(panels[n]).style.display='block';
     activePanel = n;
+    updateIssuedControls();
     refreshActive();
   };
 });
@@ -536,15 +542,31 @@ if(arrivalParams.get('complemento') === '1'){
   const now = new Date();
   for(let i=0;i<60;i++){
     const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
-    const v = d.toISOString().slice(0,7);
+    const v = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
     const o = document.createElement('option');
     o.value=v; o.textContent=d.toLocaleDateString('es-MX',{year:'numeric',month:'long'});
     sel.appendChild(o);
+    $('#issuedFrom').add(o.cloneNode(true));
+    $('#issuedTo').add(o.cloneNode(true));
+    const years=$('#issuedYear');
+    if(!Array.from(years.options).some(option=>option.value===v.slice(0,4)))years.add(new Option(v.slice(0,4),v.slice(0,4)));
   }
   sel.onchange=refreshActive;
 })();
 
-$('#q').addEventListener('input', refreshActive);
+function updateIssuedControls(){
+  const issued=activePanel==='Emitidas', scope=$('#issuedScope').value;
+  $('#issuedScope').hidden=!issued;
+  $('#monthLabel').hidden=issued;
+  $('#mes').hidden=issued && scope!=='month';
+  $('#issuedYear').hidden=!issued || scope!=='year';
+  for(const id of ['issuedFrom','issuedTo']){
+    $('#'+id).hidden=$('label[for="'+id+'"]').hidden=!issued || scope!=='range';
+  }
+}
+$('#issuedScope').onchange=()=>{updateIssuedControls();load();};
+for(const id of ['issuedYear','issuedFrom','issuedTo'])$('#'+id).onchange=()=>load();
+$('#q').addEventListener('input', ()=>activePanel==='Emitidas'?load(true):refreshActive());
 
 function refreshActive(){
   if(activePanel === 'Recibidas') return loadReceived();
@@ -574,20 +596,31 @@ function renderPendingComplements(host,rows){
 }
 if(window.HscQuickPayment)window.HscQuickPayment.mount({refresh:()=>load(),notice:message=>{pageMsg.className='flash ok';pageMsg.textContent=message;}});
 let issuedLoadVersion=0;
-async function load(){
+let issuedQuery='',issuedRequest=null;
+async function load(reuse=false){
   const version=++issuedLoadVersion;
   const pendingList=document.getElementById('issuedPendingList');
   pendingList.innerHTML='<div class="empty-state">Cargando…</div>';
   tbody.innerHTML = '<tr><td colspan="10">Cargando…</td></tr>';
   try{
-    const m = $('#mes').value;
-    const r = await fetch(`/api/facturas/list?month=${encodeURIComponent(m)}`);
-    const d = await r.json();
+    const scope=$('#issuedScope').value, month=$('#mes').value, year=$('#issuedYear').value;
+    const start=scope==='month'?month:scope==='year'?year+'-01':$('#issuedFrom').value;
+    const end=scope==='month'?month:scope==='year'?year+'-12':$('#issuedTo').value;
+    if(start>end)throw new Error('El mes final no puede ser anterior al inicial.');
+    const query=new URLSearchParams(scope==='month'?{month}:{start,end}).toString();
+    if(reuse!==true || query!==issuedQuery || !issuedRequest){
+      issuedQuery=query;
+      issuedRequest=fetch('/api/facturas/list?'+query).then(async r=>{
+        const d=await r.json();
+        if(!r.ok || d.ok===false)throw new Error(errorText(d.error));
+        return d;
+      });
+    }
+    const d=await issuedRequest;
     if(version!==issuedLoadVersion)return;
-    if(!r.ok || d.ok===false) throw new Error(errorText(d.error));
     const q = ($('#q').value||'').toLowerCase();
 
-    let rows = (d.data||[]).filter(x => (x.date||'').startsWith(m));
+    let rows = (d.data||[]).filter(x => {const m=(x.date||'').slice(0,7);return m>=start && m<=end;});
     if(q){
       rows = rows.filter(x =>
         (x.customer_name||'').toLowerCase().includes(q) ||
@@ -600,7 +633,7 @@ async function load(){
     renderPendingComplements(pendingList,pendingFromIssued(rows));
     tbody.innerHTML='';
     if(!rows.length){
-      tbody.innerHTML = '<tr><td colspan="10" style="grid-column:1/-1;text-align:center;color:var(--muted);padding:42px 10px">No hay comprobantes para este mes o búsqueda.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" style="grid-column:1/-1;text-align:center;color:var(--muted);padding:42px 10px">No hay comprobantes para este periodo y búsqueda.</td></tr>';
       return;
     }
     for(const x of rows){
@@ -693,6 +726,7 @@ async function load(){
 
   }catch(e){
     if(version!==issuedLoadVersion)return;
+    issuedRequest=null;
     pendingList.innerHTML='<div class="empty-state">No se pudieron consultar los complementos pendientes.</div>';
     tbody.innerHTML = `<tr><td colspan="10">${escAttr(e.message)}</td></tr>`;
   }

@@ -1932,16 +1932,23 @@ def facturar_safe():
 # ----------------------------------------------------------------------
 @facturacion_bp.get("/facturas/list")
 def api_list_facturas():
-    """Facturas del mes solicitado, incluyendo XML históricos importados."""
-    if _provider() == "facturama":
-        selected_month = str(request.args.get("month") or "").strip()
-        if selected_month and not re.fullmatch(r"\d{4}-\d{2}", selected_month):
-            return jsonify({"ok": False, "error": "El mes solicitado no es válido."}), 400
+    """Facturas por mes o intervalo inclusivo de meses."""
+    month = request.args.get("month")
+    ranged = "start" in request.args or "end" in request.args
+    start = end = None
+    if month is not None or ranged:
+        first, last = (request.args.get("start"), request.args.get("end")) if ranged else (month, month)
         try:
-            if selected_month:
-                month_start = datetime.strptime(selected_month + "-01", "%Y-%m-%d")
-                next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
-                rows = _facturama_period_rows("issued", month_start, next_month - timedelta(days=1))
+            if (ranged and month is not None) or not all(re.fullmatch(r"[0-9]{4}-[0-9]{2}", v or "") for v in (first, last)) or first > last:
+                raise ValueError
+            start, end = (datetime.strptime(v, "%Y-%m") for v in (first, last))
+            end = end.replace(day=monthrange(end.year, end.month)[1])
+        except ValueError:
+            return jsonify({"ok": False, "error": "Selecciona un periodo válido; el mes final no puede ser anterior al inicial."}), 400
+    if _provider() == "facturama":
+        try:
+            if start:
+                rows = _facturama_period_rows("issued", start, end)
             else:
                 raw = _fm_request("GET", "/api/cfdi", params={"type": "issued", "status": "all", "page": 0})
                 rows = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
@@ -1966,7 +1973,13 @@ def api_list_facturas():
                 out.append(normalized)
         return jsonify({"ok": True, "provider": "facturama", "data": out, "payment_sync": payment_sync}), 200
     try:
-        rs = _fa_get("/invoices", params={"limit": 100})
+        params = {"limit": 100}
+        if start:
+            params.update({"date[gte]": start.strftime("%Y-%m-%dT00:00:00"), "date[lte]": end.strftime("%Y-%m-%dT23:59:59.999")})
+        rs = _fa_get("/invoices", params=params)
+        if start:
+            for page in range(2, int(rs.get("total_pages") or 1) + 1):
+                rs["data"].extend(_fa_get("/invoices", params={**params, "page": page}).get("data", []))
     except requests.HTTPError as e:
         return jsonify({"ok": False, "error": getattr(e.response, "text", str(e))}), 400
 
@@ -2181,7 +2194,8 @@ def _facturama_period_rows(document_type, start_date, end_date):
         "dateStart": start_date.strftime("%d/%m/%Y"),
         "dateEnd": end_date.strftime("%d/%m/%Y"),
     }
-    for page in range(20):
+    page = 0
+    while True:
         raw = _fm_request("GET", "/api/cfdi", params={**params, "page": page}, timeout=45)
         batch = raw if isinstance(raw, list) else (_pick(raw, "Data", "Items") or [])
         if not batch:
@@ -2189,7 +2203,7 @@ def _facturama_period_rows(document_type, start_date, end_date):
         added = 0
         for item in batch:
             identity = str(_pick(item, "Id") or _pick(item, "Uuid", "FolioFiscal") or "").strip()
-            if identity and identity in seen:
+            if not identity or identity in seen:
                 continue
             if identity:
                 seen.add(identity)
@@ -2197,6 +2211,7 @@ def _facturama_period_rows(document_type, start_date, end_date):
             added += 1
         if added == 0:
             break
+        page += 1
     return rows
 
 
