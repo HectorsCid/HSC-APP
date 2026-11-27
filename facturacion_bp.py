@@ -305,6 +305,8 @@ def _template_invoice_payload(template, schedule, run_key):
         "quote_folio": "",
         "cliente_carpeta": str(template.get("client_name") or receiver.get("name") or "").strip(),
         "request_id": f"schedule-{schedule['id']}-{run_key}",
+        "policy_template_id": template.get("id",""),
+        "policy_period": run_key,
         "confirmed": True,
         "retenciones": {
             "aplicar": bool(float(retentions.get("isr") or 0) or float(retentions.get("iva") or 0)),
@@ -1802,6 +1804,16 @@ def facturar():
                 result["quote_folio"] = quote_folio
                 result["invoice_alias"] = invoice_alias
                 result["drive_folder_name"] = str(drive_backup.get("folder_name") or internal_folio)
+                if payload.get("policy_template_id"):
+                    try:
+                        from billing_policies import tag_template
+                        result["policy_linked"] = tag_template(str(inv_id), payload["policy_template_id"],
+                            str((payload.get("receptor") or {}).get("rfc") or "").strip().upper(),
+                            payload.get("policy_period") or datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m"))
+                    except Exception:
+                        current_app.logger.exception("No se pudo clasificar la factura ya timbrada %s", inv_id)
+                        result["policy_review"] = True
+                        result["warning"] = "Factura timbrada. Revisa su clasificación en Pólizas antes de enviarla."
                 if not drive_backup.get("ok"):
                     result["warning"] = (
                         "La factura se timbró correctamente, pero Drive no confirmó el respaldo. "
@@ -2662,7 +2674,7 @@ def _stamp_scheduled_invoice(schedule, template, run_key):
     schedule["last_invoice_id"] = str(data.get("invoice_id") or "")
     schedule["last_uuid"] = str(data.get("uuid") or "")
     schedule["last_internal_folio"] = str(data.get("internal_folio") or "")
-    if schedule.get("mode") == "auto_stamp_email":
+    if schedule.get("mode") == "auto_stamp_email" and not (data.get("policy_linked") or data.get("policy_review")):
         data.update(_email_scheduled_invoice(schedule, template))
     return data
 
@@ -2882,11 +2894,27 @@ def api_invoice_email(inv_id):
         return jsonify({"ok": False, "error": "La clave de envío no es correcta."}), 403
 
     extras = []
+    if body.get("policy_client"):
+        from billing_policies import packet, read_pdf, PolicyError
+        try:
+            info, extras = packet(body["policy_client"], inv_id, download=True)
+            if info["token"] != body.get("policy_token") or (info["required"] and not info["oc"]):
+                raise PolicyError("El expediente está incompleto o cambió. Vuelve a preparar el correo.")
+            if info["signed"]:
+                signed = request.files.get("signed_pdf")
+                extras.append(dict(data=read_pdf(signed), filename=secure_filename(signed.filename) or "Factura-firmada.pdf", content_type="application/pdf"))
+        except PolicyError as exc:
+            return jsonify(ok=False,error=str(exc)),400
+        except Exception:
+            current_app.logger.exception("No se pudo preparar la póliza %s", inv_id)
+            return jsonify(ok=False,error="No se pudo recuperar el expediente. No se envió el correo."),503
     allowed = {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".xls", ".xlsx", ".csv"}
     files = [upload for upload in request.files.getlist("attachments") if upload and upload.filename]
     if len(files) > 8:
         return jsonify({"ok": False, "error": "Puedes adjuntar como máximo 8 archivos adicionales."}), 400
-    total_size = 0
+    total_size = sum(len(item["data"]) for item in extras)
+    if total_size > 15 * 1024 * 1024:
+        return jsonify(ok=False,error="La OC y los adjuntos superan 15 MB."),400
     for upload in files:
         filename = secure_filename(upload.filename)
         suffix = Path(filename).suffix.lower()

@@ -76,6 +76,8 @@ from operaciones_sync import sync_operations_outbox
 
 from facturacion_bp import facturacion_bp, billing_client_groups, api_invoice_pdf, api_invoice_xml
 app.register_blueprint(facturacion_bp)
+from billing_policies import bp as billing_policies_bp
+app.register_blueprint(billing_policies_bp)
 from notification_delivery import bp as notifications_bp, start as start_notifications
 app.register_blueprint(notifications_bp)
 
@@ -3762,6 +3764,25 @@ def _partner_documents_identity(client):
         if str(value or "").strip()
     }
     return {"rfc": rfc, "names": names, "canonical": canonical or client.get("name") or ""}
+
+
+def _billing_policy_identity(client):
+    # Nunca elegir una razón social ni su destinatario por parecido de nombre.
+    rfc = str(client.get("billing_rfc") or "").strip().upper()
+    _, catalog = _resolver_cliente_catalogo_por_id(client.get("id"), client.get("matrix_id"))
+    if not catalog or (rfc and str(catalog.get("rfc") or "").strip().upper() != rfc):
+        _, catalog = _resolver_cliente_catalogo("", rfc) if rfc else (None, None)
+    if not catalog:
+        with _CLIENTES_DATA_LOCK:
+            exact = (clientes_predefinidos or {}).get(client.get("name")) or {}
+        if not rfc or str(exact.get("rfc") or "").strip().upper() == rfc:
+            catalog = exact
+    catalog = catalog or {}
+    return dict(rfc=rfc or str(catalog.get("rfc") or "").strip().upper(),
+                email=catalog.get("correo_cuentas_pagar") or catalog.get("correo_facturacion") or "")
+
+
+app.extensions["policy_identity"] = _billing_policy_identity
 
 
 def _partner_quote_matches(item, identity):

@@ -112,7 +112,14 @@
   .notice-bell svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
   .notice-bell-count{position:absolute;top:-5px;right:-5px;display:none;min-width:19px;height:19px;padding:0 5px;border:2px solid var(--bg);border-radius:999px;background:var(--danger);color:#fff;font-size:.62rem;font-weight:900;line-height:15px;text-align:center}
   .notice-bell.has-unread .notice-bell-count{display:block}
-  .tabs{gap:7px;margin:12px 0 10px}
+  .tabs{gap:7px;margin:12px 0 10px;flex-wrap:wrap}
+  #policyMail:not([open]){display:none}
+  #policyMail::backdrop{background:#091320a8}
+  #policyDetail h3{margin:1.25rem 0 .5rem}
+  #policyDetail details{padding:.75rem 0;border-block:1px solid var(--line)}
+  #policyDetail summary{cursor:pointer}
+  #policyDetail form,#policyMail form{margin-top:.75rem}
+  #policyDetail .balance-pending-row small{display:block;color:var(--muted)}
   .tab{padding:7px 13px;background:var(--surface);font-weight:750}
   .tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
   .card{padding:9px;background:var(--card);border-radius:16px;box-shadow:var(--shadow)}
@@ -283,6 +290,7 @@
 
     <div class="tabs">
       <div id="tabEmitidas" class="tab active">Emitidas</div>
+      <div id="tabPolizas" class="tab">Pólizas</div>
       <div id="tabRecibidas" class="tab">Recibidas</div>
       <div id="tabBalance" class="tab">Balance</div>
       <div id="tabPlantillas" class="tab">Plantillas</div>
@@ -341,6 +349,11 @@
         <div class="schedule-list" id="scheduleList"><div class="empty-state">Cargando programaciones…</div></div>
       </section>
     </div>
+    <div class="card" id="panelPolizas" style="display:none">
+      <div class="panel-head"><h2>Pólizas activas</h2><button class="btn" id="policyReload">Actualizar</button></div>
+      <div class="client-layout"><div class="client-list" id="policyClients"></div><div class="client-detail" id="policyDetail" aria-live="polite"></div></div>
+    </div>
+    <dialog id="policyMail" class="cm-card" style="max-height:90vh;overflow:auto;color:var(--ink);background:var(--surface)"></dialog>
     <div class="card" id="panelClientes" style="display:none">
       <div class="panel-head"><div><h2>Relación por cliente</h2><div class="pill">Facturas, cobros y complementos en un solo lugar</div></div><button class="btn" id="reloadClients"><svg class="line-icon" aria-hidden="true"><use href="#i-refresh"/></svg>Actualizar</button></div>
       <p id="billingCatalogFreshness" class="pill" role="status"></p><div class="client-layout"><div class="client-list" id="billingClientList"><div class="empty-state">Abre esta pestaña para consultar.</div></div><div class="client-detail" id="billingClientDetail"><div class="empty-state">Selecciona un cliente.</div></div></div>
@@ -477,7 +490,7 @@ for(const [id,label] of [['balanceTop','Clientes principales'],['balancePendingL
 }
 const lineIcon = name => `<svg class="line-icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const tbody = $('#tbl tbody');
-const panels = {Emitidas:'#panelEmitidas', Recibidas:'#panelRecibidas', Balance:'#panelBalance', Plantillas:'#panelPlantillas', Clientes:'#panelClientes'};
+const panels = {Emitidas:'#panelEmitidas', Polizas:'#panelPolizas', Recibidas:'#panelRecibidas', Balance:'#panelBalance', Plantillas:'#panelPlantillas', Clientes:'#panelClientes'};
 let activePanel = 'Emitidas';
 const clickLocks = new Set(); // antirrebote por fila
 const pageMsg = document.getElementById('pageMsg');
@@ -523,7 +536,7 @@ if(arrivalParams.get('complemento') === '1'){
   setTimeout(()=>{ pageMsg.className = 'flash'; }, 6000);
 }
 
-['Emitidas','Recibidas','Balance','Plantillas','Clientes'].forEach(n=>{
+['Emitidas','Polizas','Recibidas','Balance','Plantillas','Clientes'].forEach(n=>{
   const tab = document.getElementById('tab'+n);
   tab.onclick=()=>{
     document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
@@ -557,8 +570,8 @@ if(arrivalParams.get('complemento') === '1'){
 function updateIssuedControls(){
   const issued=activePanel==='Emitidas', scope=$('#issuedScope').value;
   $('#issuedScope').hidden=!issued;
-  $('#monthLabel').hidden=issued;
-  $('#mes').hidden=issued && scope!=='month';
+  $('#monthLabel').hidden=issued || activePanel==='Polizas';
+  $('#mes').hidden=activePanel==='Polizas' || (issued && scope!=='month');
   $('#issuedYear').hidden=!issued || scope!=='year';
   for(const id of ['issuedFrom','issuedTo']){
     $('#'+id).hidden=$('label[for="'+id+'"]').hidden=!issued || scope!=='range';
@@ -569,6 +582,7 @@ for(const id of ['issuedYear','issuedFrom','issuedTo'])$('#'+id).onchange=()=>lo
 $('#q').addEventListener('input', ()=>activePanel==='Emitidas'?load(true):refreshActive());
 
 function refreshActive(){
+  if(activePanel === 'Polizas') return HscPolicies.show();
   if(activePanel === 'Recibidas') return loadReceived();
   if(activePanel === 'Balance') return loadBalance();
   if(activePanel === 'Plantillas') return loadTemplates();
@@ -1282,6 +1296,7 @@ if(arrivalParams.get('complemento') === '1' && arrivalParams.get('enviar_complem
     rfc:arrivalParams.get('rfc') || '', email:''});
 }
 </script>
+<script src="/static/billing_policies.js?v=1"></script>
 </body>
 </html>
 

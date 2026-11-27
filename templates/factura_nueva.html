@@ -1135,6 +1135,7 @@
         quote_folio: (document.getElementById('folioCotizacion').value||'').trim(),
         cliente_carpeta: document.getElementById('cliente').value || pageClientName || document.getElementById('razon').value,
         request_id: stampRequestId,
+        policy_template_id: pageTemplateId,
         confirmed: true,
         retenciones: {
           aplicar: Number(document.getElementById('retencionIsr').value || 0) > 0 || Number(document.getElementById('retencionIva').value || 0) > 0,
